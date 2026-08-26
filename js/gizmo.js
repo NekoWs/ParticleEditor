@@ -41,10 +41,6 @@ function gizmoHl(c) { return new THREE.Color(c).lerp(new THREE.Color(1, 1, 1), 0
 
 
 function updateGizmo() {
-  // 选中后不再降低全体粒子透明度：粒子始终保持全亮度，
-  // 选中态由橙色描边（selectedMaterial）与变换控制器表示。
-  pointsMaterial.uniforms.uOpacity.value = 1.0;
-  selectedMaterial.uniforms.uOpacity.value = 1.0;
   // 拼图模式 / 非移动、旋转工具：隐藏控制器
   if (document.body.classList.contains('puzzle-mode') || !TRANSFORM_TOOLS.includes(state.tool)) {
     gizmoGroup.visible = false;
