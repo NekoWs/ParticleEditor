@@ -5,4 +5,10 @@ export default defineConfig({
   build: {
     outDir: 'dist',
   },
+  test: {
+    environment: 'node',
+    include: ['test/*.test.js'],
+    globals: true,
+    setupFiles: ['test/setup.js'],
+  },
 });

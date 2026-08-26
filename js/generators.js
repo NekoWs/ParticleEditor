@@ -4,7 +4,7 @@
 
 
 import { _etf, t } from './i18n.js';
-import { FUNCTION_PRESETS, state, nextFunctionId, setDirty } from './constants.js';
+import { FUNCTION_PRESETS, state, nextFunctionId, setDirty, compPr } from './constants.js';
 import { ATTR_NAMES, compileExpr, execRpn, tokenize, evaluate, compileFunctionCode, execFunctionCode, varKfValue, tryCompileFunction } from './easing.js';
 import { modalAlert } from './ui.js';
 import { pushUndo } from './undo.js';
