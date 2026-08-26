@@ -847,7 +847,7 @@ export async function uploadTextureFile(file) {
   while (getTexture(n)) n = name.trim() + '_' + (k++);
   makeTexture(n, w, h, data);
   renderTexCanvas();
-  if (typeof refreshTexBase64Cache === 'function') refreshTexBase64Cache();
+  refreshTexBase64Cache();
   markTextureChanged();
   refreshUVPanel();
   refreshTexList();
@@ -860,7 +860,7 @@ export function createNewTexture() {
   const name = 'tex_' + k;
   makeTexture(name, 16, 16);
   renderTexCanvas();
-  if (typeof refreshTexBase64Cache === 'function') refreshTexBase64Cache();
+  refreshTexBase64Cache();
   markTextureChanged();
   refreshUVPanel();
   refreshTexList();
@@ -897,7 +897,7 @@ export function resizeTexture(name, w, h) {
   t.data = nd; t.width = nw; t.height = nh;
   if (state.currentTexture === name) texState.selection = null;
   renderTexCanvas();
-  if (typeof refreshTexBase64Cache === 'function') refreshTexBase64Cache();
+  refreshTexBase64Cache();
   markTextureChanged();
   refreshTexList();
   refreshUVPanel();
@@ -941,7 +941,7 @@ export async function renameTextureItem(oldName) {
   state.textures[name] = nt;
   replaceTextureRef(oldName, name);
   renderTexCanvas();
-  if (typeof refreshTexBase64Cache === 'function') refreshTexBase64Cache();
+  refreshTexBase64Cache();
   markTextureChanged();
   refreshTexList();
   refreshUVPanel();
@@ -955,7 +955,7 @@ export async function deleteTextureItem(name) {
   replaceTextureRef(name, null);
   texState.selection = null;
   renderTexCanvas();
-  if (typeof refreshTexBase64Cache === 'function') refreshTexBase64Cache();
+  refreshTexBase64Cache();
   markTextureChanged();
   refreshTexList();
   refreshUVPanel();
