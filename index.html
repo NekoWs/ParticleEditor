@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ParticleDrawing 粒子动画编辑器</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <link rel="icon" href="./icon.png" />
+</head>
+<body>
+  <header class="topbar">
+    <nav class="menubar">
+      <div class="menu">
+        <button class="menu-btn" data-menu="file" data-i18n="menu.file">文件</button>
+        <div class="dropdown" id="menu-file">
+          <button id="btn-new" class="dd-item"><span data-i18n="common.new">新建</span><kbd>Ctrl+N</kbd></button>
+          <button id="btn-open" class="dd-item"><span data-i18n="menu.openEllipsis">打开…</span><kbd>Ctrl+O</kbd></button>
+          <button id="btn-save" class="dd-item"><span data-i18n="common.save">保存</span><kbd>Ctrl+S</kbd></button>
+          <button id="btn-saveas" class="dd-item"><span data-i18n="menu.saveAs">另存为…</span></button>
+          <button id="btn-export" class="dd-item"><span data-i18n="menu.exportAnim">导出动画…</span></button>
+          <div class="dd-sep"></div>
+          <button id="btn-clear" class="dd-item danger"><span data-i18n="menu.clear">清空</span></button>
+        </div>
+      </div>
+      <div class="menu">
+        <button class="menu-btn" data-menu="edit" data-i18n="menu.edit">编辑</button>
+        <div class="dropdown" id="menu-edit">
+          <button id="btn-undo" class="dd-item"><span data-i18n="common.undo">撤回</span><kbd>Ctrl+Z</kbd></button>
+          <button id="btn-redo" class="dd-item"><span data-i18n="common.redo">重做</span><kbd>Ctrl+Y</kbd></button>
+          <div class="dd-sep"></div>
+          <button id="btn-selall" class="dd-item"><span data-i18n="menu.selectAll">全选</span><kbd>Ctrl+A</kbd></button>
+          <button id="btn-delete-selected" class="dd-item danger"><span data-i18n="menu.deleteSelected">删除选中</span><kbd>Delete</kbd></button>
+          <div class="dd-sep"></div>
+          <button id="btn-group" class="dd-item"><span data-i18n="menu.group">建立组</span><kbd>Ctrl+G</kbd></button>
+        </div>
+      </div>
+      <div class="menu">
+        <button class="menu-btn" data-menu="lang" data-i18n="menu.lang">语言</button>
+        <div class="dropdown" id="menu-lang">
+          <button class="dd-item" data-lang="zh">中文</button>
+          <button class="dd-item" data-lang="en">English</button>
+        </div>
+      </div>
+      <div class="menu">
+        <button class="menu-btn" data-menu="about" id="btn-about" data-i18n="menu.about">关于</button>
+      </div>
+    </nav>
+    <span id="topbar-title">my_animation.pdraw</span>
+  </header>
+
+  <main class="layout">
+    <aside class="left-panel" id="left-panel">
+      <div class="panel-title" data-i18n="panel.particleList">粒子列表</div>
+      <div id="particle-tree" class="particle-tree"></div>
+    </aside>
+    <div class="resize-handle" id="resize-handle"></div>
+
+    <section id="viewport" class="viewport">
+      <canvas id="axis-gizmo"></canvas>
+      <div id="box-overlay"></div>
+      <div class="toolbar" id="tools">
+        <button class="tool active" data-tool="select" data-i18n-title="tool.select" title="选择（框选）"><svg viewBox="0 0 18 18"><path d="M4 2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 2"/></svg></button>
+        <button class="tool" data-tool="move" data-i18n-title="tool.move" title="移动"><svg viewBox="0 0 18 18"><path d="M9 3v12M3 9h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M6 6l3-3 3 3M6 12l3 3 3-3M6 6l-3 3 3 3M12 6l3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button class="tool" data-tool="rotate" data-i18n-title="tool.rotate" title="旋转"><svg viewBox="0 0 18 18"><path d="M14.5 9a5.5 5.5 0 1 1-1.6-3.9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M13.5 1.5v3.6h-3.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button class="tool" data-tool="pencil" data-i18n-title="tool.pencil" title="铅笔（点按放置）"><svg viewBox="0 0 18 18"><path d="M3 15l1-4 9-9 3 3-9 9-4 1z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></button>
+        <button class="tool" data-tool="line" data-i18n-title="tool.line" title="直线"><svg viewBox="0 0 18 18"><path d="M3 15L15 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+        <button class="tool" data-tool="circle" data-i18n-title="tool.circle" title="圆"><svg viewBox="0 0 18 18"><circle cx="9" cy="9" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
+        <button class="tool" data-tool="rect" data-i18n-title="tool.rect" title="矩形"><svg viewBox="0 0 18 18"><rect x="3" y="4" width="12" height="10" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
+        <button class="tool" data-tool="freehand" data-i18n-title="tool.freehand" title="手绘"><svg viewBox="0 0 18 18"><path d="M2 12c2-4 4-4 3-1s-1 5-3 5 1-5 4-5 5 2 2 3-4-1-4-3 3-4 6-2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
+      </div>
+    </section>
+
+    <div class="resize-handle-r" id="resize-handle-r"></div>
+    <aside class="sidebar">
+      <div class="tabs" id="sidebar-tabs">
+        <button class="tab active" data-tab="props" data-i18n-title="tab.props" title="属性">
+          <svg viewBox="0 0 18 18"><path d="M5 2.5h6l2.5 2.5V15a.5.5 0 0 1-.5.5H5a.5.5 0 0 1-.5-.5V3a.5.5 0 0 1 .5-.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M11 2.5V5h2.5M7 8.5h4M7 11h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+        <button class="tab" data-tab="fx" data-i18n-title="tab.fx" title="函数对象">
+          <svg viewBox="0 0 18 18"><path d="M4 14c1.5-4 2.5-6 4-6s2.5 4 4 4 2.5-4 4-6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><text x="9" y="5" font-size="5.5" fill="currentColor" text-anchor="middle" font-family="monospace">f(x)</text></svg>
+        </button>
+        <button class="tab" data-tab="texture" data-i18n-title="tab.texture" title="贴图 / UV">
+          <svg viewBox="0 0 18 18"><rect x="3" y="3" width="12" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 9h12M9 3v12" stroke="currentColor" stroke-width="1.2"/><circle cx="9" cy="9" r="1.4" fill="currentColor"/></svg>
+        </button>
+      </div>
+
+      <div class="tab-pane active" id="pane-props">
+        <label class="row"><span data-i18n="common.color">颜色</span> <input id="prop-color" type="color" value="#ffffff" /></label>
+        <label class="row"><span data-i18n="props.opacity">透明度</span> <input id="prop-alpha" type="range" min="0" max="1" step="0.01" value="1" /><span id="alpha-val">1.00</span></label>
+        <div class="row"><span data-i18n="props.scale">缩放</span>
+          <input id="prop-scale-x" type="number" min="0.05" step="0.05" value="1" title="X" />
+          <input id="prop-scale-y" type="number" min="0.05" step="0.05" value="1" title="Y" />
+          <input id="prop-scale-z" type="number" min="0.05" step="0.05" value="1" title="Z" />
+        </div>
+        <label class="chk"><input id="prop-glow" type="checkbox" /><span data-i18n="props.glow">发光</span></label>
+        <label class="row"><span data-i18n="props.light">光照等级</span> <input id="prop-light" type="range" min="0" max="15" step="1" value="15" /><span id="light-val">15</span></label>
+        <label class="row"><span data-i18n="props.life">寿命(tick)</span> <input id="prop-life" type="number" min="-1" step="1" value="20" data-i18n-title="props.lifeHint" title="-1 或留空 = 无限（活到动画结束）" /></label>
+        <label class="row">X <input id="prop-posx" type="number" step="0.1" value="0" /></label>
+        <label class="row">Y <input id="prop-posy" type="number" step="0.1" value="0" /></label>
+        <label class="row">Z <input id="prop-posz" type="number" step="0.1" value="0" /></label>
+      </div>
+
+      <div class="tab-pane" id="pane-fx">
+        <div class="vars-head">
+          <select id="fx-preset-add"></select>
+          <button id="btn-fx-preset-add" class="mini" data-i18n-title="fx.addPresetTitle" title="按预设新建函数对象">+ <span data-i18n="common.new">新建</span></button>
+        </div>
+        <div id="fx-panel"><p class="hint" data-i18n="fx.noSelection">选中一个函数对象以编辑属性</p></div>
+      </div>
+
+      <div class="tab-pane" id="pane-texture">
+        <div class="tex-editor">
+          <div class="tex-tools" id="tex-tools">
+            <button class="tex-tool active" data-ttool="select" data-i18n-title="tex.tool.select" title="矩形选区"><svg viewBox="0 0 18 18"><path d="M4 3h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2.5 2"/></svg></button>
+            <button class="tex-tool" data-ttool="selmove" data-i18n-title="tex.tool.move" title="移动选区（在选区内拖动移动内容）"><svg viewBox="0 0 18 18"><path d="M4 3h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2.5 2"/><path d="M9 6v6M6 9h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+            <button class="tex-tool" data-ttool="pencil" data-i18n-title="tex.tool.pencil" title="铅笔"><svg viewBox="0 0 18 18"><path d="M3.5 14.5l.8-3 8-8 2.2 2.2-8 8-3 .8z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
+            <button class="tex-tool" data-ttool="bucket" data-i18n-title="tex.tool.bucket" title="油漆桶"><svg viewBox="0 0 18 18"><path d="M4 14L2.5 9l4-4 3 3-5.5 6z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 5L13 8.5M12 9l-1.5 1.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+            <button class="tex-tool" data-ttool="picker" data-i18n-title="tex.tool.picker" title="滴管（按住 Alt 临时切换）"><svg viewBox="0 0 18 18"><path d="M13 3l2 2-6.5 6.5-2.5.5.5-2.5L13 3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M4.5 13.5L2 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+            <div class="tex-tool-sep"></div>
+            <button class="tex-tool" id="tex-undo" data-i18n-title="common.undo" title="撤回"><svg viewBox="0 0 18 18"><path d="M6 5l-3 3 3 3M3 8h7a4 4 0 0 1 0 8h-2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button class="tex-tool" id="tex-redo" data-i18n-title="common.redo" title="重做"><svg viewBox="0 0 18 18"><path d="M12 5l3 3-3 3M15 8H8a4 4 0 0 0 0 8h2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          </div>
+          <div class="tex-canvas-wrap" id="tex-canvas-wrap">
+            <canvas id="tex-canvas"></canvas>
+            <div class="tex-overlay" id="tex-grid"></div>
+            <div class="tex-overlay" id="tex-overlay-cells"></div>
+            <div class="tex-overlay" id="tex-overlay-uv"></div>
+            <div class="tex-overlay" id="tex-overlay-frame"></div>
+            <div class="tex-overlay" id="tex-overlay-sel"></div>
+            <button id="tex-color-btn" data-i18n-title="common.color" title="颜色" style="display:none"></button>
+          </div>
+          <div class="tex-meta" id="tex-meta">16 × 16</div>
+        </div>
+        <div class="tex-io">
+          <input id="tex-upload" type="file" accept=".png" hidden />
+          <button id="btn-tex-upload" class="mini" data-i18n="tex.upload">上传贴图</button>
+          <button id="btn-tex-new" class="mini" data-i18n="common.new">新建</button>
+          <button id="btn-tex-export" class="mini" data-i18n="tex.export">导出</button>
+        </div>
+        <div class="tex-list" id="tex-list"></div>
+        <div class="uv-panel" id="uv-panel">
+          <p class="hint" data-i18n="tex.selectHint">选中对象以编辑贴图 / UV</p>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="timeline">
+    <div id="tl-module-resize" data-i18n-title="timeline.resizeTitle" title="拖拽调整时间轴模块高度"></div>
+    <div class="tl-controls">
+      <button id="btn-play" class="btn">▶ 播放</button>
+      <label class="row" style="margin:0"><span data-i18n="timeline.speed">速度</span> <input id="tl-speed" type="number" min="0.1" step="0.1" value="1" style="width:56px" /></label>
+      <label class="chk tl-loop"><input id="tl-loop" type="checkbox" checked /><span data-i18n="timeline.loop">循环</span></label>
+      <button id="tl-easing" class="ease-btn" data-i18n-title="timeline.easing" title="缓动函数"></button>
+      <span class="tl-time-group">
+        <input id="tl-time" type="number" min="0" step="1" value="0" />
+        <span class="ticks">tick / <span id="tl-max">0</span></span>
+      </span>
+    </div>
+    <canvas id="timeline"></canvas>
+    <canvas id="tl-layers-canvas"></canvas>
+  </footer>
+
+  <input id="file-import" type="file" accept=".pdraw,.json" hidden />
+
+  <!-- 第三方依赖（挂载全局 THREE / THREE.OrbitControls） -->
+  <script src="./vendor/three.min.js"></script>
+  <script src="./vendor/OrbitControls.js"></script>
+
+  <!-- 基础层：语言表 / i18n / 常量与全局 state -->
+  <script src="./js/langs.js"></script>
+  <script src="./js/i18n.js"></script>
+  <script src="./js/constants.js"></script>
+
+  <!-- 通用 UI 组件与纯逻辑模块 -->
+  <script src="./js/ui.js"></script>
+  <script src="./js/easing.js"></script>
+  <script src="./js/float-window.js"></script>
+
+  <!-- 场景 / 渲染 / 数据模型 / 编辑与撤销 -->
+  <script src="./js/scene.js"></script>
+  <script src="./js/animation.js"></script>
+  <script src="./js/edit.js"></script>
+  <script src="./js/undo.js"></script>
+
+  <!-- 交互与控制器 -->
+  <script src="./js/gizmo.js"></script>
+  <script src="./js/interaction.js"></script>
+  <script src="./js/axis-gizmo.js"></script>
+
+  <!-- 侧边树 / 属性面板 / 时间轴 / 贴图编辑器 -->
+  <script src="./js/tree.js"></script>
+  <script src="./js/easing-editor.js"></script>
+  <script src="./js/generators.js"></script>
+  <script src="./js/panels.js"></script>
+  <script src="./js/timeline-layers.js"></script>
+  <script src="./js/texture-editor.js"></script>
+
+  <!-- 拼图模式（积木数据模型 + UI） -->
+  <script src="./js/blocks.js"></script>
+  <script src="./js/blocks-ui.js"></script>
+
+  <!-- 文件导入导出 / 应用启动与主循环 -->
+  <script src="./js/io.js"></script>
+  <script src="./js/main.js"></script>
+</body>
+</html>
