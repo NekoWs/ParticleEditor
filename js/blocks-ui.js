@@ -5,7 +5,7 @@
 
 
 import { t, tf, _etf } from './i18n.js';
-import { state, getFunction, isDerivedParticle } from './constants.js';
+import { state, getFunction } from './constants.js';
 import { ATTR_NAMES } from './easing.js';
 import { T_SCALAR, T_VEC, T_MAT, T_ANY, FUNC_BLOCKS, STMT_BLOCKS, PALETTE_GROUPS, OP_SYMBOLS, OP_LABELS, collectTemps, codeToStatements, statementsToCode, parseVarExpr, varExprToCode, exprType, typeAccepts, fmtNum } from './blocks.js';
 import { makeFloatWindow } from './float-window.js';

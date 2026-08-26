@@ -12,7 +12,7 @@ import { rebuildAtlas } from './scene.js';
 import { selectedGroupName } from './interaction.js';
 import { pushUndo } from './undo.js';
 import { showContextMenu } from './tree.js';
-import { download, refreshTexBase64Cache } from './io.js';
+import { refreshTexBase64Cache } from './io.js';
 import { modalAlert, modalPrompt, modalConfirm } from './ui.js';
 export const TEX_UV_COLOR = '#5b9dff'; // UV 预览描边（实线，与选中态 --accent 一致）
 export const TEX_SEL_COLOR = '#5b9dff'; // 选区描边（虚线，固定显示）
