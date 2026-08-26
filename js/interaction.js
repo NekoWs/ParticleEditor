@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { t } from './i18n.js';
 import { state, getParticle, getFunction, isDerivedParticle, RAD2DEG, ROT_SNAP, PLANES, DEG2RAD, nextGroupName } from './constants.js';
 import { shiftHeld } from './input-state.js';
-import { camera, renderer, raycaster, pointer, points, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, AXIS_RING_COLORS, GIZMO_FACE_DEFS, resetWorldAxisState, focalLengthPx } from './scene.js';
+import { camera, renderer, raycaster, pointer, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, AXIS_RING_COLORS, GIZMO_FACE_DEFS, resetWorldAxisState, focalLengthPx } from './scene.js';
 import { currentVisual, rebuildPoints, setPreview, clearPreview, rotVectorAt, trackValueAt, findTrackByPr } from './animation.js';
 import { screenToNdc, planePointAt, worldToUV, computeShapePositions, snapGrid, snapValue, pickParticleAt, particleAt, projectToScreen, distToSegment, planeInfo, selectionCentroid } from './gizmo.js';
 import { groupCurrentCentroid, groupCentroidValue, deleteGroup, refreshParticleTree } from './tree.js';

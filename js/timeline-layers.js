@@ -11,7 +11,7 @@
 
 
 import { state } from './constants.js';
-import { TL_PX_PER_TICK, timelineViewStart, setTimelineViewStart, drawTimeline } from './panels.js';
+import { TL_PX_PER_TICK, timelineViewStart, drawTimeline } from './panels.js';
 import { rebuildPoints, maxTick } from './animation.js';
 import { saveWorkspaceState } from './blocks-ui.js';
 import { resize } from './main.js';

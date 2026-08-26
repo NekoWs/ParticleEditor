@@ -5,7 +5,7 @@
 
 import { t, tf } from './i18n.js';
 import { state, FUNCTION_PRESETS, getFunction, isDerivedParticle } from './constants.js';
-import { currentVisual, rebuildPoints } from './animation.js';
+import { currentVisual } from './animation.js';
 import { currentSelected, selectedGroupName, fxPosDeltaAt, fxScaleValuesAt } from './interaction.js';
 import { groupCurrentCentroid } from './tree.js';
 import { modalAlert } from './ui.js';
