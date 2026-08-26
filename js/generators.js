@@ -1,5 +1,9 @@
 /* =========================================================================
  * 函数对象：活源重算
+ * 职责：
+ *   1) 公式代码/变量表达式的编译缓存（getCompiledFn / getConstVarVals / resolveVarVals）
+ *   2) 派生粒子与派生轨道的重建（rebuildFunctionObject / buildDerivedTracks）
+ *   3) 预设应用与采样数联动（applyPreset / syncPresetCount / createFunctionObject）
  * ======================================================================= */
 
 

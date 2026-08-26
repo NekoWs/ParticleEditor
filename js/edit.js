@@ -1,5 +1,9 @@
 /* =========================================================================
- * 编辑：写入关键帧（分量级）
+ * 编辑：分量级关键帧写入与粒子/组增删改
+ * 职责：
+ *   1) 关键帧创建/更新/删除（setComponentKeyframe / editComponentValue / removeKeyframe）
+ *   2) 批量编辑热路径（setValuesAtTime / editParticles / editSelectionUniform）
+ *   3) 粒子与组的基础操作（addParticle / autoGroup / rename / move / remove）
  * ======================================================================= */
 
 
