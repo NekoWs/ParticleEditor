@@ -125,6 +125,17 @@ export const PARTICLE_SIZE_FACTOR = 0.5; // 编辑器渲染缩放（与游戏内
  * 状态
  * ======================================================================= */
 
+/**
+ * 全局状态（单一数据源）。
+ * 数据模型约定：
+ * - particle: { id, color:[r,g,b,a], scale:[sx,sy,sz], glow, lightLevel,
+ *              pos:[x,y,z], vel:[vx,vy,vz], life, st, ent, uv, fx? }
+ *   派生粒子 id 固定为 `${fxId}:p${i}`，其基础属性由函数对象公式计算（只读）。
+ * - track: { pr:'pos.x'|'scl'|..., m:'set'|'op', ids:[...], kf:[[tick,value,easing],...], fx? }
+ * - group: state.groups[组名] = [粒子id...]；组级 UV 在 state.groupUV[组名]。
+ * - function object: { id:'fxN', name, center:[x,y,z], count, code,
+ *                      vars:{name:{expr,kf}}, duration, step, preset, params, st, ent, ui, uv }
+ */
 export const state = {
   name: 'my_animation',
   loop: true,
