@@ -7,16 +7,18 @@
  * 语言持久化在 localStorage('pdraw-lang')，切换后原地重渲染。
  * ======================================================================= */
 
-const I18N_LANGS = (typeof LANGS !== 'undefined') ? LANGS : { zh: {}, en: {} };
 
-let LANG = 'zh';
+import { LANGS } from './langs.js';
+export const I18N_LANGS = (typeof LANGS !== 'undefined') ? LANGS : { zh: {}, en: {} };
+
+export let LANG = 'zh';
 try {
   const s = localStorage.getItem('pdraw-lang');
   if (s === 'en' || s === 'zh') LANG = s;
 } catch (e) { /* 无 localStorage（隐私模式等）时忽略 */ }
 
 // 取当前语言文本（固定键）
-function t(key) {
+export function t(key) {
   const zh = I18N_LANGS.zh || {};
   if (LANG === 'en') {
     const en = I18N_LANGS.en || {};
@@ -27,7 +29,7 @@ function t(key) {
 }
 
 // 带占位符的翻译：tf('alert.text', a, b) → 替换 {0} {1}
-function tf(key) {
+export function tf(key) {
   let s = t(key);
   for (let i = 1; i < arguments.length; i++) {
     s = s.replace('{' + (i - 1) + '}', String(arguments[i]));
@@ -36,18 +38,18 @@ function tf(key) {
 }
 
 // 错误消息翻译（公式/拼图解析报错展示用）
-function _et(key) { return t(key); }
-function _etf(key, a) { return tf(key, a); }
+export function _et(key) { return t(key); }
+export function _etf(key, a) { return tf(key, a); }
 
 // 把 data-i18n* 属性（固定键）应用到 DOM
-function applyI18nDom() {
+export function applyI18nDom() {
   document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
   document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.dataset.i18nTitle); });
   document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder); });
 }
 
 // 语言切换：更新所有静态文本 + 重渲染各面板
-function setLanguage(lang) {
+export function setLanguage(lang) {
   if (lang !== 'zh' && lang !== 'en') return;
   LANG = lang;
   try { localStorage.setItem('pdraw-lang', lang); } catch (e) { }

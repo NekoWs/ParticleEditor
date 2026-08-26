@@ -16,18 +16,21 @@
  *     { kind:'neg', a }                        一元负号（仅用于 -x 等非数字；-数字合并进 num）
  * ======================================================================= */
 
+
+import { _et, _etf } from './i18n.js';
+import { PREC, NEG_PREC, FUNCS, ATTR_NAMES, parseNameList, parseExprList } from './easing.js';
 /* —— 类型 —— */
-const T_SCALAR = 'scalar';
-const T_VEC = 'vec';
-const T_MAT = 'mat';
-const T_ANY = 'any'; // 临时变量（类型由赋值决定，放宽约束）
+export const T_SCALAR = 'scalar';
+export const T_VEC = 'vec';
+export const T_MAT = 'mat';
+export const T_ANY = 'any'; // 临时变量（类型由赋值决定，放宽约束）
 
 // PREC 复用 easing.js 的定义；ATOM_PREC 为原子表达式的虚拟优先级
-const ATOM_PREC = 10;
+export const ATOM_PREC = 10;
 
 /* —— 函数块定义：label 显示名，ret 返回类型，args 参数槽 [标签|i18n键, 类型]，desc|i18n键 —— */
 /* 标签约定：以 "blk." 开头的为 i18n 键，其余（a/b/x/y/z/θ/φ/R/r 等）原样显示。 */
-const FUNC_BLOCKS = {
+export const FUNC_BLOCKS = {
   sin: { ret: T_SCALAR, args: [['blk.arg.angle', T_SCALAR]], desc: 'blk.func.sin.desc' },
   cos: { ret: T_SCALAR, args: [['blk.arg.angle', T_SCALAR]], desc: 'blk.func.cos.desc' },
   tan: { ret: T_SCALAR, args: [['blk.arg.angle', T_SCALAR]], desc: 'blk.func.tan.desc' },
@@ -70,7 +73,7 @@ const FUNC_BLOCKS = {
 };
 
 /* —— 语句块定义：label/desc 为 i18n 键（blk.stmt.<kind>.*），group 调色板分组 —— */
-const STMT_BLOCKS = {
+export const STMT_BLOCKS = {
   pos: { label: 'blk.stmt.pos.label', group: 'pos', slotCount: 3, desc: 'blk.stmt.pos.desc' },
   pos_vec: { label: 'blk.stmt.pos_vec.label', group: 'pos', slotCount: 1, desc: 'blk.stmt.pos_vec.desc' },
   vel: { label: 'blk.stmt.vel.label', group: 'pos', slotCount: 3, desc: 'blk.stmt.vel.desc' },
@@ -84,7 +87,7 @@ const STMT_BLOCKS = {
 };
 
 /* —— 调色板分组（顺序即显示顺序；label 为 i18n 键 blk.pal.<id>） —— */
-const PALETTE_GROUPS = [
+export const PALETTE_GROUPS = [
   { id: 'pos', label: 'blk.pal.pos' },
   { id: 'color', label: 'blk.pal.color' },
   { id: 'appearance', label: 'blk.pal.appearance' },
@@ -96,19 +99,19 @@ const PALETTE_GROUPS = [
 ];
 
 /* —— 运算符块（组内 math；值为 i18n 键 blk.op.*） —— */
-const OP_SYMBOLS = ['+', '-', '*', '/', '%', '^'];
-const OP_LABELS = { '+': 'blk.op.add', '-': 'blk.op.sub', '*': 'blk.op.mul', '/': 'blk.op.div', '%': 'blk.op.mod', '^': 'blk.op.pow' };
+export const OP_SYMBOLS = ['+', '-', '*', '/', '%', '^'];
+export const OP_LABELS = { '+': 'blk.op.add', '-': 'blk.op.sub', '*': 'blk.op.mul', '/': 'blk.op.div', '%': 'blk.op.mod', '^': 'blk.op.pow' };
 
 /* =========================================================================
  * 类型
  * ======================================================================= */
 
-function typeAccepts(slotType, blockType) {
+export function typeAccepts(slotType, blockType) {
   if (slotType === T_ANY || blockType === T_ANY) return true;
   return slotType === blockType;
 }
 
-function opResultType(op, ta, tb) {
+export function opResultType(op, ta, tb) {
   if (op === '^' || op === '%') return T_SCALAR;
   if (op === '/') return (ta === T_VEC && (tb === T_SCALAR || tb === T_ANY)) ? T_VEC : T_SCALAR;
   if (op === '+' || op === '-') {
@@ -130,7 +133,7 @@ function opResultType(op, ta, tb) {
 }
 
 /** 推断表达式节点类型。varTypeOf(name) 返回该变量的类型（标量/向量/矩阵/any）。 */
-function exprType(node, varTypeOf) {
+export function exprType(node, varTypeOf) {
   const vt = varTypeOf || (() => T_ANY);
   switch (node.kind) {
     case 'num': return T_SCALAR;
@@ -164,7 +167,7 @@ function exprType(node, varTypeOf) {
  * 代码生成（积木树 → 文本）
  * ======================================================================= */
 
-function fmtNum(v) {
+export function fmtNum(v) {
   if (!Number.isFinite(v)) return '0';
   const neg = v < 0;
   const a = Math.abs(v);
@@ -175,7 +178,7 @@ function fmtNum(v) {
 }
 
 /** 表达式节点 → 代码。parentPrec 为父级要求的优先级（低于则加括号）。 */
-function exprToCode(node, parentPrec) {
+export function exprToCode(node, parentPrec) {
   let s, p;
   switch (node.kind) {
     case 'num':
@@ -222,9 +225,9 @@ function exprToCode(node, parentPrec) {
 }
 
 /** 变量表达式（标量）→ 代码。 */
-function varExprToCode(node) { return exprToCode(node, 0); }
+export function varExprToCode(node) { return exprToCode(node, 0); }
 
-function stmtToCode(s) {
+export function stmtToCode(s) {
   switch (s.kind) {
     case 'pos': return '[x,y,z] = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
     case 'pos_vec': return '[x,y,z] = ' + exprToCode(s.expr, 0);
@@ -240,7 +243,7 @@ function stmtToCode(s) {
   }
 }
 
-function statementsToCode(stmts) {
+export function statementsToCode(stmts) {
   return stmts.map(stmtToCode).join(';\n');
 }
 
@@ -252,7 +255,7 @@ function statementsToCode(stmts) {
  * 拼图专用分词：与 easing.js 的 tokenize 等价，但 pi/e 保留为标识符
  * 使往返序列化保持 `pi`/`e` 原样、不损失精度。
  */
-function blockTokenize(expr) {
+export function blockTokenize(expr) {
   const tokens = [];
   let i = 0;
   let expectOperand = true;
@@ -281,7 +284,7 @@ function blockTokenize(expr) {
 }
 
 /** 表达式字符串 → 表达式节点（递归下降，基于 blockTokenize）。 */
-function parseExpr(str) {
+export function parseExpr(str) {
   const toks = blockTokenize(str);
   let pos = 0;
   const peek = () => toks[pos];
@@ -379,11 +382,11 @@ function parseExpr(str) {
 }
 
 /** 变量表达式字符串 → 表达式节点。 */
-function parseVarExpr(str) { return parseExpr(str); }
+export function parseVarExpr(str) { return parseExpr(str); }
 
-const isNames = (names, expect) => names.length === expect.length && names.every((n, i) => n === expect[i]);
+export const isNames = (names, expect) => names.length === expect.length && names.every((n, i) => n === expect[i]);
 
-function stmtToNode(stmt) {
+export function stmtToNode(stmt) {
   const eq = stmt.indexOf('=');
   if (eq < 0) throw new Error(_etf('err.stmtMissingEq', stmt));
   const lhs = stmt.slice(0, eq).trim();
@@ -415,12 +418,12 @@ function stmtToNode(stmt) {
 }
 
 /** 代码文本 → 语句列表。解析失败抛错（调用方按 q24 提示并禁止打开）。 */
-function codeToStatements(code) {
+export function codeToStatements(code) {
   return (code || '').split(';').map(s => s.trim()).filter(Boolean).map(stmtToNode);
 }
 
 /** 收集语句列表里的临时变量名（set 块）。 */
-function collectTemps(stmts) {
+export function collectTemps(stmts) {
   const out = [];
   const seen = new Set();
   for (const s of stmts) {

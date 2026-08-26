@@ -2,8 +2,14 @@
  * 编辑：写入关键帧（分量级）
  * ======================================================================= */
 
+
+import { TRACK_COMPS, COMP_INDEX, compPr, state, getParticle, getFunction, isDerivedParticle, nextId, nextGroupName } from './constants.js';
+import { baseComponent, componentValueAt, findTrackByPr, PR_TO_IDX, trVersion, rebuildPoints } from './animation.js';
+import { refreshParticleTree, groupCentroidValue, targetComponentValue } from './tree.js';
+import { pushUndo } from './undo.js';
+import { commitFunctionRebuild } from './panels.js';
 // 修改基础值（完整向量）
-function applyBaseValue(p, prop, values) {
+export function applyBaseValue(p, prop, values) {
   if (prop === 'pos') p.pos = values.slice(0, 3);
   else if (prop === 'col') p.color = values.slice(0, 4);
   else if (prop === 'vel') p.vel = values.slice(0, 3);
@@ -11,7 +17,7 @@ function applyBaseValue(p, prop, values) {
 }
 
 // 某 id（'p0' | 'g:g0' | 'f:fx0'）在某分量的基础值
-function baseValueFor(id, prop, comp) {
+export function baseValueFor(id, prop, comp) {
   if (id.startsWith('g:')) {
     const gname = id.slice(2);
     if (prop === 'rot') return 0;
@@ -28,7 +34,7 @@ function baseValueFor(id, prop, comp) {
 }
 
 // 写某 id 在某分量的关键帧（标量值）
-function setComponentKeyframe(id, prop, comp, time, value, mode) {
+export function setComponentKeyframe(id, prop, comp, time, value, mode) {
   const pr = compPr(prop, comp);
   let tr = findTrackByPr(pr, id);
   if (!tr) {
@@ -51,7 +57,7 @@ function setComponentKeyframe(id, prop, comp, time, value, mode) {
 }
 
 // 为多个粒子在同一时间写统一值（每分量独立轨道）
-function setValueAtTime(ids, prop, values) {
+export function setValueAtTime(ids, prop, values) {
   const t = Math.round(state.time);
   const comps = TRACK_COMPS[prop];
   for (const id of ids) {
@@ -65,7 +71,7 @@ function setValueAtTime(ids, prop, values) {
 }
 
 // 直接修改基础值（不创建关键帧），并同步 t=0 关键帧（若存在）
-function editBaseValue(ids, prop, values) {
+export function editBaseValue(ids, prop, values) {
   const comps = TRACK_COMPS[prop];
   for (const id of ids) {
     const p = getParticle(id);
@@ -85,7 +91,7 @@ function editBaseValue(ids, prop, values) {
 // 批量：为多个粒子在同一时间写关键帧（每个粒子独立值）
 // 性能优化：直接用 p._tr 分量轨道数组访问轨道（跳过 findTrackByPr 的 Map 查询与 compPr 拼接），
 // 供拖动 5w 粒子等热点路径使用。语义与 setComponentKeyframe 完全一致。
-function setValuesAtTime(entries, prop) {
+export function setValuesAtTime(entries, prop) {
   const t = Math.round(state.time);
   const comps = TRACK_COMPS[prop];
   const prs = comps.map(c => prop + '.' + c);
@@ -124,7 +130,7 @@ function setValuesAtTime(entries, prop) {
 }
 
 // 逐粒子编辑：捕获时写当前帧关键帧，否则改基础值
-function editParticles(entries, prop) {
+export function editParticles(entries, prop) {
   if (state.captureKeyframes) setValuesAtTime(entries, prop);
   else {
     for (const [id, values] of entries) editBaseValue([id], prop, values);
@@ -133,7 +139,7 @@ function editParticles(entries, prop) {
 }
 
 // 统一值编辑（属性面板）：捕获关键帧时按 函数对象 > 组 > 粒子 优先级
-function editSelectionUniform(prop, values) {
+export function editSelectionUniform(prop, values) {
   const t = Math.round(state.time);
   const comps = TRACK_COMPS[prop];
   const fxId = state.selectedFunction;
@@ -183,7 +189,7 @@ function editSelectionUniform(prop, values) {
 }
 
 // 单分量值编辑（树/时间轴用）
-function setComponentValue(id, prop, comp, time, value) {
+export function setComponentValue(id, prop, comp, time, value) {
   const p = getParticle(id);
   if (!p) return;
   pushUndo();
@@ -213,7 +219,7 @@ function setComponentValue(id, prop, comp, time, value) {
 
 // 通用分量值编辑（时间轴 [值] 输入框用）：按 id 前缀分发到粒子/组/函数对象，
 // 在当前 tick 创建/更新关键帧（op 模式把绝对值换算为增量）
-function editComponentValue(id, prop, comp, time, value) {
+export function editComponentValue(id, prop, comp, time, value) {
   pushUndo();
   const pr = compPr(prop, comp);
   let tr = findTrackByPr(pr, id);
@@ -242,7 +248,7 @@ function editComponentValue(id, prop, comp, time, value) {
   refreshParticleTree();
 }
 
-function updateKeyframeTime(id, pr, oldT, newT) {
+export function updateKeyframeTime(id, pr, oldT, newT) {
   const tr = findTrackByPr(pr, id);
   const kf = tr && tr.kf.find(k => k[0] === oldT);
   if (!kf) return;
@@ -253,7 +259,7 @@ function updateKeyframeTime(id, pr, oldT, newT) {
   refreshParticleTree();
 }
 
-function updateKeyframeEasing(id, pr, t, easing) {
+export function updateKeyframeEasing(id, pr, t, easing) {
   const tr = findTrackByPr(pr, id);
   const kf = tr && tr.kf.find(k => k[0] === t);
   if (!kf) return;
@@ -262,7 +268,7 @@ function updateKeyframeEasing(id, pr, t, easing) {
   rebuildPoints();
 }
 
-function removeKeyframe(id, pr, t) {
+export function removeKeyframe(id, pr, t) {
   const tr = findTrackByPr(pr, id);
   if (!tr) return;
   pushUndo();
@@ -276,14 +282,14 @@ function removeKeyframe(id, pr, t) {
  * 组 / 函数对象：向量级便捷写入（内部拆分量）
  * ======================================================================= */
 
-function setGroupTrackValue(groupName, prop, mode, time, values) {
+export function setGroupTrackValue(groupName, prop, mode, time, values) {
   const comps = TRACK_COMPS[prop];
   comps.forEach((comp, i) => setComponentKeyframe('g:' + groupName, prop, comp, time, values[i], mode));
   rebuildPoints();
   refreshParticleTree();
 }
 
-function setGroupTrackMode(groupName, prop, mode) {
+export function setGroupTrackMode(groupName, prop, mode) {
   pushUndo();
   const comps = TRACK_COMPS[prop];
   for (const comp of comps) {
@@ -294,14 +300,14 @@ function setGroupTrackMode(groupName, prop, mode) {
   refreshParticleTree();
 }
 
-function setFunctionTrackValue(fxId, prop, mode, time, values) {
+export function setFunctionTrackValue(fxId, prop, mode, time, values) {
   const comps = TRACK_COMPS[prop];
   comps.forEach((comp, i) => setComponentKeyframe('f:' + fxId, prop, comp, time, values[i], mode));
   rebuildPoints();
   refreshParticleTree();
 }
 
-function setFunctionTrackMode(fxId, prop, mode) {
+export function setFunctionTrackMode(fxId, prop, mode) {
   pushUndo();
   const comps = TRACK_COMPS[prop];
   for (const comp of comps) {
@@ -316,14 +322,14 @@ function setFunctionTrackMode(fxId, prop, mode) {
  * 粒子 / 组 操作
  * ======================================================================= */
 
-function addParticle(base) {
+export function addParticle(base) {
   const p = Object.assign({ id: nextId(), color: [1, 1, 1, 1], scale: [1, 1, 1], glow: false, lightLevel: 0, pos: [0, 0, 0], vel: [0, 0, 0], life: 20 }, base);
   if (!Array.isArray(p.scale)) p.scale = [p.scale, p.scale, p.scale];
   state.particles.push(p);
   return p;
 }
 
-function autoGroup(ids) {
+export function autoGroup(ids) {
   if (!ids || ids.length === 0) return null;
   const name = nextGroupName();
   state.groups[name] = ids.slice();
@@ -331,7 +337,7 @@ function autoGroup(ids) {
   return name;
 }
 
-function removeGroupAndTracks(name) {
+export function removeGroupAndTracks(name) {
   const members = state.groups[name] || [];
   for (const id of members) {
     const idx = state.particles.findIndex(p => p.id === id);
@@ -347,7 +353,7 @@ function removeGroupAndTracks(name) {
   state.expandedProps.delete('g:' + name + '|@props');
 }
 
-function renameParticle(oldId, newId) {
+export function renameParticle(oldId, newId) {
   newId = (newId || '').trim();
   if (!newId || newId === oldId || getParticle(newId)) return false;
   pushUndo();
@@ -369,7 +375,7 @@ function renameParticle(oldId, newId) {
   return true;
 }
 
-function renameGroup(oldName, newName) {
+export function renameGroup(oldName, newName) {
   newName = (newName || '').trim();
   if (!newName || newName === oldName || newName in state.groups) return false;
   pushUndo();
@@ -385,7 +391,7 @@ function renameGroup(oldName, newName) {
   return true;
 }
 
-function moveParticlesToGroup(ids, groupName) {
+export function moveParticlesToGroup(ids, groupName) {
   if (ids.length === 0) return;
   pushUndo();
   const idSet = new Set(ids);
@@ -401,7 +407,7 @@ function moveParticlesToGroup(ids, groupName) {
   refreshParticleTree();
 }
 
-function removeParticlesFromGroups(ids) {
+export function removeParticlesFromGroups(ids) {
   if (ids.length === 0) return;
   pushUndo();
   for (const g in state.groups) {

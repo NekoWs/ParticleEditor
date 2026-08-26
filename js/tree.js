@@ -2,7 +2,20 @@
  * 组 / 粒子列表（树状时间轴，分量级）
  * ======================================================================= */
 
-function createGroup() {
+
+import { t, tf } from './i18n.js';
+import { state, COMP_LABELS, PARTICLE_TRACK_DEFS, GROUP_PROP_DEFS, FUNCTION_PROP_DEFS, TRACK_COMPS, compPr, splitCompPr, getParticle, getFunction, isDerivedParticle, nextGroupName } from './constants.js';
+import { shiftHeld, getDragIds, setDragIds } from './input-state.js';
+import { modalAlert } from './ui.js';
+import { baseValue, componentValueAt, particleValueAt, trackValueAt, findTrackByPr, zeroArray, rebuildPoints, resetVelOffsets } from './animation.js';
+import { editComponentValue, removeKeyframe, renameParticle, renameGroup, moveParticlesToGroup, removeGroupAndTracks } from './edit.js';
+import { pushUndo, popUndo } from './undo.js';
+import { deleteFunctionObject } from './generators.js';
+import { deleteSelected } from './interaction.js';
+import { makeEasingBtn } from './easing-editor.js';
+import { TL_PX_PER_TICK, compTimelineViewStart, setCompTimelineViewStart, COMP_TL_MIN_VIEW_START, scrubAutoPan } from './panels.js';
+import { updateTimeUI } from './main.js';
+export function createGroup() {
   if (state.selected.size < 1) { modalAlert(t('tree.hint'), t('tree.selectParticlesFirst')); return; }
   pushUndo();
   const name = nextGroupName();
@@ -17,20 +30,20 @@ function createGroup() {
   refreshParticleTree();
 }
 
-function deleteGroup(name) {
+export function deleteGroup(name) {
   pushUndo();
   removeGroupAndTracks(name);
   rebuildPoints();
   refreshParticleTree();
 }
 
-function groupedIds() {
+export function groupedIds() {
   const ids = new Set();
   for (const members of Object.values(state.groups)) for (const id of members) ids.add(id);
   return ids;
 }
 
-function refreshParticleTree() {
+export function refreshParticleTree() {
   const box = document.getElementById('particle-tree');
   if (!box) return;
   box.innerHTML = '';
@@ -48,7 +61,7 @@ function refreshParticleTree() {
   refreshCompTimelines();
 }
 
-function refreshTreeSelection() {
+export function refreshTreeSelection() {
   document.querySelectorAll('.ptree-head').forEach(head => {
     head.classList.toggle('selected', state.selected.has(head.dataset.pid));
   });
@@ -64,14 +77,14 @@ function refreshTreeSelection() {
  * 右键菜单
  * ======================================================================= */
 
-function closeContextMenu() {
+export function closeContextMenu() {
   const m = document.getElementById('context-menu');
   if (!m || m.classList.contains('closing')) return;
   m.classList.add('closing');
   setTimeout(() => m.remove(), 130); // 等收起动画（左上→右下展开的逆过程）播完再移除
 }
 
-function showContextMenu(x, y, items) {
+export function showContextMenu(x, y, items) {
   closeContextMenu();
   // 新菜单即将出现：立即清掉仍在播放收起动画的旧菜单，避免重叠
   document.querySelectorAll('#context-menu.closing').forEach(e => e.remove());
@@ -93,10 +106,10 @@ function showContextMenu(x, y, items) {
 
 window.addEventListener('pointerdown', (e) => { if (!e.target.closest('#context-menu') && !e.target.closest('.kf-editor')) closeContextMenu(); });
 
-let evShift = () => false;
-let treeAnchorId = null;
+const evShift = () => shiftHeld;
+export let treeAnchorId = null;
 
-function startRename(el, onCommit, onCancel) {
+export function startRename(el, onCommit, onCancel) {
   const input = document.createElement('input');
   input.type = 'text';
   input.value = el.textContent;
@@ -119,7 +132,7 @@ function startRename(el, onCommit, onCancel) {
  * 粒子节点
  * ======================================================================= */
 
-function renderParticleNode(p) {
+export function renderParticleNode(p) {
   const root = document.createElement('div');
   root.className = 'ptree-particle';
   const expanded = state.expandedParticles.has(p.id);
@@ -130,9 +143,9 @@ function renderParticleNode(p) {
   head.addEventListener('dragstart', (e) => {
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', p.id);
-    dragIds = state.selected.has(p.id) ? [...state.selected] : [p.id];
+    setDragIds(state.selected.has(p.id) ? [...state.selected] : [p.id]);
   });
-  head.addEventListener('dragend', () => { dragIds = null; });
+  head.addEventListener('dragend', () => { setDragIds(null); });
   const arrow = document.createElement('span');
   arrow.className = 'arrow';
   arrow.textContent = expanded ? '▾' : '▸';
@@ -195,7 +208,7 @@ function renderParticleNode(p) {
  * ======================================================================= */
 
 // 目标分量值（id 可为 'p0' | 'g:g0' | 'f:fx0'）
-function targetComponentValue(id, prop, comp, T) {
+export function targetComponentValue(id, prop, comp, T) {
   const pr = compPr(prop, comp);
   if (id.startsWith('g:')) {
     const gname = id.slice(2);
@@ -215,14 +228,14 @@ function targetComponentValue(id, prop, comp, T) {
   return p ? componentValueAt(p, prop, comp, T) : 0;
 }
 
-function renderPropSection(id, props) {
+export function renderPropSection(id, props) {
   const wrap = document.createElement('div');
   wrap.className = 'ptree-props';
   for (const prop of props) wrap.appendChild(renderPropNode(id, prop));
   return wrap;
 }
 
-function renderPropNode(id, prop) {
+export function renderPropNode(id, prop) {
   const comps = TRACK_COMPS[prop];
   const wrap = document.createElement('div');
   wrap.className = 'ptree-prop';
@@ -245,7 +258,7 @@ function renderPropNode(id, prop) {
   return wrap;
 }
 
-function renderCompRow(id, prop, comp) {
+export function renderCompRow(id, prop, comp) {
   const pr = compPr(prop, comp);
   const row = document.createElement('div');
   row.className = 'ptree-comp-row';
@@ -285,7 +298,7 @@ function renderCompRow(id, prop, comp) {
  * 组节点
  * ======================================================================= */
 
-function renderGroupNode(name) {
+export function renderGroupNode(name) {
   const root = document.createElement('div');
   root.className = 'ptree-particle';
   const members = state.groups[name] || [];
@@ -294,15 +307,16 @@ function renderGroupNode(name) {
   head.className = 'ptree-head group';
   head.dataset.gname = name;
   head.addEventListener('dragover', (e) => {
-    if (dragIds) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; head.classList.add('drop-hint'); }
+    if (getDragIds()) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; head.classList.add('drop-hint'); }
   });
   head.addEventListener('dragleave', () => head.classList.remove('drop-hint'));
   head.addEventListener('drop', (e) => {
     e.preventDefault();
     e.stopPropagation();
     head.classList.remove('drop-hint');
-    if (dragIds) moveParticlesToGroup(dragIds, name);
-    dragIds = null;
+    const ids = getDragIds();
+    if (ids) moveParticlesToGroup(ids, name);
+    setDragIds(null);
   });
   const arrow = document.createElement('span');
   arrow.className = 'arrow';
@@ -348,7 +362,7 @@ function renderGroupNode(name) {
   return root;
 }
 
-function renderGroupPropsNode(name) {
+export function renderGroupPropsNode(name) {
   const wrap = document.createElement('div');
   const key = 'g:' + name + '|@props';
   // 组属性分组默认展开：expandedProps 中没有该键时视为「展开」。
@@ -371,7 +385,7 @@ function renderGroupPropsNode(name) {
   return wrap;
 }
 
-function renderGroupMembersNode(name, members) {
+export function renderGroupMembersNode(name, members) {
   const wrap = document.createElement('div');
   const key = 'g:' + name + '|@members';
   const expanded = state.expandedProps.has(key);
@@ -405,7 +419,7 @@ function renderGroupMembersNode(name, members) {
  * 函数对象节点
  * ======================================================================= */
 
-function renameFunction(oldId, newName) {
+export function renameFunction(oldId, newName) {
   newName = (newName || '').trim();
   if (!newName) return false;
   pushUndo();
@@ -416,7 +430,7 @@ function renameFunction(oldId, newName) {
   return true;
 }
 
-function renderFunctionNode(fx) {
+export function renderFunctionNode(fx) {
   const root = document.createElement('div');
   root.className = 'ptree-particle';
   const expanded = state.expandedParticles.has('f:' + fx.id);
@@ -468,7 +482,7 @@ function renderFunctionNode(fx) {
   return root;
 }
 
-function renderFunctionPropsNode(fx) {
+export function renderFunctionPropsNode(fx) {
   const wrap = document.createElement('div');
   const key = 'f:' + fx.id + '|@props';
   // 同 renderGroupPropsNode：函数对象属性分组默认展开。
@@ -490,7 +504,7 @@ function renderFunctionPropsNode(fx) {
   return wrap;
 }
 
-function renderFunctionMembersNode(fx) {
+export function renderFunctionMembersNode(fx) {
   const wrap = document.createElement('div');
   const members = state.particles.filter(p => p.fx === fx.id);
   const key = 'f:' + fx.id + '|@members';
@@ -521,7 +535,7 @@ function renderFunctionMembersNode(fx) {
  * 组质心（向量级）
  * ======================================================================= */
 
-function groupCentroidValue(name, prop) {
+export function groupCentroidValue(name, prop) {
   if (prop === 'rot') return [0, 0, 0];
   const members = (state.groups[name] || []).map(getParticle).filter(Boolean);
   if (members.length === 0) return zeroArray(prop);
@@ -533,7 +547,7 @@ function groupCentroidValue(name, prop) {
   return sum.map(v => r3(v / members.length));
 }
 
-function groupCurrentCentroid(name, prop) {
+export function groupCurrentCentroid(name, prop) {
   const members = (state.groups[name] || []).map(getParticle).filter(Boolean);
   if (members.length === 0) return zeroArray(prop);
   const sum = zeroArray(prop);
@@ -548,15 +562,15 @@ function groupCurrentCentroid(name, prop) {
  * 图形化时间轴：渲染 + 交互 + 刷新
  * ======================================================================= */
 
-const TL_HIT_PX = 6; // 菱形命中半径（像素）
-let selectedKeyframe = null; // { id, pr, tick }：当前选中的关键帧（变蓝）
+export const TL_HIT_PX = 6; // 菱形命中半径（像素）
+export let selectedKeyframe = null; // { id, pr, tick }：当前选中的关键帧（变蓝）
 
-function selectKeyframe(id, pr, tick) {
+export function selectKeyframe(id, pr, tick) {
   selectedKeyframe = (id && pr && tick != null) ? { id, pr, tick } : null;
   refreshCompTimelines();
 }
 
-function drawCompTimeline(canvas, pr, id) {
+export function drawCompTimeline(canvas, pr, id) {
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.clientWidth || 1, h = canvas.clientHeight || 1;
   if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
@@ -591,7 +605,7 @@ function drawCompTimeline(canvas, pr, id) {
   }
 }
 
-function drawDiamond(ctx, x, y, r, color) {
+export function drawDiamond(ctx, x, y, r, color) {
   ctx.fillStyle = color;
   ctx.beginPath();
   ctx.moveTo(x, y - r);
@@ -602,18 +616,18 @@ function drawDiamond(ctx, x, y, r, color) {
   ctx.fill();
 }
 
-function canvasTickAt(canvas, clientX) {
+export function canvasTickAt(canvas, clientX) {
   const rect = canvas.getBoundingClientRect();
   return compTimelineViewStart + (clientX - rect.left) / TL_PX_PER_TICK;
 }
 
-function hitKeyframe(pr, id, tick) {
+export function hitKeyframe(pr, id, tick) {
   const tr = findTrackByPr(pr, id);
   if (!tr) return null;
   return tr.kf.find(kf => Math.abs((kf[0] - tick) * TL_PX_PER_TICK) < TL_HIT_PX) || null;
 }
 
-function bindCompTimeline(canvas, id, pr) {
+export function bindCompTimeline(canvas, id, pr) {
   let drag = null;
   canvas.addEventListener('pointerdown', (ev) => {
     if (ev.button === 1) { // 中键：平移视图（同底部时间轴）
@@ -642,8 +656,7 @@ function bindCompTimeline(canvas, id, pr) {
   canvas.addEventListener('pointermove', (ev) => {
     if (!drag) return;
     if (drag.mode === 'pan') {
-      compTimelineViewStart -= (ev.clientX - drag.lastX) / TL_PX_PER_TICK;
-      compTimelineViewStart = Math.max(COMP_TL_MIN_VIEW_START, compTimelineViewStart);
+      setCompTimelineViewStart(Math.max(COMP_TL_MIN_VIEW_START, compTimelineViewStart - (ev.clientX - drag.lastX) / TL_PX_PER_TICK));
       drag.lastX = ev.clientX;
       refreshCompTimelines();
       return;
@@ -653,7 +666,7 @@ function bindCompTimeline(canvas, id, pr) {
       // 反向时若指针仍在可视区外则视图不回缩，回到可视区后恢复 1:1 跟随。
       const r = scrubAutoPan(drag, ev.clientX, canvas.getBoundingClientRect(), compTimelineViewStart, drag.kfTick, TL_PX_PER_TICK, COMP_TL_MIN_VIEW_START, 4);
       const vsChanged = r.viewStart !== compTimelineViewStart;
-      compTimelineViewStart = r.viewStart;
+      setCompTimelineViewStart(r.viewStart);
       const nt = Math.max(0, Math.round(r.time)); // 关键帧对齐整数 tick
       if (nt !== drag.kfTick) {
         // 直接改关键帧时间 + 重绘，不重建 DOM（否则 canvas 被替换导致拖拽中断）
@@ -675,7 +688,7 @@ function bindCompTimeline(canvas, id, pr) {
     } else {
       // scrub：AE 式滞后自动平移（越界时视图单向外追、游标钉在边缘内侧 4px；反向时若指针仍在可视区外则视图不回缩）
       const r = scrubAutoPan(drag, ev.clientX, canvas.getBoundingClientRect(), compTimelineViewStart, state.time, TL_PX_PER_TICK, COMP_TL_MIN_VIEW_START, 4);
-      compTimelineViewStart = r.viewStart;
+      setCompTimelineViewStart(r.viewStart);
       setTimeTo(r.time);
     }
   });
@@ -702,13 +715,13 @@ function bindCompTimeline(canvas, id, pr) {
   });
 }
 
-function collectKeyframeTicks() {
+export function collectKeyframeTicks() {
   const set = new Set();
   for (const tr of state.tracks) for (const kf of tr.kf) set.add(kf[0]);
   return [...set].sort((a, b) => a - b);
 }
 
-function setTimeTo(tick) {
+export function setTimeTo(tick) {
   let t = Math.max(0, tick);
   if (shiftHeld) {
     const ticks = collectKeyframeTicks();
@@ -724,7 +737,7 @@ function setTimeTo(tick) {
   refreshCompTimelines();
 }
 
-function addComponentKeyframe(id, prop, comp) {
+export function addComponentKeyframe(id, prop, comp) {
   pushUndo();
   const pr = compPr(prop, comp);
   let tr = findTrackByPr(pr, id);
@@ -745,12 +758,12 @@ function addComponentKeyframe(id, prop, comp) {
   refreshParticleTree();
 }
 
-function formatComponentValue(prop, comp, v) {
+export function formatComponentValue(prop, comp, v) {
   if (typeof v !== 'number' || !isFinite(v)) return '—';
   return v.toFixed(2);
 }
 
-function refreshCompTimelines() {
+export function refreshCompTimelines() {
   document.querySelectorAll('.comp-timeline').forEach(canvas => {
     drawCompTimeline(canvas, canvas.dataset.trackPr, canvas.dataset.trackId);
   });
@@ -761,10 +774,10 @@ function refreshCompTimelines() {
   });
 }
 
-let keyframeEditorBox = null;
-let keyframeEditorInputs = null;
+export let keyframeEditorBox = null;
+export let keyframeEditorInputs = null;
 
-function closeKeyframeEditor(immediate) {
+export function closeKeyframeEditor(immediate) {
   keyframeEditorBox = null;
   keyframeEditorInputs = null;
   document.removeEventListener('pointerdown', onKfDocPointerDown);
@@ -775,11 +788,11 @@ function closeKeyframeEditor(immediate) {
   b.addEventListener('animationend', () => b.remove(), { once: true });
 }
 
-function onKfDocPointerDown(e) {
+export function onKfDocPointerDown(e) {
   if (keyframeEditorBox && !e.target.closest('#kf-editor-pop') && !e.target.closest('#easing-editor')) closeKeyframeEditor();
 }
 
-function openKeyframeEditor(canvas, id, pr, tick) {
+export function openKeyframeEditor(canvas, id, pr, tick) {
   const tr = findTrackByPr(pr, id);
   const kf = tr && tr.kf.find(k => k[0] === tick);
   if (!kf) return;

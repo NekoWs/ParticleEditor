@@ -4,11 +4,21 @@
  * UV 参数：继承覆盖（函数对象 fx.uv > 组 state.groupUV[gname] > 粒子 p.uv）
  * ======================================================================= */
 
-const TEX_UV_COLOR = '#5b9dff'; // UV 预览描边（实线，与选中态 --accent 一致）
-const TEX_SEL_COLOR = '#5b9dff'; // 选区描边（虚线，固定显示）
-const TEX_CELL_COLOR = '#20242c'; // 动画帧范围线框（比像素网格更深的颜色）
 
-const texState = {
+import { t, tf } from './i18n.js';
+import { state, UV_MODES, autoFramesFor, effMaxFrame, defaultUV, getParticle, getFunction, isDerivedParticle, setDirty } from './constants.js';
+import { rebuildPoints } from './animation.js';
+import { rebuildAtlas } from './scene.js';
+import { selectedGroupName } from './interaction.js';
+import { pushUndo } from './undo.js';
+import { showContextMenu } from './tree.js';
+import { download, refreshTexBase64Cache } from './io.js';
+import { modalAlert, modalPrompt, modalConfirm } from './ui.js';
+export const TEX_UV_COLOR = '#5b9dff'; // UV 预览描边（实线，与选中态 --accent 一致）
+export const TEX_SEL_COLOR = '#5b9dff'; // 选区描边（虚线，固定显示）
+export const TEX_CELL_COLOR = '#20242c'; // 动画帧范围线框（比像素网格更深的颜色）
+
+export const texState = {
   tool: 'select',           // select | pencil | eraser | bucket | picker
   color: [255, 255, 255, 255], // RGBA 0-255（当前颜色，含透明度）
   brushSize: 1,             // 铅笔/橡皮大小，1~128
@@ -20,35 +30,35 @@ const texState = {
   undoStack: [], redoStack: [],
 };
 
-let texActive = false; // 鼠标是否在贴图编辑器区域内（用于 Ctrl+Z/Y 分流到贴图撤销）
+export let texActive = false; // 鼠标是否在贴图编辑器区域内（用于 Ctrl+Z/Y 分流到贴图撤销）
 
 // 实时时间（秒），驱动 flipbook 帧（与 shader uTime 一致）
-function texAnimTime() { return performance.now() / 1000; }
+export function texAnimTime() { return performance.now() / 1000; }
 
 /* =========================================================================
  * 贴图数据访问
  * ======================================================================= */
 
-function getTexture(name) { return state.textures ? state.textures[name] : null; }
-function getCurrentTexture() {
+export function getTexture(name) { return state.textures ? state.textures[name] : null; }
+export function getCurrentTexture() {
   return state.currentTexture ? getTexture(state.currentTexture) : null;
 }
 
 // 贴图数据变化时：重建 atlas 并刷新粒子渲染
-function markTextureChanged() {
+export function markTextureChanged() {
   if (typeof rebuildAtlas === 'function') rebuildAtlas();
   if (typeof rebuildPoints === 'function') rebuildPoints();
   setDirty(true);
 }
 
 // 当前空/新贴图尺寸（无贴图时 16×16）
-function currentTexSize() {
+export function currentTexSize() {
   const t = getCurrentTexture();
   return t ? { w: t.width, h: t.height } : { w: 16, h: 16 };
 }
 
 // 规范化 UV 参数（贴图大小默认贴图分辨率，其余数值字段默认 0）
-function normalizeUV(uv) {
+export function normalizeUV(uv) {
   if (!uv) uv = {};
   const t = getTexture(uv.texture);
   const w = t ? t.width : ((uv.texSize && uv.texSize[0]) || 16);
@@ -68,7 +78,7 @@ function normalizeUV(uv) {
 }
 
 // UV 继承查询（f > g > p）；返回「生效的 UV 参数」与「来源」
-function resolveUV(p) {
+export function resolveUV(p) {
   if (p.uv && p.uv.texture) return { uv: normalizeUV(p.uv), src: p.id };
   const gs = groupMemberIndexCache && groupMemberIndexCache.get(p.id);
   if (gs) {
@@ -85,7 +95,7 @@ function resolveUV(p) {
 }
 
 // 当前编辑作用域（函数对象 > 组 > 粒子多选）
-function currentUVTarget() {
+export function currentUVTarget() {
   if (state.selectedFunction) return { kind: 'fx', key: state.selectedFunction };
   const g = selectedGroupName();
   if (g) return { kind: 'group', key: g };
@@ -93,14 +103,14 @@ function currentUVTarget() {
   return null;
 }
 
-function readTargetUV(t) {
+export function readTargetUV(t) {
   if (!t) return null;
   if (t.kind === 'fx') { const fx = getFunction(t.key); return fx ? normalizeUV(fx.uv) : null; }
   if (t.kind === 'group') { return state.groupUV[t.key] ? normalizeUV(state.groupUV[t.key]) : null; }
   const p = getParticle(t.key[0]); return p ? normalizeUV(p.uv) : null;
 }
 
-function writeTargetUV(t, uv) {
+export function writeTargetUV(t, uv) {
   if (!t) return;
   pushUndo();
   if (t.kind === 'fx') { const fx = getFunction(t.key); if (fx) fx.uv = uv; }
@@ -114,18 +124,18 @@ function writeTargetUV(t, uv) {
  * 画布渲染
  * ======================================================================= */
 
-const texCanvas = () => document.getElementById('tex-canvas');
-const texCanvasWrap = () => document.getElementById('tex-canvas-wrap');
+export const texCanvas = () => document.getElementById('tex-canvas');
+export const texCanvasWrap = () => document.getElementById('tex-canvas-wrap');
 
 // 只在尺寸变化时设置 canvas 内尺寸（设置 width/height 会清空内容，避免无谓重置）
-function ensureCanvasSize() {
+export function ensureCanvasSize() {
   const c = texCanvas();
   const { w, h } = currentTexSize();
   if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
 }
 
 // 仅更新 CSS 尺寸/平移（不清空像素内容）
-function applyTexView() {
+export function applyTexView() {
   const c = texCanvas();
   const { w, h } = currentTexSize();
   c.style.width = Math.round(w * texState.zoom) + 'px';
@@ -135,7 +145,7 @@ function applyTexView() {
   updateTexOverlay();
 }
 
-function renderTexCanvas() {
+export function renderTexCanvas() {
   const c = texCanvas();
   if (!c) return;
   ensureCanvasSize();
@@ -152,7 +162,7 @@ function renderTexCanvas() {
 }
 
 // 黑白对比描边颜色：采样矩形外圈像素亮度判断
-function contrastColorAt(x0, y0, w, h) {
+export function contrastColorAt(x0, y0, w, h) {
   const t = getCurrentTexture();
   if (!t) return '#ffffff';
   let sum = 0, n = 0;
@@ -170,7 +180,7 @@ function contrastColorAt(x0, y0, w, h) {
 
 // UV 预览当前帧（动画模式按墙钟计算；与 shader uTime 一致）。
 // 帧数 = 常量层共享的自动帧数（按 UV 步长+贴图尺寸）∩ 用户上限，与渲染 render 完全一致。
-function currentUVFrame(uv) {
+export function currentUVFrame(uv) {
   if (!uv) return 0;
   const t = getTexture(uv.texture);
   const autoFrames = autoFramesFor(uv, t ? t.width : 16, t ? t.height : 16);
@@ -181,7 +191,7 @@ function currentUVFrame(uv) {
 
 // 预览描边统一走 CSS overlay（.tex-overlay）层：
 // 在贴图像素边缘绘制屏幕 1px 的细线，不写入像素数据，放大后依旧是细线
-function updateTexOverlay() {
+export function updateTexOverlay() {
   const wrap = texCanvasWrap();
   const c = texCanvas();
   const frame = document.getElementById('tex-overlay-frame');
@@ -288,12 +298,12 @@ function updateTexOverlay() {
   }
 }
 
-function updateTexMeta() {
+export function updateTexMeta() {
   const el = document.getElementById('tex-meta');
   if (el) { const { w, h } = currentTexSize(); el.textContent = w + ' × ' + h; }
 }
 
-function texPixelAt(ev) {
+export function texPixelAt(ev) {
   const c = texCanvas();
   const rect = c.getBoundingClientRect();
   return {
@@ -303,7 +313,7 @@ function texPixelAt(ev) {
 }
 
 // 在像素 (x,y) 画一块（画笔大小范围；绘制不再被选区限制），返回是否修改
-function paintArea(x, y, apply) {
+export function paintArea(x, y, apply) {
   const { w, h } = currentTexSize();
   const r = Math.floor(texState.brushSize / 2);
   const x0 = Math.max(0, x - r), x1 = Math.min(w, x + r + 1);
@@ -317,7 +327,7 @@ function paintArea(x, y, apply) {
   return changed;
 }
 
-function pushTexUndo() {
+export function pushTexUndo() {
   const t = getCurrentTexture();
   const { w, h } = currentTexSize();
   const snap = t && t.data ? t.data.slice(0, w * h * 4) : null;
@@ -325,7 +335,7 @@ function pushTexUndo() {
   if (texState.undoStack.length > 100) texState.undoStack.shift();
   texState.redoStack.length = 0;
 }
-function texUndo() {
+export function texUndo() {
   const t = getCurrentTexture();
   if (!t || texState.undoStack.length === 0) return;
   texState.redoStack.push(t.data.slice());
@@ -334,7 +344,7 @@ function texUndo() {
   if (typeof rebuildAtlas === 'function') rebuildAtlas();
   setDirty(true);
 }
-function texRedo() {
+export function texRedo() {
   const t = getCurrentTexture();
   if (!t || texState.redoStack.length === 0) return;
   texState.undoStack.push(t.data.slice());
@@ -344,7 +354,7 @@ function texRedo() {
   setDirty(true);
 }
 
-function texSetPixel(px, py) {
+export function texSetPixel(px, py) {
   const t = getCurrentTexture();
   if (!t) return;
   const i = (py * t.width + px) * 4;
@@ -353,19 +363,19 @@ function texSetPixel(px, py) {
   t.data[i + 2] = texState.color[2];
   t.data[i + 3] = texState.color[3];
 }
-function texGetPixel(px, py) {
+export function texGetPixel(px, py) {
   const t = getCurrentTexture();
   if (!t || px < 0 || py < 0 || px >= t.width || py >= t.height) return null;
   const i = (py * t.width + px) * 4;
   return [t.data[i], t.data[i + 1], t.data[i + 2], t.data[i + 3]];
 }
-function texErasePixel(px, py) {
+export function texErasePixel(px, py) {
   const t = getCurrentTexture();
   if (!t) return;
   const i = (py * t.width + px) * 4;
   t.data[i] = 0; t.data[i + 1] = 0; t.data[i + 2] = 0; t.data[i + 3] = 0;
 }
-function floodFill(px, py, target, apply) {
+export function floodFill(px, py, target, apply) {
   const { w, h } = currentTexSize();
   const key = (x, y) => y * w + x;
   const start = texGetPixel(px, py);
@@ -393,17 +403,17 @@ function floodFill(px, py, target, apply) {
  * 编辑器交互（事件挂到 wrap，兼容灰色区域平移/缩放）
  * ======================================================================= */
 
-let texDrag = null; // { mode: 'draw'|'pan'|'select'|'selmove'|'erase', last }
+export let texDrag = null; // { mode: 'draw'|'pan'|'select'|'selmove'|'erase', last }
 
 // 选区像素矩形（取整归一化）；无选区/宽高为 0 返回 null
-function selectionRect() {
+export function selectionRect() {
   const s = texState.selection;
   if (!s) return null;
   const x = Math.floor(Math.min(s.x0, s.x1)), y = Math.floor(Math.min(s.y0, s.y1));
   const w = Math.floor(Math.abs(s.x1 - s.x0)), h = Math.floor(Math.abs(s.y1 - s.y0));
   return w < 1 || h < 1 ? null : { x, y, w, h };
 }
-function clearRegion(x, y, w, h) {
+export function clearRegion(x, y, w, h) {
   const t = getCurrentTexture(); if (!t) return;
   const x0 = Math.max(0, x), y0 = Math.max(0, y);
   const x1 = Math.min(t.width, x + w), y1 = Math.min(t.height, y + h);
@@ -412,7 +422,7 @@ function clearRegion(x, y, w, h) {
     t.data.fill(0, i0, i0 + (x1 - x0) * 4);
   }
 }
-function stampRegion(t, snap, x, y, w, h) {
+export function stampRegion(t, snap, x, y, w, h) {
   // 允许目标位置在贴图外：仅盖章贴图内的部分（溢出舍弃）
   const x0 = Math.max(0, x), y0 = Math.max(0, y);
   const x1 = Math.min(t.width, x + w), y1 = Math.min(t.height, y + h);
@@ -423,9 +433,9 @@ function stampRegion(t, snap, x, y, w, h) {
 }
 
 // Alt 临时吸管：按住切到 picker，松开切回上一个工具（仅鼠标在贴图编辑器内时生效）
-let texAltPreviewOn = false;
-let texPreAltTool = null;
-function texAltPreview(on) {
+export let texAltPreviewOn = false;
+export let texPreAltTool = null;
+export function texAltPreview(on) {
   if (on) {
     if (texState.tool === 'picker') return;
     texPreAltTool = texState.tool;
@@ -446,7 +456,7 @@ window.addEventListener('keydown', (e) => { if (e.key === 'Alt' && texActive) { 
 window.addEventListener('keyup', (e) => { if (e.key === 'Alt') { e.preventDefault(); texAltPreview(false); } });
 window.addEventListener('blur', () => texAltPreview(false));
 
-function initTextureEditor() {
+export function initTextureEditor() {
   const wrap = texCanvasWrap();
   const c = texCanvas();
   if (!wrap || !c) return;
@@ -646,16 +656,16 @@ function initTextureEditor() {
   updateColorButton();
 }
 
-function toggleColorButton(show) {
+export function toggleColorButton(show) {
   document.getElementById('tex-color-btn').style.display = show ? 'block' : 'none';
 }
-function updateColorButton() {
+export function updateColorButton() {
   const btn = document.getElementById('tex-color-btn');
   if (btn) btn.style.background = rgbaToCss(texState.color);
 }
 
 // 铅笔/橡皮一笔（连线补间）
-function applyStroke(p, mode) {
+export function applyStroke(p, mode) {
   if (!texDrag || !texDrag.last) { paintAt(p, mode); texDrag.last = p; return; }
   const a = texDrag.last, b = p;
   const steps = Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y));
@@ -666,7 +676,7 @@ function applyStroke(p, mode) {
   }
   texDrag.last = p;
 }
-function paintAt(p, mode) {
+export function paintAt(p, mode) {
   const t = getCurrentTexture();
   if (!t) return;
   if (mode === 'eraser' || mode === 'erase') paintArea(p.x, p.y, (x, y) => { texErasePixel(x, y); return true; });
@@ -680,11 +690,11 @@ function paintAt(p, mode) {
  * 取色板（HSV + alpha）
  * ======================================================================= */
 
-function rgbaToCss(rgba) {
+export function rgbaToCss(rgba) {
   return 'rgba(' + rgba[0] + ',' + rgba[1] + ',' + rgba[2] + ',' + (rgba[3] / 255).toFixed(3) + ')';
 }
 
-function openColorPicker(x, y, rgba, onCommit) {
+export function openColorPicker(x, y, rgba, onCommit) {
   closeColorPicker();
   const box = document.createElement('div');
   box.className = 'color-picker';
@@ -780,10 +790,10 @@ function openColorPicker(x, y, rgba, onCommit) {
   box.style.left = Math.min(x, window.innerWidth - 240) + 'px';
   box.style.top = Math.min(y, window.innerHeight - 250) + 'px';
 }
-function closeColorPicker() { const b = document.getElementById('color-picker-pop'); if (b) b.remove(); }
+export function closeColorPicker() { const b = document.getElementById('color-picker-pop'); if (b) b.remove(); }
 window.addEventListener('pointerdown', (e) => { if (!e.target.closest('#color-picker-pop') && !e.target.closest('#tex-color-btn')) closeColorPicker(); });
 
-function rgbToHsv(rgb) {
+export function rgbToHsv(rgb) {
   const r = rgb[0] / 255, g = rgb[1] / 255, b = rgb[2] / 255;
   const max = Math.max(r, g, b), min = Math.min(r, g, b);
   const d = max - min;
@@ -797,7 +807,7 @@ function rgbToHsv(rgb) {
   const s = max === 0 ? 0 : d / max;
   return [h, s, max];
 }
-function hsvToRgb(hsv) {
+export function hsvToRgb(hsv) {
   const h = hsv[0], s = hsv[1], v = hsv[2];
   const c = v * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = v - c;
   let r = 0, g = 0, b = 0;
@@ -810,7 +820,7 @@ function hsvToRgb(hsv) {
  * 文件：上传 / 新建 / 保存
  * ======================================================================= */
 
-function makeTexture(name, w, h, data) {
+export function makeTexture(name, w, h, data) {
   const t = { name, width: w, height: h, data: data || new Uint8ClampedArray(w * h * 4) };
   state.textures[name] = t;
   state.currentTexture = name;
@@ -820,7 +830,7 @@ function makeTexture(name, w, h, data) {
   return t;
 }
 
-async function uploadTextureFile(file) {
+export async function uploadTextureFile(file) {
   if (file.size > 5 * 1024 * 1024) { await modalAlert(t('alert.uploadFailed'), t('alert.texTooBig')); return; }
   if (!file.name.toLowerCase().endsWith('.png')) { await modalAlert(t('alert.uploadFailed'), t('alert.pngOnly')); return; }
   let bmp;
@@ -844,7 +854,7 @@ async function uploadTextureFile(file) {
 }
 
 // 新建：直接在列表中创建一个默认 16×16 的贴图并打开（大小可随后用右键「修改大小」调整）
-function createNewTexture() {
+export function createNewTexture() {
   let k = 1;
   while (getTexture('tex_' + k)) k++;
   const name = 'tex_' + k;
@@ -857,7 +867,7 @@ function createNewTexture() {
 }
 
 // 导出：把当前贴图以 PNG 格式下载（贴图本身随工程 Ctrl+S 实时保存，无需单独保存）
-async function exportTexture() {
+export async function exportTexture() {
   const tex = getCurrentTexture();
   if (!tex) { await modalAlert(t('alert.exportFailed'), t('alert.noTexture')); return; }
   const cnv = document.createElement('canvas');
@@ -873,7 +883,7 @@ async function exportTexture() {
 }
 
 // 修改贴图大小：保持左上对齐复制原有像素，新区域透明
-function resizeTexture(name, w, h) {
+export function resizeTexture(name, w, h) {
   const t = getTexture(name);
   if (!t) return;
   pushTexUndo();
@@ -898,7 +908,7 @@ function resizeTexture(name, w, h) {
  * ======================================================================= */
 
 // 把全部对象 UV 里对 oldName 的贴图引用改为 newName（newName 为 null = 清空为无贴图）
-function replaceTextureRef(oldName, newName) {
+export function replaceTextureRef(oldName, newName) {
   const set = uv => {
     if (uv && uv.texture === oldName) {
       uv.texture = newName;
@@ -916,7 +926,7 @@ function replaceTextureRef(oldName, newName) {
   if (state.currentTexture === oldName) state.currentTexture = newName;
 }
 
-async function renameTextureItem(oldName) {
+export async function renameTextureItem(oldName) {
   const tex = getTexture(oldName);
   if (!tex) return;
   const res = await modalPrompt(t('tex.renameTitle'), oldName, t('tex.newName'));
@@ -937,7 +947,7 @@ async function renameTextureItem(oldName) {
   refreshUVPanel();
 }
 
-async function deleteTextureItem(name) {
+export async function deleteTextureItem(name) {
   const ok = await modalConfirm(t('tex.deleteTitle'), tf('alert.deleteTexConfirm', name));
   if (!ok) return;
   delete state.textures[name];
@@ -955,7 +965,7 @@ async function deleteTextureItem(name) {
  * 贴图列表（文件管理器预留区域）
  * ======================================================================= */
 
-function refreshTexList() {
+export function refreshTexList() {
   const box = document.getElementById('tex-list');
   if (!box) return;
   box.innerHTML = '';
@@ -997,11 +1007,11 @@ function refreshTexList() {
 }
 
 /* ---- 修改大小悬浮框：悬停在贴图条目下方（同曲线编辑器风格），外部点击关闭 ---- */
-let texResizePop = null;
-function closeTexResizePop() {
+export let texResizePop = null;
+export function closeTexResizePop() {
   if (texResizePop) { texResizePop.remove(); texResizePop = null; }
 }
-function openTexResizePop(item, name) {
+export function openTexResizePop(item, name) {
   closeTexResizePop();
   const tex = getTexture(name);
   if (!tex) return;
@@ -1052,7 +1062,7 @@ function openTexResizePop(item, name) {
  * UV 面板
  * ======================================================================= */
 
-function refreshTexturePanel() {
+export function refreshTexturePanel() {
   // 自动选中当前对象使用的贴图
   const target = currentUVTarget();
   if (target) {
@@ -1068,8 +1078,8 @@ function refreshTexturePanel() {
 
 // 选中对象变化时自动把贴图编辑器切换到该对象使用的贴图。
 // 在主循环中每帧调用（内部按目标签名去重，几乎零开销）。
-let _uvTargetSig = null;
-function syncTextureSelection() {
+export let _uvTargetSig = null;
+export function syncTextureSelection() {
   const t = currentUVTarget();
   const sig = t ? t.kind + ':' + (t.kind === 'particle' ? [...t.key].sort().join(',') : t.key) : '';
   if (sig === _uvTargetSig) return;
@@ -1086,7 +1096,7 @@ function syncTextureSelection() {
   refreshUVPanel();
 }
 
-function refreshUVPanel() {
+export function refreshUVPanel() {
   const box = document.getElementById('uv-panel');
   if (!box) return;
   box.innerHTML = '';
@@ -1144,7 +1154,7 @@ function refreshUVPanel() {
 
 // 轻量更新「自动 N」提示文本（不重建面板、不失焦）：重算当前 target 的自动帧数并写进所有 .uv-auto-count。
 // 用于 UV 步长/起点等会改变自动帧数的字段 change 后即时刷新。
-function refreshAutoFrameHint() {
+export function refreshAutoFrameHint() {
   const t = currentUVTarget();
   if (!t) return;
   const uv = readTargetUV(t);
@@ -1157,7 +1167,7 @@ function refreshAutoFrameHint() {
 // 是否需要在主渲染循环中逐帧刷新贴图编辑器 overlay（UV 动画预览跟随帧移动）。
 // 仅当贴图 tab 激活、当前编辑目标的 UV 为动画模式、且其贴图 == 当前打开的贴图时才逐帧刷新
 // （与 updateTexOverlay 的显示条件一致，避免画布打开其它贴图时无谓逐帧重算与错误显示）。
-function texAnimOverlayActive() {
+export function texAnimOverlayActive() {
   const pane = document.getElementById('pane-texture');
   if (!pane || !pane.classList.contains('active')) return false;
   const t = currentUVTarget();
@@ -1168,7 +1178,7 @@ function texAnimOverlayActive() {
 
 // 二维像素字段（[x, y] 或 [w, h]），时间轴分组风格；affectsAuto=true 表示该字段变化会改变自动帧数（即时刷新提示）
 // sep：两框间分隔符——'x' 显示乘号（贴图大小/UV 大小），'|' 显示细竖线（UV 起点/UV 步长），null 不显示
-function uvVecField(labelText, get, set, uv, affectsAuto, sep) {
+export function uvVecField(labelText, get, set, uv, affectsAuto, sep) {
   const row = document.createElement('div'); row.className = 'row';
   const lab = document.createElement('span'); lab.textContent = t(labelText);
   row.appendChild(lab);
@@ -1204,7 +1214,7 @@ function uvVecField(labelText, get, set, uv, affectsAuto, sep) {
   row.appendChild(group);
   return row;
 }
-function uvNumField(labelText, get, set, uv) {
+export function uvNumField(labelText, get, set, uv) {
   const row = document.createElement('div'); row.className = 'row';
   const lab = document.createElement('span'); lab.textContent = t(labelText);
   row.appendChild(lab);
@@ -1225,7 +1235,7 @@ function uvNumField(labelText, get, set, uv) {
 }
 // 「最大帧数」专用字段：0 / 1 / 未设置为「自动」（不限制，按 UV 步长自动算满）；
 // >1 的输入作为「小于实际帧数的上限」。时间轴风格「输入 / 自动 N」。
-function uvFrameField(uv) {
+export function uvFrameField(uv) {
   const row = document.createElement('div'); row.className = 'row';
   const lab = document.createElement('span'); lab.textContent = t('tex.maxFrames');
   row.appendChild(lab);
@@ -1251,7 +1261,7 @@ function uvFrameField(uv) {
   row.appendChild(group);
   return row;
 }
-function uvChkField(labelText, get, set, uv) {
+export function uvChkField(labelText, get, set, uv) {
   const row = document.createElement('label'); row.className = 'chk';
   const inp = document.createElement('input'); inp.type = 'checkbox';
   inp.checked = get(uv);

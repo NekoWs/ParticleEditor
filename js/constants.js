@@ -1,15 +1,19 @@
 /* =========================================================================
  * ParticleDrawing 粒子动画编辑器
- * 依赖全局 THREE（vendor/three.min.js）与 THREE.OrbitControls（vendor/OrbitControls.js）
+ * 依赖 npm three 与 three/examples 的 OrbitControls
  * ======================================================================= */
 
-const OrbitControls = THREE.OrbitControls;
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { t } from './i18n.js';
+
+export { OrbitControls };
 
 /* =========================================================================
  * 常量
  * ======================================================================= */
 
-const EASINGS = [
+export const EASINGS = [
   ['LINEAR', 0, 0, 1, 1],
   ['EASE_IN', 0.42, 0, 1, 1],
   ['EASE_OUT', 0, 0, 0.58, 1],
@@ -26,7 +30,7 @@ const EASINGS = [
   ['EASE_OUT_ELASTIC', 0.25, -0.61, 0.44, 0.99],
 ];
 
-const PLANES = {
+export const PLANES = {
   XZ: { axes: ['X', 'Z'], constant: 'Y', normal: new THREE.Vector3(0, 1, 0), toWorld: (u, v, o) => [u, o, v] },
   XY: { axes: ['X', 'Y'], constant: 'Z', normal: new THREE.Vector3(0, 0, 1), toWorld: (u, v, o) => [u, v, o] },
   YZ: { axes: ['Y', 'Z'], constant: 'X', normal: new THREE.Vector3(1, 0, 0), toWorld: (u, v, o) => [o, u, v] },
@@ -39,7 +43,7 @@ const PLANES = {
  * ======================================================================== */
 
 // 属性 → 分量键列表
-const TRACK_COMPS = {
+export const TRACK_COMPS = {
   pos: ['x', 'y', 'z'],
   rot: ['x', 'y', 'z'],
   vel: ['x', 'y', 'z'],
@@ -48,35 +52,35 @@ const TRACK_COMPS = {
 };
 
 // 分量键 → 在向量中的下标
-const COMP_INDEX = { x: 0, y: 1, z: 2, r: 0, g: 1, b: 2, a: 3 };
+export const COMP_INDEX = { x: 0, y: 1, z: 2, r: 0, g: 1, b: 2, a: 3 };
 
 // 属性 / 分量 显示标签
-const PROP_LABELS = { pos: '位置', rot: '旋转', vel: '速度', col: '颜色', scl: '缩放' };
-const COMP_LABELS = { x: 'X', y: 'Y', z: 'Z', r: 'R', g: 'G', b: 'B', a: 'A' };
+export const PROP_LABELS = { pos: '位置', rot: '旋转', vel: '速度', col: '颜色', scl: '缩放' };
+export const COMP_LABELS = { x: 'X', y: 'Y', z: 'Z', r: 'R', g: 'G', b: 'B', a: 'A' };
 
 // 各对象类型可动画的属性
-const PARTICLE_TRACK_DEFS = ['pos', 'vel', 'col', 'scl'];
-const GROUP_PROP_DEFS = ['pos', 'rot', 'vel', 'col', 'scl'];
-const FUNCTION_PROP_DEFS = ['pos', 'rot', 'scl'];
+export const PARTICLE_TRACK_DEFS = ['pos', 'vel', 'col', 'scl'];
+export const GROUP_PROP_DEFS = ['pos', 'rot', 'vel', 'col', 'scl'];
+export const FUNCTION_PROP_DEFS = ['pos', 'rot', 'scl'];
 
 // 分量轨道 pr 拼接 / 解析
-function compPr(prop, comp) { return comp ? prop + '.' + comp : prop; }
-function splitCompPr(pr) { const i = pr.indexOf('.'); return i < 0 ? [pr, null] : [pr.slice(0, i), pr.slice(i + 1)]; }
+export function compPr(prop, comp) { return comp ? prop + '.' + comp : prop; }
+export function splitCompPr(pr) { const i = pr.indexOf('.'); return i < 0 ? [pr, null] : [pr.slice(0, i), pr.slice(i + 1)]; }
 
-const DEFAULT_EASING = 3;
+export const DEFAULT_EASING = 3;
 
 /* =========================================================================
  * 贴图 / UV（静态属性，非关键帧；作用域 f > g > p 继承覆盖）
  * UV 坐标一律使用贴图像素；贴图大小(texSize)为粒子贴图显示尺寸（像素），仅参与采样拉伸。
  * ======================================================================= */
 
-const UV_MODES = { static: '静态', fill: '填充', animated: '动画' };
+export const UV_MODES = { static: '静态', fill: '填充', animated: '动画' };
 
 // 自动帧数：沿 x 方向能放几格 × 沿 y 方向能放几格（行末换行，flipbook 常见布局）。
 // 有效格 = 格起点仍在贴图内：起点 sx 起、步进 step，满足 sx + k*step < texW 的 k 计数；
 // 即 k = 0..floor((texW-1-sx)/step)。某方向 step 为 0（不移动）则该方向只算 1 格。
 // 渲染（computeParticleUV）与贴图预览（currentUVFrame）共用，保证实际采样帧数与预览描边一致。
-function autoFramesFor(uv, texW, texH) {
+export function autoFramesFor(uv, texW, texH) {
   if (!uv) return 1;
   const w = texW || 1, h = texH || 1;
   const sx = uv.uvStart[0] || 0, sy = uv.uvStart[1] || 0;
@@ -89,14 +93,14 @@ function autoFramesFor(uv, texW, texH) {
 // 生效帧数 = min(自动帧数, 用户上限)。
 // maxFrame 语义：0 / 未设置 / 等于旧默认 1 均视为「不限制 = 自动帧数」；
 // >1 的显式值作为「小于实际帧数的最大上限」（用户可用它限制播放长度）。
-function effMaxFrame(uv, autoFrames) {
+export function effMaxFrame(uv, autoFrames) {
   const mf = (uv.maxFrame != null && uv.maxFrame > 1) ? uv.maxFrame : autoFrames;
   return Math.max(1, Math.min(mf, autoFrames));
 }
 
 // 默认 UV 参数（对象未单独设置时继承上级；根默认为「无贴图」）
 // 贴图大小默认 = 贴图分辨率，其余数值字段（UV 起点/大小/步长）默认 0
-function defaultUV(texWidth, texHeight) {
+export function defaultUV(texWidth, texHeight) {
   const w = texWidth || 16, h = texHeight || 16;
   return {
     texture: null,        // 贴图名（state.textures 的 key），null = 无贴图
@@ -111,17 +115,17 @@ function defaultUV(texWidth, texHeight) {
   };
 }
 
-const SNAP_STEP = 1.0;
-const DEG2RAD = Math.PI / 180;
-const RAD2DEG = 180 / Math.PI;
-const ROT_SNAP = 45; // 按住 Shift 时旋转吸附的步长（角度）
-const PARTICLE_SIZE_FACTOR = 0.5; // 编辑器渲染缩放（与游戏内 quad 的可见点大小一致）
+export const SNAP_STEP = 1.0;
+export const DEG2RAD = Math.PI / 180;
+export const RAD2DEG = 180 / Math.PI;
+export const ROT_SNAP = 45; // 按住 Shift 时旋转吸附的步长（角度）
+export const PARTICLE_SIZE_FACTOR = 0.5; // 编辑器渲染缩放（与游戏内 quad 的可见点大小一致）
 
 /* =========================================================================
  * 状态
  * ======================================================================= */
 
-const state = {
+export const state = {
   name: 'my_animation',
   loop: true,
   particles: [],
@@ -150,38 +154,41 @@ const state = {
   groupUV: {},           // 组级 UV/贴图设置（继承 f > g > p）
 };
 
-function setDirty(v) {
+export function setDirty(v) {
   state.dirty = v;
   if (typeof updateTopbarTitle === 'function') updateTopbarTitle();
 }
 
-function nextId() {
+export function nextId() {
   let n = 0;
   const pre = t('default.particleName');
   while (state.particles.some(p => p.id === pre + n)) n++;
   return pre + n;
 }
-function nextGroupName() {
+export function nextGroupName() {
   let n = 0;
   const pre = t('default.groupName');
   while ((pre + n) in state.groups) n++;
   return pre + n;
 }
-function nextFunctionId() {
+export function nextFunctionId() {
   let n = 0;
   while (state.functions.some(f => f.id === 'fx' + n)) n++;
   return 'fx' + n;
 }
-function getFunction(id) { return functionIndexCache ? functionIndexCache.get(id) : state.functions.find(f => f.id === id); }
+export function getFunction(id) { return functionIndexCache ? functionIndexCache.get(id) : state.functions.find(f => f.id === id); }
 // 粒子是否由函数对象派生（基础属性只读）
-function isDerivedParticle(p) { return p != null && !!p.fx; }
+export function isDerivedParticle(p) { return p != null && !!p.fx; }
 // 粒子索引（animation.js 的 buildParticleIndex 在 rebuildPoints 时重建，供 getParticle O(1) 查找）
-let particleIndexCache = null;
-let functionIndexCache = null; // 函数对象索引（buildParticleIndex 时重建，供 getFunction O(1) 查找）
-function getParticle(id) { return particleIndexCache ? particleIndexCache.get(id) : state.particles.find(p => p.id === id); }
-function findTrack(prop, id) { return state.tracks.find(tr => tr.pr === prop && tr.ids.length === 1 && tr.ids[0] === id); }
+export let particleIndexCache = null;
+export let functionIndexCache = null; // 函数对象索引（buildParticleIndex 时重建，供 getFunction O(1) 查找）
+// 索引缓存由 animation.js 的 buildParticleIndex 重建；这里提供 setter 供其写入（ESM 导入绑定不可重新赋值）。
+export function setParticleIndex(map) { particleIndexCache = map; }
+export function setFunctionIndex(map) { functionIndexCache = map; }
+export function getParticle(id) { return particleIndexCache ? particleIndexCache.get(id) : state.particles.find(p => p.id === id); }
+export function findTrack(prop, id) { return state.tracks.find(tr => tr.pr === prop && tr.ids.length === 1 && tr.ids[0] === id); }
 
-function nextFreeTime(tr, startTime) {
+export function nextFreeTime(tr, startTime) {
   let t = Math.max(0, Math.round(startTime));
   while (tr.kf.some(k => k[0] === t)) t += 5;
   return t;
@@ -192,7 +199,7 @@ function nextFreeTime(tr, startTime) {
  * 内置变量：i=粒子序号、n=采样数、t=时间（vars 内不可重名）
  * ======================================================================= */
 
-const FUNCTION_PRESETS = {
+export const FUNCTION_PRESETS = {
   blank: {
     label: '空',
     params: [],

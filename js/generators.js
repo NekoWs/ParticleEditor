@@ -2,8 +2,17 @@
  * 函数对象：活源重算
  * ======================================================================= */
 
+
+import { _etf, t } from './i18n.js';
+import { FUNCTION_PRESETS, state, nextFunctionId, setDirty } from './constants.js';
+import { ATTR_NAMES, compileExpr, execRpn, tokenize, evaluate, compileFunctionCode, execFunctionCode, varKfValue, tryCompileFunction } from './easing.js';
+import { modalAlert } from './ui.js';
+import { pushUndo } from './undo.js';
+import { rebuildPoints } from './animation.js';
+import { refreshParticleTree } from './tree.js';
+import { refreshFunctionPanel } from './panels.js';
 // 代码块编译缓存：fx.code 变化时重新编译（避免每粒子重复 split/tokenize）
-function getCompiledCode(fx) {
+export function getCompiledCode(fx) {
   const code = fx.code || '';
   if (fx._compiledCode === undefined || fx._compiledSrc !== code) {
     fx._compiledCode = compileFunctionCode(code);
@@ -13,13 +22,13 @@ function getCompiledCode(fx) {
 }
 
 // 变量名列表缓存（fx.vars 的 key 顺序；重建函数对象时失效）
-function getVarNames(fx) {
+export function getVarNames(fx) {
   if (fx._varNames === undefined) fx._varNames = Object.keys(fx.vars || {});
   return fx._varNames;
 }
 
 // 常量变量值缓存：所有变量无关键帧且表达式无变量引用时，预计算一次共享（否则 null）
-function getConstVarVals(fx) {
+export function getConstVarVals(fx) {
   if (fx._constVarVals !== undefined) return fx._constVarVals;
   const names = getVarNames(fx);
   let vals = (names.length === 0) ? [] : null;
@@ -38,7 +47,7 @@ function getConstVarVals(fx) {
 }
 
 // 代码块原生编译缓存：fx.code 变化时重新编译（纯标量代码块可编译为原生 JS 函数，否则 null）
-function getCompiledFn(fx) {
+export function getCompiledFn(fx) {
   const code = fx.code || '';
   if (fx._compiledFn === undefined || fx._compiledFnSrc !== code) {
     fx._compiledFn = tryCompileFunction(code, getVarNames(fx));
@@ -48,7 +57,7 @@ function getCompiledFn(fx) {
 }
 
 // 解析变量值数组（按 getVarNames 顺序；含链式引用与关键帧），供原生编译函数调用
-function resolveVarVals(fx, i, n, t) {
+export function resolveVarVals(fx, i, n, t) {
   const constVals = getConstVarVals(fx);
   if (constVals) return constVals;
   const vars = fx.vars || {};
@@ -80,7 +89,7 @@ function resolveVarVals(fx, i, n, t) {
 }
 
 // 变量表达式编译缓存
-function getCompiledVarExpr(v) {
+export function getCompiledVarExpr(v) {
   const expr = v.expr || '0';
   if (v._compiled === undefined || v._compiledSrc !== expr) {
     v._compiled = compileExpr(expr);
@@ -90,7 +99,7 @@ function getCompiledVarExpr(v) {
 }
 
 // 链式求值变量：vars 为 { name: {expr, kf} }，关键帧优先按 t 插值，无帧用表达式
-function buildEnv(vars, ctx) {
+export function buildEnv(vars, ctx) {
   const env = { i: ctx.i, n: ctx.n, t: ctx.t || 0 };
   const memo = {};
   const inStack = new Set();
@@ -115,7 +124,7 @@ function buildEnv(vars, ctx) {
   return env;
 }
 
-function exprUsesT(expr) {
+export function exprUsesT(expr) {
   const e = (expr || '').trim();
   if (!e) return false;
   try { return tokenize(e).some(tk => tk.t === 'var' && tk.name === 't'); }
@@ -123,7 +132,7 @@ function exprUsesT(expr) {
 }
 
 // 求值单个粒子在某时刻的完整状态（执行公式代码块）
-function evaluateParticleAt(fx, i, n, t) {
+export function evaluateParticleAt(fx, i, n, t) {
   const fn = getCompiledFn(fx);
   if (fn) {
     const center = fx.center || [0, 0, 0];
@@ -142,12 +151,12 @@ function evaluateParticleAt(fx, i, n, t) {
     light: Math.max(0, Math.min(15, Math.round(out.light))),
   };
 }
-function evaluateParticleBase(fx, i, n) { return evaluateParticleAt(fx, i, n, 0); }
+export function evaluateParticleBase(fx, i, n) { return evaluateParticleAt(fx, i, n, 0); }
 
-const eq3 = (a, b) => a.length === b.length && a.every((x, i) => Math.abs(x - b[i]) < 1e-9);
+export const eq3 = (a, b) => a.length === b.length && a.every((x, i) => Math.abs(x - b[i]) < 1e-9);
 
 // 生成函数派生轨道（公式/变量随时间变化时按 duration/step 采样）
-function buildDerivedTracks(fx) {
+export function buildDerivedTracks(fx) {
   const n = Math.max(1, Math.round(fx.count) || 1);
   const duration = Math.max(0, Math.round(fx.duration) || 0);
   const step = Math.max(1, Math.round(fx.step) || 1);
@@ -225,7 +234,7 @@ function buildDerivedTracks(fx) {
 
 // 活源重算：按当前函数定义重建派生粒子与派生轨道。
 // 派生粒子 id 约定为 `fxId:p<i>`，据此清理旧格式（无 fx 标记）残留的派生粒子与派生轨道。
-function rebuildFunctionObject(fx) {
+export function rebuildFunctionObject(fx) {
   // 失效编译缓存（code/vars/count 可能已变）
   fx._compiledFn = undefined;
   fx._compiledCode = undefined;
@@ -278,7 +287,7 @@ function rebuildFunctionObject(fx) {
 }
 
 // 预设：按参数生成代码块 + 变量（改参数时不重置 count）
-function applyPresetBuild(fx) {
+export function applyPresetBuild(fx) {
   const preset = FUNCTION_PRESETS[fx.preset];
   if (!preset) return;
   const built = preset.build(fx.params || {});
@@ -287,7 +296,7 @@ function applyPresetBuild(fx) {
 }
 
 // 分辨率变量联动 count：改 m/k/cols/rows/turns/ppr 时重算 count=乘积
-function syncPresetCount(fx) {
+export function syncPresetCount(fx) {
   const preset = FUNCTION_PRESETS[fx.preset];
   if (!preset) return;
   // 先把所有变量求值为 scope（供 countExpr 或 countVars 使用）
@@ -312,7 +321,7 @@ function syncPresetCount(fx) {
   fx.count = Math.max(1, Math.round(count));
 }
 
-function applyPreset(fx, presetId) {
+export function applyPreset(fx, presetId) {
   const preset = FUNCTION_PRESETS[presetId];
   if (!preset) return;
   fx.preset = presetId;
@@ -326,7 +335,7 @@ function applyPreset(fx, presetId) {
   else fx.count = built.count;
 }
 
-function createFunctionObject(presetId) {
+export function createFunctionObject(presetId) {
   pushUndo();
   const fx = {
     id: nextFunctionId(), name: presetId ? t('fx.preset.' + presetId) : t('fx.defaultName'),
@@ -349,7 +358,7 @@ function createFunctionObject(presetId) {
   return fx;
 }
 
-function deleteFunctionObject(fxId) {
+export function deleteFunctionObject(fxId) {
   pushUndo();
   state.functions = state.functions.filter(f => f.id !== fxId);
   for (const p of [...state.particles]) {

@@ -163,45 +163,7 @@
 
   <input id="file-import" type="file" accept=".pdraw,.json" hidden />
 
-  <!-- 第三方依赖（挂载全局 THREE / THREE.OrbitControls） -->
-  <script src="./vendor/three.min.js"></script>
-  <script src="./vendor/OrbitControls.js"></script>
-
-  <!-- 基础层：语言表 / i18n / 常量与全局 state -->
-  <script src="./js/langs.js"></script>
-  <script src="./js/i18n.js"></script>
-  <script src="./js/constants.js"></script>
-
-  <!-- 通用 UI 组件与纯逻辑模块 -->
-  <script src="./js/ui.js"></script>
-  <script src="./js/easing.js"></script>
-  <script src="./js/float-window.js"></script>
-
-  <!-- 场景 / 渲染 / 数据模型 / 编辑与撤销 -->
-  <script src="./js/scene.js"></script>
-  <script src="./js/animation.js"></script>
-  <script src="./js/edit.js"></script>
-  <script src="./js/undo.js"></script>
-
-  <!-- 交互与控制器 -->
-  <script src="./js/gizmo.js"></script>
-  <script src="./js/interaction.js"></script>
-  <script src="./js/axis-gizmo.js"></script>
-
-  <!-- 侧边树 / 属性面板 / 时间轴 / 贴图编辑器 -->
-  <script src="./js/tree.js"></script>
-  <script src="./js/easing-editor.js"></script>
-  <script src="./js/generators.js"></script>
-  <script src="./js/panels.js"></script>
-  <script src="./js/timeline-layers.js"></script>
-  <script src="./js/texture-editor.js"></script>
-
-  <!-- 拼图模式（积木数据模型 + UI） -->
-  <script src="./js/blocks.js"></script>
-  <script src="./js/blocks-ui.js"></script>
-
-  <!-- 文件导入导出 / 应用启动与主循环 -->
-  <script src="./js/io.js"></script>
-  <script src="./js/main.js"></script>
+  <!-- 应用入口：ES 模块，其余 js/ 文件由 import 按依赖加载 -->
+  <script type="module" src="/js/main.js"></script>
 </body>
 </html>

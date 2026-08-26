@@ -2,26 +2,29 @@
  * Three.js 场景
  * ======================================================================= */
 
-const viewport = document.getElementById('viewport');
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+
+import * as THREE from 'three';
+import { OrbitControls, state } from './constants.js';
+export const viewport = document.getElementById('viewport');
+export const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setClearColor(0x14161c, 1);
 viewport.appendChild(renderer.domElement);
 
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
+export const scene = new THREE.Scene();
+export const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
 camera.position.set(12, 8, 14);
 
-const controls = new OrbitControls(camera, renderer.domElement);
+export const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0, 1, 0);
 controls.update();
 controls.mouseButtons = { LEFT: null, MIDDLE: null, RIGHT: THREE.MOUSE.PAN };
 
-const raycaster = new THREE.Raycaster();
-const pointer = new THREE.Vector2();
+export const raycaster = new THREE.Raycaster();
+export const pointer = new THREE.Vector2();
 
 // 底部平面网格：距离无限（视觉上延伸至地平线），移除与世界轴重合的 x=0 / z=0 中心线
-const grid = (function makeGrid() {
+export const grid = (function makeGrid() {
   const half = 500, step = 1;
   const pts = [];
   for (let i = -500; i <= 500; i++) {
@@ -40,13 +43,13 @@ scene.add(grid);
 // ---- 底部世界三轴指示器（无限长，双向） ----
 // 默认只显示 X/Z（与底部网格同面）；操作 Y 轴（移动/旋转拖拽）时才显示 Y。
 // 平时 depthTest:true 正常被遮挡（不穿透）；操作中由 setWorldAxisGlow 改为穿透显示。
-const WORLD_AXIS_LEN = 3000; // 半长：轴向从 -3000 延伸到 +3000
-const WORLD_AXIS_DEFS = {
+export const WORLD_AXIS_LEN = 3000; // 半长：轴向从 -3000 延伸到 +3000
+export const WORLD_AXIS_DEFS = {
   X: { dir: new THREE.Vector3(1, 0, 0), color: 0xff5555 },
   Y: { dir: new THREE.Vector3(0, 1, 0), color: 0x55ff55 },
   Z: { dir: new THREE.Vector3(0, 0, 1), color: 0x5588ff },
 };
-const worldAxes = {};
+export const worldAxes = {};
 (function buildWorldAxes() {
   const up = new THREE.Vector3(0, 1, 0);
   for (const [key, def] of Object.entries(WORLD_AXIS_DEFS)) {
@@ -69,9 +72,9 @@ const worldAxes = {};
   }
 })();
 
-function setWorldAxisVisible(key, visible) { if (worldAxes[key]) worldAxes[key].mesh.visible = visible; }
+export function setWorldAxisVisible(key, visible) { if (worldAxes[key]) worldAxes[key].mesh.visible = visible; }
 // glow: 0~1，把轴色向白色混合（变亮），并略微提高透明度/置顶，使其透过遮挡显示
-function setWorldAxisGlow(key, glow) {
+export function setWorldAxisGlow(key, glow) {
   const w = worldAxes[key];
   if (!w) return;
   w.mesh.material.color.copy(w.baseColor).lerp(new THREE.Color(1, 1, 1), Math.max(0, Math.min(1, glow)));
@@ -82,7 +85,7 @@ function setWorldAxisGlow(key, glow) {
   w.mesh.renderOrder = active ? 21 : 20;
 }
 // 恢复默认状态：X/Z 常显、Y 隐藏、无高亮
-function resetWorldAxisState() {
+export function resetWorldAxisState() {
   for (const key of Object.keys(WORLD_AXIS_DEFS)) {
     setWorldAxisVisible(key, key !== 'Y');
     setWorldAxisGlow(key, 0);
@@ -90,7 +93,7 @@ function resetWorldAxisState() {
 }
 
 // 方形贴图（2D 广告牌，始终朝向摄像头）
-function makeSquareTexture() {
+export function makeSquareTexture() {
   const c = document.createElement('canvas');
   c.width = c.height = 16;
   const ctx = c.getContext('2d');
@@ -103,7 +106,7 @@ function makeSquareTexture() {
 }
 
 // 选中描边用方框贴图（中心透明，露出粒子本色，形状与粒子一致）
-function makeRingTexture() {
+export function makeRingTexture() {
   const c = document.createElement('canvas');
   c.width = c.height = 32;
   const ctx = c.getContext('2d');
@@ -116,12 +119,12 @@ function makeRingTexture() {
   return tex;
 }
 
-function focalLengthPx() {
+export function focalLengthPx() {
   const h = renderer.domElement.clientHeight || 1;
   return h / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
 }
 
-const pointsMaterial = new THREE.ShaderMaterial({
+export const pointsMaterial = new THREE.ShaderMaterial({
   uniforms: { uMap: { value: makeSquareTexture() }, uPixelScale: { value: focalLengthPx() }, uOpacity: { value: 1.0 }, uTime: { value: 0.0 } },
   vertexShader: `
     uniform float uPixelScale;
@@ -199,10 +202,10 @@ const pointsMaterial = new THREE.ShaderMaterial({
 });
 
 /* ---- 贴图图集（atlas）：把所有贴图拼成一张大图，粒子用 per-point UV 采样 ---- */
-let texAtlasMap = {};
-let texAtlasTexture = null;
+export let texAtlasMap = {};
+export let texAtlasTexture = null;
 
-function rebuildAtlas() {
+export function rebuildAtlas() {
   const names = Object.keys(state.textures || {});
   if (names.length === 0) {
     texAtlasMap = {};
@@ -259,7 +262,7 @@ function rebuildAtlas() {
 }
 
 // 选中描边（方形边框，中心透明露出粒子本色）
-const selectedMaterial = new THREE.ShaderMaterial({
+export const selectedMaterial = new THREE.ShaderMaterial({
   uniforms: { uMap: { value: makeRingTexture() }, uPixelScale: { value: focalLengthPx() }, uOpacity: { value: 1.0 } },
   vertexShader: `
     uniform float uPixelScale;
@@ -289,9 +292,9 @@ const selectedMaterial = new THREE.ShaderMaterial({
   blending: THREE.NormalBlending,
 });
 
-let points = new THREE.Points(new THREE.BufferGeometry(), pointsMaterial);
-let selectedPoints = new THREE.Points(new THREE.BufferGeometry(), selectedMaterial);
-let previewPoints = new THREE.Points(new THREE.BufferGeometry(), pointsMaterial);
+export let points = new THREE.Points(new THREE.BufferGeometry(), pointsMaterial);
+export let selectedPoints = new THREE.Points(new THREE.BufferGeometry(), selectedMaterial);
+export let previewPoints = new THREE.Points(new THREE.BufferGeometry(), pointsMaterial);
 points.renderOrder = 0;
 selectedPoints.renderOrder = 1;
 previewPoints.renderOrder = 0;
@@ -299,18 +302,18 @@ scene.add(points);
 scene.add(selectedPoints);
 scene.add(previewPoints);
 
-const gizmoGroup = new THREE.Group();
+export const gizmoGroup = new THREE.Group();
 scene.add(gizmoGroup);
 gizmoGroup.visible = false;
 
 // 旋转控制器子组：跟随本地坐标轴（对象 rot 轨道），移动控制器保持世界朝向
-const gizmoRotateGroup = new THREE.Group();
+export const gizmoRotateGroup = new THREE.Group();
 gizmoGroup.add(gizmoRotateGroup);
 
 // gizmo 渲染顺序最高：无视遮挡关系，始终绘制在最上层
-const GIZMO_RING_RENDER_ORDER = 50;
-const GIZMO_FACE_RENDER_ORDER = 51;
-const GIZMO_ARROW_RENDER_ORDER = 52;
+export const GIZMO_RING_RENDER_ORDER = 50;
+export const GIZMO_FACE_RENDER_ORDER = 51;
+export const GIZMO_ARROW_RENDER_ORDER = 52;
 
 /* =========================================================================
  * 旋转控制器（Blender 风格，世界朝向，移除局部坐标系）
@@ -318,13 +321,13 @@ const GIZMO_ARROW_RENDER_ORDER = 52;
  *   渲染效果类似在此处放了一个球体，环是球面上的可见部分）
  * - 外部白色圆环：绕视线方向旋转
  * ======================================================================= */
-const AXIS_RING_COLORS = { X: 0xff5555, Y: 0x55ff55, Z: 0x5588ff };
+export const AXIS_RING_COLORS = { X: 0xff5555, Y: 0x55ff55, Z: 0x5588ff };
 // 各轴环的环面法线 = 旋转轴方向（世界朝向）
-const RING_NORMALS = { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1] };
-const RING_SEGMENTS = 72;                       // 每环分段数（提高弧线精度）
-const RING_SEG_ARC = (Math.PI * 2) / RING_SEGMENTS;
-const gizmoRingSegs = {};                        // { X: [mesh...], Y: [...], Z: [...] }
-const gizmoRingSegDirs = {};                     // 各段中点方向（局部坐标，gizmo 无旋转即世界方向）
+export const RING_NORMALS = { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1] };
+export const RING_SEGMENTS = 72;                       // 每环分段数（提高弧线精度）
+export const RING_SEG_ARC = (Math.PI * 2) / RING_SEGMENTS;
+export const gizmoRingSegs = {};                        // { X: [mesh...], Y: [...], Z: [...] }
+export const gizmoRingSegDirs = {};                     // 各段中点方向（局部坐标，gizmo 无旋转即世界方向）
 (function buildRotateRings() {
   const zAxis = new THREE.Vector3(0, 0, 1);
   for (const axis of ['X', 'Y', 'Z']) {
@@ -351,7 +354,7 @@ const gizmoRingSegDirs = {};                     // 各段中点方向（局部�
   }
 })();
 // 外部白色视图环（绕视线方向旋转）
-const gizmoViewRing = new THREE.Mesh(
+export const gizmoViewRing = new THREE.Mesh(
   new THREE.TorusGeometry(0.62, 0.016, 10, 96),
   new THREE.MeshBasicMaterial({ color: 0xe4e8f2, depthWrite: false, depthTest: false, transparent: true, side: THREE.DoubleSide })
 );
@@ -364,13 +367,13 @@ gizmoGroup.add(gizmoViewRing);
  * ======================================================================= */
 // 面移动器：三轴之间的矩形，固定朝向该面（法线沿该面正对的轴），
 // 颜色 = 该面正对的轴的颜色（如 XZ 面正对 Y 轴 → 绿色）
-const GIZMO_FACE_DEFS = {
+export const GIZMO_FACE_DEFS = {
   XY: { pos: [0.38, 0.38, 0], normal: [0, 0, 1], color: 0x5588ff },    // 正对 Z → 蓝，位于 XY 面（z=0）
   XZ: { pos: [0.38, 0, 0.38], normal: [0, 1, 0], color: 0x55ff55 },    // 正对 Y → 绿，位于 XZ 面（y=0）
   YZ: { pos: [0, 0.38, 0.38], normal: [1, 0, 0], color: 0xff5555 },    // 正对 X → 红，位于 YZ 面（x=0）
 };
-const FACE_AXES = { XY: ['X', 'Y'], XZ: ['X', 'Z'], YZ: ['Y', 'Z'] };
-const gizmoFaces = {};
+export const FACE_AXES = { XY: ['X', 'Y'], XZ: ['X', 'Z'], YZ: ['Y', 'Z'] };
+export const gizmoFaces = {};
 (function buildFacePlanes() {
   const zAxis = new THREE.Vector3(0, 0, 1);
   for (const [name, def] of Object.entries(GIZMO_FACE_DEFS)) {
@@ -395,7 +398,7 @@ const gizmoFaces = {};
   }
 })();
 // 移动控制器：柱身 + 锥头
-const gizmoArrows = {};
+export const gizmoArrows = {};
 (function buildMoveArrows() {
   const defs = { X: [1, 0, 0, 0xff5555], Y: [0, 1, 0, 0x55ff55], Z: [0, 0, 1, 0x5588ff] };
   const up = new THREE.Vector3(0, 1, 0);
@@ -419,7 +422,7 @@ const gizmoArrows = {};
 })();
 
 // 操作轴提示线：拖拽移动/旋转的某个轴时，在 gizmo 中心画一条高亮轴线（与移动线同粗）
-const gizmoAxisHint = new THREE.Mesh(
+export const gizmoAxisHint = new THREE.Mesh(
   new THREE.CylinderGeometry(0.008, 0.008, 100.0, 6, 1, true), // 无限长（双向 ±50，乘 gizmo scale 后远超屏幕）
   new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false, depthTest: false })
 );
@@ -427,5 +430,8 @@ gizmoAxisHint.renderOrder = GIZMO_ARROW_RENDER_ORDER + 1;
 gizmoAxisHint.visible = false;
 gizmoGroup.add(gizmoAxisHint);
 
-let camTransition = null;
-let planePulse = null; // 绘制平面切换时的轴线发光动画 { axis, t0, dur }
+export let camTransition = null;
+export let planePulse = null; // 绘制平面切换时的轴线发光动画 { axis, t0, dur }
+// 跨模块写入状态（axis-gizmo / main 的相机过渡与绘制平面脉冲动画）。
+export function setCamTransition(v) { camTransition = v; }
+export function setPlanePulse(v) { planePulse = v; }

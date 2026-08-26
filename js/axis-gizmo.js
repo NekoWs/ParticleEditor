@@ -7,28 +7,32 @@
  * 透明度随深度渐变：正面不透明，背面最低降到 0.6。
  * ========================================================================= */
 
-const gizmoCanvas = document.getElementById('axis-gizmo');
-const gizmoCtx = gizmoCanvas.getContext('2d');
 
-const GIZMO_SIZE = 112;
+import * as THREE from 'three';
+import { state } from './constants.js';
+import { camera, controls, renderer, grid, worldAxes, setWorldAxisVisible, camTransition, setCamTransition } from './scene.js';
+export const gizmoCanvas = document.getElementById('axis-gizmo');
+export const gizmoCtx = gizmoCanvas.getContext('2d');
+
+export const GIZMO_SIZE = 112;
 gizmoCanvas.width = GIZMO_SIZE; gizmoCanvas.height = GIZMO_SIZE;
-const GIZMO_CENTER = GIZMO_SIZE / 2;
-const SPHERE_R = 33;        // 球面半径（轴球中心到球心）
-const BALL_R = 10;          // 轴球半径
-const PI2 = Math.PI * 2;
-const NEG_FILL_ALPHA = 0.22;// 负轴球填充透明度
-const HOVER_ALPHA = 0.28;   // 悬停白圆透明度
-const ROT_SPEED = 0.01;     // 旋转速度（弧度/像素）
+export const GIZMO_CENTER = GIZMO_SIZE / 2;
+export const SPHERE_R = 33;        // 球面半径（轴球中心到球心）
+export const BALL_R = 10;          // 轴球半径
+export const PI2 = Math.PI * 2;
+export const NEG_FILL_ALPHA = 0.22;// 负轴球填充透明度
+export const HOVER_ALPHA = 0.28;   // 悬停白圆透明度
+export const ROT_SPEED = 0.01;     // 旋转速度（弧度/像素）
 
 // 正轴单位向量（用于计算目标视图方向）
-const AXIS_DIRS = {
+export const AXIS_DIRS = {
   X: new THREE.Vector3(1, 0, 0),
   Y: new THREE.Vector3(0, 1, 0),
   Z: new THREE.Vector3(0, 0, 1),
 };
 
 // 六轴球：正轴实心（红X/绿Y/蓝Z），负轴填充半透明 + 描边（同轴色）
-const AXIS_DEFS = [
+export const AXIS_DEFS = [
   { key: '+X', axis: 'X', dir: new THREE.Vector3(1, 0, 0), color: '#ff5555', sign: +1 },
   { key: '-X', axis: 'X', dir: new THREE.Vector3(-1, 0, 0), color: '#ff5555', sign: -1 },
   { key: '+Y', axis: 'Y', dir: new THREE.Vector3(0, 1, 0), color: '#55ff55', sign: +1 },
@@ -37,37 +41,37 @@ const AXIS_DEFS = [
   { key: '-Z', axis: 'Z', dir: new THREE.Vector3(0, 0, -1), color: '#5588ff', sign: -1 },
 ];
 
-let gizmoHovering = false;   // 鼠标是否悬停在 gizmo 上（决定白圆）
-let snappedAxis = null;       // 当前吸附的轴球 key（'+X'/'-X'/...）
-let navDrag = null;           // gizmo 拖拽 { x, y, moved }
-let midDrag = null;           // 中键拖拽 { x, y }
-let lastAxis = null;          // 上次点击 { axis:'X'|'Y'|'Z', sign:+1|-1 }
-let navOriented = false;      // 切到轴视图后为 true，转动视角时恢复 XZ 并置 false
+export let gizmoHovering = false;   // 鼠标是否悬停在 gizmo 上（决定白圆）
+export let snappedAxis = null;       // 当前吸附的轴球 key（'+X'/'-X'/...）
+export let navDrag = null;           // gizmo 拖拽 { x, y, moved }
+export let midDrag = null;           // 中键拖拽 { x, y }
+export let lastAxis = null;          // 上次点击 { axis:'X'|'Y'|'Z', sign:+1|-1 }
+export let navOriented = false;      // 切到轴视图后为 true，转动视角时恢复 XZ 并置 false
 
-const _invQ = new THREE.Quaternion();
-const _pv = new THREE.Vector3();
-const _right = new THREE.Vector3();
-const _forward = new THREE.Vector3();
-const _yAxis = new THREE.Vector3(0, 1, 0);
-const _qEnd = new THREE.Quaternion();
-const _qInterp = new THREE.Quaternion();
+export const _invQ = new THREE.Quaternion();
+export const _pv = new THREE.Vector3();
+export const _right = new THREE.Vector3();
+export const _forward = new THREE.Vector3();
+export const _yAxis = new THREE.Vector3(0, 1, 0);
+export const _qEnd = new THREE.Quaternion();
+export const _qInterp = new THREE.Quaternion();
 
 // 网格旋转映射：把底部网格转到 2D 视图对应的平面
-const GRID_ROT = {
+export const GRID_ROT = {
   XZ: [0, 0, 0],
   YZ: [0, 0, Math.PI / 2],
   XY: [Math.PI / 2, 0, 0],
 };
 
 // 每个 2D 平面内显示的世界轴（隐藏视线方向那条，避免投影退化/被网格遮挡）
-const PLANE_AXES = {
+export const PLANE_AXES = {
   XZ: ['X', 'Z'],
   YZ: ['Y', 'Z'],
   XY: ['X', 'Y'],
 };
 
 // 世界方向 → 屏幕坐标（返回相机空间深度 z，范围约 [-1,1]，z 越小越靠前）
-function projectDir(dir) {
+export function projectDir(dir) {
   _invQ.copy(camera.quaternion).invert();
   _pv.copy(dir).applyQuaternion(_invQ);
   return {
@@ -78,11 +82,11 @@ function projectDir(dir) {
 }
 
 // 深度渐变：朝向相机一侧实(1)，背面渐淡到 0.45（z 越大越朝向相机）
-function depthAlpha(z) {
+export function depthAlpha(z) {
   return 0.45 + 0.55 * ((z + 1) / 2);
 }
 
-function drawAxisGizmo() {
+export function drawAxisGizmo() {
   const c = gizmoCtx;
   const cx = GIZMO_CENTER, cy = GIZMO_CENTER;
   c.clearRect(0, 0, GIZMO_SIZE, GIZMO_SIZE);
@@ -118,7 +122,7 @@ function drawAxisGizmo() {
   c.globalAlpha = 1;
 }
 
-function drawAxisBall(def, p) {
+export function drawAxisBall(def, p) {
   const c = gizmoCtx;
   const base = depthAlpha(p.z);
   const r = BALL_R;
@@ -141,7 +145,7 @@ function drawAxisBall(def, p) {
   }
 }
 
-function drawAxisLabel(def, p) {
+export function drawAxisLabel(def, p) {
   const c = gizmoCtx;
   const base = depthAlpha(p.z);
   const isSnap = snappedAxis === def.key;
@@ -158,7 +162,7 @@ function drawAxisLabel(def, p) {
   }
 }
 
-function canvasPoint(ev) {
+export function canvasPoint(ev) {
   const rect = gizmoCanvas.getBoundingClientRect();
   return {
     x: (ev.clientX - rect.left) * (GIZMO_SIZE / rect.width),
@@ -167,7 +171,7 @@ function canvasPoint(ev) {
 }
 
 // 全局吸附：取距鼠标最近的轴球（不设半径限制）
-function nearestBall(pt) {
+export function nearestBall(pt) {
   let best = null, bestD = Infinity;
   for (const def of AXIS_DEFS) {
     const p = projectDir(def.dir);
@@ -179,7 +183,7 @@ function nearestBall(pt) {
 
 // 统一的自由旋转（turntable）：水平绕世界 Y，垂直绕相机右轴，
 // 刚体旋转 offset 与 up，可翻过极点，手感与中键一致。
-function turntableRotate(dx, dy) {
+export function turntableRotate(dx, dy) {
   const target = controls.target;
   const offset = camera.position.clone().sub(target);
   const up = camera.up.clone();
@@ -201,14 +205,14 @@ function turntableRotate(dx, dy) {
 }
 
 // gizmo 拖动自由旋转：打断过渡动画、恢复 XZ 后走 turntable
-function orbitCamera(dx, dy) {
-  if (camTransition) camTransition = null;
+export function orbitCamera(dx, dy) {
+  if (camTransition) setCamTransition(null);
   if (navOriented) { setDrawPlane('XZ'); setWorldAxesOccluded(true); navOriented = false; }
   turntableRotate(dx, dy);
 }
 
 // 点击轴球切视图：首次（或跨轴后回来）→ 该轴正视图；连续再点同轴 → 反方向视图
-function clickAxis(def) {
+export function clickAxis(def) {
   let sign;
   if (lastAxis && lastAxis.axis === def.axis) sign = -lastAxis.sign;
   else sign = +1;
@@ -258,7 +262,7 @@ gizmoCanvas.addEventListener('pointerup', (ev) => {
 // 中键自由旋转（与 gizmo 共用 turntable，方向一致）
 renderer.domElement.addEventListener('pointerdown', (ev) => {
   if (ev.button !== 1) return;
-  if (camTransition) camTransition = null;
+  if (camTransition) setCamTransition(null);
   if (navOriented) { setDrawPlane('XZ'); setWorldAxesOccluded(true); navOriented = false; }
   midDrag = { x: ev.clientX, y: ev.clientY };
   renderer.domElement.setPointerCapture(ev.pointerId);
@@ -277,7 +281,7 @@ renderer.domElement.addEventListener('pointerup', (ev) => {
 
 renderer.domElement.addEventListener('pointercancel', () => { midDrag = null; });
 
-function setDrawPlane(p) {
+export function setDrawPlane(p) {
   state.drawPlane = p;
   // 同步底部网格到 2D 视图对应的平面
   if (typeof grid !== 'undefined' && grid) {
@@ -294,7 +298,7 @@ function setDrawPlane(p) {
 }
 
 // 世界轴遮挡开关：切 2D 视图时穿透显示（避免被网格遮挡），移动视角后恢复遮挡
-function setWorldAxesOccluded(occluded) {
+export function setWorldAxesOccluded(occluded) {
   if (typeof worldAxes === 'undefined') return;
   for (const key of Object.keys(worldAxes)) {
     worldAxes[key].mesh.material.depthTest = occluded;
@@ -302,7 +306,7 @@ function setWorldAxesOccluded(occluded) {
 }
 
 // 四元数球面插值（main.js 相机过渡动画使用）——处理方向反向时不发散的稳健版
-function slerp(a, b, t) {
+export function slerp(a, b, t) {
   _qEnd.setFromUnitVectors(a, b);
   _qInterp.set(0, 0, 0, 1);
   _qInterp.slerp(_qEnd, t);
@@ -310,14 +314,14 @@ function slerp(a, b, t) {
 }
 
 // 平滑切到 dir 方向的正交视图：保持当前距离、绕 target 旋转过去、更新绘制平面
-function orientToAxis(dir) {
+export function orientToAxis(dir) {
   const dist = camera.position.distanceTo(controls.target);
   const target = controls.target.clone();
   const startDir = camera.position.clone().sub(target).normalize();
   const endPos = target.clone().sub(dir.clone().normalize().multiplyScalar(dist));
   const endDir = endPos.clone().sub(target).normalize();
   const endUp = Math.abs(dir.y) > 0.9 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
-  camTransition = { startDir, endDir, startUp: camera.up.clone(), endUp, target, dist, t0: performance.now(), dur: 320 };
+  setCamTransition({ startDir, endDir, startUp: camera.up.clone(), endUp, target, dist, t0: performance.now(), dur: 320 });
   if (Math.abs(dir.x) > 0.5) setDrawPlane('YZ');
   else if (Math.abs(dir.y) > 0.5) setDrawPlane('XZ');
   else setDrawPlane('XY');

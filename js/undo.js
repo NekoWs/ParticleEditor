@@ -2,17 +2,22 @@
  * 撤回 / 重做
  * ======================================================================= */
 
-const undoStack = [];
-const redoStack = [];
 
-function cloneVars(vars) {
+import { state, setDirty } from './constants.js';
+import { rebuildPoints } from './animation.js';
+import { refreshParticleTree } from './tree.js';
+import { refreshFunctionPanel, updateLoopIndicator } from './panels.js';
+export const undoStack = [];
+export const redoStack = [];
+
+export function cloneVars(vars) {
   const o = {};
   for (const [name, v] of Object.entries(vars || {})) {
     o[name] = { expr: v.expr, kf: (v.kf || []).map(k => [k[0], k[1], k[2]]) };
   }
   return o;
 }
-function cloneFunctions(fs) {
+export function cloneFunctions(fs) {
   return (fs || []).map(f => ({
     ...f,
     center: f.center.slice(),
@@ -22,7 +27,7 @@ function cloneFunctions(fs) {
   }));
 }
 
-function snapshot() {
+export function snapshot() {
   return {
     particles: state.particles.map(p => ({ ...p, color: p.color.slice(), pos: p.pos.slice(), vel: p.vel ? p.vel.slice() : [0, 0, 0] })),
     tracks: state.tracks.map(tr => ({ pr: tr.pr, m: tr.m, ids: tr.ids.slice(), kf: tr.kf.map(k => [k[0], k[1], k[2]]) })),
@@ -36,7 +41,7 @@ function snapshot() {
   };
 }
 
-function restore(s) {
+export function restore(s) {
   state.particles = s.particles.map(p => ({ ...p, color: p.color.slice(), pos: p.pos.slice(), vel: p.vel ? p.vel.slice() : [0, 0, 0] }));
   state.tracks = s.tracks.map(tr => ({ pr: tr.pr, m: tr.m, ids: tr.ids.slice(), kf: tr.kf.map(k => [k[0], k[1], k[2]]) }));
   state.groups = JSON.parse(JSON.stringify(s.groups));
@@ -53,27 +58,27 @@ function restore(s) {
   if (typeof refreshFunctionPanel === 'function') refreshFunctionPanel();
 }
 
-function pushUndo() {
+export function pushUndo() {
   undoStack.push(snapshot());
   if (undoStack.length > 100) undoStack.shift();
   redoStack.length = 0;
   setDirty(true);
 }
 
-function popUndo() { undoStack.pop(); }
+export function popUndo() { undoStack.pop(); }
 
-let continuousDirty = false;
-function beginContinuous() { if (!continuousDirty) { pushUndo(); continuousDirty = true; } }
-function endContinuous() { continuousDirty = false; }
+export let continuousDirty = false;
+export function beginContinuous() { if (!continuousDirty) { pushUndo(); continuousDirty = true; } }
+export function endContinuous() { continuousDirty = false; }
 
-function undo() {
+export function undo() {
   if (undoStack.length === 0) return;
   redoStack.push(snapshot());
   restore(undoStack.pop());
   setDirty(true);
 }
 
-function redo() {
+export function redo() {
   if (redoStack.length === 0) return;
   undoStack.push(snapshot());
   restore(redoStack.pop());

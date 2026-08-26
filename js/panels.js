@@ -2,8 +2,18 @@
  * 属性面板
  * ======================================================================= */
 
+
+import { t, tf } from './i18n.js';
+import { state, FUNCTION_PRESETS, getFunction, isDerivedParticle } from './constants.js';
+import { currentVisual, rebuildPoints } from './animation.js';
+import { currentSelected, selectedGroupName, fxPosDeltaAt, fxScaleValuesAt } from './interaction.js';
+import { groupCurrentCentroid } from './tree.js';
+import { modalAlert } from './ui.js';
+import { makeEasingBtn } from './easing-editor.js';
+import { ATTR_NAMES, evaluate, varKfValue } from './easing.js';
+import { syncPresetCount } from './generators.js';
 // 设置缩放 XYZ 三输入（vals 为 [x,y,z]；null 元素表示混合值显示空）
-function setScaleInputs(vals) {
+export function setScaleInputs(vals) {
   ['prop-scale-x', 'prop-scale-y', 'prop-scale-z'].forEach((id, i) => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -13,7 +23,7 @@ function setScaleInputs(vals) {
   });
 }
 
-function updatePropPanel() {
+export function updatePropPanel() {
   const sel = currentSelected();
   const fxId = state.selectedFunction;
   const isFx = !!fxId;
@@ -100,12 +110,12 @@ function updatePropPanel() {
   setPos('prop-posz', pos[2].toFixed(2), zSame);
 }
 
-function rgbToHex(r, g, b) {
+export function rgbToHex(r, g, b) {
   const c = v => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, '0');
   return '#' + c(r) + c(g) + c(b);
 }
 
-function hexToRgb(hex) {
+export function hexToRgb(hex) {
   const n = parseInt(hex.slice(1), 16);
   return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255];
 }
@@ -114,14 +124,22 @@ function hexToRgb(hex) {
  * 时间轴（底部：仅播放进度）
  * ======================================================================= */
 
-const TL_PX_PER_TICK = 4;
-let timelineViewStart = -25;
+export const TL_PX_PER_TICK = 4;
+export let timelineViewStart = -25;
 // 组件时间轴左侧负轴（负几个 tick）：tick 0 不贴画布左缘，
 // 配合钉边缘余量让播放头/关键帧能真正停在 0t 上
-const COMP_TL_MIN_VIEW_START = -5;
-let compTimelineViewStart = COMP_TL_MIN_VIEW_START;
+export const COMP_TL_MIN_VIEW_START = -5;
+export let compTimelineViewStart = COMP_TL_MIN_VIEW_START;
+// 跨模块写入（main / tree / timeline-layers 的平移与自动追赶）。
+export function setTimelineViewStart(v) { timelineViewStart = v; }
+export function setCompTimelineViewStart(v) { compTimelineViewStart = v; }
 
-function drawTimeline() {
+export function updateLoopIndicator() {
+  const el = document.getElementById('loop-indicator');
+  if (el) el.style.opacity = state.loop ? '1' : '0.25';
+}
+
+export function drawTimeline() {
   const canvas = document.getElementById('timeline');
   if (!canvas) return;
   const dpr = window.devicePixelRatio || 1;
@@ -149,14 +167,14 @@ function drawTimeline() {
   ctx.fillStyle = '#ffcc55'; ctx.beginPath(); ctx.moveTo(phx - 5, 0); ctx.lineTo(phx + 5, 0); ctx.lineTo(phx, 8); ctx.closePath(); ctx.fill();
 }
 
-function niceStep(range) {
+export function niceStep(range) {
   const rough = Math.max(1, range / 10);
   const pow = Math.pow(10, Math.floor(Math.log10(rough)));
   const norm = rough / pow;
   return (norm < 1.5 ? 1 : norm < 3.5 ? 2 : norm < 7.5 ? 5 : 10) * pow;
 }
 
-function timelineXToTick(clientX) {
+export function timelineXToTick(clientX) {
   const canvas = document.getElementById('timeline');
   const rect = canvas.getBoundingClientRect();
   return timelineViewStart + (clientX - rect.left) / TL_PX_PER_TICK;
@@ -175,7 +193,7 @@ function timelineXToTick(clientX) {
  *  - 滞后：指针反向但仍停留在可视区外时，视图不回缩（播放头继续钉边缘）；
  *    只有指针重新进入可视区后，才恢复 1:1 跟随。
  */
-function scrubAutoPan(drag, clientX, rect, viewStart, time, pxPerTick, minStart, pinMarginPx) {
+export function scrubAutoPan(drag, clientX, rect, viewStart, time, pxPerTick, minStart, pinMarginPx) {
   const W = rect.width;
   const x = clientX - rect.left;         // 相对画布左缘（可 <0 或 >W）
   const m = Math.max(0, pinMarginPx || 0); // 钉边缘的可见余量（像素）
@@ -221,7 +239,7 @@ function scrubAutoPan(drag, clientX, rect, viewStart, time, pxPerTick, minStart,
  * 函数对象属性面板
  * ======================================================================= */
 
-function refreshFunctionPanel() {
+export function refreshFunctionPanel() {
   const box = document.getElementById('fx-panel');
   if (!box) return;
   const fx = getFunction(state.selectedFunction);
@@ -230,12 +248,12 @@ function refreshFunctionPanel() {
   box.appendChild(buildFunctionPanel(fx));
 }
 
-function commitFunctionRebuild(fx) {
+export function commitFunctionRebuild(fx) {
   try { rebuildFunctionObject(fx); }
   catch (e) { modalAlert(t('fx.exprError'), e.message); }
 }
 
-function buildFunctionPanel(fx) {
+export function buildFunctionPanel(fx) {
   const wrap = document.createElement('div');
   wrap.className = 'fx-panel';
 
@@ -356,22 +374,22 @@ function buildFunctionPanel(fx) {
   return wrap;
 }
 
-function nextFreeTimeVar(kf, startTime) {
+export function nextFreeTimeVar(kf, startTime) {
   let t = Math.max(0, Math.round(startTime));
   while (kf.some(k => k[0] === t)) t += 5;
   return t;
 }
 
 // 变量关键帧区展开状态（fx.id|name → bool，默认折叠）
-const varExpandState = {};
+export const varExpandState = {};
 // 每个变量一个色调（按变量顺序循环），关键帧列表背景色区分归属变量
-const VAR_KF_PALETTE = ['#5b9dff', '#ffa94d', '#6bd489', '#e57fae', '#9d7bff', '#4fc3c9', '#e0c35b', '#ff7d6b'];
-function varKfHue(fx, name) {
+export const VAR_KF_PALETTE = ['#5b9dff', '#ffa94d', '#6bd489', '#e57fae', '#9d7bff', '#4fc3c9', '#e0c35b', '#ff7d6b'];
+export function varKfHue(fx, name) {
   const keys = Object.keys(fx.vars);
   return VAR_KF_PALETTE[Math.max(0, keys.indexOf(name)) % VAR_KF_PALETTE.length];
 }
 
-function buildVarRow(fx, name) {
+export function buildVarRow(fx, name) {
   const v = fx.vars[name];
   const wrap = document.createElement('div');
   wrap.className = 'fx-var';
@@ -461,7 +479,7 @@ function buildVarRow(fx, name) {
   return wrap;
 }
 
-function buildVarKfRow(fx, name, k, isFirst) {
+export function buildVarKfRow(fx, name, k, isFirst) {
   const row = document.createElement('div');
   row.className = 'kf-row';
   const tIn = document.createElement('input');
@@ -484,7 +502,7 @@ function buildVarKfRow(fx, name, k, isFirst) {
 }
 
 // 实时同步「有关键帧」变量输入框显示的当前帧插值值（不重建面板）
-function syncFunctionVarValues() {
+export function syncFunctionVarValues() {
   document.querySelectorAll('input.kf-synced').forEach(inp => {
     const sep = inp.dataset.fxKf.indexOf('|');
     const fxId = inp.dataset.fxKf.slice(0, sep);

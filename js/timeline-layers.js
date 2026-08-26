@@ -9,10 +9,16 @@
  * - undo：拖拽开始前 pushUndo 一次（undo.js 的 snapshot 经字段展开天然覆盖 st/life/ent）。
  * ======================================================================= */
 
-const TL_LAYER_ROW_H = 18;
-const tlLayerState = { expanded: new Set(), scroll: 0, drag: null, hit: [] };
 
-function tlLayerRows() {
+import { state } from './constants.js';
+import { TL_PX_PER_TICK, timelineViewStart, setTimelineViewStart, drawTimeline } from './panels.js';
+import { rebuildPoints, maxTick } from './animation.js';
+import { saveWorkspaceState } from './blocks-ui.js';
+import { resize } from './main.js';
+export const TL_LAYER_ROW_H = 18;
+export const tlLayerState = { expanded: new Set(), scroll: 0, drag: null, hit: [] };
+
+export function tlLayerRows() {
   const rows = [];
   const grouped = new Set();
   for (const [gname, members] of Object.entries(state.groups)) {
@@ -27,20 +33,20 @@ function tlLayerRows() {
   return rows;
 }
 
-function rowLabel(r) {
+export function rowLabel(r) {
   if (r.kind === 'group') return r.name + ' (' + r.members.length + ')';
   if (r.kind === 'fx') return r.fx.name;
   return r.p.id;
 }
 
-function particleLifeEnd(p) {
+export function particleLifeEnd(p) {
   const life = typeof p.life === 'number' ? p.life : -1;
   const s = p.st || 0;
   return life < 0 ? Infinity : s + life;
 }
 
 /** 行的可见性跨度 [start, end]；end 可为 Infinity（无限寿命）。 */
-function rowSpan(r) {
+export function rowSpan(r) {
   if (r.kind === 'group') {
     let lo = Infinity, hi = -Infinity, anyInf = false;
     for (const id of r.members) {
@@ -64,7 +70,7 @@ function rowSpan(r) {
   return [s, e];
 }
 
-function drawTimelineLayers() {
+export function drawTimelineLayers() {
   const canvas = document.getElementById('tl-layers-canvas');
   if (!canvas) return;
   const dpr = window.devicePixelRatio || 1;
@@ -138,10 +144,10 @@ function drawTimelineLayers() {
   ctx.beginPath(); ctx.moveTo(phx, headerH); ctx.lineTo(phx, h); ctx.stroke();
 }
 
-function X_of(t) { return (t - timelineViewStart) * TL_PX_PER_TICK; }
+export function X_of(t) { return (t - timelineViewStart) * TL_PX_PER_TICK; }
 
 /** 命中检测：返回 {hit, zone}；zone ∈ 'start'|'life'|'body'。 */
-function tlLayerHitAt(clientX, clientY) {
+export function tlLayerHitAt(clientX, clientY) {
   const canvas = document.getElementById('tl-layers-canvas');
   if (!canvas) return null;
   const rect = canvas.getBoundingClientRect();
@@ -158,16 +164,16 @@ function tlLayerHitAt(clientX, clientY) {
   return null;
 }
 
-function setRowStart(r, v) {
+export function setRowStart(r, v) {
   if (r.kind === 'particle' || r.kind === 'member') r.p.st = v;
   else if (r.kind === 'fx') r.fx.st = v;
 }
 
-function setParticleLife(p, v) {
+export function setParticleLife(p, v) {
   p.life = Math.max(1, v);   // 拖拽调整的最小寿命 1 tick
 }
 
-function shiftGroup(r, delta) {
+export function shiftGroup(r, delta) {
   if (!delta) return;
   for (const id of r.members) {
     const p = state.particles.find(q => q.id === id);
@@ -175,14 +181,14 @@ function shiftGroup(r, delta) {
   }
 }
 
-function timelineXToTickL(clientX) {
+export function timelineXToTickL(clientX) {
   const canvas = document.getElementById('tl-layers-canvas');
   const rect = canvas.getBoundingClientRect();
   return timelineViewStart + (clientX - rect.left) / TL_PX_PER_TICK;
 }
 
 /** 轻刷新：st/life 改动后同步时长显示、标尺、图层区与预览。 */
-function refreshAllPanelsLight() {
+export function refreshAllPanelsLight() {
   const maxEl = document.getElementById('tl-max');
   if (maxEl) maxEl.textContent = maxTick();
   if (typeof drawTimeline === 'function') drawTimeline();
@@ -190,7 +196,7 @@ function refreshAllPanelsLight() {
   rebuildPoints(false);
 }
 
-function tlInitLayerEvents() {
+export function tlInitLayerEvents() {
   const canvas = document.getElementById('tl-layers-canvas');
   const grip = document.getElementById('tl-module-resize');
   if (!canvas) return;

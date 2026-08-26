@@ -2,12 +2,23 @@
  * 导出 / 导入 / 文件
  * ======================================================================= */
 
-const r3 = x => Math.round(x * 1000) / 1000;
-const roundArr = a => a.map(r3);
-function encodeEasing(e) { return Array.isArray(e) ? e.map(r3) : e; }
+import { t } from './i18n.js';
+import { state, setDirty, DEFAULT_EASING, UV_MODES, PROP_LABELS, splitCompPr, nextId } from './constants.js';
+import { pushUndo } from './undo.js';
+import { rebuildPoints } from './animation.js';
+import { refreshParticleTree } from './tree.js';
+import { updateLoopIndicator } from './panels.js';
+import { updateTimeUI } from './main.js';
+import { rebuildFunctionObject } from './generators.js';
+import { markTextureChanged, refreshTexturePanel } from './texture-editor.js';
+import { buildModal, modalPrompt } from './ui.js';
+
+export const r3 = x => Math.round(x * 1000) / 1000;
+export const roundArr = a => a.map(r3);
+export function encodeEasing(e) { return Array.isArray(e) ? e.map(r3) : e; }
 
 // 贴图 → base64 PNG（同步导出用；贴图变化时调用 refreshTexBase64Cache 预计算）
-async function textureToBase64(t) {
+export async function textureToBase64(t) {
   const cnv = document.createElement('canvas'); cnv.width = t.width; cnv.height = t.height;
   const ctx = cnv.getContext('2d');
   ctx.putImageData(new ImageData(t.data.slice(), t.width, t.height), 0, 0);
@@ -16,7 +27,7 @@ async function textureToBase64(t) {
   let bin = ''; for (const b of new Uint8Array(buf)) bin += String.fromCharCode(b);
   return btoa(bin);
 }
-function base64ToTexture(name, b64) {
+export function base64ToTexture(name, b64) {
   return new Promise((resolve, reject) => {
     const bin = atob(b64);
     const bytes = new Uint8Array(bin.length);
@@ -32,8 +43,8 @@ function base64ToTexture(name, b64) {
   });
 }
 // 预计算缓存：exportProject 同步读取（异步刷新，调用时机：贴图新建/上传/编辑/删除/重命名后）
-let _texBase64Cache = {};
-async function refreshTexBase64Cache() {
+export let _texBase64Cache = {};
+export async function refreshTexBase64Cache() {
   const c = {};
   for (const [name, t] of Object.entries(state.textures)) {
     try { c[name] = await textureToBase64(t); } catch (e) { /* skip */ }
@@ -42,12 +53,12 @@ async function refreshTexBase64Cache() {
 }
 
 // 颜色是否为默认白色（省略导出）
-function isDefaultColor(c) {
+export function isDefaultColor(c) {
   return !!c && Math.abs(c[0] - 1) < 1e-9 && Math.abs(c[1] - 1) < 1e-9 && Math.abs(c[2] - 1) < 1e-9 && Math.abs(c[3] - 1) < 1e-9;
 }
 
 // UV 参数序列化 / 解析（外部 PNG 贴图只存名，像素存 textures/<name>.png）
-function serializeUV(uv) {
+export function serializeUV(uv) {
   if (!uv) return undefined;
   return {
     texture: uv.texture || null,
@@ -61,7 +72,7 @@ function serializeUV(uv) {
     loop: uv.loop != null ? !!uv.loop : true,
   };
 }
-function parseUV(o) {
+export function parseUV(o) {
   if (!o) return undefined;
   const w = (o.texSize && o.texSize[0]) || 16, h = (o.texSize && o.texSize[1]) || 16;
   return {
@@ -78,7 +89,7 @@ function parseUV(o) {
 }
 
 // 粒子序列化：省略等于默认值的字段，减小工程文件体积（解析侧均有默认回退）
-function serializeParticle(pt) {
+export function serializeParticle(pt) {
   const o = { id: pt.id, pos: roundArr(pt.pos) };
   if (!isDefaultColor(pt.color)) o.c = roundArr(pt.color);
   const s = pt.scale || [1, 1, 1];
@@ -95,14 +106,14 @@ function serializeParticle(pt) {
 }
 
 /* —— 函数对象 序列化 —— */
-function serializeVars(vars) {
+export function serializeVars(vars) {
   const o = {};
   for (const [name, v] of Object.entries(vars || {})) {
     o[name] = { expr: v.expr != null ? String(v.expr) : '0', kf: (v.kf || []).map(k => [k[0], k[1], k[2]]) };
   }
   return o;
 }
-function parseVars(vars) {
+export function parseVars(vars) {
   const o = {};
   for (const [name, v] of Object.entries(vars || {})) {
     if (typeof v === 'string') o[name] = { expr: v, kf: [] }; // 兼容旧格式（纯字符串）
@@ -113,7 +124,7 @@ function parseVars(vars) {
   }
   return o;
 }
-function serializeFunction(fx) {
+export function serializeFunction(fx) {
   const o = {
     id: fx.id, name: fx.name, center: fx.center.slice(), count: fx.count,
     code: fx.code || '',
@@ -128,7 +139,7 @@ function serializeFunction(fx) {
   if (fx.uv && fx.uv.texture) o.uv = serializeUV(fx.uv);
   return o;
 }
-function parseFunction(o) {
+export function parseFunction(o) {
   return {
     id: o.id, name: o.name || '函数对象', center: (o.center || [0, 0, 0]).slice(0, 3), count: o.count || 30,
     code: o.code != null ? String(o.code) : "",
@@ -143,7 +154,7 @@ function parseFunction(o) {
 }
 
 // 导出工程（.pdraw）：独立粒子 + 非派生轨道 + 函数对象定义
-function exportProject() {
+export function exportProject() {
   const p = state.particles.filter(pt => !pt.fx).map(serializeParticle);
   const t = state.tracks.filter(tr => !tr.fx).map(tr => {
     const o = { pr: tr.pr, ids: tr.ids.slice(), kf: tr.kf.map(k => [k[0], r3(k[1]), encodeEasing(k[2])]) };
@@ -172,7 +183,7 @@ function exportProject() {
   return result;
 }
 
-function parseParticlesTracks(obj) {
+export function parseParticlesTracks(obj) {
   state.particles = (obj.p || []).map(pt => {
     let sc;
     if (Array.isArray(pt.sc)) sc = pt.sc.slice(0, 3);
@@ -204,7 +215,7 @@ function parseParticlesTracks(obj) {
   state.loop = !!obj.loop;
 }
 
-function importJSON(obj) {
+export function importJSON(obj) {
   pushUndo();
   parseParticlesTracks(obj);
   state.functions = [];
@@ -219,7 +230,7 @@ function importJSON(obj) {
   setDirty(false);
 }
 
-function importProject(obj) {
+export function importProject(obj) {
   pushUndo();
   parseParticlesTracks(obj);
   state.functions = (obj.f || []).map(parseFunction);
@@ -249,7 +260,7 @@ function importProject(obj) {
   setDirty(false);
 }
 
-function download(json, filename) {
+export function download(json, filename) {
   const blob = new Blob([json], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -259,7 +270,7 @@ function download(json, filename) {
 }
 
 // 从 File 对象载入（文件选择与拖拽打开）
-async function loadFile(file) {
+export async function loadFile(file) {
   const text = await file.text();
   const obj = JSON.parse(text);
   if (file.name.toLowerCase().endsWith('.pdraw') || obj.v >= 2 || obj.f) importProject(obj);
@@ -268,12 +279,12 @@ async function loadFile(file) {
   setDirty(false);
 }
 
-function updateTopbarTitle() {
+export function updateTopbarTitle() {
   const el = document.getElementById('topbar-title');
   if (el) el.textContent = state.name + '.pdraw' + (state.dirty ? ' *' : '');
 }
 
-async function openFile() {
+export async function openFile() {
   if ((await confirmDiscardChanges(t('common.open'))) === 'cancel') return;
   if (window.showOpenFilePicker) {
     try {
@@ -293,7 +304,7 @@ async function openFile() {
 }
 
 
-async function saveFile() {
+export async function saveFile() {
   if (!state.fileHandle || !state.fileHandle.createWritable) {
     await saveFileAs();
     return;
@@ -303,7 +314,7 @@ async function saveFile() {
   await writeProjectText(state.fileHandle, json);
 }
 
-async function writeProjectText(handle, json) {
+export async function writeProjectText(handle, json) {
   try {
     const w = await handle.createWritable();
     await w.write(json); await w.close();
@@ -313,7 +324,7 @@ async function writeProjectText(handle, json) {
   }
 }
 
-async function saveFileAs() {
+export async function saveFileAs() {
   await refreshTexBase64Cache();
   const json = JSON.stringify(exportProject());
   if (window.showSaveFilePicker) {
@@ -334,7 +345,7 @@ async function saveFileAs() {
 }
 
 // 导出动画（.pdraw 供模组 /pdraw play 播放），不改变当前工程 fileHandle
-async function exportAnimation() {
+export async function exportAnimation() {
   await refreshTexBase64Cache();
   const json = JSON.stringify(exportProject());
   if (window.showSaveFilePicker) {
@@ -352,7 +363,7 @@ async function exportAnimation() {
 }
 
 // 新建空白动画
-async function newFile() {
+export async function newFile() {
   const r = await confirmDiscardChanges(t('common.new'));
   if (r === 'cancel') return;
   const name = await modalPrompt(t('newProject.title'), 'my_animation', t('newProject.name'));
@@ -375,7 +386,7 @@ async function newFile() {
 // 若有未保存更改，弹出三键确认（按钮名即操作，不在正文里解释）：
 // 取消 = 中止本次操作；不保存 = 丢弃更改继续；保存并<动作> = 保存后继续。
 // 返回 'cancel' | 'discard' | 'save'。
-async function confirmDiscardChanges(actionLabel) {
+export async function confirmDiscardChanges(actionLabel) {
   if (!state.dirty) return 'discard';
   const r = await buildModal({
     title: t('confirm.unsavedTitle'),

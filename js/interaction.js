@@ -2,25 +2,38 @@
  * 交互：Blender 式操作
  * ======================================================================= */
 
-let drag = null;
-let modal = null;
-let boxSel = null;
-let dragIds = null;
-const lastMouse = { x: 0, y: 0 };
+import * as THREE from 'three';
+import { t } from './i18n.js';
+import { state, getParticle, getFunction, isDerivedParticle, RAD2DEG, ROT_SNAP, PLANES, DEG2RAD, nextGroupName } from './constants.js';
+import { shiftHeld } from './input-state.js';
+import { camera, renderer, raycaster, pointer, points, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, AXIS_RING_COLORS, GIZMO_FACE_DEFS, resetWorldAxisState, focalLengthPx } from './scene.js';
+import { currentVisual, rebuildPoints, setPreview, clearPreview, rotVectorAt, trackValueAt, findTrackByPr } from './animation.js';
+import { screenToNdc, planePointAt, worldToUV, computeShapePositions, snapGrid, snapValue, pickParticleAt, particleAt, projectToScreen, distToSegment, planeInfo, selectionCentroid } from './gizmo.js';
+import { groupCurrentCentroid, groupCentroidValue, deleteGroup, refreshParticleTree } from './tree.js';
+import { setFunctionTrackValue, setGroupTrackValue, editParticles, addParticle, autoGroup, removeGroupAndTracks } from './edit.js';
+import { pushUndo, restore, undoStack, undo, redo } from './undo.js';
+import { deleteFunctionObject } from './generators.js';
+import { texUndo, texRedo, texActive } from './texture-editor.js';
+import { togglePlay } from './main.js';
 
-function currentSelected() { return state.particles.filter(p => state.selected.has(p.id)); }
+export let drag = null;
+export let modal = null;
+export let boxSel = null;
+export const lastMouse = { x: 0, y: 0 };
 
-function selectedGroupName() {
+export function currentSelected() { return state.particles.filter(p => state.selected.has(p.id)); }
+
+export function selectedGroupName() {
   return state.selectedGroup && state.groups[state.selectedGroup] ? state.selectedGroup : null;
 }
 
 // 当前是否有任何选中（粒子 / 组 / 函数对象）
-function hasSelection() {
+export function hasSelection() {
   return state.selected.size > 0 || state.selectedGroup != null || state.selectedFunction != null;
 }
 
 // 当前选中成员的粒子 id 数组（组/函数对象展开为其成员，否则为已选粒子）
-function selectedMemberIds() {
+export function selectedMemberIds() {
   if (state.selectedFunction) return state.particles.filter(p => p.fx === state.selectedFunction).map(p => p.id);
   const g = selectedGroupName();
   if (g) return state.groups[g] || [];
@@ -28,13 +41,13 @@ function selectedMemberIds() {
 }
 
 // 当前选中是否包含派生粒子（基础属性只读）
-function selectionHasDerived() {
+export function selectionHasDerived() {
   for (const id of state.selected) { const p = getParticle(id); if (isDerivedParticle(p)) return true; }
   return false;
 }
 
 // 从当前选中的派生粒子中推断所属函数对象 id（多个派生粒子必须属于同一函数对象）
-function derivedFxIdFromSelection() {
+export function derivedFxIdFromSelection() {
   let fxId = null;
   for (const id of state.selected) {
     const p = getParticle(id);
@@ -46,7 +59,7 @@ function derivedFxIdFromSelection() {
   return fxId;
 }
 
-function rotateVector(v, axis, angle) {
+export function rotateVector(v, axis, angle) {
   const c = Math.cos(angle), s = Math.sin(angle);
   const dot = v[0] * axis[0] + v[1] * axis[1] + v[2] * axis[2];
   return [
@@ -56,7 +69,7 @@ function rotateVector(v, axis, angle) {
   ];
 }
 
-function enterGrab(clientX, clientY, axis, face) {
+export function enterGrab(clientX, clientY, axis, face) {
   const fx = getFunction(state.selectedFunction);
   if (fx) {
     pushUndo();
@@ -94,7 +107,7 @@ function enterGrab(clientX, clientY, axis, face) {
   controls.enabled = false;
 }
 
-function enterScale(clientX) {
+export function enterScale(clientX) {
   const fx = getFunction(state.selectedFunction);
   if (fx) {
     pushUndo();
@@ -125,11 +138,11 @@ function enterScale(clientX) {
   controls.enabled = false;
 }
 
-const AXIS_VECTORS = { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1] };
-const AXIS_INDEX = { X: 0, Y: 1, Z: 2 };
+export const AXIS_VECTORS = { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1] };
+export const AXIS_INDEX = { X: 0, Y: 1, Z: 2 };
 
 // 将鼠标射线与「过质心、法线为旋转轴」的平面求交，返回交点（世界坐标）
-function rayOnAxisPlane(clientX, clientY, axisVec, centroid) {
+export function rayOnAxisPlane(clientX, clientY, axisVec, centroid) {
   screenToNdc(clientX, clientY);
   raycaster.setFromCamera(pointer, camera);
   const normal = new THREE.Vector3(axisVec[0], axisVec[1], axisVec[2]);
@@ -139,42 +152,42 @@ function rayOnAxisPlane(clientX, clientY, axisVec, centroid) {
   return raycaster.ray.intersectPlane(plane, hit) ? hit : null;
 }
 
-function angleInBasis(point, centroid, u, v) {
+export function angleInBasis(point, centroid, u, v) {
   const rel = point.clone().sub(new THREE.Vector3(centroid[0], centroid[1], centroid[2]));
   return Math.atan2(rel.dot(v), rel.dot(u));
 }
 
-function groupRotationValueAt(gname, T) { return rotVectorAt('g:' + gname, T); }
+export function groupRotationValueAt(gname, T) { return rotVectorAt('g:' + gname, T); }
 
-function groupPosDeltaAt(gname, T) {
+export function groupPosDeltaAt(gname, T) {
   return ['x', 'y', 'z'].map(c => {
     const tr = findTrackByPr('pos.' + c, 'g:' + gname);
     return (tr && tr.m === 'op' && tr.kf.length > 0) ? trackValueAt(tr, T, 0) : 0;
   });
 }
 
-function fxPosDeltaAt(fxId, T) {
+export function fxPosDeltaAt(fxId, T) {
   return ['x', 'y', 'z'].map(c => {
     const tr = findTrackByPr('pos.' + c, 'f:' + fxId);
     return (tr && tr.m === 'op' && tr.kf.length > 0) ? trackValueAt(tr, T, 0) : 0;
   });
 }
 
-function fxRotationValueAt(fxId, T) { return rotVectorAt('f:' + fxId, T); }
+export function fxRotationValueAt(fxId, T) { return rotVectorAt('f:' + fxId, T); }
 
-function fxScaleValueAt(fxId, T) {
+export function fxScaleValueAt(fxId, T) {
   const tr = findTrackByPr('scl.x', 'f:' + fxId);
   return (tr && tr.kf.length > 0) ? trackValueAt(tr, T, 1) : 1;
 }
 
-function fxScaleValuesAt(fxId, T) {
+export function fxScaleValuesAt(fxId, T) {
   return ['x', 'y', 'z'].map(c => {
     const tr = findTrackByPr('scl.' + c, 'f:' + fxId);
     return (tr && tr.kf.length > 0) ? trackValueAt(tr, T, 1) : 1;
   });
 }
 
-function enterRotate(clientX, clientY, axis) {
+export function enterRotate(clientX, clientY, axis) {
   const fx = getFunction(state.selectedFunction);
   if (fx) {
     pushUndo();
@@ -240,14 +253,14 @@ function enterRotate(clientX, clientY, axis) {
 
 /* ---------------- 视图旋转（外部白色圆环：绕视线方向旋转） ---------------- */
 
-function viewAxisOf(c) {
+export function viewAxisOf(c) {
   // 视线轴：从选中对象指向摄像头（摄像头相对于选中对象的轴），白圈绕该轴旋转
   const v = [camera.position.x - c[0], camera.position.y - c[1], camera.position.z - c[2]];
   const len = Math.hypot(v[0], v[1], v[2]) || 1;
   return [v[0] / len, v[1] / len, v[2] / len];
 }
 
-function screenAngleAt(clientX, clientY, centroid) {
+export function screenAngleAt(clientX, clientY, centroid) {
   const s = projectToScreen(centroid[0], centroid[1], centroid[2]);
   const rect = renderer.domElement.getBoundingClientRect();
   // 统一到画布本地坐标（projectToScreen 返回相对 rect 的坐标，client 是页面坐标）
@@ -257,7 +270,7 @@ function screenAngleAt(clientX, clientY, centroid) {
 // 绕世界轴 axis（单位向量）旋转 angle（弧度），复合到 startRot（度）。
 // 使用四元数增量累积，避免欧拉 gimbal lock 导致 Y=90° 附近值跳变。
 // rot 轨道为 extrinsic XYZ（先绕 X、再绕 Y、再绕 Z，等价 THREE.Euler 'ZYX'）。
-function applyWorldRotation(startRot, axis, angle) {
+export function applyWorldRotation(startRot, axis, angle) {
   const qBase = new THREE.Quaternion().setFromEuler(
     new THREE.Euler(startRot[0] * DEG2RAD, startRot[1] * DEG2RAD, startRot[2] * DEG2RAD, 'ZYX'));
   const qDelta = new THREE.Quaternion().setFromAxisAngle(
@@ -270,7 +283,7 @@ function applyWorldRotation(startRot, axis, angle) {
 // 从四元数中提取 Euler，被拖拽的轴使用用户的累积角度（无 ±90° 限幅）。
 // 其余两轴从旋转矩阵的独立列用 atan2 提取（对 Y=90° 万向锁免疫）。
 // dragAxisIdx: 0=X, 1=Y, 2=Z; -1=不用替换（视图旋转）。
-function eulerFromQuatDragAxis(q, dragAxisIdx, cumAngle) {
+export function eulerFromQuatDragAxis(q, dragAxisIdx, cumAngle) {
   const me = new THREE.Matrix4().makeRotationFromQuaternion(q).elements;
   // atan2 从矩阵独立列提取，不依赖 cos(Y) ≠ 0（无万向锁分支）
   const x = Math.atan2(me[9], me[10]) * RAD2DEG;     // atan2(R21, R22)
@@ -283,7 +296,7 @@ function eulerFromQuatDragAxis(q, dragAxisIdx, cumAngle) {
 
 // 增量四元数累乘 + 被拖拽轴用累积角度。
 // modal.curQuat: 四元数, modal.cumAngle: 累积角度(弧度), modal.dragAxisIdx: 轴索引。
-function applyWorldRotationQ(modal, axis, dAngle) {
+export function applyWorldRotationQ(modal, axis, dAngle) {
   const qDelta = new THREE.Quaternion().setFromAxisAngle(
     new THREE.Vector3(axis[0], axis[1], axis[2]), dAngle);
   // 世界轴旋转：delta 在左侧乘 → curQuat = qDelta * curQuat
@@ -293,7 +306,7 @@ function applyWorldRotationQ(modal, axis, dAngle) {
   return eulerFromQuatDragAxis(modal.curQuat, modal.dragAxisIdx, modal.cumAngle);
 }
 
-function enterViewRotate(clientX, clientY) {
+export function enterViewRotate(clientX, clientY) {
   const fx = getFunction(state.selectedFunction);
   if (fx) {
     pushUndo();
@@ -333,7 +346,7 @@ function enterViewRotate(clientX, clientY) {
   controls.enabled = false;
 }
 
-function updateViewRotate(clientX, clientY) {
+export function updateViewRotate(clientX, clientY) {
   const m = modal;
   if (!m) return;
   // Blender trackball：增量累加角度，处理 atan2 的 ±π 跳变，支持连续多圈旋转
@@ -367,7 +380,7 @@ function updateViewRotate(clientX, clientY) {
   editParticles(entries, 'pos');
 }
 
-function cancelModal() {
+export function cancelModal() {
   if (!modal) return;
   modal = null;
   controls.enabled = true;
@@ -377,7 +390,7 @@ function cancelModal() {
   setGizmoHover(null, null, null, false); // 恢复拖拽高亮为基色
 }
 
-function confirmModal() {
+export function confirmModal() {
   modal = null;
   controls.enabled = true;
   resetWorldAxisState();
@@ -386,14 +399,14 @@ function confirmModal() {
 }
 
 // 面移动器：面法线方向 + 面内两轴
-const FACE_PLANES = {
+export const FACE_PLANES = {
   XY: { dir: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] },
   XZ: { dir: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1] },
   YZ: { dir: [1, 0, 0], u: [0, 1, 0], v: [0, 0, 1] },
 };
 
 // 按 modal 计算世界位移 delta（x/y/z），面移动器 / XZ 轴 / Y 轴 共用
-function grabDelta(clientX, clientY, m) {
+export function grabDelta(clientX, clientY, m) {
   if (m.face) {
     // 面移动器：在「过质心、法线=面法线」的平面上求交，取面内两轴的位移
     const def = FACE_PLANES[m.face];
@@ -429,7 +442,7 @@ function grabDelta(clientX, clientY, m) {
   return [dx, 0, dz];
 }
 
-function updateGrab(clientX, clientY) {
+export function updateGrab(clientX, clientY) {
   const m = modal;
   if (!m || (m.type !== 'grab' && m.type !== 'fx-grab')) return;
   const fxMode = m.type === 'fx-grab';
@@ -462,7 +475,7 @@ function updateGrab(clientX, clientY) {
   }
 }
 
-function updateScale(clientX) {
+export function updateScale(clientX) {
   const m = modal;
   if (!m || (m.type !== 'scale' && m.type !== 'fx-scale')) return;
   const factor = Math.max(0.02, 1 + (clientX - m.startClient.x) * 0.01);
@@ -481,7 +494,7 @@ function updateScale(clientX) {
   editParticles([...m.origins].map(([id, orig]) => [id, [orig[0] * factor, orig[1] * factor, orig[2] * factor]]), 'scl');
 }
 
-function updateRotate(clientX, clientY) {
+export function updateRotate(clientX, clientY) {
   const m = modal;
   if (!m || (m.type !== 'rotate' && m.type !== 'group-rotate' && m.type !== 'fx-rotate')) return;
   const p1 = rayOnAxisPlane(clientX, clientY, m.axis, m.centroid);
@@ -521,7 +534,7 @@ function updateRotate(clientX, clientY) {
   editParticles(entries, 'pos');
 }
 
-function deleteSelected() {
+export function deleteSelected() {
   // 函数对象优先：直接删除整个函数对象及其派生粒子
   if (state.selectedFunction) {
     deleteFunctionObject(state.selectedFunction);
@@ -551,7 +564,7 @@ function deleteSelected() {
   refreshParticleTree();
 }
 
-function selectAll() {
+export function selectAll() {
   if (state.selected.size === state.particles.length && state.particles.length > 0) state.selected.clear();
   else state.selected = new Set(state.particles.map(p => p.id));
   state.selectedGroup = null;
@@ -559,8 +572,8 @@ function selectAll() {
   rebuildPoints();
 }
 
-let clipboard = null;
-function copySelected() {
+export let clipboard = null;
+export function copySelected() {
   const gname = selectedGroupName();
   if (gname) {
     const members = (state.groups[gname] || []).map(getParticle).filter(Boolean);
@@ -586,7 +599,7 @@ function copySelected() {
     })),
   };
 }
-function pasteClipboard() {
+export function pasteClipboard() {
   if (!clipboard || !clipboard.items || clipboard.items.length === 0) return;
   pushUndo();
   const idMap = {};
@@ -620,14 +633,14 @@ function pasteClipboard() {
   refreshParticleTree();
 }
 
-function raycastGizmoMeshes(clientX, clientY, meshes) {
+export function raycastGizmoMeshes(clientX, clientY, meshes) {
   if (!meshes || meshes.length === 0) return [];
   screenToNdc(clientX, clientY);
   raycaster.setFromCamera(pointer, camera);
   return raycaster.intersectObjects(meshes, false);
 }
 
-function hitGizmoAxis(clientX, clientY) {
+export function hitGizmoAxis(clientX, clientY) {
   if (!gizmoGroup.visible) return null;
   // 使用 gizmo 实际显示位置（函数对象在 center，粒子/组在质心），与 updateGizmo 一致
   const c = [gizmoGroup.position.x, gizmoGroup.position.y, gizmoGroup.position.z];
@@ -644,7 +657,7 @@ function hitGizmoAxis(clientX, clientY) {
 }
 
 // 鼠标到轴环的最小距离 + 命中的轴（null 表示未命中）
-function ringHitInfo(clientX, clientY) {
+export function ringHitInfo(clientX, clientY) {
   if (!gizmoGroup.visible) return null;
   const c = [gizmoGroup.position.x, gizmoGroup.position.y, gizmoGroup.position.z];
   const rect = renderer.domElement.getBoundingClientRect();
@@ -666,13 +679,13 @@ function ringHitInfo(clientX, clientY) {
 }
 
 // 命中旋转控制器的轴圆环（仅返回轴）
-function hitGizmoRotate(clientX, clientY) {
+export function hitGizmoRotate(clientX, clientY) {
   const info = ringHitInfo(clientX, clientY);
   return info && info.dist < 15 ? info.axis : null;
 }
 
 // 命中面移动器（三轴之间的矩形）
-function hitGizmoFace(clientX, clientY) {
+export function hitGizmoFace(clientX, clientY) {
   if (!gizmoGroup.visible) return null;
   const targets = Object.values(gizmoFaces).filter(f => f.visible);
   if (targets.length === 0) return null;
@@ -681,7 +694,7 @@ function hitGizmoFace(clientX, clientY) {
 }
 
 // 鼠标到白圈投影圆的距离（Infinity 表示未命中）
-function viewRingDistance(clientX, clientY) {
+export function viewRingDistance(clientX, clientY) {
   if (!gizmoGroup.visible || !gizmoViewRing.visible) return Infinity;
   const c = gizmoGroup.position;
   const rect = renderer.domElement.getBoundingClientRect();
@@ -697,14 +710,14 @@ function viewRingDistance(clientX, clientY) {
 }
 
 // 命中外部白色视图环
-function hitGizmoViewRing(clientX, clientY) {
+export function hitGizmoViewRing(clientX, clientY) {
   return viewRingDistance(clientX, clientY) < 15;
 }
 
-const AXIS_COLORS = { X: 0xff5555, Y: 0x55ff55, Z: 0x5588ff };
+export const AXIS_COLORS = { X: 0xff5555, Y: 0x55ff55, Z: 0x5588ff };
 // 悬停时变亮，使用白色 30% 混合
-function hoverColor(c) { return new THREE.Color(c).lerp(new THREE.Color(1, 1, 1), 0.3); }
-function setGizmoHover(arrowAxis, ringAxis, faceKey, viewRingHover) {
+export function hoverColor(c) { return new THREE.Color(c).lerp(new THREE.Color(1, 1, 1), 0.3); }
+export function setGizmoHover(arrowAxis, ringAxis, faceKey, viewRingHover) {
   if (!gizmoGroup.visible) return;
   for (const ax of ['X', 'Y', 'Z']) {
     const col = ringAxis === ax ? hoverColor(AXIS_RING_COLORS[ax]) : AXIS_RING_COLORS[ax];
@@ -723,7 +736,7 @@ function setGizmoHover(arrowAxis, ringAxis, faceKey, viewRingHover) {
 }
 
 // 拖拽时：底部世界三轴中对应的轴显示并高亮（Y 轴默认隐藏，操作 Y 时才显示）
-function setDragAxisHighlight(m) {
+export function setDragAxisHighlight(m) {
   // 操作轴提示线由 updateGizmoFrame 在中心显示
   resetWorldAxisState();
 }
@@ -948,7 +961,7 @@ window.addEventListener('keydown', (ev) => {
   else if (k === 'escape') { state.selected.clear(); state.selectedGroup = null; state.selectedFunction = null; rebuildPoints(); }
 });
 
-function updateBoxOverlay() {
+export function updateBoxOverlay() {
   const ov = document.getElementById('box-overlay');
   const rect = renderer.domElement.getBoundingClientRect();
   const x = Math.min(boxSel.x0, boxSel.x1) - rect.left;
@@ -959,7 +972,7 @@ function updateBoxOverlay() {
 }
 
 // 选中集合恰好等于某组全部成员时，自动提升为选中该组
-function promoteGroupSelection() {
+export function promoteGroupSelection() {
   for (const [gname, members] of Object.entries(state.groups)) {
     if (members.length === 0) continue;
     if (state.selected.size === members.length && members.every(id => state.selected.has(id))) {
@@ -972,7 +985,7 @@ function promoteGroupSelection() {
 }
 
 // 按优先级解析选中：函数对象 > 组 > 单个粒子
-function resolveSelectionPriority() {
+export function resolveSelectionPriority() {
   state.selectedFunction = null;
   state.selectedGroup = null;
   // 1. 函数对象：选中集合覆盖某函数对象的全部派生粒子 → 选中该函数对象
@@ -987,7 +1000,7 @@ function resolveSelectionPriority() {
   promoteGroupSelection();
 }
 
-function applyBoxSelection() {
+export function applyBoxSelection() {
   const rect = renderer.domElement.getBoundingClientRect();
   const x0 = Math.min(boxSel.x0, boxSel.x1) - rect.left, y0 = Math.min(boxSel.y0, boxSel.y1) - rect.top;
   const x1 = Math.max(boxSel.x0, boxSel.x1) - rect.left, y1 = Math.max(boxSel.y0, boxSel.y1) - rect.top;
@@ -1007,22 +1020,22 @@ function applyBoxSelection() {
  * 绘制粒子数量交互：右键短按弹编辑框 + range，拖动时滚轮增减数量
  * ======================================================================= */
 
-const DRAW_TOOLS = ['pencil', 'line', 'circle', 'rect', 'freehand'];
-const DRAW_COUNT_MAX = 1000;
+export const DRAW_TOOLS = ['pencil', 'line', 'circle', 'rect', 'freehand'];
+export const DRAW_COUNT_MAX = 1000;
 
-function isDrawTool() { return DRAW_TOOLS.includes(state.tool); }
+export function isDrawTool() { return DRAW_TOOLS.includes(state.tool); }
 
-let rightDownPos = null;
-let drawCountEditor = null;
-let drawCountDismiss = null; // document pointerdown 关闭监听器
+export let rightDownPos = null;
+export let drawCountEditor = null;
+export let drawCountDismiss = null; // document pointerdown 关闭监听器
 
-function closeDrawCountEditor() {
+export function closeDrawCountEditor() {
   if (drawCountDismiss) { document.removeEventListener('pointerdown', drawCountDismiss); drawCountDismiss = null; }
   if (drawCountEditor) { drawCountEditor.remove(); drawCountEditor = null; }
 }
 
 // 右键短按：悬浮粒子数量编辑框 + range 编辑条
-function showDrawCountEditor(cx, cy) {
+export function showDrawCountEditor(cx, cy) {
   closeDrawCountEditor();
   const box = document.createElement('div');
   box.className = 'draw-count-editor';
@@ -1050,7 +1063,7 @@ function showDrawCountEditor(cx, cy) {
   // 延迟注册，避免本次右键 pointerup 事件立即触发关闭
   setTimeout(() => document.addEventListener('pointerdown', drawCountDismiss), 0);
 }
-function clampCount(v) { return Math.max(2, Math.min(DRAW_COUNT_MAX, Math.round(parseInt(v) || 30))); }
+export function clampCount(v) { return Math.max(2, Math.min(DRAW_COUNT_MAX, Math.round(parseInt(v) || 30))); }
 
 renderer.domElement.addEventListener('pointerdown', (ev) => {
   if (ev.button === 2) rightDownPos = { x: ev.clientX, y: ev.clientY };
@@ -1079,7 +1092,7 @@ renderer.domElement.addEventListener('wheel', (ev) => {
   }
 }, { passive: true });
 
-function syncDrawCountEditorValues() {
+export function syncDrawCountEditorValues() {
   if (!drawCountEditor) return;
   const inputs = drawCountEditor.querySelectorAll('input');
   if (inputs.length === 2) { inputs[0].value = state.drawCount; inputs[1].value = state.drawCount; }

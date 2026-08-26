@@ -7,7 +7,10 @@
  *   4) 纯标量代码块的 native Function 快速路径（tryCompileFunction）
  * ======================================================================= */
 
-function cubicBezier(t, x1, y1, x2, y2) {
+
+import { _et, _etf } from './i18n.js';
+import { EASINGS } from './constants.js';
+export function cubicBezier(t, x1, y1, x2, y2) {
   if (x1 === y1 && x2 === y2) return t; // 对角贝塞尔（含 LINEAR）即线性，避免牛顿迭代浮点误差
   const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx;
   const cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
@@ -18,9 +21,9 @@ function cubicBezier(t, x1, y1, x2, y2) {
   return ((ay * s + by) * s + cy) * s;
 }
 
-const EASE_CACHE_Q = 1000; // t 量化精度（1/1000，视觉无感，用于缓存去重）
-const easeCache = [];     // easing → 长度 EASE_CACHE_Q+1 的数组，惰性分配
-function easeVal(t, easing) {
+export const EASE_CACHE_Q = 1000; // t 量化精度（1/1000，视觉无感，用于缓存去重）
+export const easeCache = [];     // easing → 长度 EASE_CACHE_Q+1 的数组，惰性分配
+export function easeVal(t, easing) {
   const t1 = t < 0 ? 0 : (t > 1 ? 1 : t);
   if (Array.isArray(easing)) return cubicBezier(t1, easing[0], easing[1], easing[2], easing[3]);
   const p = EASINGS[easing] || EASINGS[0];
@@ -34,19 +37,19 @@ function easeVal(t, easing) {
   return v;
 }
 
-function easeInOut(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
+export function easeInOut(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
 
 /* =========================================================================
  * 迷你表达式求值器（标量 / 向量 vec3 / 矩阵 mat3）
  * ======================================================================= */
 
 // —— 值类型标记 ——
-function isVec(v) { return v != null && v.__v === 3; }
-function isMat(v) { return v != null && v.__m === 3; }
-function vec3(x, y, z) { return { __v: 3, x, y, z }; }
-function mat3(m) { return { __m: 3, m }; }
+export function isVec(v) { return v != null && v.__v === 3; }
+export function isMat(v) { return v != null && v.__m === 3; }
+export function vec3(x, y, z) { return { __v: 3, x, y, z }; }
+export function mat3(m) { return { __m: 3, m }; }
 
-const FUNCS = {
+export const FUNCS = {
   sin: 1, cos: 1, tan: 1, asin: 1, acos: 1, atan: 1, atan2: 2,
   sqrt: 1, abs: 1, sign: 1, exp: 1, log: 1, ln: 1,
   floor: 1, ceil: 1, round: 1, fract: 1, pow: 2, min: 2, max: 2, clamp: 3, lerp: 3, step: 2, smoothstep: 3, mod: 2, random: 0, rand: 1,
@@ -54,7 +57,7 @@ const FUNCS = {
   rotX: 1, rotY: 1, rotZ: 1, rotAxis: 2,
   polar: 2, sphere: 3, torus: 4,
 };
-const FUNC_IMPL = {
+export const FUNC_IMPL = {
   sin: a => Math.sin(a), cos: a => Math.cos(a), tan: a => Math.tan(a),
   asin: a => Math.asin(a), acos: a => Math.acos(a), atan: a => Math.atan(a), atan2: (a, b) => Math.atan2(a, b),
   sqrt: a => Math.sqrt(a), abs: a => Math.abs(a), sign: a => Math.sign(a), exp: a => Math.exp(a),
@@ -89,10 +92,10 @@ const FUNC_IMPL = {
   sphere: (r, th, ph) => vec3(r * Math.sin(th) * Math.cos(ph), r * Math.cos(th), r * Math.sin(th) * Math.sin(ph)),
   torus: (R, r, th, ph) => vec3((R + r * Math.cos(th)) * Math.cos(ph), r * Math.sin(th), (R + r * Math.cos(th)) * Math.sin(ph)),
 };
-const PREC = { '+': 1, '-': 1, '*': 2, '/': 2, '%': 2, '^': 3 };
-const NEG_PREC = 2.5; // 一元负号优先级：高于 * / %，低于 ^（-2^2 = -(2^2)）
+export const PREC = { '+': 1, '-': 1, '*': 2, '/': 2, '%': 2, '^': 3 };
+export const NEG_PREC = 2.5; // 一元负号优先级：高于 * / %，低于 ^（-2^2 = -(2^2)）
 
-function matVec(M, v) {
+export function matVec(M, v) {
   const m = M.m;
   return vec3(
     m[0][0] * v.x + m[0][1] * v.y + m[0][2] * v.z,
@@ -100,20 +103,20 @@ function matVec(M, v) {
     m[2][0] * v.x + m[2][1] * v.y + m[2][2] * v.z,
   );
 }
-function matMat(A, B) {
+export function matMat(A, B) {
   const a = A.m, b = B.m, o = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
   for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) for (let k = 0; k < 3; k++) o[i][j] += a[i][k] * b[k][j];
   return mat3(o);
 }
 
-function negate(v) {
+export function negate(v) {
   if (typeof v === 'number') return -v;
   if (isVec(v)) return vec3(-v.x, -v.y, -v.z);
   if (isMat(v)) return mat3(v.m.map(r => r.map(c => -c)));
   throw new Error(_et('err.negType'));
 }
 
-function applyOp(op, a, b) {
+export function applyOp(op, a, b) {
   if (op === '+') {
     if (isVec(a) && isVec(b)) return vec3(a.x + b.x, a.y + b.y, a.z + b.z);
     if (isMat(a) && isMat(b)) return mat3(a.m.map((r, i) => r.map((c, j) => c + b.m[i][j])));
@@ -159,7 +162,7 @@ function applyOp(op, a, b) {
   throw new Error(_etf('err.unknownOp', op));
 }
 
-function tokenize(expr) {
+export function tokenize(expr) {
   const tokens = [];
   let i = 0;
   let expectOperand = true; // 一元负号判定：期望操作数时遇到的 - 是负号
@@ -193,11 +196,11 @@ function tokenize(expr) {
 // 编辑器预览拿不到真实世界数据，统一 stub 让带 getter 的公式结构可正常预览。
 // get_entity_pos 整取替换为 vec(0,0,0)（unpack 三分量赋值与 .x 分量访问都成立）；
 // 其余 getter 替换为标量 0。与 Kotlin 端 GetterRewriter 语义对应。
-const GETTER_POS_RE = /\bget_entity_pos\s*\(\s*[^()]*?\s*\)/g;
-const GETTER_CALL_RE = /\b(?:get_entity|get_world)_[a-z_]+\s*\(\s*[^()]*?\s*\)/g;
+export const GETTER_POS_RE = /\bget_entity_pos\s*\(\s*[^()]*?\s*\)/g;
+export const GETTER_CALL_RE = /\b(?:get_entity|get_world)_[a-z_]+\s*\(\s*[^()]*?\s*\)/g;
 
 // 编译表达式 → RPN 指令数组（变量保留为 {t:'var',name} 符号，求值期查表，供高频求值复用）
-function compileExpr(expr) {
+export function compileExpr(expr) {
   if (expr.indexOf('get_') !== -1) {
     expr = expr.replace(GETTER_POS_RE, 'vec(0,0,0)').replace(GETTER_CALL_RE, '0');
   }
@@ -242,7 +245,7 @@ function compileExpr(expr) {
 }
 
 // 执行 RPN（compileExpr 输出），vars 为变量查表（对象或函数）
-function execRpn(output, vars) {
+export function execRpn(output, vars) {
   const isFn = typeof vars === 'function';
   const s = [];
   for (let i = 0; i < output.length; i++) {
@@ -278,7 +281,7 @@ function execRpn(output, vars) {
   return s[s.length - 1];
 }
 
-function evaluate(expr, vars) {
+export function evaluate(expr, vars) {
   return execRpn(compileExpr(expr), vars);
 }
 
@@ -287,10 +290,10 @@ function evaluate(expr, vars) {
  * ======================================================================= */
 
 // 属性保留字（vars 与临时变量不可同名）
-const ATTR_NAMES = ['x', 'y', 'z', 'r', 'g', 'b', 'a', 'vx', 'vy', 'vz', 'sc', 'glow', 'light'];
+export const ATTR_NAMES = ['x', 'y', 'z', 'r', 'g', 'b', 'a', 'vx', 'vy', 'vz', 'sc', 'glow', 'light'];
 
 // 变量关键帧插值（kf: [tick, value, easing]，value 为标量）
-function varKfValue(kf, t) {
+export function varKfValue(kf, t) {
   if (!kf || kf.length === 0) return 0;
   if (t <= kf[0][0]) return kf[0][1];
   if (t >= kf[kf.length - 1][0]) return kf[kf.length - 1][1];
@@ -305,13 +308,13 @@ function varKfValue(kf, t) {
 }
 
 // 解析名称列表 [x,y,z] → ['x','y','z']
-function parseNameList(s) {
+export function parseNameList(s) {
   const inner = s.trim().replace(/^\[/, '').replace(/\]$/, '');
   return inner.split(',').map(x => x.trim()).filter(Boolean);
 }
 
 // 解析表达式列表 [e1,e2,e3] → ['e1','e2','e3']（跳过括号内逗号）
-function parseExprList(s) {
+export function parseExprList(s) {
   const inner = s.trim();
   if (!inner.startsWith('[') || !inner.endsWith(']')) return [inner];
   const body = inner.slice(1, -1);
@@ -329,7 +332,7 @@ function parseExprList(s) {
 }
 
 // 给属性赋值；返回 true 表示是属性名，false 表示非属性（临时变量）
-function assignAttr(name, v, out, scope) {
+export function assignAttr(name, v, out, scope) {
   const val = (typeof v === 'number') ? v : (() => { throw new Error(_etf('err.propScalar', name)); })();
   switch (name) {
     case 'x': out.pos[0] = val; scope.x = val; break;
@@ -351,7 +354,7 @@ function assignAttr(name, v, out, scope) {
 }
 
 // 编译公式代码块 → 语句数组（赋值目标 + RHS 的 RPN 已预编译，供高频求值复用）
-function compileFunctionCode(code) {
+export function compileFunctionCode(code) {
   const stmts = [];
   for (const stmt of (code || '').split(';').map(s => s.trim()).filter(Boolean)) {
     const eq = stmt.indexOf('=');
@@ -375,7 +378,7 @@ function compileFunctionCode(code) {
 }
 
 // 执行编译后的公式代码块（compileFunctionCode 输出），返回 { pos, color, vel, scale, glow, light }
-function execFunctionCode(compiled, env) {
+export function execFunctionCode(compiled, env) {
   const out = { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0 };
   const scope = { ...env };
   for (let si = 0; si < compiled.length; si++) {
@@ -411,7 +414,7 @@ function execFunctionCode(compiled, env) {
 
 // 标量函数 → JS 表达式生成器（参数已生成好的表达式字符串数组），全部内联为 Math/原生表达式，
 // 避免 new Function 生成代码依赖 eval 作用域里的外部符号。
-const SCALAR_FUNC_GEN = {
+export const SCALAR_FUNC_GEN = {
   sin: a => 'Math.sin(' + a[0] + ')', cos: a => 'Math.cos(' + a[0] + ')', tan: a => 'Math.tan(' + a[0] + ')',
   asin: a => 'Math.asin(' + a[0] + ')', acos: a => 'Math.acos(' + a[0] + ')', atan: a => 'Math.atan(' + a[0] + ')',
   atan2: a => 'Math.atan2(' + a[0] + ',' + a[1] + ')', sqrt: a => 'Math.sqrt(' + a[0] + ')', abs: a => 'Math.abs(' + a[0] + ')',
@@ -428,7 +431,7 @@ const SCALAR_FUNC_GEN = {
   rand: a => '(function(x){x=Math.sin(x*127.1+311.7)*43758.5453;return x-Math.floor(x);})(' + a[0] + ')',
 };
 
-function isScalarRpn(output) {
+export function isScalarRpn(output) {
   for (const o of output) {
     if (typeof o === 'string') {
       if (o !== 'neg' && FUNCS[o] !== undefined && !SCALAR_FUNC_GEN[o]) return false; // vec/mat 函数
@@ -438,7 +441,7 @@ function isScalarRpn(output) {
 }
 
 // RPN → JS 表达式字符串（变量名直接作为参数/局部变量引用，见 tryCompileFunction 的函数签名）
-function rpnToJs(output) {
+export function rpnToJs(output) {
   const s = [];
   for (const o of output) {
     const to = typeof o;
@@ -464,7 +467,7 @@ function rpnToJs(output) {
 
 // 尝试把代码块编译为原生 JS 函数；失败（含向量/矩阵/拆包）返回 null
 // 函数签名：function(i, n, t, cx, cy, cz, ...varNames)
-function tryCompileFunction(code, varNames) {
+export function tryCompileFunction(code, varNames) {
   let compiled;
   try { compiled = compileFunctionCode(code); }
   catch (e) { return null; }

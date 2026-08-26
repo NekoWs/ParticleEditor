@@ -3,41 +3,53 @@
  * 依赖 blocks.js、float-window.js、easing.js、constants.js、undo.js、panels.js、generators.js
  * ======================================================================= */
 
-/* —— 类型 → 标签（i18n 键 blk.type.*） —— */
-const TYPE_LABEL = { scalar: 'blk.type.scalar', vec: 'blk.type.vec', mat: 'blk.type.mat', any: 'blk.type.any' };
+
+import { t, tf, _etf } from './i18n.js';
+import { state, getFunction, isDerivedParticle } from './constants.js';
+import { ATTR_NAMES } from './easing.js';
+import { T_SCALAR, T_VEC, T_MAT, T_ANY, FUNC_BLOCKS, STMT_BLOCKS, PALETTE_GROUPS, OP_SYMBOLS, OP_LABELS, collectTemps, codeToStatements, statementsToCode, parseVarExpr, varExprToCode, exprType, typeAccepts, fmtNum } from './blocks.js';
+import { makeFloatWindow } from './float-window.js';
+import { pushUndo, cloneVars } from './undo.js';
+import { commitFunctionRebuild } from './panels.js';
+import { refreshFunctionPanel, drawTimeline } from './panels.js';
+import { refreshParticleTree } from './tree.js';
+import { rebuildPoints } from './animation.js';
+import { gizmoGroup } from './scene.js';
+import { resize } from './main.js';
+export const TYPE_LABEL = { scalar: 'blk.type.scalar', vec: 'blk.type.vec', mat: 'blk.type.mat', any: 'blk.type.any' };
 /* —— 积木类别配色 —— */
-const GROUP_COLOR = {
+export const GROUP_COLOR = {
   pos: 'blk-pos', color: 'blk-color', appearance: 'blk-appearance',
   math: 'blk-math', vec: 'blk-vec', mat: 'blk-mat', var: 'blk-var', const: 'blk-const',
 };
 
 /* —— 语句块槽规格（ASCII 名原样显示；中文语义槽用 i18n 键 blk.slot.*） —— */
-const STMT_SLOTS = {
+export const STMT_SLOTS = {
   pos: [['X', T_SCALAR], ['Y', T_SCALAR], ['Z', T_SCALAR]],
   vel: [['vx', T_SCALAR], ['vy', T_SCALAR], ['vz', T_SCALAR]],
   col: [['R', T_SCALAR], ['G', T_SCALAR], ['B', T_SCALAR], ['A', T_SCALAR]],
   scl: [['blk.slot.scale', T_SCALAR]],
   light: [['blk.slot.light', T_SCALAR]],
 };
-const BIG_BLOCKS = { pos: true, vel: true };
+export const BIG_BLOCKS = { pos: true, vel: true };
 
-const BUILTIN_VAR_INFO = {
+export const BUILTIN_VAR_INFO = {
   i: 'blk.var.i',
   n: 'blk.var.n',
   t: 'blk.var.t',
 };
-const BUILTIN_VAR_NAMES = ['i', 'n', 't'];
+export const BUILTIN_VAR_NAMES = ['i', 'n', 't'];
 
-let bctx = null;
-let bdrag = null;
-let puzzleWin = null;
-let viewportOrigin = null;
+export let bctx = null;
+export let bdrag = null;
+export let puzzleWin = null;
+export let viewportOrigin = null;
 
 /* =========================================================================
  * 节点工具
  * ======================================================================= */
 
-function cloneExprNode(n) {
+export function cloneExprNode(n) {
   if (!n) return n;
   const o = { kind: n.kind };
   if (n.kind === 'num') o.value = n.value;
@@ -49,9 +61,9 @@ function cloneExprNode(n) {
   else if (n.kind === 'chain') { o.terms = n.terms.map(cloneExprNode); o.ops = n.ops.slice(); }
   return o;
 }
-function cloneStmts(stmts) { return stmts.map(s => ({ ...s, slots: (s.slots || []).map(cloneExprNode), expr: cloneExprNode(s.expr) })); }
+export function cloneStmts(stmts) { return stmts.map(s => ({ ...s, slots: (s.slots || []).map(cloneExprNode), expr: cloneExprNode(s.expr) })); }
 
-function nodeToBlockType(n) {
+export function nodeToBlockType(n) {
   switch (n.kind) {
     case 'num': return { cls: 'blk-const', label: fmtNum(n.value) };
     case 'var': return { cls: n.name === 'pi' || n.name === 'e' ? 'blk-const' : 'blk-var', label: n.name };
@@ -63,20 +75,20 @@ function nodeToBlockType(n) {
     default: return { cls: 'blk-var', label: '?' };
   }
 }
-function funcGroup(name) {
+export function funcGroup(name) {
   const r = FUNC_BLOCKS[name].ret;
   if (r === T_VEC) return 'vec';
   if (r === T_MAT) return 'mat';
   return 'math';
 }
-function blockVarTypeOf(name) {
+export function blockVarTypeOf(name) {
   if (name === 'i' || name === 'n' || name === 't') return T_SCALAR;
   if (name === 'pi' || name === 'e') return T_SCALAR;
   if (ATTR_NAMES.includes(name)) return T_SCALAR; // 属性（x/y/z/…）是标量
   if (bctx && name in bctx.varExprs) return T_SCALAR;
   return T_ANY;
 }
-function availableVars() {
+export function availableVars() {
   const out = ['i', 'n', 't'];
   if (bctx) {
     for (const name of bctx.varOrder) if (name in bctx.varExprs && !out.includes(name)) out.push(name);
@@ -90,9 +102,9 @@ function availableVars() {
  * 积木工厂
  * ======================================================================= */
 
-function slotRef(get, set, type) { return { get, set, type }; }
+export function slotRef(get, set, type) { return { get, set, type }; }
 
-function makeSlot(ref, label) {
+export function makeSlot(ref, label) {
   const el = document.createElement('span');
   el.className = 'blk-slot';
   el.dataset.slotType = ref.type;
@@ -108,7 +120,7 @@ function makeSlot(ref, label) {
   return el;
 }
 
-function makeExprBlock(n) {
+export function makeExprBlock(n) {
   const bt = nodeToBlockType(n);
   const el = document.createElement('span');
   el.className = 'blk-expr ' + bt.cls + ' blk-drag';
@@ -178,14 +190,14 @@ function makeExprBlock(n) {
   return el;
 }
 
-function opSlotType(op, side) {
+export function opSlotType(op, side) {
   if (op === '^' || op === '%') return T_SCALAR;
   if (op === '/') return side === 'r' ? T_SCALAR : T_ANY;
   return T_ANY;
 }
 
 /** 算式内的运算符槽：可拖出删除该运算符及其后的数值，也可拖入运算符拼图替换。 */
-function makeOpSlot(chain, index) {
+export function makeOpSlot(chain, index) {
   const el = document.createElement('span');
   el.className = 'blk-op-sym blk-drag';
   el.textContent = chain.ops[index];
@@ -195,7 +207,7 @@ function makeOpSlot(chain, index) {
 }
 
 /** 算式末尾追加槽：拖入数值或运算符拼图自动追加一项。 */
-function makeChainAppend(chain) {
+export function makeChainAppend(chain) {
   const el = document.createElement('span');
   el.className = 'blk-chain-append';
   el.textContent = t('blk.addTerm');
@@ -208,7 +220,7 @@ function makeChainAppend(chain) {
  * 语句块工厂
  * ======================================================================= */
 
-function makeStatementBlock(s, isChain, chainIndex) {
+export function makeStatementBlock(s, isChain, chainIndex) {
   const el = document.createElement('div');
   const cls = GROUP_COLOR[STMT_BLOCKS[s.kind].group] || 'blk-var';
   el.className = 'blk-stmt ' + cls + (BIG_BLOCKS[s.kind] ? ' big' : '') + ' blk-drag';
@@ -328,10 +340,10 @@ function makeStatementBlock(s, isChain, chainIndex) {
   return el;
 }
 
-function renameRefsInAll(oldName, newName) {
+export function renameRefsInAll(oldName, newName) {
   renameRefsInStmts([...bctx.chain, ...bctx.frags.flatMap(f => f.stmts)], oldName, newName);
 }
-function renameRefsInStmts(stmts, oldName, newName) {
+export function renameRefsInStmts(stmts, oldName, newName) {
   const walk = (n) => {
     if (!n) return;
     if (n.kind === 'var' && n.name === oldName) n.name = newName;
@@ -347,12 +359,12 @@ function renameRefsInStmts(stmts, oldName, newName) {
     if (s.expr) walk(s.expr);
   }
 }
-function rgbToHexColor(rNode, gNode, bNode) {
+export function rgbToHexColor(rNode, gNode, bNode) {
   const v = n => (n && n.kind === 'num') ? Math.round(Math.min(1, Math.max(0, n.value)) * 255) : 255;
   const c = x => x.toString(16).padStart(2, '0');
   return '#' + c(v(rNode)) + c(v(gNode)) + c(v(bNode));
 }
-function hexToRgbColor(hex) {
+export function hexToRgbColor(hex) {
   const n = parseInt(hex.slice(1), 16);
   return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 }
@@ -361,10 +373,10 @@ function hexToRgbColor(hex) {
  * 默认值 / 定位
  * ======================================================================= */
 
-const N0 = () => ({ kind: 'num', value: 0 });
-const NVEC = () => ({ kind: 'func', name: 'vec', args: [N0(), N0(), N0()] });
+export const N0 = () => ({ kind: 'num', value: 0 });
+export const NVEC = () => ({ kind: 'func', name: 'vec', args: [N0(), N0(), N0()] });
 
-function newStmtNode(kind) {
+export function newStmtNode(kind) {
   switch (kind) {
     case 'pos': return { kind, slots: [N0(), N0(), N0()] };
     case 'vel': return { kind, slots: [N0(), N0(), N0()] };
@@ -378,14 +390,14 @@ function newStmtNode(kind) {
     default: throw new Error(_etf('err.unknownStmt', kind));
   }
 }
-function freshTempName() {
+export function freshTempName() {
   let k = 0;
   const all = bctx ? [...bctx.chain, ...bctx.frags.flatMap(f => f.stmts)] : [];
   const names = new Set(collectTemps(all));
   while (names.has('v' + k)) k++;
   return 'v' + k;
 }
-function newExprNodeFromTemplate(template) {
+export function newExprNodeFromTemplate(template) {
   if (template.kind === 'num') return { kind: 'num', value: 1 };
   if (template.kind === 'var') return { kind: 'var', name: template.name };
   if (template.kind === 'comp') return { kind: 'comp', axis: 'x', target: NVEC() };
@@ -397,17 +409,17 @@ function newExprNodeFromTemplate(template) {
   if (template.kind === 'chain') return { kind: 'chain', terms: [N0(), N0()], ops: ['+'] };
   return N0();
 }
-function defaultExprFor(type) {
+export function defaultExprFor(type) {
   if (type === T_VEC) return NVEC();
   if (type === T_MAT) return { kind: 'func', name: 'rotZ', args: [N0()] };
   return N0();
 }
-function stmtExprSlotType(s) {
+export function stmtExprSlotType(s) {
   if (s.kind === 'pos_vec' || s.kind === 'vel_vec') return T_VEC;
   return T_SCALAR;
 }
-function findAllStmts() { return bctx ? [...bctx.chain, ...bctx.frags.flatMap(f => f.stmts)] : []; }
-function findSlotRefByNode(stmts, node) {
+export function findAllStmts() { return bctx ? [...bctx.chain, ...bctx.frags.flatMap(f => f.stmts)] : []; }
+export function findSlotRefByNode(stmts, node) {
   let result = null;
   const walkStmt = (s) => {
     if (result) return;
@@ -456,14 +468,14 @@ function findSlotRefByNode(stmts, node) {
   stmts.forEach(walkStmt);
   return result;
 }
-function findExprDetach(node) {
+export function findExprDetach(node) {
   const found = findSlotRefByNode(findAllStmts(), node);
   if (found) return () => { found.set(defaultExprFor(found.type)); return node; };
   return null;
 }
 
 /** 删除算式内 index 处的运算符及其后的数值；若只剩一项则退化为该项。 */
-function removeChainOp(chain, index) {
+export function removeChainOp(chain, index) {
   chain.ops.splice(index, 1);
   chain.terms.splice(index + 1, 1);
   if (chain.ops.length === 0) {
@@ -476,7 +488,7 @@ function removeChainOp(chain, index) {
  * 调色板渲染（左侧固定栏，紧凑列表）
  * ======================================================================= */
 
-function renderPalette() {
+export function renderPalette() {
   const list = document.getElementById('pal-list');
   if (!list) return;
   list.innerHTML = '';
@@ -496,14 +508,14 @@ function renderPalette() {
 }
 
 /** 函数积木注解：用途（参数含义…）。 */
-function funcInfo(name) {
+export function funcInfo(name) {
   const f = FUNC_BLOCKS[name];
   const args = (f.args || []).map(a => t(a[0])).join(', ');
   return t(f.desc) + (args ? '（' + args + '）' : '');
 }
 
 /** 积木节点含义（供放大镜查看）。 */
-function nodeInfo(n) {
+export function nodeInfo(n) {
   switch (n.kind) {
     case 'num': return t('blk.constNum');
     case 'var': return (BUILTIN_VAR_INFO[n.name] && t(BUILTIN_VAR_INFO[n.name])) || t('blk.var');
@@ -516,7 +528,7 @@ function nodeInfo(n) {
   }
 }
 
-function buildPaletteGroup(g) {
+export function buildPaletteGroup(g) {
   const items = [];
   if (g.id === 'pos') {
     ['pos', 'pos_vec', 'vel', 'vel_vec'].forEach(k => items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: t(STMT_BLOCKS[k].label), info: t(STMT_BLOCKS[k].desc) }));
@@ -552,8 +564,8 @@ function buildPaletteGroup(g) {
 }
 
 /** 调色板项：与代码链积木同款渲染（复用 makeStatementBlock / makeExprBlock），内部禁用交互。 */
-let paletteTipEl = null;
-function showPaletteTip(anchor, text) {
+export let paletteTipEl = null;
+export function showPaletteTip(anchor, text) {
   hidePaletteTip();
   const tip = document.createElement('div');
   tip.className = 'qtip';
@@ -569,10 +581,10 @@ function showPaletteTip(anchor, text) {
   tip.style.top = top + 'px';
   paletteTipEl = tip;
 }
-function hidePaletteTip() {
+export function hidePaletteTip() {
   if (paletteTipEl) { paletteTipEl.remove(); paletteTipEl = null; }
 }
-function makePaletteItemEl(item) {
+export function makePaletteItemEl(item) {
   const wrap = document.createElement('div');
   wrap.className = 'pal-item blk-drag';
   wrap._palette = { type: item.type, kind: item.kind, template: item.template, op: item.op };
@@ -598,7 +610,7 @@ function makePaletteItemEl(item) {
  * 代码链渲染（工作区）
  * ======================================================================= */
 
-function renderChain() {
+export function renderChain() {
   const canvas = document.getElementById('chain-canvas');
   if (!canvas) return;
   canvas.innerHTML = '';
@@ -663,14 +675,14 @@ function renderChain() {
   refreshCodeEcho();
 }
 
-function makeStmtDropZone(index) {
+export function makeStmtDropZone(index) {
   const el = document.createElement('div');
   el.className = 'blk-stmt-drop';
   el._dropIndex = index;
   return el;
 }
 
-function makeVarBlock(name) {
+export function makeVarBlock(name) {
   const fx = getFunction(bctx.fxId);
   const v = fx && fx.vars[name];
   const hasKf = v && (v.kf || []).length > 0;
@@ -704,7 +716,7 @@ function makeVarBlock(name) {
   return wrap;
 }
 /** 可设置属性标签（x/y/z/…）：可拖入表达式 slot 作为变量引用。 */
-function makeAttrBlock(name) {
+export function makeAttrBlock(name) {
   const wrap = document.createElement('div');
   wrap.className = 'blk-var-row';
   const tag = document.createElement('span');
@@ -717,7 +729,7 @@ function makeAttrBlock(name) {
   return wrap;
 }
 /** 采样数 n：内置只读变量，直接在拼图变量区编辑总数（实时写入 fx.count）。 */
-function makeCountBlock() {
+export function makeCountBlock() {
   const fx = getFunction(bctx.fxId);
   const wrap = document.createElement('div');
   wrap.className = 'blk-var-row';
@@ -743,7 +755,7 @@ function makeCountBlock() {
   wrap.appendChild(inp);
   return wrap;
 }
-function renameVarGlobal(oldName, newName) {
+export function renameVarGlobal(oldName, newName) {
   if (oldName in bctx.varExprs) {
     bctx.varExprs[newName] = bctx.varExprs[oldName];
     delete bctx.varExprs[oldName];
@@ -758,9 +770,9 @@ function renameVarGlobal(oldName, newName) {
  * 拖拽
  * ======================================================================= */
 
-const DRAG_THRESHOLD = 5; // 移动超过该距离才真正断开/开始拖拽
+export const DRAG_THRESHOLD = 5; // 移动超过该距离才真正断开/开始拖拽
 
-function beginBlockDrag(el, clientX, clientY) {
+export function beginBlockDrag(el, clientX, clientY) {
   bdrag = { ghost: null, source: null, target: null, valid: false, startX: clientX, startY: clientY, started: false, grabDx: 0, grabDy: 0 };
 
   // 调色板项优先（内部积木也命中 wrapper）
@@ -818,13 +830,13 @@ function beginBlockDrag(el, clientX, clientY) {
 }
 
 /** 记录鼠标按下时相对积木左上角的偏移，使 ghost 位置贴合。 */
-function computeGrab(el, clientX, clientY) {
+export function computeGrab(el, clientX, clientY) {
   const r = el.getBoundingClientRect();
   bdrag.grabDx = clientX - r.left;
   bdrag.grabDy = clientY - r.top;
 }
 
-function makeGhost(el, clientX, clientY) {
+export function makeGhost(el, clientX, clientY) {
   const ghost = document.createElement('div');
   ghost.className = 'blk-ghost';
   // 克隆积木真实外观（语句块/表达式块/起点块），内部控件只读
@@ -855,7 +867,7 @@ function makeGhost(el, clientX, clientY) {
 }
 
 /** 语句组 ghost：渲染整组积木（该块及下方所有块），跟随鼠标。 */
-function makeGroupGhost(group, clientX, clientY) {
+export function makeGroupGhost(group, clientX, clientY) {
   const ghost = document.createElement('div');
   ghost.className = 'blk-ghost';
   const stack = document.createElement('div');
@@ -880,7 +892,7 @@ function makeGroupGhost(group, clientX, clientY) {
   document.body.classList.add('blk-dragging');
 }
 
-function stmtGroupLocation(s) {
+export function stmtGroupLocation(s) {
   const ci = bctx.chain.indexOf(s);
   if (ci >= 0) return { where: 'chain', index: ci };
   for (const f of bctx.frags) {
@@ -889,14 +901,14 @@ function stmtGroupLocation(s) {
   }
   return null;
 }
-function detachStmtGroupNow(s) {
+export function detachStmtGroupNow(s) {
   const loc = stmtGroupLocation(s);
   if (loc.where === 'chain') return bctx.chain.splice(loc.index);
   const group = loc.frag.stmts.splice(loc.index);
   if (loc.frag.stmts.length === 0) bctx.frags.splice(bctx.frags.indexOf(loc.frag), 1);
   return group;
 }
-function restoreStmtGroup(loc, group) {
+export function restoreStmtGroup(loc, group) {
   if (loc.where === 'chain') {
     bctx.chain.splice(loc.index, 0, ...group);
   } else {
@@ -909,7 +921,7 @@ function restoreStmtGroup(loc, group) {
   }
 }
 
-function moveGhost(clientX, clientY) {
+export function moveGhost(clientX, clientY) {
   if (!bdrag) return;
   const src = bdrag.source;
 
@@ -1004,7 +1016,7 @@ function moveGhost(clientX, clientY) {
 }
 
 /** 找鼠标位置最近的语句插入点（drop zone）。 */
-function nearestStmtDrop(clientX, clientY) {
+export function nearestStmtDrop(clientX, clientY) {
   // 用拼图实际位置（ghost 左边缘），纳入 grab 偏移，使从某处拖走能精确拖回
   let cx = clientX, cy = clientY;
   if (bdrag && bdrag.ghost) {
@@ -1027,7 +1039,7 @@ function nearestStmtDrop(clientX, clientY) {
   return { index: best._dropIndex, frag, el: best };
 }
 
-function canPlaceIntoTarget(slotType) {
+export function canPlaceIntoTarget(slotType) {
   if (!bdrag || !bdrag.source) return false;
   if (bdrag.source.stmt) return false;
   if (bdrag.source.type === 'palette') return typeAccepts(slotType, exprType(bdrag.source.make(), blockVarTypeOf));
@@ -1035,7 +1047,7 @@ function canPlaceIntoTarget(slotType) {
   return false;
 }
 
-function endBlockDrag() {
+export function endBlockDrag() {
   if (!bdrag) return;
   const { source, target, valid } = bdrag;
   document.querySelectorAll('.blk-slot.hover, .blk-slot.invalid, .blk-stmt-drop.hover, .blk-stmt-drop.invalid, #puzzle-palette.del-target, .blk-op-sym.hover, .blk-op-sym.invalid, .blk-chain-append.hover, .blk-chain-append.invalid').forEach(x => x.classList.remove('hover', 'invalid', 'del-target'));
@@ -1139,7 +1151,7 @@ function endBlockDrag() {
  * 生命周期
  * ======================================================================= */
 
-function ensurePuzzleDom() {
+export function ensurePuzzleDom() {
   if (document.getElementById('puzzle-overlay')) return;
   const vp = document.getElementById('viewport');
   viewportOrigin = { parent: vp.parentElement, next: vp.nextSibling };
@@ -1256,7 +1268,7 @@ function ensurePuzzleDom() {
   })();
 }
 
-function applyChainView() {
+export function applyChainView() {
   if (!bctx) return;
   const plane = document.querySelector('#chain-canvas .chain-plane');
   if (plane) {
@@ -1271,7 +1283,7 @@ function applyChainView() {
   }
 }
 
-function openBlockDrawer(fx) {
+export function openBlockDrawer(fx) {
   ensurePuzzleDom();
   let chain;
   try { chain = codeToStatements(fx.code); }
@@ -1318,7 +1330,7 @@ function openBlockDrawer(fx) {
   renderChain();
 }
 
-function closeBlockDrawer(commit) {
+export function closeBlockDrawer(commit) {
   if (!bctx) return;
   const fx = getFunction(bctx.fxId);
   if (commit && fx) {
@@ -1372,7 +1384,7 @@ function closeBlockDrawer(commit) {
   refreshFunctionPanel();
 }
 
-function refreshCodeEcho() {
+export function refreshCodeEcho() {
   const el = document.getElementById('echo-text');
   if (!el || !bctx) return;
   el.textContent = statementsToCode(bctx.chain);
@@ -1380,7 +1392,7 @@ function refreshCodeEcho() {
   blockPreview();
 }
 
-function blockPreview() {
+export function blockPreview() {
   if (!bctx) return;
   const fx = getFunction(bctx.fxId);
   if (!fx) return;
@@ -1398,13 +1410,13 @@ function blockPreview() {
  * 撤销
  * ======================================================================= */
 
-function bctxPushUndo() {
+export function bctxPushUndo() {
   if (!bctx) return;
   bctx.undoStack.push(snapBctx());
   if (bctx.undoStack.length > 100) bctx.undoStack.shift();
   bctx.redoStack.length = 0;
 }
-function snapBctx() {
+export function snapBctx() {
   return {
     chain: cloneStmts(bctx.chain),
     frags: bctx.frags.map(f => ({ stmts: cloneStmts(f.stmts), x: f.x, y: f.y })),
@@ -1412,20 +1424,20 @@ function snapBctx() {
     chainPos: { x: bctx.layout.chain.x, y: bctx.layout.chain.y },
   };
 }
-function restoreBctx(s) {
+export function restoreBctx(s) {
   bctx.chain = cloneStmts(s.chain);
   bctx.frags = s.frags.map(f => ({ stmts: cloneStmts(f.stmts), x: f.x, y: f.y }));
   bctx.varExprs = deepCloneVarExprs(s.varExprs);
   bctx.layout.chain = { x: s.chainPos.x, y: s.chainPos.y };
 }
-function deepCloneVarExprs(o) { const r = {}; for (const k in o) r[k] = cloneExprNode(o[k]); return r; }
-function bctxUndo() {
+export function deepCloneVarExprs(o) { const r = {}; for (const k in o) r[k] = cloneExprNode(o[k]); return r; }
+export function bctxUndo() {
   if (!bctx || bctx.undoStack.length === 0) return;
   bctx.redoStack.push(snapBctx());
   restoreBctx(bctx.undoStack.pop());
   renderChain(); renderPalette();
 }
-function bctxRedo() {
+export function bctxRedo() {
   if (!bctx || bctx.redoStack.length === 0) return;
   bctx.undoStack.push(snapBctx());
   restoreBctx(bctx.redoStack.pop());
@@ -1436,15 +1448,15 @@ function bctxRedo() {
  * 工作区持久化（localStorage）：窗口位置状态、调色盘宽、粒子列表宽、上次路径
  * ======================================================================= */
 
-const WS_KEY = 'particledrawing.workspace';
+export const WS_KEY = 'particledrawing.workspace';
 
-function loadWorkspaceState() {
+export function loadWorkspaceState() {
   try {
     const s = JSON.parse(localStorage.getItem(WS_KEY) || '{}');
     return s || {};
   } catch (e) { return {}; }
 }
-function saveWorkspaceState() {
+export function saveWorkspaceState() {
   const s = loadWorkspaceState();
   // 窗口位置状态
   if (puzzleWin && puzzleWin.scene) {
@@ -1469,7 +1481,7 @@ function saveWorkspaceState() {
   if (curTlH) s.tlModuleH = curTlH;
   try { localStorage.setItem(WS_KEY, JSON.stringify(s)); } catch (e) {}
 }
-function applyWorkspaceState() {
+export function applyWorkspaceState() {
   const s = loadWorkspaceState();
   // 粒子列表宽
   const layout = document.querySelector('.layout');
@@ -1501,9 +1513,9 @@ function applyWorkspaceState() {
  * 放大镜（拖到拼图上查看含义）
  * ======================================================================= */
 
-let lensDrag = null;
+export let lensDrag = null;
 
-function beginLensDrag(e) {
+export function beginLensDrag(e) {
   e.preventDefault();
   e.stopPropagation();
   lensDrag = { startX: e.clientX, startY: e.clientY, moved: false, ghost: null, shownInfo: null };
@@ -1516,7 +1528,7 @@ function beginLensDrag(e) {
   lensDrag.ghost = ghost;
 }
 
-function moveLensGhost(clientX, clientY) {
+export function moveLensGhost(clientX, clientY) {
   if (!lensDrag) return;
   if (Math.hypot(clientX - lensDrag.startX, clientY - lensDrag.startY) > 3) lensDrag.moved = true;
   lensDrag.ghost.style.left = clientX + 'px';
@@ -1530,7 +1542,7 @@ function moveLensGhost(clientX, clientY) {
   }
 }
 
-function findInfoEl(el) {
+export function findInfoEl(el) {
   let cur = el;
   while (cur && cur !== document.body) {
     if (cur._info) return cur;
@@ -1539,7 +1551,7 @@ function findInfoEl(el) {
   return null;
 }
 
-function endLensDrag(clientX, clientY) {
+export function endLensDrag(clientX, clientY) {
   if (!lensDrag) return;
   if (lensDrag.ghost) lensDrag.ghost.remove();
   lensDrag = null;

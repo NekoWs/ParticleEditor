@@ -3,7 +3,9 @@
  * 供拼图模式下的场景窗 / 代码链窗 / 代码回显窗复用。
  * ======================================================================= */
 
-let fwinZTop = 1000;
+
+import { t } from './i18n.js';
+export let fwinZTop = 1000;
 
 /**
  * 创建悬浮窗。
@@ -12,7 +14,7 @@ let fwinZTop = 1000;
  * @param {object} opts { x, y, w, h, minW, minH, resizable, minimizable, closable, onClose }
  * @returns { {el, body, titlebar, setPos, setSize, minimize, restore, isMinimized} }
  */
-function makeFloatWindow(id, title, opts) {
+export function makeFloatWindow(id, title, opts) {
   const o = opts || {};
   const el = document.createElement('div');
   el.className = 'fwin';

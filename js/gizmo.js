@@ -5,15 +5,23 @@
  * 说明：gizmo 网格几何体在 scene.js 构建；本文件负责其显示更新与交互判定。
  * ======================================================================= */
 
-function snapValue(v) {
+
+import * as THREE from 'three';
+import { state, PLANES, SNAP_STEP, getFunction } from './constants.js';
+import { shiftHeld } from './input-state.js';
+import { camera, renderer, raycaster, pointer, points, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, gizmoAxisHint, AXIS_RING_COLORS, RING_NORMALS, GIZMO_FACE_DEFS, planePulse, setPlanePulse, setWorldAxisVisible, setWorldAxisGlow, resetWorldAxisState } from './scene.js';
+import { AXIS_COLORS, AXIS_VECTORS, modal, setGizmoHover, selectedGroupName, selectionHasDerived, derivedFxIdFromSelection, fxPosDeltaAt } from './interaction.js';
+import { currentVisual } from './animation.js';
+import { groupCurrentCentroid } from './tree.js';
+export function snapValue(v) {
   return Math.round(v / SNAP_STEP) * SNAP_STEP;
 }
 
-function snapGrid(v) {
+export function snapGrid(v) {
   return shiftHeld ? snapValue(v) : v;
 }
 
-function snapPos(p) {
+export function snapPos(p) {
   return p.map(snapValue);
 }
 
@@ -21,7 +29,7 @@ function snapPos(p) {
  * 变换方向轴
  * ======================================================================= */
 
-function selectionCentroid() {
+export function selectionCentroid() {
   const sel = state.particles.filter(p => state.selected.has(p.id));
   if (sel.length === 0) return null;
   const c = [0, 0, 0];
@@ -33,14 +41,14 @@ function selectionCentroid() {
  * 变换控制器（gizmo）：移动工具 = 三轴箭头 + 面移动器；旋转工具 = 三轴环 + 视图环
  * 使用世界坐标系（不随选中对象旋转）
  * ======================================================================= */
-const GIZMO_SCREEN_SCALE = 0.14; // 屏幕恒定大小系数：世界缩放 = 视线深度 × 系数
-const TRANSFORM_TOOLS = ['move', 'rotate']; // 仅移动/旋转工具显示 gizmo
-const _gizmoTmp = new THREE.Vector3();
+export const GIZMO_SCREEN_SCALE = 0.14; // 屏幕恒定大小系数：世界缩放 = 视线深度 × 系数
+export const TRANSFORM_TOOLS = ['move', 'rotate']; // 仅移动/旋转工具显示 gizmo
+export const _gizmoTmp = new THREE.Vector3();
 // 拖拽中选中的控制器高亮：向白色混合 30%
-function gizmoHl(c) { return new THREE.Color(c).lerp(new THREE.Color(1, 1, 1), 0.3); }
+export function gizmoHl(c) { return new THREE.Color(c).lerp(new THREE.Color(1, 1, 1), 0.3); }
 
 
-function updateGizmo() {
+export function updateGizmo() {
   // 拼图模式 / 非移动、旋转工具：隐藏控制器
   if (document.body.classList.contains('puzzle-mode') || !TRANSFORM_TOOLS.includes(state.tool)) {
     gizmoGroup.visible = false;
@@ -73,7 +81,7 @@ function updateGizmo() {
 
 // 每帧调用：恒定屏幕大小 + 白环正对相机 + 轴环半圆环可见性（alpha 渐变防突变）
 // 拖拽某个环时：隐藏其他圆环与视图环，选中环整环显示
-function updateGizmoFrame() {
+export function updateGizmoFrame() {
   if (!gizmoGroup.visible) return;
   const c = gizmoGroup.position;
   const showMove = state.tool === 'move';
@@ -165,42 +173,42 @@ function updateGizmoFrame() {
  * 坐标工具
  * ======================================================================= */
 
-function screenToNdc(clientX, clientY) {
+export function screenToNdc(clientX, clientY) {
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
 }
 
-function planeInfo() {
+export function planeInfo() {
   const def = PLANES[state.drawPlane] || PLANES.XZ;
   return { def, plane: new THREE.Plane(def.normal, 0), off: 0 };
 }
 
 // 绘制平面切换时：让该平面内包含的两条轴线颜色发光一下
-function triggerDrawPlanePulse() {
+export function triggerDrawPlanePulse() {
   if (planePulse) restoreAxisColors();
   const def = PLANES[state.drawPlane] || PLANES.XZ;
-  planePulse = { axes: def.axes, t0: performance.now(), dur: 400 };
+  setPlanePulse({ axes: def.axes, t0: performance.now(), dur: 400 });
 }
 
 // 让指定轴发光（绘制平面脉冲用）：显示并变亮（透过网格线也能看到）
-function setAxisGlow(axes, glow) {
+export function setAxisGlow(axes, glow) {
   for (const axis of axes) {
     setWorldAxisVisible(axis, true);
     setWorldAxisGlow(axis, glow);
   }
 }
 
-function restoreAxisColors() { resetWorldAxisState(); }
+export function restoreAxisColors() { resetWorldAxisState(); }
 
-function planePointAt(clientX, clientY) {
+export function planePointAt(clientX, clientY) {
   screenToNdc(clientX, clientY);
   raycaster.setFromCamera(pointer, camera);
   const hit = new THREE.Vector3();
   return raycaster.ray.intersectPlane(planeInfo().plane, hit) ? hit : null;
 }
 
-function pickParticleAt(clientX, clientY) {
+export function pickParticleAt(clientX, clientY) {
   screenToNdc(clientX, clientY);
   raycaster.setFromCamera(pointer, camera);
   raycaster.params.Points.threshold = 0.5;
@@ -208,15 +216,15 @@ function pickParticleAt(clientX, clientY) {
   return hits.length ? hits[0].index : -1;
 }
 
-function particleAt(index) { return state.particles[index] || null; }
+export function particleAt(index) { return state.particles[index] || null; }
 
-function projectToScreen(x, y, z) {
+export function projectToScreen(x, y, z) {
   const v = new THREE.Vector3(x, y, z).project(camera);
   const rect = renderer.domElement.getBoundingClientRect();
   return { x: (v.x + 1) / 2 * rect.width, y: (1 - v.y) / 2 * rect.height };
 }
 
-function distToSegment(px, py, ax, ay, bx, by) {
+export function distToSegment(px, py, ax, ay, bx, by) {
   const dx = bx - ax, dy = by - ay;
   const lenSq = dx * dx + dy * dy;
   let t = lenSq === 0 ? 0 : ((px - ax) * dx + (py - ay) * dy) / lenSq;
@@ -224,15 +232,15 @@ function distToSegment(px, py, ax, ay, bx, by) {
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
-function worldToUV(p) {
+export function worldToUV(p) {
   if (state.drawPlane === 'XZ') return [p.x, p.z];
   if (state.drawPlane === 'XY') return [p.x, p.y];
   return [p.y, p.z];
 }
 
-const shapeCount = () => Math.max(2, state.drawCount || 30);
+export const shapeCount = () => Math.max(2, state.drawCount || 30);
 
-function computeShapePositions(mode, u0, v0, u1, v1, off) {
+export function computeShapePositions(mode, u0, v0, u1, v1, off) {
   const toWorld = PLANES[state.drawPlane].toWorld;
   const out = [];
   const su0 = shiftHeld ? snapValue(u0) : u0;

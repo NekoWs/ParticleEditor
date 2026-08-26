@@ -5,44 +5,58 @@
  * 依赖：本文件最后加载，可直接调用前面所有脚本定义的全局函数。
  * ======================================================================= */
 
+import { t, applyI18nDom, setLanguage } from './i18n.js';
+import { state, FUNCTION_PRESETS, getParticle, isDerivedParticle } from './constants.js';
+import { setShiftHeld, getDragIds, setDragIds } from './input-state.js';
+import { showAboutModal } from './ui.js';
+import { easeInOut } from './easing.js';
+import { openEasingEditor, easingCurveSVG } from './easing-editor.js';
+import { viewport, renderer, camera, controls, scene, pointsMaterial, selectedMaterial, focalLengthPx, camTransition, setCamTransition, planePulse, setPlanePulse } from './scene.js';
+import { rebuildPoints, maxTick, resetVelOffsets, updateAnimatedUV } from './animation.js';
+import { editSelectionUniform, addParticle, removeParticlesFromGroups } from './edit.js';
+import { pushUndo, undo, redo, beginContinuous, endContinuous } from './undo.js';
+import { currentSelected, selectedGroupName, deleteSelected, selectAll } from './interaction.js';
+import { refreshParticleTree, createGroup, showContextMenu, refreshCompTimelines } from './tree.js';
+import { createFunctionObject } from './generators.js';
+import { syncFunctionVarValues, drawTimeline, updateLoopIndicator, hexToRgb, TL_PX_PER_TICK, timelineViewStart, setTimelineViewStart, scrubAutoPan, timelineXToTick, refreshFunctionPanel } from './panels.js';
+import { drawTimelineLayers, tlInitLayerEvents, refreshAllPanelsLight } from './timeline-layers.js';
+import { initTextureEditor, syncTextureSelection, updateTexOverlay, texAnimOverlayActive, refreshTexturePanel } from './texture-editor.js';
+import { applyWorkspaceState, saveWorkspaceState } from './blocks-ui.js';
+import { newFile, openFile, saveFile, saveFileAs, exportAnimation, loadFile, confirmDiscardChanges, updateTopbarTitle } from './io.js';
+import { drawAxisGizmo, slerp } from './axis-gizmo.js';
+import { updateGizmo, updateGizmoFrame, restoreAxisColors, setAxisGlow } from './gizmo.js';
+
 // 时间轴数值变化后的统一刷新：粒子状态、时间 UI、函数变量插值显示。
 // 多处 scrub / 播放头拖动路径共用，避免漏刷某一项。
-function applyTimeChange() {
+export function applyTimeChange() {
   resetVelOffsets();
   updateTimeUI();
   rebuildPoints();
   syncFunctionVarValues();
 }
 
-function updateTimeUI() {
+export function updateTimeUI() {
   document.getElementById('tl-time').value = Math.round(state.time);
   document.getElementById('tl-max').textContent = maxTick();
 }
 
-function updateLoopIndicator() {
-  const el = document.getElementById('loop-indicator');
-  if (el) el.style.opacity = state.loop ? '1' : '0.25';
-}
-
-function syncPlayButton() {
+export function syncPlayButton() {
   document.getElementById('btn-play').textContent = state.playing ? t('timeline.pause') : t('timeline.play');
 }
 
-function togglePlay() {
+export function togglePlay() {
   state.playing = !state.playing;
   syncPlayButton();
   resetVelOffsets();
 }
 
-let shiftHeld = false;
-window.addEventListener('keydown', (e) => { if (e.key === 'Shift') shiftHeld = true; });
-window.addEventListener('keyup', (e) => { if (e.key === 'Shift') shiftHeld = false; });
-evShift = () => shiftHeld;
+window.addEventListener('keydown', (e) => { if (e.key === 'Shift') setShiftHeld(true); });
+window.addEventListener('keyup', (e) => { if (e.key === 'Shift') setShiftHeld(false); });
 window.addEventListener('keydown', (e) => { if (e.key === 'Control') document.body.classList.add('ctrl-held'); });
 window.addEventListener('keyup', (e) => { if (e.key === 'Control') document.body.classList.remove('ctrl-held'); });
 
 // 重建函数对象预设下拉（语言切换后重新取标签）
-function refreshFxPresetOptions() {
+export function refreshFxPresetOptions() {
   const sel = document.getElementById('fx-preset-add');
   if (!sel) return;
   sel.innerHTML = '';
@@ -53,7 +67,7 @@ function refreshFxPresetOptions() {
   sel.value = 'blank';
 }
 
-function initUI() {
+export function initUI() {
   applyI18nDom();
   syncPlayButton();
   const tlEase = document.getElementById('tl-easing');
@@ -176,12 +190,11 @@ function initUI() {
   tlCanvas.addEventListener('pointermove', (ev) => {
     if (!tlDrag) return;
     if (tlDrag.mode === 'pan') {
-      timelineViewStart -= (ev.clientX - tlDrag.lastX) / TL_PX_PER_TICK;
-      timelineViewStart = Math.max(-25, timelineViewStart);
+      setTimelineViewStart(Math.max(-25, timelineViewStart - (ev.clientX - tlDrag.lastX) / TL_PX_PER_TICK));
     } else {
       // scrub：AE 式滞后自动平移（越界时视图单向外追、游标钉边缘；反向时若指针仍在可视区外则视图不回缩）
       const r = scrubAutoPan(tlDrag, ev.clientX, tlCanvas.getBoundingClientRect(), timelineViewStart, state.time, TL_PX_PER_TICK, -25);
-      timelineViewStart = r.viewStart;
+      setTimelineViewStart(r.viewStart);
       state.time = r.time;
       updateTimeUI();
     }
@@ -193,8 +206,7 @@ function initUI() {
   tlCanvas.addEventListener('pointerleave', () => { tlDrag = null; state.scrubbing = false; });
   tlCanvas.addEventListener('wheel', (ev) => {
     ev.preventDefault();
-    timelineViewStart += ev.deltaY / TL_PX_PER_TICK;
-    timelineViewStart = Math.max(-25, timelineViewStart);
+    setTimelineViewStart(Math.max(-25, timelineViewStart + ev.deltaY / TL_PX_PER_TICK));
     drawTimeline();
   }, { passive: false });
 
@@ -207,7 +219,7 @@ function initUI() {
   if (typeof initTextureEditor === 'function') initTextureEditor();
 }
 
-function clearAll() {
+export function clearAll() {
   pushUndo();
   state.particles = []; state.tracks = []; state.groups = {}; state.functions = [];
   state.textures = {}; state.currentTexture = null; state.groupUV = {};
@@ -218,31 +230,31 @@ function clearAll() {
 }
 
 // 读取三个数值输入框组成的向量；任一框为空/非法时返回 null。
-function readVec3Inputs(ids) {
+export function readVec3Inputs(ids) {
   const v = ids.map(id => parseFloat(document.getElementById(id).value));
   return v.some(Number.isNaN) ? null : v;
 }
 
 // 为三个向量输入框统一绑定 input（连续编辑）与 change（结束连续编辑）。
-function bindVec3Inputs(ids, apply) {
+export function bindVec3Inputs(ids, apply) {
   ids.forEach(id => {
     document.getElementById(id).addEventListener('input', () => { beginContinuous(); apply(); });
     document.getElementById(id).addEventListener('change', endContinuous);
   });
 }
 
-function applyColorFromInputs() {
+export function applyColorFromInputs() {
   const rgb = hexToRgb(document.getElementById('prop-color').value);
   const a = parseFloat(document.getElementById('prop-alpha').value);
   editSelectionUniform('col', [rgb[0], rgb[1], rgb[2], a]);
 }
 
-function applyPositionFromInputs() {
+export function applyPositionFromInputs() {
   const v = readVec3Inputs(['prop-posx', 'prop-posy', 'prop-posz']);
   if (v) editSelectionUniform('pos', v);
 }
 
-function applyScaleFromInputs() {
+export function applyScaleFromInputs() {
   const v = readVec3Inputs(['prop-scale-x', 'prop-scale-y', 'prop-scale-z']);
   if (v) editSelectionUniform('scl', v);
 }
@@ -250,13 +262,14 @@ function applyScaleFromInputs() {
 /* 左侧面板拖拽缩放 + 拖拽移出组 */
 (function setupPanelResizeAndDrop() {
   const tree = document.getElementById('particle-tree');
-  tree.addEventListener('dragover', (e) => { if (dragIds) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; } });
+  tree.addEventListener('dragover', (e) => { if (getDragIds()) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; } });
   tree.addEventListener('drop', (e) => {
-    if (dragIds && !e.target.closest('.ptree-head.group')) {
+    const ids = getDragIds();
+    if (ids && !e.target.closest('.ptree-head.group')) {
       e.preventDefault();
-      removeParticlesFromGroups(dragIds);
+      removeParticlesFromGroups(ids);
     }
-    dragIds = null;
+    setDragIds(null);
   });
   tree.addEventListener('contextmenu', (e) => {
     if (e.target.closest('.ptree-head')) return;
@@ -311,7 +324,7 @@ function applyScaleFromInputs() {
   handleR.addEventListener('pointerup', () => { resizingR = false; handleR.classList.remove('dragging'); if (typeof saveWorkspaceState === 'function') saveWorkspaceState(); });
 })();
 
-function resize() {
+export function resize() {
   const w = viewport.clientWidth, h = viewport.clientHeight;
   renderer.setSize(w, h);
   camera.aspect = w / h;
@@ -326,8 +339,8 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-let last = performance.now();
-function animate(now) {
+export let last = performance.now();
+export function animate(now) {
   requestAnimationFrame(animate);
   const dt = Math.min((now - last) / 1000, 0.1);
   last = now;
@@ -339,7 +352,7 @@ function animate(now) {
     camera.position.copy(camTransition.target).addScaledVector(dir, camTransition.dist);
     camera.up.lerpVectors(camTransition.startUp, camTransition.endUp, e).normalize();
     camera.lookAt(camTransition.target);
-    if (t >= 1) camTransition = null;
+    if (t >= 1) setCamTransition(null);
     controls.update();
   }
 
@@ -347,7 +360,7 @@ function animate(now) {
     const t = (now - planePulse.t0) / planePulse.dur;
     if (t >= 1) {
       restoreAxisColors();
-      planePulse = null;
+      setPlanePulse(null);
     } else {
       setAxisGlow(planePulse.axes, Math.sin(Math.PI * t) * 0.85);
     }

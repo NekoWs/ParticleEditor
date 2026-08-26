@@ -7,8 +7,18 @@
  *   3) 渲染缓冲组装（setPointsGeometry / rebuildPoints / setPreview）
  * ======================================================================= */
 
+
+import { COMP_INDEX, compPr, DEG2RAD, PARTICLE_SIZE_FACTOR, state, getParticle, getFunction, particleIndexCache, functionIndexCache, setParticleIndex, setFunctionIndex } from './constants.js';
+import { easeVal, FUNC_IMPL, matMat } from './easing.js';
+import { getCompiledFn, getConstVarVals, resolveVarVals, evaluateParticleAt } from './generators.js';
+import { points, selectedPoints, previewPoints, texAtlasMap } from './scene.js';
+import { resolveUV, refreshUVPanel } from './texture-editor.js';
+import { updateGizmo } from './gizmo.js';
+import { drawTimeline, updatePropPanel } from './panels.js';
+import { refreshTreeSelection, refreshCompTimelines, groupCentroidValue } from './tree.js';
+import { rotateVector } from './interaction.js';
 // 粒子基础分量值（无轨道）
-function baseComponent(p, prop, comp) {
+export function baseComponent(p, prop, comp) {
   if (prop === 'pos') return p.pos[COMP_INDEX[comp]];
   if (prop === 'col') return p.color[COMP_INDEX[comp]];
   if (prop === 'vel') return (p.vel || [0, 0, 0])[COMP_INDEX[comp]];
@@ -17,7 +27,7 @@ function baseComponent(p, prop, comp) {
 }
 
 // 粒子完整基础向量
-function baseValue(p, prop) {
+export function baseValue(p, prop) {
   if (prop === 'pos') return p.pos.slice(0, 3);
   if (prop === 'col') return p.color.slice(0, 4);
   if (prop === 'vel') return (p.vel || [0, 0, 0]).slice(0, 3);
@@ -27,7 +37,7 @@ function baseValue(p, prop) {
 }
 
 // 零向量（按属性）
-function zeroArray(prop) {
+export function zeroArray(prop) {
   if (prop === 'pos' || prop === 'rot' || prop === 'vel' || prop === 'scl') return [0, 0, 0];
   if (prop === 'col') return [0, 0, 0, 0];
   return [0];
@@ -35,7 +45,7 @@ function zeroArray(prop) {
 
 // 轨道插值（标量）：b[2] 缓动语义（后一关键帧控制前一段）
 // 带每轨道缓存：同一轨道在同一 T 下的值固定（组/函数轨道被多粒子共享时大幅加速）
-function trackValueAt(tr, T, fallback) {
+export function trackValueAt(tr, T, fallback) {
   const kfs = tr.kf;
   if (!kfs || kfs.length === 0) return fallback;
   if (tr._t === T) return tr._v;
@@ -60,38 +70,38 @@ function trackValueAt(tr, T, fallback) {
 }
 
 // ---- 求值索引缓存（rebuildPoints 每次重建，避免 O(N) / O(N·M) 线性扫描） ----
-let trackIndexCache = null;        // Map: pr -> Map(id -> track)
-let opTracksCache = null;          // Array<track>（op 模式轨道）
-let groupSetCache = null;          // Map: gname -> Set<id>
-let groupMemberIndexCache = null;  // Map: particleId -> Set<gname>
-let groupCentroidPosCache = null;  // Map: gname -> [x,y,z]
-let groupOpDeltaCache = null;      // Map: gname -> Map(pr -> delta)：op 增量预计算（per 组）
-let fxOpDeltaCache = null;         // Map: fxId -> Map(pr -> delta)：op 增量预计算（per 函数对象）
-let groupXformCache = null;        // Map: gname -> { rotTr, setTr, op, pivot }：组变换预计算（组-only 粒子快路径）
-let fxSclTrackCache = null;        // Map: fxId -> scl 轨道（函数对象整体缩放，pr='scl'）
+export let trackIndexCache = null;        // Map: pr -> Map(id -> track)
+export let opTracksCache = null;          // Array<track>（op 模式轨道）
+export let groupSetCache = null;          // Map: gname -> Set<id>
+export let groupMemberIndexCache = null;  // Map: particleId -> Set<gname>
+export let groupCentroidPosCache = null;  // Map: gname -> [x,y,z]
+export let groupOpDeltaCache = null;      // Map: gname -> Map(pr -> delta)：op 增量预计算（per 组）
+export let fxOpDeltaCache = null;         // Map: fxId -> Map(pr -> delta)：op 增量预计算（per 函数对象）
+export let groupXformCache = null;        // Map: gname -> { rotTr, setTr, op, pivot }：组变换预计算（组-only 粒子快路径）
+export let fxSclTrackCache = null;        // Map: fxId -> scl 轨道（函数对象整体缩放，pr='scl'）
 
 // 10 个分量轨道 pr 顺序（组变换预计算用，与 positions/colors 写入一致）
-const TRACK_COMP_ORDER = ['pos.x', 'pos.y', 'pos.z', 'col.r', 'col.g', 'col.b', 'col.a', 'scl.x', 'scl.y', 'scl.z'];
+export const TRACK_COMP_ORDER = ['pos.x', 'pos.y', 'pos.z', 'col.r', 'col.g', 'col.b', 'col.a', 'scl.x', 'scl.y', 'scl.z'];
 // pr -> 粒子分量轨道槽下标（p._tr 数组，13 槽：10 分量 + vel 3）
-const PR_TO_IDX = {
+export const PR_TO_IDX = {
   'pos.x': 0, 'pos.y': 1, 'pos.z': 2,
   'col.r': 3, 'col.g': 4, 'col.b': 5, 'col.a': 6,
   'scl.x': 7, 'scl.y': 8, 'scl.z': 9,
   'vel.x': 10, 'vel.y': 11, 'vel.z': 12,
 };
 
-let trVersion = 0; // 每次 buildParticleIndex 递增，配合 p._trVersion 惰性失效 p._tr
-function buildParticleIndex() {
+export let trVersion = 0; // 每次 buildParticleIndex 递增，配合 p._trVersion 惰性失效 p._tr
+export function buildParticleIndex() {
   const map = new Map();
   for (const p of state.particles) map.set(p.id, p);
-  particleIndexCache = map;
+  setParticleIndex(map);
   const fm = new Map();
   for (const f of state.functions) fm.set(f.id, f);
-  functionIndexCache = fm;
+  setFunctionIndex(fm);
   trVersion++;
 }
 
-function buildTrackIndex() {
+export function buildTrackIndex() {
   const opTracks = [];
   const pidx = particleIndexCache;
   const tracks = state.tracks;
@@ -120,7 +130,7 @@ function buildTrackIndex() {
 }
 
 // 惰性重建 pr -> id -> track 两级索引（仅在编辑类操作调用 findTrackByPr 时按需构建）
-function buildTrackIndexMap() {
+export function buildTrackIndexMap() {
   const map = new Map();
   for (const tr of state.tracks) {
     if (tr.ids.length === 1) {
@@ -133,7 +143,7 @@ function buildTrackIndexMap() {
 }
 
 // 组成员索引（particleId -> 所属组集合）+ 组 Set + 组质心缓存
-function buildGroupIndex() {
+export function buildGroupIndex() {
   const memberIdx = new Map();
   const sets = new Map();
   const centroids = new Map();
@@ -159,14 +169,14 @@ function buildGroupIndex() {
 }
 
 // 按 pr + id 精确查找轨道（O(1)；索引失效时惰性重建）
-function findTrackByPr(pr, id) {
+export function findTrackByPr(pr, id) {
   if (!trackIndexCache) buildTrackIndexMap();
   const byId = trackIndexCache.get(pr);
   return byId ? (byId.get(id) || null) : null;
 }
 
 // 某 id 在某分量的 set 轨道（优先级：自身 > 组 > 函数对象）
-function findSetTrackFor(id, prop, comp) {
+export function findSetTrackFor(id, prop, comp) {
   const pr = compPr(prop, comp);
   const own = findTrackByPr(pr, id);
   if (own && own.m !== 'op') return own;
@@ -187,7 +197,7 @@ function findSetTrackFor(id, prop, comp) {
 
 // 预计算 op 轨道在时间 T 的增量（按组/函数对象聚合到分量 pr），供 compOpDelta 直接查表，
 // 避免每个粒子重复遍历 opTracksCache 与 trackValueAt。
-function buildOpDeltaCache(T) {
+export function buildOpDeltaCache(T) {
   const gMap = new Map();
   const fMap = new Map();
   for (const tr of opTracksCache) {
@@ -213,7 +223,7 @@ function buildOpDeltaCache(T) {
 
 // 预计算每个组的变换（rot 轨道引用 / set 轨道引用 / op 增量数组 / 质心），
 // 供组-only 粒子（无自身轨道、单组）走快路径，绕过 findSetTrackFor 的重复 Map 查询。
-function buildGroupXforms(T) {
+export function buildGroupXforms(T) {
   const xforms = new Map();
   for (const gname of Object.keys(state.groups)) {
     const setTr = TRACK_COMP_ORDER.map(pr => {
@@ -246,7 +256,7 @@ function buildGroupXforms(T) {
 }
 
 // 预计算函数对象的整体 scl 轨道（pr 为 scl.x/scl.y/scl.z），供 currentVisualDerived 快速路径查询
-function buildFxSclTrackCache() {
+export function buildFxSclTrackCache() {
   const map = new Map();
   for (const tr of state.tracks) {
     if (tr.ids.length === 1 && tr.ids[0].charCodeAt(0) === 102 && tr.m !== 'op' && tr.kf.length) {
@@ -262,7 +272,7 @@ function buildFxSclTrackCache() {
 }
 
 // 组/函数对象在某分量的 op 增量（标量累加）
-function compOpDelta(p, prop, comp, T) {
+export function compOpDelta(p, prop, comp, T) {
   const pr = compPr(prop, comp);
   let delta = 0;
   if (groupOpDeltaCache) {
@@ -294,7 +304,7 @@ function compOpDelta(p, prop, comp, T) {
 }
 
 // 某 id（'g:name' 或 'f:fxId'）的 rot 向量（三个分量）
-function rotVectorAt(id, T) {
+export function rotVectorAt(id, T) {
   return ['x', 'y', 'z'].map(c => {
     const tr = findTrackByPr('rot.' + c, id);
     return tr ? trackValueAt(tr, T, 0) : 0;
@@ -302,7 +312,7 @@ function rotVectorAt(id, T) {
 }
 
 // 组旋转信息（组件/函数对象的 rot + pivot）
-function groupRotationInfo(p, T) {
+export function groupRotationInfo(p, T) {
   const gs = groupMemberIndexCache && groupMemberIndexCache.get(p.id);
   if (gs) {
     for (const gname of gs) {
@@ -321,7 +331,7 @@ function groupRotationInfo(p, T) {
   return null;
 }
 
-function applyGroupRotation(p, value, T) {
+export function applyGroupRotation(p, value, T) {
   const info = groupRotationInfo(p, T);
   if (!info) return value;
   const rot = info.rot;
@@ -334,7 +344,7 @@ function applyGroupRotation(p, value, T) {
 }
 
 // 粒子位置：set 覆盖 → 组旋转 → op 增量
-function particlePosition(p, T) {
+export function particlePosition(p, T) {
   let pos = ['x', 'y', 'z'].map(c => {
     let v = baseComponent(p, 'pos', c);
     const tr = findSetTrackFor(p.id, 'pos', c);
@@ -347,7 +357,7 @@ function particlePosition(p, T) {
 }
 
 // 粒子某分量值：基础 → set 覆盖 → op 增量
-function componentValueAt(p, prop, comp, T) {
+export function componentValueAt(p, prop, comp, T) {
   let v = baseComponent(p, prop, comp);
   const tr = findSetTrackFor(p.id, prop, comp);
   if (tr && tr.kf.length > 0) v = trackValueAt(tr, T, v);
@@ -356,7 +366,7 @@ function componentValueAt(p, prop, comp, T) {
 }
 
 // 粒子某属性完整向量（分量级拼装）
-function particleValueAt(p, prop, T) {
+export function particleValueAt(p, prop, T) {
   if (prop === 'pos') return particlePosition(p, T);
   if (prop === 'col') return ['r', 'g', 'b', 'a'].map(c => componentValueAt(p, 'col', c, T));
   if (prop === 'vel') return ['x', 'y', 'z'].map(c => componentValueAt(p, 'vel', c, T));
@@ -364,7 +374,7 @@ function particleValueAt(p, prop, T) {
   return ['x', 'y', 'z'].map(c => componentValueAt(p, 'scl', c, T));
 }
 
-function currentVisual(p) {
+export function currentVisual(p) {
   if (p.fx) return currentVisualDerived(p, state.time);
   return {
     pos: particleValueAt(p, 'pos', state.time),
@@ -376,7 +386,7 @@ function currentVisual(p) {
 // 派生粒子活源求值：每帧执行公式代码块（random 每帧变化，实现星光闪闪预览），
 // 再叠加函数对象整体旋转（rot）与位移增量（op），与游戏端活源语义一致。
 // 返回的 scale 为三分量数组 [sx,sy,sz]（函数对象整体缩放可独立分轴）。
-function currentVisualDerived(p, T) {
+export function currentVisualDerived(p, T) {
   const fx = getFunction(p.fx);
   if (!fx) return { pos: [0, 0, 0], color: [1, 1, 1, 1], scale: [1, 1, 1] };
   const i = (p._fxIdx !== undefined) ? p._fxIdx : parseInt(p.id.slice(fx.id.length + 2), 10);
@@ -400,7 +410,7 @@ function currentVisualDerived(p, T) {
   return { pos, color: r.color, scale: scaleVec };
 }
 
-function maxTick() {
+export function maxTick() {
   let m = 0;
   for (const tr of state.tracks) for (const k of tr.kf) m = Math.max(m, k[0]);
   // 粒子起始时间与有限寿命计入时长；函数对象跨度 = st + extent（变量关键帧 或 依赖 t 时的 duration）
@@ -423,10 +433,10 @@ function maxTick() {
 
 // 速度位移积分：按时间计算（任何时刻都生效，含非播放/拖动时间轴），渲染期叠加不改数据。
 // 兼容旧调用：速度积分已改为按 time 计算，无需重置状态。
-function resetVelOffsets() {}
+export function resetVelOffsets() {}
 
 // 轨道分段积分（线性近似，忽略缓动）：trackValueAt 的常数段 + 线性段面积
-function trackIntegral(tr, time) {
+export function trackIntegral(tr, time) {
   const kfs = tr.kf;
   if (!kfs || kfs.length === 0) return 0;
   const first = kfs[0], last = kfs[kfs.length - 1];
@@ -451,7 +461,7 @@ function trackIntegral(tr, time) {
 }
 
 // 速度从 0 到 time 的位移积分（恒定速度解析，轨道分段线性近似）
-function velOffsetAt(p, time) {
+export function velOffsetAt(p, time) {
   if (time <= 0) return [0, 0, 0];
   if (p.fx) {
     // 派生粒子：活源初速（t=0 的 p.vel）恒定积分（散开等恒定速度效果精确）
@@ -470,7 +480,7 @@ function velOffsetAt(p, time) {
 
 // 复用几何体与缓冲：仅顶点数量变化时重建，否则只更新数组内容（避免每帧 new/dispose 造成 GC 卡顿）
 // sizes 为每粒子 2 分量（sx, sy，非均匀 billboard 尺寸）
-function setPointsGeometry(pts, positions, colors, sizes) {
+export function setPointsGeometry(pts, positions, colors, sizes) {
   let geo = pts.geometry;
   const posAttr = geo && geo.getAttribute('position');
   if (!geo || !posAttr || posAttr.array.length !== positions.length) {
@@ -491,16 +501,16 @@ function setPointsGeometry(pts, positions, colors, sizes) {
   geo.setDrawRange(0, positions.length / 3);
 }
 
-let rpPos = null, rpCol = null, rpSize = null, rpSelPos = null, rpSelCol = null, rpSelSize = null;
-let rpUV = null, rpUVScale = null, rpUVAnim = null, rpUVTex = null, rpUVMode = null;
+export let rpPos = null, rpCol = null, rpSize = null, rpSelPos = null, rpSelCol = null, rpSelSize = null;
+export let rpUV = null, rpUVScale = null, rpUVAnim = null, rpUVTex = null, rpUVMode = null;
 // 派生粒子求值的复用输出对象（主循环顺序执行、立即读走，单线程安全，避免每粒子分配）
-const FX_OUT = { pos: [0, 0, 0], color: [0, 0, 0, 0], vel: [0, 0, 0], scale: 1, glow: false, light: 0 };
+export const FX_OUT = { pos: [0, 0, 0], color: [0, 0, 0, 0], vel: [0, 0, 0], scale: 1, glow: false, light: 0 };
 // 粒子 UV 求值的复用输出（fill 模式下强制全图采样）
-const UVOUT = { mode: 0, au0: 0, av0: 0, au1: 0, av1: 0, sx: 0, sy: 0, sw: 16, sh: 16, stepx: 16, stepy: 0, fps: 1, maxFrame: 1, tw: 16, th: 16 };
+export const UVOUT = { mode: 0, au0: 0, av0: 0, au1: 0, av1: 0, sx: 0, sy: 0, sw: 16, sh: 16, stepx: 16, stepy: 0, fps: 1, maxFrame: 1, tw: 16, th: 16 };
 
 // 计算单个粒子的 uv 渲染参数（写入复用 out），无贴图时 mode=0
 // UV 坐标为像素坐标，在 shader 中除以 vUVTex 归一化；texSize 仅影响粒子显示大小，不影响 UV
-function computeParticleUV(p, out) {
+export function computeParticleUV(p, out) {
   out.mode = 0;
   if (typeof resolveUV !== 'function') return;
   const uv = resolveUV(p).uv;
@@ -535,7 +545,7 @@ function computeParticleUV(p, out) {
  * 暂停空闲时，则退回墙钟循环播放，供单独预览贴图动画。
  * state.time 为「刻度」单位（20 刻度 = 1 秒），故除以 20 换算成秒。
  */
-function uvDriveSeconds() {
+export function uvDriveSeconds() {
   if (state.playing || state.scrubbing) return state.time / 20;
   return performance.now() / 1000;
 }
@@ -544,7 +554,7 @@ function uvDriveSeconds() {
  * 动画贴图当前帧的行主 flipbook 偏移 [sx, sy]（帧号按 uvDriveSeconds 的 float64 确定性计算，
  * 与贴图预览 currentUVFrame、游戏端 currentUvStart 完全同源）。
  */
-function animatedUVOffsetAt(uv, texW, texH) {
+export function animatedUVOffsetAt(uv, texW, texH) {
   const maxF = effMaxFrame(uv, autoFramesFor(uv, texW, texH));
   const raw = Math.floor(uvDriveSeconds() * (uv.fps || 1));
   const frame = uv.loop ? ((raw % maxF) + maxF) % maxF : Math.min(raw, maxF - 1);
@@ -554,10 +564,10 @@ function animatedUVOffsetAt(uv, texW, texH) {
 }
 
 /** 是否存在动画贴图粒子（决定是否需要每帧轻量推进 UV 帧）。 */
-let hasAnimatedTex = false;
+export let hasAnimatedTex = false;
 
 /** 每帧只推进动画贴图粒子的 sx/sy（轻量，不重建位置/颜色/整段缓冲区）。 */
-function updateAnimatedUV() {
+export function updateAnimatedUV() {
   if (!hasAnimatedTex) return;
   if (typeof resolveUV !== 'function') return;
   const attr = points.geometry.getAttribute('aUVScale');
@@ -579,7 +589,7 @@ function updateAnimatedUV() {
 }
 
 // 设置 UV 相关 attribute（在 geometry 重建后调用）
-function setPointUVAttributes(geo, uvs) {
+export function setPointUVAttributes(geo, uvs) {
   const defs = [
     ['aUV', uvs.uv, 4],
     ['aUVScale', uvs.uvScale, 4],
@@ -598,7 +608,7 @@ function setPointUVAttributes(geo, uvs) {
   }
 }
 
-function rebuildPoints(full) {
+export function rebuildPoints(full) {
   buildParticleIndex();
   buildTrackIndex();
   buildGroupIndex();
@@ -815,7 +825,7 @@ function rebuildPoints(full) {
   }
 }
 
-function setPreview(positions) {
+export function setPreview(positions) {
   const n = positions.length;
   const pos = new Float32Array(n * 3), col = new Float32Array(n * 4), siz = new Float32Array(n * 2);
   for (let i = 0; i < n; i++) {
@@ -832,4 +842,4 @@ function setPreview(positions) {
   });
 }
 
-function clearPreview() { setPointsGeometry(previewPoints, new Float32Array(0), new Float32Array(0), new Float32Array(0)); }
+export function clearPreview() { setPointsGeometry(previewPoints, new Float32Array(0), new Float32Array(0), new Float32Array(0)); }
