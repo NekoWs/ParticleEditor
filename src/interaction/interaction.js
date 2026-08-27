@@ -782,6 +782,7 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
     // 空白：框选（三种变换工具共用）
     if (!handled) {
       boxSel = { x0: ev.clientX, y0: ev.clientY, x1: ev.clientX, y1: ev.clientY, shift: ev.shiftKey };
+      renderer.domElement.setPointerCapture(ev.pointerId); // 确保左键在画布外松开也能结束框选
       document.getElementById('box-overlay').style.display = 'block';
       updateBoxOverlay();
     }
@@ -917,6 +918,12 @@ renderer.domElement.addEventListener('pointerup', (ev) => {
 });
 
 renderer.domElement.addEventListener('contextmenu', (ev) => { ev.preventDefault(); if (modal) cancelModal(); });
+renderer.domElement.addEventListener('pointercancel', () => {
+  if (boxSel) {
+    boxSel = null;
+    document.getElementById('box-overlay').style.display = 'none';
+  }
+});
 window.addEventListener('pointerup', () => { renderer.domElement.style.cursor = ''; });
 
 window.addEventListener('keydown', (ev) => {
