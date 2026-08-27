@@ -362,11 +362,10 @@ export function renderGroupNode(name) {
   return root;
 }
 
-export function renderGroupPropsNode(name) {
+// 组/函数对象共用的「属性分组」子节点：默认展开，entityId 为 'g:name' 或 'f:fxId'。
+function renderPropsSubNode(key, entityId, propDefs) {
   const wrap = document.createElement('div');
-  const key = 'g:' + name + '|@props';
-  // 组属性分组默认展开：expandedProps 中没有该键时视为「展开」。
-  // 这里用 isCollapsed（而非 expanded）表达存储语义，避免与默认展开行为混淆。
+  // 属性分组默认展开：expandedProps 中没有该键时视为「展开」。
   const isCollapsed = state.expandedProps.has(key);
   const head = document.createElement('div');
   head.className = 'ptree-subhead';
@@ -381,8 +380,12 @@ export function renderGroupPropsNode(name) {
     refreshParticleTree();
   };
   wrap.appendChild(head);
-  if (!isCollapsed) wrap.appendChild(renderPropSection('g:' + name, GROUP_PROP_DEFS));
+  if (!isCollapsed) wrap.appendChild(renderPropSection(entityId, propDefs));
   return wrap;
+}
+
+export function renderGroupPropsNode(name) {
+  return renderPropsSubNode('g:' + name + '|@props', 'g:' + name, GROUP_PROP_DEFS);
 }
 
 export function renderGroupMembersNode(name, members) {
@@ -483,25 +486,7 @@ export function renderFunctionNode(fx) {
 }
 
 export function renderFunctionPropsNode(fx) {
-  const wrap = document.createElement('div');
-  const key = 'f:' + fx.id + '|@props';
-  // 同 renderGroupPropsNode：函数对象属性分组默认展开。
-  const isCollapsed = state.expandedProps.has(key);
-  const head = document.createElement('div');
-  head.className = 'ptree-subhead';
-  const arrow = document.createElement('span');
-  arrow.className = 'arrow';
-  arrow.textContent = isCollapsed ? '▸' : '▾';
-  const label = document.createElement('span');
-  label.textContent = t('tab.props');
-  head.appendChild(arrow); head.appendChild(label);
-  head.onclick = () => {
-    if (isCollapsed) state.expandedProps.delete(key); else state.expandedProps.add(key);
-    refreshParticleTree();
-  };
-  wrap.appendChild(head);
-  if (!isCollapsed) wrap.appendChild(renderPropSection('f:' + fx.id, FUNCTION_PROP_DEFS));
-  return wrap;
+  return renderPropsSubNode('f:' + fx.id + '|@props', 'f:' + fx.id, FUNCTION_PROP_DEFS);
 }
 
 export function renderFunctionMembersNode(fx) {
