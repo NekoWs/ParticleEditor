@@ -9,7 +9,7 @@
 
 import { _etf, t } from './i18n.js';
 import { FUNCTION_PRESETS, state, nextFunctionId, setDirty, compPr } from './constants.js';
-import { ATTR_NAMES, compileExpr, execRpn, tokenize, evaluate, compileFunctionCode, execFunctionCode, varKfValue, tryCompileFunction } from './easing.js';
+import { ATTR_NAMES, tokenize, evaluate, compileFunctionCode, execFunctionCode, varKfValue, tryCompileFunction } from './easing.js';
 import { modalAlert } from '../ui/ui.js';
 import { pushUndo } from '../state/undo.js';
 import { rebuildPoints } from './animation.js';
@@ -31,7 +31,7 @@ export function getVarNames(fx) {
   return fx._varNames;
 }
 
-// 常量变量值缓存：所有变量无关键帧且表达式无变量引用时，预计算一次共享（否则 null）
+// 常量变量值缓存：所有变量均无关键帧时，预计算一次常量数组（否则 null）。
 export function getConstVarVals(fx) {
   if (fx._constVarVals !== undefined) return fx._constVarVals;
   const names = getVarNames(fx);
@@ -41,9 +41,7 @@ export function getConstVarVals(fx) {
     for (let k = 0; k < names.length; k++) {
       const v = fx.vars[names[k]];
       if (!v || (v.kf && v.kf.length > 0)) { vals = null; break; }
-      const rpn = getCompiledVarExpr(v);
-      if (rpn.some(o => o && o.t === 'var')) { vals = null; break; }
-      vals[k] = execRpn(rpn, {});
+      vals[k] = Number.isFinite(v.base) ? v.base : 0;
     }
   }
   fx._constVarVals = vals;
@@ -60,71 +58,35 @@ export function getCompiledFn(fx) {
   return fx._compiledFn;
 }
 
-// 解析变量值数组（按 getVarNames 顺序；含链式引用与关键帧），供原生编译函数调用
+// 解析变量值数组（按 getVarNames 顺序；关键帧按 t 插值，否则用常数 base），供原生编译函数调用。
 export function resolveVarVals(fx, i, n, t) {
   const constVals = getConstVarVals(fx);
   if (constVals) return constVals;
   const vars = fx.vars || {};
   const names = getVarNames(fx);
   const out = new Array(names.length);
-  if (names.length === 0) return out;
   const t0 = t || 0;
-  const env = { i, n, t: t0 };
-  const memo = {};
-  const inStack = new Set();
-  function resolve(name) {
-    if (name in memo) return memo[name];
-    if (name in env) return env[name];
+  for (let k = 0; k < names.length; k++) {
+    const name = names[k];
+    if (ATTR_NAMES.includes(name)) throw new Error(_etf('err.varReserved', name));
     const v = vars[name];
     if (!v) throw new Error(_etf('err.unknownVar', name));
-    if (inStack.has(name)) throw new Error(_etf('err.varCycle', name));
-    inStack.add(name);
     const kf = v.kf || [];
-    const val = (kf.length > 0) ? varKfValue(kf, t0) : execRpn(getCompiledVarExpr(v), resolve);
-    inStack.delete(name);
-    memo[name] = val;
-    return val;
-  }
-  for (let k = 0; k < names.length; k++) {
-    if (ATTR_NAMES.includes(names[k])) throw new Error(_etf('err.varReserved', names[k]));
-    out[k] = resolve(names[k]);
+    out[k] = (kf.length > 0) ? varKfValue(kf, t0) : (Number.isFinite(v.base) ? v.base : 0);
   }
   return out;
 }
 
-// 变量表达式编译缓存
-export function getCompiledVarExpr(v) {
-  const expr = v.expr || '0';
-  if (v._compiled === undefined || v._compiledSrc !== expr) {
-    v._compiled = compileExpr(expr);
-    v._compiledSrc = expr;
-  }
-  return v._compiled;
-}
-
-// 链式求值变量：vars 为 { name: {expr, kf} }，关键帧优先按 t 插值，无帧用表达式
+// 变量环境：vars 为 { name: { base, kf } }，关键帧优先按 t 插值，否则使用常数 base。
 export function buildEnv(vars, ctx) {
   const env = { i: ctx.i, n: ctx.n, t: ctx.t || 0 };
-  const memo = {};
-  const inStack = new Set();
-  function resolve(name) {
-    if (name in memo) return memo[name];
-    if (name in env) return env[name];
-    const v = vars[name];
-    if (!v) throw new Error(_etf('err.unknownVar', name));
-    if (inStack.has(name)) throw new Error(_etf('err.varCycle', name));
-    inStack.add(name);
-    const kf = v.kf || [];
-    const val = (kf.length > 0) ? varKfValue(kf, ctx.t || 0) : execRpn(getCompiledVarExpr(v), resolve);
-    inStack.delete(name);
-    memo[name] = val;
-    return val;
-  }
   for (const name in vars) {
     if (ATTR_NAMES.includes(name)) throw new Error(_etf('err.varReserved', name));
-    resolve(name);
+    const v = vars[name];
+    if (!v) throw new Error(_etf('err.unknownVar', name));
+    const kf = v.kf || [];
+    env[name] = (kf.length > 0) ? varKfValue(kf, ctx.t || 0) : (Number.isFinite(v.base) ? v.base : 0);
   }
-  for (const name in memo) env[name] = memo[name];
   return env;
 }
 
@@ -165,7 +127,7 @@ export function buildDerivedTracks(fx) {
   const duration = Math.max(0, Math.round(fx.duration) || 0);
   const step = Math.max(1, Math.round(fx.step) || 1);
   if (duration <= 0) return;
-  const hasVarAnim = Object.values(fx.vars || {}).some(v => (v.kf || []).length > 1 || exprUsesT(v.expr));
+  const hasVarAnim = Object.values(fx.vars || {}).some(v => (v.kf || []).length > 1);
   if (!exprUsesT(fx.code) && !hasVarAnim) return;
 
   // 收集动画源关键帧（变量 kf + 整体轨道 kf）
@@ -306,7 +268,9 @@ export function syncPresetCount(fx) {
   // 先把所有变量求值为 scope（供 countExpr 或 countVars 使用）
   const scope = { i: 0, n: 1, t: 0 };
   for (const name in fx.vars) {
-    try { scope[name] = evaluate(fx.vars[name].expr || '0', scope); } catch (e) { return; }
+    const v = fx.vars[name];
+    const kf = v.kf || [];
+    scope[name] = (kf.length > 0) ? varKfValue(kf, 0) : (Number.isFinite(v.base) ? v.base : 0);
   }
   let count;
   if (preset.countExpr) {

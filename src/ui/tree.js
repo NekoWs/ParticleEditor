@@ -136,7 +136,6 @@ export function startRename(el, onCommit, onCancel) {
 export function renderParticleNode(p) {
   const root = document.createElement('div');
   root.className = 'ptree-particle';
-  const expanded = state.expandedParticles.has(p.id);
   const head = document.createElement('div');
   head.className = 'ptree-head' + (state.selected.has(p.id) ? ' selected' : '');
   head.dataset.pid = p.id;
@@ -147,14 +146,6 @@ export function renderParticleNode(p) {
     setDragIds(state.selected.has(p.id) ? [...state.selected] : [p.id]);
   });
   head.addEventListener('dragend', () => { setDragIds(null); });
-  const arrow = document.createElement('span');
-  arrow.className = 'arrow';
-  arrow.textContent = expanded ? '▾' : '▸';
-  arrow.onclick = (e) => {
-    e.stopPropagation();
-    if (expanded) state.expandedParticles.delete(p.id); else state.expandedParticles.add(p.id);
-    refreshParticleTree();
-  };
   const pid = document.createElement('span');
   pid.className = 'pid'; pid.textContent = p.id;
   pid.title = t('tree.dblclickRename');
@@ -162,7 +153,7 @@ export function renderParticleNode(p) {
     e.stopPropagation();
     startRename(pid, (v) => renameParticle(p.id, v), () => refreshParticleTree());
   });
-  head.appendChild(arrow); head.appendChild(pid);
+  head.appendChild(pid);
   const trackCount = state.tracks.filter(tr => tr.ids.length === 1 && tr.ids[0] === p.id).length;
   if (trackCount > 0) {
     const cnt = document.createElement('span');
@@ -198,9 +189,6 @@ export function renderParticleNode(p) {
     ]);
   });
   root.appendChild(head);
-  if (expanded) {
-    root.appendChild(renderPropSection(p.id, PARTICLE_TRACK_DEFS));
-  }
   return root;
 }
 
@@ -356,7 +344,6 @@ export function renderGroupNode(name) {
   if (expanded) {
     const section = document.createElement('div');
     section.className = 'ptree-sub';
-    section.appendChild(renderGroupPropsNode(name));
     section.appendChild(renderGroupMembersNode(name, members));
     root.appendChild(section);
   }
@@ -437,18 +424,9 @@ export function renameFunction(oldId, newName) {
 export function renderFunctionNode(fx) {
   const root = document.createElement('div');
   root.className = 'ptree-particle';
-  const expanded = state.expandedParticles.has('f:' + fx.id);
   const head = document.createElement('div');
   head.className = 'ptree-head func';
   head.dataset.fxid = fx.id;
-  const arrow = document.createElement('span');
-  arrow.className = 'arrow';
-  arrow.textContent = expanded ? '▾' : '▸';
-  arrow.onclick = (e) => {
-    e.stopPropagation();
-    if (expanded) state.expandedParticles.delete('f:' + fx.id); else state.expandedParticles.add('f:' + fx.id);
-    refreshParticleTree();
-  };
   const label = document.createElement('span');
   label.className = 'pid';
   label.textContent = fx.name;
@@ -460,7 +438,7 @@ export function renderFunctionNode(fx) {
   const count = document.createElement('span');
   count.className = 'pstyle';
   count.textContent = tf('tree.fxParticleCount', fx.count);
-  head.appendChild(arrow); head.appendChild(label); head.appendChild(count);
+  head.appendChild(label); head.appendChild(count);
   head.onclick = () => {
     state.selected.clear();
     state.selectedGroup = null;
@@ -476,13 +454,6 @@ export function renderFunctionNode(fx) {
     ]);
   });
   root.appendChild(head);
-  if (expanded) {
-    const section = document.createElement('div');
-    section.className = 'ptree-sub';
-    section.appendChild(renderFunctionPropsNode(fx));
-    section.appendChild(renderFunctionMembersNode(fx));
-    root.appendChild(section);
-  }
   return root;
 }
 

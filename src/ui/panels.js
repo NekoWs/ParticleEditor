@@ -359,25 +359,6 @@ export function buildFunctionPanel(fx) {
   codeArea.onchange = () => { pushUndo(); fx.code = codeArea.value; commitFunctionRebuild(fx); };
   wrap.appendChild(codeArea);
 
-  // 变量表
-  const vhead = document.createElement('div');
-  vhead.className = 'vars-head';
-  vhead.innerHTML = '<span>' + t('fx.varList') + '</span>';
-  const vadd = document.createElement('button');
-  vadd.className = 'mini'; vadd.textContent = '+';
-  vadd.onclick = () => {
-    pushUndo();
-    let k = 0; while (('v' + k) in fx.vars) k++;
-    fx.vars['v' + k] = { expr: '0', kf: [] };
-    commitFunctionRebuild(fx); refreshFunctionPanel();
-  };
-  vhead.appendChild(vadd);
-  wrap.appendChild(vhead);
-  const vlist = document.createElement('div');
-  vlist.className = 'fx-vars';
-  for (const name of Object.keys(fx.vars)) vlist.appendChild(buildVarRow(fx, name));
-  wrap.appendChild(vlist);
-
   return wrap;
 }
 

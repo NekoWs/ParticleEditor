@@ -110,16 +110,17 @@ export function serializeParticle(pt) {
 export function serializeVars(vars) {
   const o = {};
   for (const [name, v] of Object.entries(vars || {})) {
-    o[name] = { expr: v.expr != null ? String(v.expr) : '0', kf: (v.kf || []).map(k => [k[0], k[1], k[2]]) };
+    o[name] = { b: Number.isFinite(v.base) ? v.base : 0, kf: (v.kf || []).map(k => [k[0], k[1], k[2]]) };
   }
   return o;
 }
 export function parseVars(vars) {
   const o = {};
   for (const [name, v] of Object.entries(vars || {})) {
-    if (typeof v === 'string') o[name] = { expr: v, kf: [] }; // 兼容旧格式（纯字符串）
-    else o[name] = {
-      expr: v.expr != null ? String(v.expr) : '0',
+    if (typeof v === 'string') { o[name] = { base: Number(v) || 0, kf: [] }; continue; } // 旧格式纯字符串
+    const legacy = (v.expr != null && v.expr !== '') ? Number(v.expr) : NaN;
+    o[name] = {
+      base: Number.isFinite(v.b) ? v.b : (Number.isFinite(v.base) ? v.base : (Number.isFinite(legacy) ? legacy : 0)),
       kf: (v.kf || []).map(k => [k[0], k[1], Array.isArray(k[2]) ? k[2].slice() : (Number.isInteger(k[2]) ? k[2] : DEFAULT_EASING)]),
     };
   }

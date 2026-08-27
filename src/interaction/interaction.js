@@ -1005,14 +1005,27 @@ export function applyBoxSelection() {
   const x0 = Math.min(boxSel.x0, boxSel.x1) - rect.left, y0 = Math.min(boxSel.y0, boxSel.y1) - rect.top;
   const x1 = Math.max(boxSel.x0, boxSel.x1) - rect.left, y1 = Math.max(boxSel.y0, boxSel.y1) - rect.top;
   const sel = new Set();
+  const derivedFx = new Set();
   for (const p of state.particles) {
     const v = currentVisual(p).pos;
     const s = projectToScreen(v[0], v[1], v[2]);
-    if (s.x >= x0 && s.x <= x1 && s.y >= y0 && s.y <= y1) sel.add(p.id);
+    if (s.x >= x0 && s.x <= x1 && s.y >= y0 && s.y <= y1) {
+      sel.add(p.id);
+      if (p.fx) derivedFx.add(p.fx);
+    }
   }
-  if (boxSel.shift) for (const id of sel) state.selected.add(id);
-  else state.selected = sel;
-  resolveSelectionPriority();
+  if (derivedFx.size > 0) {
+    // 框选命中派生粒子时，直接选中其函数对象（整组派生粒子），不再单独选中部分派生粒子
+    const ids = new Set(state.particles.filter(p => derivedFx.has(p.fx)).map(p => p.id));
+    if (boxSel.shift) for (const id of ids) state.selected.add(id);
+    else state.selected = ids;
+    state.selectedFunction = derivedFx.values().next().value;
+    state.selectedGroup = null;
+  } else {
+    if (boxSel.shift) for (const id of sel) state.selected.add(id);
+    else state.selected = sel;
+    resolveSelectionPriority();
+  }
   if (state.selectedFunction) refreshFunctionPanel(); // 选中函数对象时刷新其属性面板
 }
 

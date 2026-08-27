@@ -246,7 +246,7 @@ export const FUNCTION_PRESETS = {
     ],
     build: p => ({
       count: 200,
-      vars: { amp: { expr: String(p.amp), kf: [] }, freq: { expr: String(p.freq), kf: [] }, wid: { expr: String(p.wid), kf: [] } },
+      vars: { amp: { base: Number(p.amp), kf: [] }, freq: { base: Number(p.freq), kf: [] }, wid: { base: Number(p.wid), kf: [] } },
       code: 'xx = (i / n - 0.5) * wid;\n' +
           '[x,y,z] = [xx, amp * sin(freq * pi * xx / wid), 0]',
     }),
@@ -258,7 +258,7 @@ export const FUNCTION_PRESETS = {
     ],
     build: p => ({
       count: 200,
-      vars: { rad: { expr: String(p.rad), kf: [] } },
+      vars: { rad: { base: Number(p.rad), kf: [] } },
       code: 'th = acos(1-2*(i+0.5)/n);\n' +
           'ph = i*pi*(3-sqrt(5));\n' +
           '[x,y,z] = [rad*sin(th)*cos(ph), rad*cos(th), rad*sin(th)*sin(ph)];\n' +
@@ -273,7 +273,7 @@ export const FUNCTION_PRESETS = {
     ],
     build: p => ({
       count: 512,
-      vars: { edge: { expr: String(p.edge), kf: [] }, sx: { expr: '8', kf: [] }, sy: { expr: '8', kf: [] }, sz: { expr: '8', kf: [] } },
+      vars: { edge: { base: Number(p.edge), kf: [] }, sx: { base: 8, kf: [] }, sy: { base: 8, kf: [] }, sz: { base: 8, kf: [] } },
       code: '[x,y,z] = [((floor(i/(sy*sz)))/(sx-1)-0.5)*edge, ((floor((i%(sy*sz))/sz))/(sy-1)-0.5)*edge, ((i%sz)/(sz-1)-0.5)*edge];\n' +
           '[r,g,b,a] = [1,1,1,1]',
     }),
@@ -289,7 +289,7 @@ export const FUNCTION_PRESETS = {
     ],
     build: p => ({
       count: 717,
-      vars: { major: { expr: String(p.major), kf: [] }, minor: { expr: String(p.minor), kf: [] }, m: { expr: String(p.m), kf: [] }, k: { expr: String(p.k), kf: [] } },
+      vars: { major: { base: Number(p.major), kf: [] }, minor: { base: Number(p.minor), kf: [] }, m: { base: Number(p.m), kf: [] }, k: { base: Number(p.k), kf: [] } },
       code: 'th = i%k/k*2*pi;\n' +
           'ph = floor(i/k)/m*2*pi;\n' +
           '[x,y,z] = [(major+minor*cos(th))*cos(ph), minor*sin(th), (major+minor*cos(th))*sin(ph)]',
@@ -307,7 +307,7 @@ export const FUNCTION_PRESETS = {
     ],
     build: p => ({
       count: 512,
-      vars: { rad: { expr: String(p.rad), kf: [] }, h: { expr: String(p.h), kf: [] }, m: { expr: String(p.m), kf: [] }, k: { expr: String(p.k), kf: [] }, cr: { expr: String(p.cr), kf: [] } },
+      vars: { rad: { base: Number(p.rad), kf: [] }, h: { base: Number(p.h), kf: [] }, m: { base: Number(p.m), kf: [] }, k: { base: Number(p.k), kf: [] }, cr: { base: Number(p.cr), kf: [] } },
       code: 'L = k + 2*cr;\n' +
           'ly = floor(i/m);\n' +
           'aa = i%m/m*2*pi;\n' +
@@ -325,7 +325,7 @@ export const FUNCTION_PRESETS = {
     ],
     build: p => ({
       count: 512,
-      vars: { rad: { expr: String(p.rad), kf: [] }, h: { expr: String(p.h), kf: [] }, m: { expr: '32', kf: [] }, k: { expr: '16', kf: [] } },
+      vars: { rad: { base: Number(p.rad), kf: [] }, h: { base: Number(p.h), kf: [] }, m: { base: 32, kf: [] }, k: { base: 16, kf: [] } },
       code: 'aa = i%m/m*2*pi;\nyy = floor(i/m)/(k-1);\n[x,y,z] = [rad*(1-yy)*cos(aa), (yy-0.5)*h, rad*(1-yy)*sin(aa)];\n[r,g,b,a] = [1,1,1,1];\nglow = 0;\nlight = 0',
     }),
   },
@@ -338,7 +338,7 @@ export const FUNCTION_PRESETS = {
     ],
     build: p => ({
       count: 120,
-      vars: { rad: { expr: String(p.rad), kf: [] }, h: { expr: String(p.h), kf: [] }, turns: { expr: '3', kf: [] }, ppr: { expr: '40', kf: [] } },
+      vars: { rad: { base: Number(p.rad), kf: [] }, h: { base: Number(p.h), kf: [] }, turns: { base: 3, kf: [] }, ppr: { base: 40, kf: [] } },
       code: 'aa = i/ppr*2*pi;\n[x,y,z] = [rad*cos(aa), (i/n-0.5)*h, rad*sin(aa)];\n[r,g,b,a] = [1,1,1,1];\nglow = 1;\nlight = 8',
     }),
   },
@@ -351,7 +351,7 @@ export const FUNCTION_PRESETS = {
     ],
     build: p => ({
       count: 256,
-      vars: { w: { expr: String(p.w), kf: [] }, d: { expr: String(p.d), kf: [] }, cols: { expr: '16', kf: [] }, rows: { expr: '16', kf: [] } },
+      vars: { w: { base: Number(p.w), kf: [] }, d: { base: Number(p.d), kf: [] }, cols: { base: 16, kf: [] }, rows: { base: 16, kf: [] } },
       code: '[x,y,z] = [((i%cols)/(cols-1)-0.5)*w, 0, (floor(i/cols)/(rows-1)-0.5)*d];\n[r,g,b,a] = [1,1,1,1];\nglow = 0;\nlight = 0',
     }),
   },
@@ -362,7 +362,7 @@ export const FUNCTION_PRESETS = {
     ],
     build: p => ({
       count: 200,
-      vars: { rad: { expr: String(p.rad), kf: [] } },
+      vars: { rad: { base: Number(p.rad), kf: [] } },
       code: 'ang = i / n * 2 * pi;\n' +
           '[x,y,z] = [rad * cos(ang), 0, rad * sin(ang)]',
     }),
@@ -374,7 +374,7 @@ export const FUNCTION_PRESETS = {
     ],
     build: p => ({
       count: 400,
-      vars: { diskR: { expr: String(p.diskR), kf: [] } },
+      vars: { diskR: { base: Number(p.diskR), kf: [] } },
       code: 'rad = diskR * sqrt(i / n);\n' +
           'th = i * pi * (3 - sqrt(5));\n' +
           'x = rad * cos(th);\n' +
@@ -388,7 +388,7 @@ export const FUNCTION_PRESETS = {
     ],
     build: p => ({
       count: 2000,
-      vars: { rad: { expr: String(p.rad), kf: [] } },
+      vars: { rad: { base: Number(p.rad), kf: [] } },
       code: 'm = floor(pow(n, 0.5));\nu = floor(i / m) * 2 * pi / m;\nv = i % m * pi / m - pi / 2;\nx = rad * pow(cos(u) * cos(v), 3);\ny = rad * pow(sin(u) * cos(v), 3);\nz = rad * pow(sin(v), 3)'
     })
   },
@@ -400,7 +400,7 @@ export const FUNCTION_PRESETS = {
     ],
     build: p => ({
       count: 2000,
-      vars: { rad: { expr: String(p.rad), kf: []}, spd: { expr: String(p.spd), kf: [] } },
+      vars: { rad: { base: Number(p.rad), kf: []}, spd: { base: Number(p.spd), kf: [] } },
       code: 'x = rand(i * 2) * 2 * rad - rad;\n' +
           'z = rand(i * 4) * 2 * rad - rad;\n' +
           '_y = rand(i * 6) * 2 * rad - rad; \n' +
