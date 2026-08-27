@@ -388,9 +388,9 @@ export function renderGroupPropsNode(name) {
   return renderPropsSubNode('g:' + name + '|@props', 'g:' + name, GROUP_PROP_DEFS);
 }
 
-export function renderGroupMembersNode(name, members) {
+// 组/函数对象共用的「成员列表」子节点：members 为粒子对象数组。
+function renderMembersSubNode(key, members) {
   const wrap = document.createElement('div');
-  const key = 'g:' + name + '|@members';
   const expanded = state.expandedProps.has(key);
   const head = document.createElement('div');
   head.className = 'ptree-subhead';
@@ -408,14 +408,14 @@ export function renderGroupMembersNode(name, members) {
   if (expanded) {
     const list = document.createElement('div');
     list.className = 'ptree-members';
-    for (const id of members) {
-      const p = getParticle(id);
-      if (!p) continue;
-      list.appendChild(renderParticleNode(p));
-    }
+    for (const p of members) list.appendChild(renderParticleNode(p));
     wrap.appendChild(list);
   }
   return wrap;
+}
+
+export function renderGroupMembersNode(name, members) {
+  return renderMembersSubNode('g:' + name + '|@members', members.map(getParticle).filter(Boolean));
 }
 
 /* =========================================================================
@@ -490,30 +490,7 @@ export function renderFunctionPropsNode(fx) {
 }
 
 export function renderFunctionMembersNode(fx) {
-  const wrap = document.createElement('div');
-  const members = state.particles.filter(p => p.fx === fx.id);
-  const key = 'f:' + fx.id + '|@members';
-  const expanded = state.expandedProps.has(key);
-  const head = document.createElement('div');
-  head.className = 'ptree-subhead';
-  const arrow = document.createElement('span');
-  arrow.className = 'arrow';
-  arrow.textContent = expanded ? '▾' : '▸';
-  const label = document.createElement('span');
-  label.textContent = tf('tree.particleListCount', members.length);
-  head.appendChild(arrow); head.appendChild(label);
-  head.onclick = () => {
-    if (expanded) state.expandedProps.delete(key); else state.expandedProps.add(key);
-    refreshParticleTree();
-  };
-  wrap.appendChild(head);
-  if (expanded) {
-    const list = document.createElement('div');
-    list.className = 'ptree-members';
-    for (const p of members) list.appendChild(renderParticleNode(p));
-    wrap.appendChild(list);
-  }
-  return wrap;
+  return renderMembersSubNode('f:' + fx.id + '|@members', state.particles.filter(p => p.fx === fx.id));
 }
 
 /* =========================================================================
