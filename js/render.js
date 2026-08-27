@@ -171,6 +171,7 @@ export function rebuildPoints(full) {
   const hasGroups = memberIdx.size > 0;
   const xforms = groupXformCache;
   const SZF = PARTICLE_SIZE_FACTOR;
+  hasAnimatedTex = false; // 主循环顺带统计动画贴图粒子，避免额外整表扫描
   // 函数对象"干净"标志：无组、无 op 轨道、无函数 scl 轨道、无函数 rot 轨道 → 派生粒子走最简快速路径
   const hasFxRotTracks = state.tracks.some(tr => tr.pr.startsWith('rot.') && tr.ids.some(id => id.startsWith('f:')));
   const fxClean = !hasGroups && opTracksCache.length === 0 && (fxSclTrackCache ? fxSclTrackCache.size === 0 : true) && !hasFxRotTracks;
@@ -302,6 +303,7 @@ export function rebuildPoints(full) {
     positions[i * 3] = px; positions[i * 3 + 1] = py; positions[i * 3 + 2] = pz;
     colors[i * 4] = cr; colors[i * 4 + 1] = cg; colors[i * 4 + 2] = cb; colors[i * 4 + 3] = ca;
     const uvForSize = computeParticleUV(p, UVOUT);
+    if (uvForSize && uvForSize.mode === 'animated') hasAnimatedTex = true;
     // 贴图大小缩放：使用用户设置的 texSize（控制粒子显示大小），基准 16px
     const texW = uvForSize ? (uvForSize.texSize[0] || 16) : 16;
     const texH = uvForSize ? (uvForSize.texSize[1] || 16) : 16;
@@ -344,13 +346,6 @@ export function rebuildPoints(full) {
     ssiz[i * 2 + 1] = Math.max(0.02, sy);
   }
   setPointsGeometry(selectedPoints, spos, rpSelCol, ssiz);
-
-  // 是否存在动画贴图粒子——决定主循环是否每帧轻量推进 UV 帧（updateAnimatedUV）
-  hasAnimatedTex = state.particles.some(p => {
-    if (typeof resolveUV !== 'function') return false;
-    const uv = resolveUV(p).uv;
-    return !!(uv && uv.mode === 'animated' && uv.texture);
-  });
 
   updateGizmo();
   drawTimeline();
