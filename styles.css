@@ -615,7 +615,7 @@ body.ctrl-held .kf-t { cursor: pointer; }
 /* ---- 底部时间轴左侧标签轨 + 右侧 lane 画布 ---- */
 .tl-body {
   flex: 1 1 auto; min-height: 0;
-  display: flex; gap: 8px; margin-top: 6px;
+  display: flex; margin-top: 6px;
 }
 .tl-tree {
   flex: 0 0 320px; min-width: 240px; max-width: 480px;
