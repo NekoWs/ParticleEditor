@@ -12,8 +12,9 @@ import { editComponentValue, removeKeyframe, renameParticle, renameGroup, movePa
 import { pushUndo, popUndo } from './undo.js';
 import { deleteFunctionObject } from './generators.js';
 import { deleteSelected } from './interaction.js';
-import { makeEasingBtn } from './easing-editor.js';
-import { TL_PX_PER_TICK, compTimelineViewStart, setCompTimelineViewStart, COMP_TL_MIN_VIEW_START, scrubAutoPan } from './panels.js';
+import { makeEasingBtn, easingCurveSVG } from './easing-editor.js';
+import { r3 } from './io.js';
+import { TL_PX_PER_TICK, compTimelineViewStart, setCompTimelineViewStart, COMP_TL_MIN_VIEW_START, scrubAutoPan, refreshFunctionPanel, syncFunctionVarValues } from './panels.js';
 import { updateTimeUI } from './main.js';
 export function createGroup() {
   if (state.selected.size < 1) { modalAlert(t('tree.hint'), t('tree.selectParticlesFirst')); return; }

@@ -12,6 +12,7 @@ import { baseComponent, componentValueAt, findTrackByPr, PR_TO_IDX, trVersion, r
 import { refreshParticleTree, groupCentroidValue, targetComponentValue } from './tree.js';
 import { pushUndo } from './undo.js';
 import { commitFunctionRebuild } from './panels.js';
+import { selectedGroupName } from './interaction.js';
 // 修改基础值（完整向量）
 export function applyBaseValue(p, prop, values) {
   if (prop === 'pos') p.pos = values.slice(0, 3);

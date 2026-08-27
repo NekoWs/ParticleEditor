@@ -11,7 +11,7 @@ import { resolveUV, refreshUVPanel } from './texture-editor.js';
 import { updateGizmo } from './gizmo.js';
 import { drawTimeline, updatePropPanel } from './panels.js';
 import { refreshTreeSelection, refreshCompTimelines } from './tree.js';
-import { buildParticleIndex, buildTrackIndex, buildGroupIndex, buildOpDeltaCache, buildGroupXforms, buildFxSclTrackCache, currentVisual, velOffsetAt, rotVectorAt, trackValueAt, groupMemberIndexCache, groupXformCache, opTracksCache, fxSclTrackCache, fxOpDeltaCache } from './animation-eval.js';
+import { buildParticleIndex, buildTrackIndex, buildGroupIndex, buildOpDeltaCache, buildGroupXforms, buildFxSclTrackCache, currentVisual, velOffsetAt, rotVectorAt, trackValueAt, trackIntegral, trVersion, groupMemberIndexCache, groupXformCache, opTracksCache, fxSclTrackCache, fxOpDeltaCache } from './animation-eval.js';
 import * as THREE from "three";
 /* =========================================================================
  * 渲染

@@ -7,7 +7,7 @@
 
 import { t, tf } from './i18n.js';
 import { state, UV_MODES, autoFramesFor, effMaxFrame, defaultUV, getParticle, getFunction, isDerivedParticle, setDirty } from './constants.js';
-import { rebuildPoints } from './animation.js';
+import { rebuildPoints, groupMemberIndexCache } from './animation.js';
 import { rebuildAtlas } from './scene.js';
 import { selectedGroupName } from './interaction.js';
 import { pushUndo } from './undo.js';

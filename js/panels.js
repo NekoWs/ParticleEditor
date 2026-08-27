@@ -11,11 +11,14 @@ import { t, tf } from './i18n.js';
 import { state, FUNCTION_PRESETS, getFunction, isDerivedParticle } from './constants.js';
 import { currentVisual } from './animation.js';
 import { currentSelected, selectedGroupName, fxPosDeltaAt, fxScaleValuesAt } from './interaction.js';
-import { groupCurrentCentroid } from './tree.js';
+import { groupCurrentCentroid, refreshParticleTree } from './tree.js';
 import { modalAlert } from './ui.js';
 import { makeEasingBtn } from './easing-editor.js';
 import { ATTR_NAMES, evaluate, varKfValue } from './easing.js';
-import { syncPresetCount } from './generators.js';
+import { applyPresetBuild, rebuildFunctionObject, syncPresetCount } from './generators.js';
+import { openBlockDrawer } from './blocks-ui.js';
+import { pushUndo } from './undo.js';
+import { r3 } from './io.js';
 // 设置缩放 XYZ 三输入（vals 为 [x,y,z]；null 元素表示混合值显示空）
 export function setScaleInputs(vals) {
   ['prop-scale-x', 'prop-scale-y', 'prop-scale-z'].forEach((id, i) => {
@@ -291,7 +294,7 @@ export function buildFunctionPanel(fx) {
     inp.type = 'number'; inp.step = '0.1'; inp.value = fx.center[idx];
     inp.style.width = '46px';
     inp.title = axis;
-    inp.onchange = () => { fx.center[idx] = parseFloat(inp.value) || 0; pushUndo(); commitFunctionRebuild(fx); };
+    inp.onchange = () => { pushUndo(); fx.center[idx] = parseFloat(inp.value) || 0; commitFunctionRebuild(fx); };
     centerRow.appendChild(document.createTextNode(axis));
     centerRow.appendChild(inp);
   });
