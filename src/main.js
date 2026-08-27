@@ -341,21 +341,40 @@ window.addEventListener('resize', resize);
 resize();
 
 export let last = performance.now();
-const fpsFrameSamples = []; // 最近帧间隔采样，取中位数后再平滑，避免抖动
-let fpsEma = 60;            // 帧率指数移动平均，供右下角 FPS 显示
+const fpsFrameSamples = []; // 最近帧间隔采样
+let displayFps = 60;        // 估算出的显示器最大刷新率，显示在右下角
+// 常见显示器刷新率档位，用于把测量值吸附到最接近的档位，避免数字抖动
+const COMMON_REFRESH_RATES = [60, 75, 90, 120, 144, 160, 165, 180, 240, 360];
+
+function snapToDisplayRefresh(rawFps) {
+  let best = COMMON_REFRESH_RATES[0];
+  let bestDiff = Infinity;
+  for (const rate of COMMON_REFRESH_RATES) {
+    const diff = Math.abs(rawFps - rate);
+    if (diff < bestDiff) { bestDiff = diff; best = rate; }
+  }
+  return best;
+}
+
+function estimateDisplayRefresh() {
+  if (fpsFrameSamples.length < 8) return displayFps;
+  const sorted = [...fpsFrameSamples].sort((a, b) => a - b);
+  // 用较快的 10% 分位帧间隔近似 vsync 周期：即使当前帧率被场景拖低，仍能反映显示器上限
+  const fastestMs = sorted[Math.max(0, Math.floor(sorted.length * 0.1))] || 16.7;
+  return snapToDisplayRefresh(1000 / Math.max(1, fastestMs));
+}
+
 export function animate(now) {
   requestAnimationFrame(animate);
   const frameMs = now - last;
   const dt = Math.min(frameMs / 1000, 0.1);
   last = now;
-  // 更新场景刷新率显示：中位数 + EMA，稳定收敛到显示器 vsync 帧率
+  // 更新 FPS 显示：估算显示器最大刷新率并吸附到常见档位，数值稳定
   fpsFrameSamples.push(Math.min(frameMs, 250));
-  if (fpsFrameSamples.length > 30) fpsFrameSamples.shift();
-  const sorted = [...fpsFrameSamples].sort((a, b) => a - b);
-  const medianMs = sorted[Math.floor(sorted.length / 2)] || frameMs;
-  fpsEma = fpsEma * 0.9 + (1000 / Math.max(1, medianMs)) * 0.1;
+  if (fpsFrameSamples.length > 60) fpsFrameSamples.shift();
+  displayFps = estimateDisplayRefresh();
   const fpsEl = document.getElementById('fps-counter');
-  if (fpsEl) fpsEl.textContent = Math.max(0, Math.round(fpsEma)) + 'FPS';
+  if (fpsEl) fpsEl.textContent = displayFps + 'FPS';
 
   if (camTransition) {
     const t = Math.min(1, (now - camTransition.t0) / camTransition.dur);
