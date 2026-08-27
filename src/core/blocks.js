@@ -224,9 +224,6 @@ export function exprToCode(node, parentPrec) {
   return (p < parentPrec) ? '(' + s + ')' : s;
 }
 
-/** 变量表达式（标量）→ 代码。 */
-export function varExprToCode(node) { return exprToCode(node, 0); }
-
 export function stmtToCode(s) {
   switch (s.kind) {
     case 'pos': return '[x,y,z] = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
@@ -380,9 +377,6 @@ export function parseExpr(str) {
   if (pos < toks.length) throw new Error(_etf('err.exprExtra', str));
   return node;
 }
-
-/** 变量表达式字符串 → 表达式节点。 */
-export function parseVarExpr(str) { return parseExpr(str); }
 
 export const isNames = (names, expect) => names.length === expect.length && names.every((n, i) => n === expect[i]);
 

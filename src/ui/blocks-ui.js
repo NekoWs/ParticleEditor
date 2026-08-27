@@ -8,7 +8,7 @@ import { t, tf, _etf } from '../core/i18n.js';
 import { state, getFunction } from '../core/constants.js';
 import { ATTR_NAMES } from '../core/easing.js';
 import { modalAlert } from './ui.js';
-import { T_SCALAR, T_VEC, T_MAT, T_ANY, FUNC_BLOCKS, STMT_BLOCKS, PALETTE_GROUPS, OP_SYMBOLS, OP_LABELS, collectTemps, codeToStatements, statementsToCode, parseVarExpr, varExprToCode, exprType, typeAccepts, fmtNum } from '../core/blocks.js';
+import { T_SCALAR, T_VEC, T_MAT, T_ANY, FUNC_BLOCKS, STMT_BLOCKS, PALETTE_GROUPS, OP_SYMBOLS, OP_LABELS, collectTemps, codeToStatements, statementsToCode, exprType, typeAccepts, fmtNum } from '../core/blocks.js';
 import { makeFloatWindow } from './float-window.js';
 import { pushUndo, cloneVars } from '../state/undo.js';
 import { commitFunctionRebuild, refreshFunctionPanel, drawTimeline } from './panels.js';
@@ -712,7 +712,16 @@ export function makeVarBlock(name) {
   nameIn.addEventListener('pointerdown', e => e.stopPropagation());
   wrap.appendChild(nameIn);
   wrap.appendChild(document.createTextNode(' = '));
-  wrap.appendChild(makeSlot(slotRef(() => bctx.varExprs[name], val => { bctx.varExprs[name] = val; }, T_SCALAR), ''));
+  const valIn = document.createElement('input');
+  valIn.className = 'blk-num';
+  valIn.type = 'number'; valIn.step = 'any';
+  valIn.value = Number.isFinite(bctx.varExprs[name]) ? bctx.varExprs[name] : 0;
+  const fitValWidth = () => { valIn.style.width = Math.max(26, Math.min(120, (String(valIn.value).length + 1) * 8)) + 'px'; };
+  fitValWidth();
+  valIn.addEventListener('input', () => { const n = parseFloat(valIn.value); if (Number.isFinite(n)) { bctx.varExprs[name] = n; refreshCodeEcho(); } fitValWidth(); });
+  valIn.addEventListener('change', () => bctxPushUndo());
+  valIn.addEventListener('pointerdown', e => e.stopPropagation());
+  wrap.appendChild(valIn);
   return wrap;
 }
 /** 可设置属性标签（x/y/z/…）：可拖入表达式 slot 作为变量引用。 */
@@ -1293,8 +1302,8 @@ export function openBlockDrawer(fx) {
   for (const name of Object.keys(fx.vars)) {
     const v = fx.vars[name];
     if ((v.kf || []).length > 0) continue;
-    try { varExprs[name] = parseVarExpr(v.expr || '0'); varOrder.push(name); }
-    catch (e) { modalAlert(t('blk.varExprErrTitle'), tf('blk.varExprErr', name, e.message)); return; }
+    varExprs[name] = Number.isFinite(v.base) ? v.base : 0;
+    varOrder.push(name);
   }
   const saved = fx.ui || {};
   bctx = {
@@ -1339,7 +1348,7 @@ export function closeBlockDrawer(commit) {
     for (const name of bctx.varOrder) {
       if (name in bctx.varExprs) {
         const v = fx.vars[name];
-        if (v && (v.kf || []).length === 0) v.expr = varExprToCode(bctx.varExprs[name]);
+        if (v && (v.kf || []).length === 0) v.base = Number.isFinite(bctx.varExprs[name]) ? bctx.varExprs[name] : 0;
       }
     }
     if (newCode !== bctx.snapshot.code) { fx.preset = null; fx.params = null; }
@@ -1400,7 +1409,7 @@ export function blockPreview() {
   for (const name of bctx.varOrder) {
     if (name in bctx.varExprs) {
       const v = fx.vars[name];
-      if (v && (v.kf || []).length === 0) v.expr = varExprToCode(bctx.varExprs[name]);
+      if (v && (v.kf || []).length === 0) v.base = Number.isFinite(bctx.varExprs[name]) ? bctx.varExprs[name] : 0;
     }
   }
   commitFunctionRebuild(fx);
@@ -1430,7 +1439,7 @@ export function restoreBctx(s) {
   bctx.varExprs = deepCloneVarExprs(s.varExprs);
   bctx.layout.chain = { x: s.chainPos.x, y: s.chainPos.y };
 }
-export function deepCloneVarExprs(o) { const r = {}; for (const k in o) r[k] = cloneExprNode(o[k]); return r; }
+export function deepCloneVarExprs(o) { const r = {}; for (const k in o) r[k] = o[k]; return r; }
 export function bctxUndo() {
   if (!bctx || bctx.undoStack.length === 0) return;
   bctx.redoStack.push(snapBctx());

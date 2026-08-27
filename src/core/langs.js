@@ -25,6 +25,7 @@ export var LANGS = {
     // —— 函数对象 ——
     'fx.addPresetTitle': '按预设新建函数对象', 'fx.noSelection': '选中一个函数对象以编辑属性',
     'fx.exprError': '表达式错误', 'fx.name': '名称 ', 'fx.sampleCount': '采样数 ', 'fx.center': '中心点 ',
+    'fx.noVars': '暂无变量',
     'fx.duration': '时长 ', 'fx.interval': ' 间隔 ', 'fx.codeBlock': '公式代码块', 'fx.puzzle': '🧩 拼图',
     'fx.puzzleHint': '以拼图形式编辑代码段', 'fx.varList': '变量列表',
     'fx.collapseKf': '折叠关键帧列表', 'fx.expandKf': '展开关键帧列表',
@@ -179,6 +180,7 @@ export var LANGS = {
     // —— 函数对象 ——
     'fx.addPresetTitle': 'Create function object from preset', 'fx.noSelection': 'Select a function object to edit its properties',
     'fx.exprError': 'Expression Error', 'fx.name': 'Name ', 'fx.sampleCount': 'Sample Count ', 'fx.center': 'Center ',
+    'fx.noVars': 'No variables',
     'fx.duration': 'Duration ', 'fx.interval': ' Interval ', 'fx.codeBlock': 'Code Block', 'fx.puzzle': '🧩 Puzzle',
     'fx.puzzleHint': 'Edit code as puzzle blocks', 'fx.varList': 'Variables',
     'fx.collapseKf': 'Collapse keyframes', 'fx.expandKf': 'Expand keyframes',
