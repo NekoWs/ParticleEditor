@@ -6,10 +6,26 @@
 import * as THREE from 'three';
 import { OrbitControls, state } from '../core/constants.js';
 export const viewport = document.getElementById('viewport');
-export const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+export const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
 renderer.setClearColor(0x14161c, 1);
 viewport.appendChild(renderer.domElement);
+
+// 根据视口 CSS 尺寸与设备像素比，动态限制实际渲染分辨率。
+// 4K 大屏若仍按 devicePixelRatio=2 渲染，绘制缓冲会达 7680×4320，帧率急剧下降；
+// 这里设置像素预算，超出后自动降低渲染倍率（最低 0.75），保证大屏高帧率。
+const MAX_RENDER_PIXELS = 2560 * 1440; // 约 370 万像素，优先帧率
+const MIN_RENDER_SCALE = 0.75;
+export function updateRenderScale() {
+  const cssW = viewport.clientWidth || 1;
+  const cssH = viewport.clientHeight || 1;
+  const dpr = window.devicePixelRatio || 1;
+  let ratio = Math.min(dpr, 2);
+  if (cssW * cssH * ratio * ratio > MAX_RENDER_PIXELS) {
+    ratio = Math.sqrt(MAX_RENDER_PIXELS / (cssW * cssH));
+  }
+  ratio = Math.max(MIN_RENDER_SCALE, ratio);
+  renderer.setPixelRatio(ratio);
+}
 
 export const scene = new THREE.Scene();
 export const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);

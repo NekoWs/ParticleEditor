@@ -11,7 +11,7 @@ import { setShiftHeld, getDragIds, setDragIds } from './interaction/input-state.
 import { showAboutModal } from './ui/ui.js';
 import { easeInOut } from './core/easing.js';
 import { openEasingEditor, easingCurveSVG } from './ui/easing-editor.js';
-import { viewport, renderer, camera, controls, scene, pointsMaterial, selectedMaterial, focalLengthPx, camTransition, setCamTransition, planePulse, setPlanePulse } from './scene/scene.js';
+import { viewport, renderer, camera, controls, scene, pointsMaterial, selectedMaterial, focalLengthPx, camTransition, setCamTransition, planePulse, setPlanePulse, updateRenderScale } from './scene/scene.js';
 import { rebuildPoints, rebuildPointsTime, maxTick, resetVelOffsets, updateAnimatedUV } from './core/animation.js';
 import { editSelectionUniform, addParticle, removeParticlesFromGroups } from './core/edit.js';
 import { pushUndo, undo, redo, beginContinuous, endContinuous } from './state/undo.js';
@@ -326,6 +326,7 @@ export function applyScaleFromInputs() {
 
 export function resize() {
   const w = viewport.clientWidth, h = viewport.clientHeight;
+  updateRenderScale();
   renderer.setSize(w, h);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
