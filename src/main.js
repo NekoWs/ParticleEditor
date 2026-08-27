@@ -340,10 +340,16 @@ window.addEventListener('resize', resize);
 resize();
 
 export let last = performance.now();
+let fpsEma = 60; // 帧率指数移动平均，供右下角 FPS 显示
 export function animate(now) {
   requestAnimationFrame(animate);
-  const dt = Math.min((now - last) / 1000, 0.1);
+  const frameMs = now - last;
+  const dt = Math.min(frameMs / 1000, 0.1);
   last = now;
+  // 更新场景刷新率显示（指数平滑，避免数字抖动过大）
+  fpsEma = fpsEma * 0.9 + (1000 / Math.max(1, frameMs)) * 0.1;
+  const fpsEl = document.getElementById('fps-counter');
+  if (fpsEl) fpsEl.textContent = Math.max(0, Math.round(fpsEma)) + 'FPS';
 
   if (camTransition) {
     const t = Math.min(1, (now - camTransition.t0) / camTransition.dur);
