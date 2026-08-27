@@ -1,45 +1,32 @@
 /* =========================================================================
- * 底部时间轴 · 图层区（AE 式）
+ * 底部时间轴 · lane 画布（与左侧 HTML 标签轨共用 tlTreeFlatRows）
  *
- * - 行模型：组聚合行（成员 st 跨度，可展开为成员行）+ 未分组粒子行 + 函数对象行；
- * - 拖拽条形起点改 st（整数 tick 吸附）；组条拖拽整体平移全部成员；
- * - 粒子寿命 life（tick，-1=无限）：有限时条长=st~st+life，右端手柄拖拽调整；
- *   双击右端手柄在 无限⇄有限（取当前指针位置） 之间切换；
- * - 视口横向与标尺共享 timelineViewStart / TL_PX_PER_TICK（panels.js）；
- * - undo：拖拽开始前 pushUndo 一次（undo.js 的 snapshot 经字段展开天然覆盖 st/life/ent）。
+ * - 行模型完全来自 timeline-tree.js 的 tlTreeFlatRows()；
+ * - 顶层对象行（组/粒子/函数对象）保留 st/life 拖拽条；
+ * - 属性/分量/变量行绘制关键帧菱形（隐藏 0t 默认关键帧）；
+ * - 播放头与刻度横跨整块画布，与上方 #timeline 标尺共享
+ *   timelineViewStart / TL_PX_PER_TICK；
+ * - 垂直滚动由 #tl-tree 的 scrollTop 驱动（tlLayerState.scroll）。
  * ======================================================================= */
 
-
-import { state } from '../core/constants.js';
+import { state, TRACK_COMPS, compPr, getFunction } from '../core/constants.js';
 import { TL_PX_PER_TICK, timelineViewStart, drawTimeline } from './panels.js';
 import { rebuildPoints, maxTick } from '../core/animation.js';
+import { findTrackByPr } from '../core/animation-eval.js';
+import { varKfValue } from '../core/easing.js';
+import { baseValueFor } from '../core/edit.js';
 import { saveWorkspaceState } from './blocks-ui.js';
 import { resize } from '../main.js';
 import { pushUndo } from '../state/undo.js';
-import { refreshTimelineTree } from './timeline-tree.js';
-export const TL_LAYER_ROW_H = 18;
-export const tlLayerState = { expanded: new Set(), scroll: 0, drag: null, hit: [] };
+import { refreshTimelineTree, tlTreeFlatRows, TL_TREE_ROW_H } from './timeline-tree.js';
 
-export function tlLayerRows() {
-  const rows = [];
-  const grouped = new Set();
-  for (const [gname, members] of Object.entries(state.groups)) {
-    for (const id of members) grouped.add(id);
-    rows.push({ kind: 'group', name: gname, members: members.slice() });
-  }
-  for (const p of state.particles) {
-    if (p.fx || grouped.has(p.id)) continue;
-    rows.push({ kind: 'particle', p });
-  }
-  for (const fx of state.functions) rows.push({ kind: 'fx', fx });
-  return rows;
-}
+export const tlLayerState = { scroll: 0, drag: null, hit: [] };
 
-export function rowLabel(r) {
-  if (r.kind === 'group') return r.name + ' (' + r.members.length + ')';
-  if (r.kind === 'fx') return r.fx.name;
-  return r.p.id;
-}
+// 分量关键帧菱形配色（与旧的 .comp-timeline 视觉一致）
+const LANE_KF_COLORS = {
+  x: '#ffcc55', y: '#5b9dff', z: '#6bd489',
+  r: '#ff7b6b', g: '#6bd489', b: '#5b9dff', a: '#e57fae',
+};
 
 export function particleLifeEnd(p) {
   const life = typeof p.life === 'number' ? p.life : -1;
@@ -47,7 +34,7 @@ export function particleLifeEnd(p) {
   return life < 0 ? Infinity : s + life;
 }
 
-/** 行的可见性跨度 [start, end]；end 可为 Infinity（无限寿命）。 */
+/** 顶层对象行的可见性跨度 [start, end]；end 可为 Infinity（无限寿命）。 */
 export function rowSpan(r) {
   if (r.kind === 'group') {
     let lo = Infinity, hi = -Infinity, anyInf = false;
@@ -62,7 +49,6 @@ export function rowSpan(r) {
     return [lo, anyInf ? Infinity : Math.max(hi, lo)];
   }
   if (r.kind === 'fx') {
-    // 与 maxTick 一致：extent = max(时长, 变量关键帧最大 tick)
     const fx = r.fx;
     let extent = fx.duration || 0;
     for (const v of Object.values(fx.vars)) for (const k of (v.kf || [])) if (k[0] > extent) extent = k[0];
@@ -72,10 +58,130 @@ export function rowSpan(r) {
   return [s, e];
 }
 
+function barRowFor(row) {
+  if (row.kind === 'group') return { kind: 'group', name: row.name, members: row.members };
+  if (row.kind === 'particle') return { kind: 'particle', p: row.p };
+  return { kind: 'fx', fx: row.fx };
+}
+
+function drawDiamond(ctx, x, cy, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x, cy - 4);
+  ctx.lineTo(x + 4, cy);
+  ctx.lineTo(x, cy + 4);
+  ctx.lineTo(x - 4, cy);
+  ctx.closePath();
+  ctx.fill();
+}
+
+// 0t 默认关键帧（轨道创建时写入的基线 kf0）不画菱形
+function isDefaultKf(tr, id, prop, comp, kf) {
+  if (kf[0] !== 0) return false;
+  const baseline = tr.m === 'op' ? 0 : baseValueFor(id, prop, comp);
+  return Math.abs(kf[1] - baseline) < 1e-6;
+}
+
+function drawKfsForTrack(ctx, tr, id, prop, comp, w, cy, color, X) {
+  for (const kf of tr.kf) {
+    if (isDefaultKf(tr, id, prop, comp, kf)) continue;
+    const x = X(kf[0]);
+    if (x < -6 || x > w + 6) continue;
+    drawDiamond(ctx, x, cy, color);
+  }
+}
+
+function drawPropLane(ctx, row, y, w, rowH, X) {
+  const cy = y + rowH / 2;
+  for (const comp of TRACK_COMPS[row.prop] || []) {
+    const tr = findTrackByPr(compPr(row.prop, comp), row.id);
+    if (!tr) continue;
+    drawKfsForTrack(ctx, tr, row.id, row.prop, comp, w, cy, LANE_KF_COLORS[comp] || '#ffcc55', X);
+  }
+}
+
+function drawCompLane(ctx, row, y, w, rowH, X) {
+  const tr = findTrackByPr(compPr(row.prop, row.comp), row.id);
+  if (!tr) return;
+  drawKfsForTrack(ctx, tr, row.id, row.prop, row.comp, w, y + rowH / 2, LANE_KF_COLORS[row.comp] || '#ffcc55', X);
+}
+
+function drawVarLane(ctx, row, y, w, rowH, X) {
+  const v = row.fx.vars && row.fx.vars[row.name];
+  const kfs = v && v.kf ? v.kf : [];
+  const cy = y + rowH / 2;
+  for (const kf of kfs) {
+    const x = X(kf[0]);
+    if (x < -6 || x > w + 6) continue;
+    drawDiamond(ctx, x, cy, '#ffcc55');
+  }
+}
+
+function drawBarLane(ctx, row, y, w, rowH, X) {
+  const r = barRowFor(row);
+  const [s, e] = rowSpan(r);
+  const bx = X(s);
+  const inf = e === Infinity;
+  const bw = inf ? Math.max(4, w - bx) : Math.max(4, X(e) - X(s));
+  const bh = rowH - 6;
+
+  ctx.fillStyle = row.kind === 'group' ? '#c9a24b' : row.kind === 'fx' ? '#7e6bc9' : '#4b7ec9';
+  ctx.fillRect(bx, y + 3, bw, bh);
+
+  if (inf) {
+    const grad = ctx.createLinearGradient(w - 60, 0, w, 0);
+    grad.addColorStop(0, 'rgba(24,27,34,0)');
+    grad.addColorStop(1, '#181b22');
+    ctx.fillStyle = grad;
+    ctx.fillRect(Math.max(bx, w - 60), y + 3, w - Math.max(bx, w - 60), bh);
+    if (bw > 26) {
+      ctx.fillStyle = '#aab3c5';
+      ctx.font = '10px sans-serif';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('∞', Math.min(w - 14, bx + bw - 12), y + rowH / 2);
+    }
+  } else {
+    ctx.fillStyle = '#dfe6f2';
+    ctx.fillRect(X(e) - 1.5, y + 2, 3, rowH - 4);   // 寿命终点手柄
+  }
+  ctx.fillStyle = '#e8ecf5';
+  ctx.fillRect(bx - 1.5, y + 2, 3, rowH - 4);       // 起点(入场)手柄
+  if (state.time < s) {
+    ctx.fillStyle = 'rgba(24,27,34,0.55)';
+    ctx.fillRect(bx, y + 3, Math.max(0, w - bx), bh);
+  }
+
+  tlLayerState.hit.push({ y, rowH, r, s, e, inf, bx, bw });
+}
+
+function drawLaneRow(ctx, row, y, w, rowH, X) {
+  // 行分隔线（HTML 侧行高一致，这里画一条淡线增强对齐感）
+  ctx.strokeStyle = '#232833';
+  ctx.beginPath();
+  ctx.moveTo(0, y + rowH - 0.5);
+  ctx.lineTo(w, y + rowH - 0.5);
+  ctx.stroke();
+
+  if (row.kind === 'group' || row.kind === 'particle' || row.kind === 'fx') {
+    drawBarLane(ctx, row, y, w, rowH, X);
+  } else if (row.kind === 'prop') {
+    drawPropLane(ctx, row, y, w, rowH, X);
+  } else if (row.kind === 'comp') {
+    drawCompLane(ctx, row, y, w, rowH, X);
+  } else if (row.kind === 'var') {
+    drawVarLane(ctx, row, y, w, rowH, X);
+  }
+}
+
 export function drawTimelineLayers() {
   const canvas = document.getElementById('tl-layers-canvas');
   if (typeof refreshTimelineTree === 'function') refreshTimelineTree();
   if (!canvas) return;
+
+  // 与 HTML 标签轨共享滚动偏移
+  const tree = document.getElementById('tl-tree');
+  if (tree) tlLayerState.scroll = tree.scrollTop || 0;
+
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.clientWidth || 1, h = canvas.clientHeight || 1;
   canvas.width = w * dpr; canvas.height = h * dpr;
@@ -84,72 +190,39 @@ export function drawTimelineLayers() {
   ctx.fillStyle = '#181b22';
   ctx.fillRect(0, 0, w, h);
 
-  // 刻度行：每 5 tick 一条线（与标尺对齐）；数字只在上方标尺显示
   const pxPerTick = TL_PX_PER_TICK;
-  ctx.strokeStyle = '#262b34';
-  const viewEnd = timelineViewStart + w / pxPerTick;
-  for (let t = Math.max(0, Math.floor(timelineViewStart / 5) * 5); t <= viewEnd; t += 5) {
-    ctx.beginPath(); ctx.moveTo(X_of(t), 0); ctx.lineTo(X_of(t), h); ctx.stroke();
-  }
-
-  const rowH = TL_LAYER_ROW_H;
-  const headerH = 12;
   const X = t => (t - timelineViewStart) * pxPerTick;
+  const viewEnd = timelineViewStart + w / pxPerTick;
 
-  // 展开组的成员行插入到组行之后
-  const flat = [];
-  for (const r of tlLayerRows()) {
-    flat.push(r);
-    if (r.kind === 'group' && tlLayerState.expanded.has(r.name)) {
-      for (const id of r.members) {
-        const p = state.particles.find(q => q.id === id);
-        if (p) flat.push({ kind: 'member', p, group: r.name });
-      }
-    }
+  // 每 5 tick 一条竖刻度线（与上方标尺同一视口；数字只在上方标尺显示）
+  ctx.strokeStyle = '#262b34';
+  for (let t = Math.max(0, Math.floor(timelineViewStart / 5) * 5); t <= viewEnd; t += 5) {
+    ctx.beginPath(); ctx.moveTo(X(t), 0); ctx.lineTo(X(t), h); ctx.stroke();
   }
 
+  const rowH = TL_TREE_ROW_H;
+  const rows = tlTreeFlatRows();
   tlLayerState.hit = [];
-  let y = headerH - tlLayerState.scroll;
-  for (const r of flat) {
-    if (y + rowH >= headerH && y <= h) {
-      const [s, e] = rowSpan(r);
-      ctx.fillStyle = '#8a92a3'; ctx.font = '10px sans-serif'; ctx.textBaseline = 'middle';
-      const arrow = r.kind === 'group' ? (tlLayerState.expanded.has(r.name) ? '▾ ' : '▸ ') : '';
-      ctx.fillText(arrow + rowLabel(r), 4, y + rowH / 2);
-      const bx = X(s);
-      const inf = e === Infinity;
-      const bw = inf ? Math.max(4, w - bx) : Math.max(4, X(e) - X(s));
-      ctx.fillStyle = r.kind === 'group' ? '#c9a24b' : r.kind === 'fx' ? '#7e6bc9' : '#4b7ec9';
-      ctx.fillRect(bx, y + 3, bw, rowH - 6);
-      if (inf) {
-        // 无限寿命：右端渐隐 + ∞ 标记
-        const grad = ctx.createLinearGradient(w - 60, 0, w, 0);
-        grad.addColorStop(0, 'rgba(24,27,34,0)');
-        grad.addColorStop(1, '#181b22');
-        ctx.fillStyle = grad;
-        ctx.fillRect(Math.max(bx, w - 60), y + 3, w - Math.max(bx, w - 60), rowH - 6);
-        if (bw > 26) { ctx.fillStyle = '#aab3c5'; ctx.fillText('∞', Math.min(w - 14, bx + bw - 12), y + rowH / 2); }
-      } else {
-        ctx.fillStyle = '#dfe6f2';
-        ctx.fillRect(X(e) - 1.5, y + 2, 3, rowH - 4);   // 寿命终点手柄
-      }
-      ctx.fillStyle = '#e8ecf5';
-      ctx.fillRect(bx - 1.5, y + 2, 3, rowH - 4);       // 起点(入场)手柄
-      // 播放头之前（未出场）画遮罩
-      if (state.time < s) { ctx.fillStyle = 'rgba(24,27,34,0.55)'; ctx.fillRect(bx, y + 3, Math.max(0, w - bx), rowH - 6); }
-      tlLayerState.hit.push({ y, rowH, r, s, e, inf, bx, bw });
-    }
+  let y = -tlLayerState.scroll;
+  for (const row of rows) {
+    if (y + rowH < 0) { y += rowH; continue; }
+    if (y > h) break;
+    drawLaneRow(ctx, row, y, w, rowH, X);
     y += rowH;
   }
 
-  const phx = (state.time - timelineViewStart) * pxPerTick;
+  // 播放头（贯穿全部 lane）
+  const phx = X(state.time);
   ctx.strokeStyle = 'rgba(255,204,85,0.5)';
-  ctx.beginPath(); ctx.moveTo(phx, headerH); ctx.lineTo(phx, h); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(phx, 0);
+  ctx.lineTo(phx, h);
+  ctx.stroke();
 }
 
 export function X_of(t) { return (t - timelineViewStart) * TL_PX_PER_TICK; }
 
-/** 命中检测：返回 {hit, zone}；zone ∈ 'start'|'life'|'body'。 */
+/** 顶层对象条的命中检测：返回 {hit, zone}；zone ∈ 'start'|'life'|'body'。 */
 export function tlLayerHitAt(clientX, clientY) {
   const canvas = document.getElementById('tl-layers-canvas');
   if (!canvas) return null;
@@ -190,7 +263,7 @@ export function timelineXToTickL(clientX) {
   return timelineViewStart + (clientX - rect.left) / TL_PX_PER_TICK;
 }
 
-/** 轻刷新：st/life 改动后同步时长显示、标尺、图层区与预览。 */
+/** 轻刷新：st/life 改动后同步时长显示、标尺、lane 区与预览。 */
 export function refreshAllPanelsLight() {
   const maxEl = document.getElementById('tl-max');
   if (maxEl) maxEl.textContent = maxTick();
@@ -201,15 +274,21 @@ export function refreshAllPanelsLight() {
 
 export function tlInitLayerEvents() {
   const canvas = document.getElementById('tl-layers-canvas');
-  const grip = document.getElementById('tl-module-resize');
   if (!canvas) return;
+
+  // HTML 标签轨滚动 → 同步 lane 画布
+  const tree = document.getElementById('tl-tree');
+  if (tree) {
+    tree.addEventListener('scroll', () => {
+      tlLayerState.scroll = tree.scrollTop || 0;
+      drawTimelineLayers();
+    });
+  }
 
   canvas.addEventListener('pointerdown', ev => {
     const res = tlLayerHitAt(ev.clientX, ev.clientY);
     if (!res) return;
     const { hit, zone } = res;
-    // 组行行首 14px 是展开箭头，交给 click 处理
-    if (hit.r.kind === 'group' && (ev.clientX - canvas.getBoundingClientRect().left) < 14) return;
     pushUndo();
     canvas.setPointerCapture(ev.pointerId);
     const ptrTick = Math.round(timelineXToTickL(ev.clientX));
@@ -220,7 +299,6 @@ export function tlInitLayerEvents() {
     // 点击瞬间不跳位：记录「指针-当前值」抓取偏移，拖动后按偏移平移
     if (zone === 'life') {
       if (hit.r.kind === 'fx') {
-        // 函数对象右端手柄：拖拽调整时长（此前会因 hit.r.p 不存在而报错无法拖动）
         const fx = hit.r.fx;
         const [s, e] = rowSpan(hit.r);
         tlLayerState.drag = { kind: 'fxdur', fx, grabOff: ptrTick - Math.max(1, e - s) };
@@ -278,27 +356,15 @@ export function tlInitLayerEvents() {
     refreshAllPanelsLight();
   });
 
+  // canvas 滚轮 → 滚动左侧 HTML 标签轨（其 scroll 事件会驱动本画布重绘）
   canvas.addEventListener('wheel', ev => {
     ev.preventDefault();
-    tlLayerState.scroll = Math.max(0, tlLayerState.scroll + (ev.deltaY > 0 ? TL_LAYER_ROW_H * 2 : -TL_LAYER_ROW_H * 2));
-    drawTimelineLayers();
+    if (!tree) return;
+    const delta = ev.deltaY > 0 ? TL_TREE_ROW_H * 2 : -TL_TREE_ROW_H * 2;
+    tree.scrollTop = Math.max(0, tree.scrollTop + delta);
   }, { passive: false });
 
-  canvas.addEventListener('click', ev => {
-    const hit = tlLayerHitAt(ev.clientX, ev.clientY);
-    if (hit && hit.hit.r.kind === 'group') {
-      const rect = canvas.getBoundingClientRect();
-      if (ev.clientX - rect.left < 14) {
-        const name = hit.hit.r.name;
-        if (tlLayerState.expanded.has(name)) tlLayerState.expanded.delete(name);
-        else tlLayerState.expanded.add(name);
-        drawTimelineLayers();
-      }
-    }
-  });
-
   // 时间轴模块整体高度拖拽（模块顶边）：clientY 差分驱动，方向=向上拖增高。
-  // 高度写入 body 的 --tl-h（body 网格第三行轨道），图层画布 flex:1 自动填满剩余空间。
   const moduleGrip = document.getElementById('tl-module-resize');
   if (moduleGrip) {
     let resizing = false, lastY = 0;

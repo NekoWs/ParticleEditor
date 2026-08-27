@@ -148,19 +148,19 @@
 
   <footer class="timeline">
     <div id="tl-module-resize" data-i18n-title="timeline.resizeTitle" title="拖拽调整时间轴模块高度"></div>
+    <div class="tl-controls">
+      <button id="btn-play" class="btn">▶ 播放</button>
+      <label class="row" style="margin:0"><span data-i18n="timeline.speed">速度</span> <input id="tl-speed" type="number" min="0.1" step="0.1" value="1" style="width:56px" /></label>
+      <label class="chk tl-loop"><input id="tl-loop" type="checkbox" checked /><span data-i18n="timeline.loop">循环</span></label>
+      <button id="tl-easing" class="ease-btn" data-i18n-title="timeline.easing" title="缓动函数"></button>
+      <span class="tl-time-group">
+        <input id="tl-time" type="number" min="0" step="1" value="0" />
+        <span class="ticks">tick / <span id="tl-max">0</span></span>
+      </span>
+    </div>
     <div class="tl-body">
       <div id="tl-tree" class="tl-tree"></div>
       <div class="tl-main">
-        <div class="tl-controls">
-          <button id="btn-play" class="btn">▶ 播放</button>
-          <label class="row" style="margin:0"><span data-i18n="timeline.speed">速度</span> <input id="tl-speed" type="number" min="0.1" step="0.1" value="1" style="width:56px" /></label>
-          <label class="chk tl-loop"><input id="tl-loop" type="checkbox" checked /><span data-i18n="timeline.loop">循环</span></label>
-          <button id="tl-easing" class="ease-btn" data-i18n-title="timeline.easing" title="缓动函数"></button>
-          <span class="tl-time-group">
-            <input id="tl-time" type="number" min="0" step="1" value="0" />
-            <span class="ticks">tick / <span id="tl-max">0</span></span>
-          </span>
-        </div>
         <canvas id="timeline"></canvas>
         <canvas id="tl-layers-canvas"></canvas>
       </div>

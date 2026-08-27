@@ -612,32 +612,32 @@ body.ctrl-held .kf-t { cursor: pointer; }
   background: #181b22; cursor: grab;
 }
 
-/* ---- 底部时间轴左侧分层列表 ---- */
+/* ---- 底部时间轴左侧标签轨 + 右侧 lane 画布 ---- */
 .tl-body {
   flex: 1 1 auto; min-height: 0;
   display: flex; gap: 8px; margin-top: 6px;
 }
 .tl-tree {
-  flex: 0 0 300px; min-width: 220px; max-width: 480px;
-  overflow-y: auto; overflow-x: hidden;
-  background: var(--panel); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); padding: 4px;
+  flex: 0 0 320px; min-width: 240px; max-width: 480px;
+  height: 100%; overflow-y: auto; overflow-x: hidden;
+  background: var(--panel); border: none;
+  border-radius: var(--radius-sm);
+  /* 上方空出 #timeline 标尺高度 + 间距，保证第一行与 lane 画布第一行对齐 */
+  padding-top: 34px;
 }
 .tl-main {
   flex: 1 1 auto; min-width: 0;
-  display: flex; flex-direction: column;
+  height: 100%; display: flex; flex-direction: column;
 }
-.tl-main #timeline { margin-top: 6px; }
+.tl-main #timeline { margin: 0 0 6px; }
 
-.tt-node, .tt-prop, .tt-members-node, .tt-vars-node { display: flex; flex-direction: column; }
-.tt-head, .tt-prop-head, .tt-subhead, .tt-comp-row, .tt-var-row {
+.tt-row {
   display: flex; align-items: center; gap: 4px;
-  min-height: 22px;
+  min-width: 0; padding-right: 4px; box-sizing: border-box;
 }
-.tt-head { min-height: 24px; padding: 0 2px; border-radius: 4px; }
-.tt-head:hover { background: var(--accent-soft); }
-.tt-group-head .tt-label { color: #c9a24b; }
-.tt-fx-head .tt-label { color: #a99bf5; }
+.tt-row:hover { background: var(--accent-soft); }
+.tt-group .tt-label { color: #c9a24b; }
+.tt-fx .tt-label { color: #a99bf5; }
 .tt-particle .tt-label { color: #7fb3e8; }
 .tt-arrow {
   flex: 0 0 16px; width: 16px; text-align: center;
@@ -645,26 +645,23 @@ body.ctrl-held .kf-t { cursor: pointer; }
   user-select: none; line-height: 1;
 }
 .tt-arrow:hover { color: var(--text); }
+.tt-arrow-spacer { cursor: default; }
 .tt-label {
   flex: 0 1 auto; min-width: 0; max-width: 110px;
   font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .tt-count { flex: 0 0 auto; color: var(--muted); font-size: 11px; }
 .tt-sub-label { flex: 0 1 auto; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tt-sub { padding-left: 14px; display: flex; flex-direction: column; }
 .tt-empty { color: var(--muted); padding: 6px 8px; font-size: 12px; }
 
-.tt-prop-head { padding-left: 0; }
 .tt-plabel { flex: 0 0 34px; color: #9aa0ad; font-size: 12px; }
 .tt-vec {
   flex: 0 0 auto; display: inline-flex; align-items: center; gap: 2px;
   color: var(--muted); font-size: 11px; white-space: nowrap;
 }
-.tt-vec input.tt-val { width: 44px; }
-.tt-comp-rows { padding-left: 0; }
+.tt-vec input.tt-val { width: 40px; }
 .tt-clabel { flex: 0 0 16px; font-size: 11px; color: #9aa0ad; text-align: center; font-weight: 700; }
 .tt-cval { width: 52px; }
-.tt-var-row { padding-left: 0; }
 .tt-vname {
   flex: 0 0 64px; min-width: 0; font-size: 12px; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -680,10 +677,6 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .tt-val:focus, .tt-var-val:focus { border-color: var(--accent); outline: none; }
 .tt-val:disabled, .tt-var-val:disabled { opacity: 0.55; }
 
-.tt-mini {
-  flex: 1 1 auto; min-width: 40px; height: 20px;
-  border-radius: 3px; cursor: crosshair; display: block;
-}
 .tt-add-kf, .tt-add-var-kf {
   flex: 0 0 auto; width: 22px; height: 18px; padding: 0;
   font-size: 11px; line-height: 1; border-radius: 4px;
