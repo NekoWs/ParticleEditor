@@ -49,8 +49,10 @@ export const UVOUT = { mode: 0, au0: 0, av0: 0, au1: 0, av1: 0, sx: 0, sy: 0, sw
 
 // 计算单个粒子的 uv 渲染参数（写入复用 out），无贴图时 mode=0。
 // 返回生效的 uv 对象（无贴图时返回 null），供调用方直接复用，避免重复 resolveUV。
-export function computeParticleUV(p, out) {
+// hasAnyTexture 为 false 时直接跳过 UV 解析（多数场景无贴图，省去每粒子对象分配）。
+export function computeParticleUV(p, out, hasAnyTexture) {
   out.mode = 0;
+  if (hasAnyTexture === false) return null;
   const uv = resolveUV(p).uv;
   if (!uv || !uv.texture) return null;
   const tex = texAtlasMap[uv.texture];
@@ -147,15 +149,18 @@ export function setPointUVAttributes(geo, uvs) {
   }
 }
 
-export function rebuildPoints(full) {
+function rebuildIndexes() {
   buildParticleIndex();
   buildTrackIndex();
   buildGroupIndex();
-  buildOpDeltaCache(state.time);
-  buildGroupXforms(state.time);
   buildFxSclTrackCache();
   // 预编译所有函数对象（code 变化时惰性重编译），主循环直接取 fx._compiledFn/_constVarVals
   for (let fi = 0; fi < state.functions.length; fi++) { getCompiledFn(state.functions[fi]); getConstVarVals(state.functions[fi]); }
+}
+
+function writePointBuffers(full) {
+  buildOpDeltaCache(state.time);
+  buildGroupXforms(state.time);
   const n = state.particles.length;
   if (!rpPos || rpPos.length !== n * 3) rpPos = new Float32Array(n * 3);
   if (!rpCol || rpCol.length !== n * 4) rpCol = new Float32Array(n * 4);
@@ -167,6 +172,7 @@ export function rebuildPoints(full) {
   if (!rpUVMode || rpUVMode.length !== n) rpUVMode = new Float32Array(n);
   const positions = rpPos, colors = rpCol, sizes = rpSize;
   const T = state.time;
+  const hasAnyTexture = Object.keys(texAtlasMap).length > 0;
   const memberIdx = groupMemberIndexCache;
   const hasGroups = memberIdx.size > 0;
   const xforms = groupXformCache;
@@ -302,7 +308,7 @@ export function rebuildPoints(full) {
     ca *= vis;
     positions[i * 3] = px; positions[i * 3 + 1] = py; positions[i * 3 + 2] = pz;
     colors[i * 4] = cr; colors[i * 4 + 1] = cg; colors[i * 4 + 2] = cb; colors[i * 4 + 3] = ca;
-    const uvForSize = computeParticleUV(p, UVOUT);
+    const uvForSize = computeParticleUV(p, UVOUT, hasAnyTexture);
     if (uvForSize && uvForSize.mode === 'animated') hasAnimatedTex = true;
     // 贴图大小缩放：使用用户设置的 texSize（控制粒子显示大小），基准 16px
     const texW = uvForSize ? (uvForSize.texSize[0] || 16) : 16;
@@ -336,7 +342,7 @@ export function rebuildPoints(full) {
     const off = velOffsetAt(sel[i], state.time);
     spos[i * 3] = v.pos[0] + off[0]; spos[i * 3 + 1] = v.pos[1] + off[1]; spos[i * 3 + 2] = v.pos[2] + off[2];
     // 与主循环一致：使用用户设置的 texSize 计算粒子尺寸
-    const uvForSize = computeParticleUV(sel[i], UVOUT);
+    const uvForSize = computeParticleUV(sel[i], UVOUT, hasAnyTexture);
     const texW = uvForSize ? (uvForSize.texSize[0] || 16) : 16;
     const texH = uvForSize ? (uvForSize.texSize[1] || 16) : 16;
     const texScaleX = Math.max(1, texW) / 16;
@@ -355,6 +361,17 @@ export function rebuildPoints(full) {
     if (typeof refreshCompTimelines === 'function') refreshCompTimelines();
     if (typeof refreshUVPanel === 'function' && document.getElementById('pane-texture') && document.getElementById('pane-texture').classList.contains('active')) refreshUVPanel();
   }
+}
+
+// 结构变化后的完整刷新：重建索引并写缓冲。
+export function rebuildPoints(full) {
+  rebuildIndexes();
+  writePointBuffers(full);
+}
+
+// 播放/拖动时间轴专用：结构未变、仅 time 变化，跳过索引重建以降低帧耗时。
+export function rebuildPointsTime(full) {
+  writePointBuffers(full);
 }
 
 export function setPreview(positions) {

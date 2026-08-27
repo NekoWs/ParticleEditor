@@ -77,7 +77,9 @@ export function normalizeUV(uv) {
   };
 }
 
-// UV 继承查询（f > g > p）；返回「生效的 UV 参数」与「来源」
+// UV 继承查询（f > g > p）；返回「生效的 UV 参数」与「来源」。
+// 无贴图时返回共享的只读默认对象，避免高频粒子循环中反复分配。
+const DEFAULT_UV_OBJECT = defaultUV(16, 16);
 export function resolveUV(p) {
   if (p.uv && p.uv.texture) return { uv: normalizeUV(p.uv), src: p.id };
   const gs = groupMemberIndexCache && groupMemberIndexCache.get(p.id);
@@ -91,7 +93,7 @@ export function resolveUV(p) {
     const fx = getFunction(p.fx);
     if (fx && fx.uv && fx.uv.texture) return { uv: normalizeUV(fx.uv), src: 'f:' + fx.id };
   }
-  return { uv: defaultUV(16, 16), src: null };
+  return { uv: DEFAULT_UV_OBJECT, src: null };
 }
 
 // 当前编辑作用域（函数对象 > 组 > 粒子多选）

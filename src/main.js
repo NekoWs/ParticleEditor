@@ -12,7 +12,7 @@ import { showAboutModal } from './ui/ui.js';
 import { easeInOut } from './core/easing.js';
 import { openEasingEditor, easingCurveSVG } from './ui/easing-editor.js';
 import { viewport, renderer, camera, controls, scene, pointsMaterial, selectedMaterial, focalLengthPx, camTransition, setCamTransition, planePulse, setPlanePulse } from './scene/scene.js';
-import { rebuildPoints, maxTick, resetVelOffsets, updateAnimatedUV } from './core/animation.js';
+import { rebuildPoints, rebuildPointsTime, maxTick, resetVelOffsets, updateAnimatedUV } from './core/animation.js';
 import { editSelectionUniform, addParticle, removeParticlesFromGroups } from './core/edit.js';
 import { pushUndo, undo, redo, beginContinuous, endContinuous } from './state/undo.js';
 import { currentSelected, selectedGroupName, deleteSelected, selectAll } from './interaction/interaction.js';
@@ -374,7 +374,7 @@ export function animate(now) {
       else { state.time = mx; state.playing = false; syncPlayButton(); resetVelOffsets(); }
     }
     updateTimeUI();
-    rebuildPoints(false);
+    rebuildPointsTime(false);
     syncFunctionVarValues();
   }
   // 仅动画贴图粒子需要每帧随墙钟推进 UV 帧：轻量更新（只改 sx/sy），
