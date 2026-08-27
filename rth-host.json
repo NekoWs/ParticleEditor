@@ -1,0 +1,5 @@
+{
+	"outdir": "dist",
+	"site": "viewer.nekow.work",
+	"build": "build"
+}
