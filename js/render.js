@@ -4,7 +4,7 @@
  *       中统筹索引重建、UV 计算、gizmo/面板/树刷新。
  * ======================================================================= */
 
-import { PARTICLE_SIZE_FACTOR, state, functionIndexCache } from './constants.js';
+import {PARTICLE_SIZE_FACTOR, state, functionIndexCache, effMaxFrame, autoFramesFor} from './constants.js';
 import { getCompiledFn, getConstVarVals, resolveVarVals } from './generators.js';
 import { points, selectedPoints, previewPoints, texAtlasMap } from './scene.js';
 import { resolveUV, refreshUVPanel } from './texture-editor.js';
