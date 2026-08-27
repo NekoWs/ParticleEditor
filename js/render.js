@@ -11,7 +11,9 @@ import { resolveUV, refreshUVPanel } from './texture-editor.js';
 import { updateGizmo } from './gizmo.js';
 import { drawTimeline, updatePropPanel } from './panels.js';
 import { refreshTreeSelection, refreshCompTimelines } from './tree.js';
-import { buildParticleIndex, buildTrackIndex, buildGroupIndex, buildOpDeltaCache, buildGroupXforms, buildFxSclTrackCache, currentVisual, velOffsetAt, rotVectorAt, trackValueAt, groupMemberIndexCache, groupXformCache, opTracksCache, fxSclTrackCache, fxOpDeltaCache } from './animation-eval.js';/* =========================================================================
+import { buildParticleIndex, buildTrackIndex, buildGroupIndex, buildOpDeltaCache, buildGroupXforms, buildFxSclTrackCache, currentVisual, velOffsetAt, rotVectorAt, trackValueAt, groupMemberIndexCache, groupXformCache, opTracksCache, fxSclTrackCache, fxOpDeltaCache } from './animation-eval.js';
+import * as THREE from "three";
+/* =========================================================================
  * 渲染
  * ======================================================================= */
 
@@ -45,15 +47,14 @@ export const FX_OUT = { pos: [0, 0, 0], color: [0, 0, 0, 0], vel: [0, 0, 0], sca
 // 粒子 UV 求值的复用输出（fill 模式下强制全图采样）
 export const UVOUT = { mode: 0, au0: 0, av0: 0, au1: 0, av1: 0, sx: 0, sy: 0, sw: 16, sh: 16, stepx: 16, stepy: 0, fps: 1, maxFrame: 1, tw: 16, th: 16 };
 
-// 计算单个粒子的 uv 渲染参数（写入复用 out），无贴图时 mode=0
-// UV 坐标为像素坐标，在 shader 中除以 vUVTex 归一化；texSize 仅影响粒子显示大小，不影响 UV
+// 计算单个粒子的 uv 渲染参数（写入复用 out），无贴图时 mode=0。
+// 返回生效的 uv 对象（无贴图时返回 null），供调用方直接复用，避免重复 resolveUV。
 export function computeParticleUV(p, out) {
   out.mode = 0;
-  if (typeof resolveUV !== 'function') return;
   const uv = resolveUV(p).uv;
-  if (!uv || !uv.texture) return;
+  if (!uv || !uv.texture) return null;
   const tex = texAtlasMap[uv.texture];
-  if (!tex) return;
+  if (!tex) return null;
   out.au0 = tex.u0; out.av0 = tex.v0; out.au1 = tex.u1; out.av1 = tex.v1;
   out.tw = tex.w; out.th = tex.h;
   if (uv.mode === 'fill') {
@@ -74,6 +75,7 @@ export function computeParticleUV(p, out) {
     out.sw = uv.uvSize[0] || tex.w; out.sh = uv.uvSize[1] || tex.h;
     out.mode = 1;
   }
+  return uv;
 }
 
 /**
@@ -299,9 +301,8 @@ export function rebuildPoints(full) {
     ca *= vis;
     positions[i * 3] = px; positions[i * 3 + 1] = py; positions[i * 3 + 2] = pz;
     colors[i * 4] = cr; colors[i * 4 + 1] = cg; colors[i * 4 + 2] = cb; colors[i * 4 + 3] = ca;
-    computeParticleUV(p, UVOUT);
+    const uvForSize = computeParticleUV(p, UVOUT);
     // 贴图大小缩放：使用用户设置的 texSize（控制粒子显示大小），基准 16px
-    const uvForSize = (typeof resolveUV === 'function') ? resolveUV(p).uv : null;
     const texW = uvForSize ? (uvForSize.texSize[0] || 16) : 16;
     const texH = uvForSize ? (uvForSize.texSize[1] || 16) : 16;
     const texScaleX = Math.max(1, texW) / 16;
@@ -333,8 +334,7 @@ export function rebuildPoints(full) {
     const off = velOffsetAt(sel[i], state.time);
     spos[i * 3] = v.pos[0] + off[0]; spos[i * 3 + 1] = v.pos[1] + off[1]; spos[i * 3 + 2] = v.pos[2] + off[2];
     // 与主循环一致：使用用户设置的 texSize 计算粒子尺寸
-    computeParticleUV(sel[i], UVOUT);
-    const uvForSize = (typeof resolveUV === 'function') ? resolveUV(sel[i]).uv : null;
+    const uvForSize = computeParticleUV(sel[i], UVOUT);
     const texW = uvForSize ? (uvForSize.texSize[0] || 16) : 16;
     const texH = uvForSize ? (uvForSize.texSize[1] || 16) : 16;
     const texScaleX = Math.max(1, texW) / 16;

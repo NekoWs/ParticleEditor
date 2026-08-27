@@ -60,6 +60,17 @@ export function derivedFxIdFromSelection() {
   return fxId;
 }
 
+// 无组但选中了派生粒子时，把选择提升为所属函数对象；返回提升后的 fxId（不可提升返回 null）。
+function promoteDerivedToFunction() {
+  if (selectedGroupName() || !selectionHasDerived()) return null;
+  const fxId = derivedFxIdFromSelection();
+  if (!fxId || !getFunction(fxId)) return null;
+  state.selectedFunction = fxId;
+  state.selectedGroup = null;
+  state.selected.clear();
+  return fxId;
+}
+
 export function rotateVector(v, axis, angle) {
   const c = Math.cos(angle), s = Math.sin(angle);
   const dot = v[0] * axis[0] + v[1] * axis[1] + v[2] * axis[2];
@@ -85,12 +96,7 @@ export function enterGrab(clientX, clientY, axis, face) {
   if (!hasSelection()) return;
   const gname = selectedGroupName();
   // 无组但选中了派生粒子 → 提升为函数对象位移
-  if (!gname && selectionHasDerived()) {
-    const fxId = derivedFxIdFromSelection();
-    if (!fxId) return;
-    const fx2 = getFunction(fxId);
-    if (!fx2) return;
-    state.selectedFunction = fxId; state.selectedGroup = null; state.selected.clear();
+  if (promoteDerivedToFunction()) {
     enterGrab(clientX, clientY, axis, face);
     return;
   }
@@ -119,12 +125,7 @@ export function enterScale(clientX) {
   if (!hasSelection()) return;
   const gname = selectedGroupName();
   // 无组但选中了派生粒子 → 提升为函数对象缩放
-  if (!gname && selectionHasDerived()) {
-    const fxId = derivedFxIdFromSelection();
-    if (!fxId) return;
-    const fx2 = getFunction(fxId);
-    if (!fx2) return;
-    state.selectedFunction = fxId; state.selectedGroup = null; state.selected.clear();
+  if (promoteDerivedToFunction()) {
     enterScale(clientX);
     return;
   }
@@ -211,12 +212,7 @@ export function enterRotate(clientX, clientY, axis) {
   if (!hasSelection()) return;
   const gname = selectedGroupName();
   // 无组但选中了派生粒子 → 提升为函数对象旋转
-  if (!gname && selectionHasDerived()) {
-    const fxId = derivedFxIdFromSelection();
-    if (!fxId) return;
-    const fx2 = getFunction(fxId);
-    if (!fx2) return;
-    state.selectedFunction = fxId; state.selectedGroup = null; state.selected.clear();
+  if (promoteDerivedToFunction()) {
     enterRotate(clientX, clientY, axis);
     return;
   }
@@ -321,12 +317,7 @@ export function enterViewRotate(clientX, clientY) {
   if (!hasSelection()) return;
   const gname = selectedGroupName();
   // 无组但选中了派生粒子 → 提升为函数对象视图旋转
-  if (!gname && selectionHasDerived()) {
-    const fxId = derivedFxIdFromSelection();
-    if (!fxId) return;
-    const fx2 = getFunction(fxId);
-    if (!fx2) return;
-    state.selectedFunction = fxId; state.selectedGroup = null; state.selected.clear();
+  if (promoteDerivedToFunction()) {
     enterViewRotate(clientX, clientY);
     return;
   }
