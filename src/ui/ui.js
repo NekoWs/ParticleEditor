@@ -2,7 +2,7 @@
  * UI 弹窗：替代浏览器原生 prompt / alert / confirm，符合主题风格
  * ======================================================================= */
 
-import { t } from './i18n.js';
+import { t } from '../core/i18n.js';
 
 export let uiModalOverlay = null;
 export let uiModalClosePromise = Promise.resolve();

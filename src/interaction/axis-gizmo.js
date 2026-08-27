@@ -9,8 +9,8 @@
 
 
 import * as THREE from 'three';
-import { state } from './constants.js';
-import { camera, controls, renderer, grid, worldAxes, setWorldAxisVisible, camTransition, setCamTransition } from './scene.js';
+import { state } from '../core/constants.js';
+import { camera, controls, renderer, grid, worldAxes, setWorldAxisVisible, camTransition, setCamTransition } from '../scene/scene.js';
 export const gizmoCanvas = document.getElementById('axis-gizmo');
 export const gizmoCtx = gizmoCanvas.getContext('2d');
 

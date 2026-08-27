@@ -10,11 +10,11 @@
 import { _etf, t } from './i18n.js';
 import { FUNCTION_PRESETS, state, nextFunctionId, setDirty, compPr } from './constants.js';
 import { ATTR_NAMES, compileExpr, execRpn, tokenize, evaluate, compileFunctionCode, execFunctionCode, varKfValue, tryCompileFunction } from './easing.js';
-import { modalAlert } from './ui.js';
-import { pushUndo } from './undo.js';
+import { modalAlert } from '../ui/ui.js';
+import { pushUndo } from '../state/undo.js';
 import { rebuildPoints } from './animation.js';
-import { refreshParticleTree } from './tree.js';
-import { refreshFunctionPanel } from './panels.js';
+import { refreshParticleTree } from '../ui/tree.js';
+import { refreshFunctionPanel } from '../ui/panels.js';
 // 代码块编译缓存：fx.code 变化时重新编译（避免每粒子重复 split/tokenize）
 export function getCompiledCode(fx) {
   const code = fx.code || '';

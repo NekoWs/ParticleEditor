@@ -5,26 +5,26 @@
  * 依赖：本文件最后加载，可直接调用前面所有脚本定义的全局函数。
  * ======================================================================= */
 
-import { t, applyI18nDom, setLanguage } from './i18n.js';
-import { state, FUNCTION_PRESETS, getParticle, isDerivedParticle, updateTopbarTitle } from './constants.js';
-import { setShiftHeld, getDragIds, setDragIds } from './input-state.js';
-import { showAboutModal } from './ui.js';
-import { easeInOut } from './easing.js';
-import { openEasingEditor, easingCurveSVG } from './easing-editor.js';
-import { viewport, renderer, camera, controls, scene, pointsMaterial, selectedMaterial, focalLengthPx, camTransition, setCamTransition, planePulse, setPlanePulse } from './scene.js';
-import { rebuildPoints, maxTick, resetVelOffsets, updateAnimatedUV } from './animation.js';
-import { editSelectionUniform, addParticle, removeParticlesFromGroups } from './edit.js';
-import { pushUndo, undo, redo, beginContinuous, endContinuous } from './undo.js';
-import { currentSelected, selectedGroupName, deleteSelected, selectAll } from './interaction.js';
-import { refreshParticleTree, createGroup, showContextMenu, refreshCompTimelines } from './tree.js';
-import { createFunctionObject } from './generators.js';
-import { syncFunctionVarValues, drawTimeline, updateLoopIndicator, hexToRgb, TL_PX_PER_TICK, timelineViewStart, setTimelineViewStart, scrubAutoPan, timelineXToTick, refreshFunctionPanel } from './panels.js';
-import { drawTimelineLayers, tlInitLayerEvents, refreshAllPanelsLight } from './timeline-layers.js';
-import { initTextureEditor, syncTextureSelection, updateTexOverlay, texAnimOverlayActive, refreshTexturePanel } from './texture-editor.js';
-import { applyWorkspaceState, saveWorkspaceState } from './blocks-ui.js';
-import { newFile, openFile, saveFile, saveFileAs, exportAnimation, loadFile, confirmDiscardChanges } from './io.js';
-import { drawAxisGizmo, slerp } from './axis-gizmo.js';
-import { updateGizmo, updateGizmoFrame, restoreAxisColors, setAxisGlow } from './gizmo.js';
+import { t, applyI18nDom, setLanguage } from './core/i18n.js';
+import { state, FUNCTION_PRESETS, getParticle, isDerivedParticle, updateTopbarTitle } from './core/constants.js';
+import { setShiftHeld, getDragIds, setDragIds } from './interaction/input-state.js';
+import { showAboutModal } from './ui/ui.js';
+import { easeInOut } from './core/easing.js';
+import { openEasingEditor, easingCurveSVG } from './ui/easing-editor.js';
+import { viewport, renderer, camera, controls, scene, pointsMaterial, selectedMaterial, focalLengthPx, camTransition, setCamTransition, planePulse, setPlanePulse } from './scene/scene.js';
+import { rebuildPoints, maxTick, resetVelOffsets, updateAnimatedUV } from './core/animation.js';
+import { editSelectionUniform, addParticle, removeParticlesFromGroups } from './core/edit.js';
+import { pushUndo, undo, redo, beginContinuous, endContinuous } from './state/undo.js';
+import { currentSelected, selectedGroupName, deleteSelected, selectAll } from './interaction/interaction.js';
+import { refreshParticleTree, createGroup, showContextMenu, refreshCompTimelines } from './ui/tree.js';
+import { createFunctionObject } from './core/generators.js';
+import { syncFunctionVarValues, drawTimeline, updateLoopIndicator, hexToRgb, TL_PX_PER_TICK, timelineViewStart, setTimelineViewStart, scrubAutoPan, timelineXToTick, refreshFunctionPanel } from './ui/panels.js';
+import { drawTimelineLayers, tlInitLayerEvents, refreshAllPanelsLight } from './ui/timeline-layers.js';
+import { initTextureEditor, syncTextureSelection, updateTexOverlay, texAnimOverlayActive, refreshTexturePanel } from './ui/texture-editor.js';
+import { applyWorkspaceState, saveWorkspaceState } from './ui/blocks-ui.js';
+import { newFile, openFile, saveFile, saveFileAs, exportAnimation, loadFile, confirmDiscardChanges } from './io/io.js';
+import { drawAxisGizmo, slerp } from './interaction/axis-gizmo.js';
+import { updateGizmo, updateGizmoFrame, restoreAxisColors, setAxisGlow } from './interaction/gizmo.js';
 
 // 时间轴数值变化后的统一刷新：粒子状态、时间 UI、函数变量插值显示。
 // 多处 scrub / 播放头拖动路径共用，避免漏刷某一项。

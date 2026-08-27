@@ -3,16 +3,16 @@
  * 职责：.pdraw/.json 序列化与解析、贴图 base64、File System Access 保存/打开、新建与导出流程。
  * ======================================================================= */
 
-import { t } from './i18n.js';
-import { state, setDirty, DEFAULT_EASING, UV_MODES, PROP_LABELS, splitCompPr, nextId } from './constants.js';
-import { pushUndo } from './undo.js';
-import { rebuildPoints } from './animation.js';
-import { refreshParticleTree } from './tree.js';
-import { updateLoopIndicator } from './panels.js';
-import { updateTimeUI } from './main.js';
-import { rebuildFunctionObject } from './generators.js';
-import { markTextureChanged, refreshTexturePanel } from './texture-editor.js';
-import { buildModal, modalPrompt } from './ui.js';
+import { t } from '../core/i18n.js';
+import { state, setDirty, DEFAULT_EASING, UV_MODES, PROP_LABELS, splitCompPr, nextId } from '../core/constants.js';
+import { pushUndo } from '../state/undo.js';
+import { rebuildPoints } from '../core/animation.js';
+import { refreshParticleTree } from '../ui/tree.js';
+import { updateLoopIndicator } from '../ui/panels.js';
+import { updateTimeUI } from '../main.js';
+import { rebuildFunctionObject } from '../core/generators.js';
+import { markTextureChanged, refreshTexturePanel } from '../ui/texture-editor.js';
+import { buildModal, modalPrompt } from '../ui/ui.js';
 
 export const r3 = x => Math.round(x * 1000) / 1000;
 export const roundArr = a => a.map(r3);

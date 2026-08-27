@@ -4,4 +4,4 @@
  * ======================================================================= */
 
 export * from './animation-eval.js';
-export * from './render.js';
+export * from '../scene/render.js';

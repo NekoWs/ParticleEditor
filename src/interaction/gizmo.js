@@ -7,12 +7,12 @@
 
 
 import * as THREE from 'three';
-import { state, PLANES, SNAP_STEP, getFunction } from './constants.js';
+import { state, PLANES, SNAP_STEP, getFunction } from '../core/constants.js';
 import { shiftHeld } from './input-state.js';
-import { camera, renderer, raycaster, pointer, points, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, gizmoAxisHint, AXIS_RING_COLORS, RING_NORMALS, GIZMO_FACE_DEFS, planePulse, setPlanePulse, setWorldAxisVisible, setWorldAxisGlow, resetWorldAxisState } from './scene.js';
+import { camera, renderer, raycaster, pointer, points, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, gizmoAxisHint, AXIS_RING_COLORS, RING_NORMALS, GIZMO_FACE_DEFS, planePulse, setPlanePulse, setWorldAxisVisible, setWorldAxisGlow, resetWorldAxisState } from '../scene/scene.js';
 import { AXIS_COLORS, AXIS_VECTORS, modal, setGizmoHover, selectedGroupName, selectionHasDerived, derivedFxIdFromSelection, fxPosDeltaAt } from './interaction.js';
-import { currentVisual } from './animation.js';
-import { groupCurrentCentroid } from './tree.js';
+import { currentVisual } from '../core/animation.js';
+import { groupCurrentCentroid } from '../ui/tree.js';
 export function snapValue(v) {
   return Math.round(v / SNAP_STEP) * SNAP_STEP;
 }

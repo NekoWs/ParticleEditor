@@ -7,18 +7,18 @@
  * ======================================================================= */
 
 
-import { t, tf } from './i18n.js';
-import { state, FUNCTION_PRESETS, getFunction, isDerivedParticle } from './constants.js';
-import { currentVisual } from './animation.js';
-import { currentSelected, selectedGroupName, fxPosDeltaAt, fxScaleValuesAt } from './interaction.js';
+import { t, tf } from '../core/i18n.js';
+import { state, FUNCTION_PRESETS, getFunction, isDerivedParticle } from '../core/constants.js';
+import { currentVisual } from '../core/animation.js';
+import { currentSelected, selectedGroupName, fxPosDeltaAt, fxScaleValuesAt } from '../interaction/interaction.js';
 import { groupCurrentCentroid, refreshParticleTree } from './tree.js';
 import { modalAlert } from './ui.js';
 import { makeEasingBtn } from './easing-editor.js';
-import { ATTR_NAMES, evaluate, varKfValue } from './easing.js';
-import { applyPresetBuild, rebuildFunctionObject, syncPresetCount } from './generators.js';
+import { ATTR_NAMES, evaluate, varKfValue } from '../core/easing.js';
+import { applyPresetBuild, rebuildFunctionObject, syncPresetCount } from '../core/generators.js';
 import { openBlockDrawer } from './blocks-ui.js';
-import { pushUndo } from './undo.js';
-import { r3 } from './io.js';
+import { pushUndo } from '../state/undo.js';
+import { r3 } from '../io/io.js';
 // 设置缩放 XYZ 三输入（vals 为 [x,y,z]；null 元素表示混合值显示空）
 export function setScaleInputs(vals) {
   ['prop-scale-x', 'prop-scale-y', 'prop-scale-z'].forEach((id, i) => {

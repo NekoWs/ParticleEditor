@@ -4,14 +4,14 @@
  *       中统筹索引重建、UV 计算、gizmo/面板/树刷新。
  * ======================================================================= */
 
-import {PARTICLE_SIZE_FACTOR, state, functionIndexCache, effMaxFrame, autoFramesFor} from './constants.js';
-import { getCompiledFn, getConstVarVals, resolveVarVals } from './generators.js';
+import {PARTICLE_SIZE_FACTOR, state, functionIndexCache, effMaxFrame, autoFramesFor} from '../core/constants.js';
+import { getCompiledFn, getConstVarVals, resolveVarVals } from '../core/generators.js';
 import { points, selectedPoints, previewPoints, texAtlasMap } from './scene.js';
-import { resolveUV, refreshUVPanel } from './texture-editor.js';
-import { updateGizmo } from './gizmo.js';
-import { drawTimeline, updatePropPanel } from './panels.js';
-import { refreshTreeSelection, refreshCompTimelines } from './tree.js';
-import { buildParticleIndex, buildTrackIndex, buildGroupIndex, buildOpDeltaCache, buildGroupXforms, buildFxSclTrackCache, currentVisual, velOffsetAt, rotVectorAt, trackValueAt, trackIntegral, trVersion, groupMemberIndexCache, groupXformCache, opTracksCache, fxSclTrackCache, fxOpDeltaCache } from './animation-eval.js';
+import { resolveUV, refreshUVPanel } from '../ui/texture-editor.js';
+import { updateGizmo } from '../interaction/gizmo.js';
+import { drawTimeline, updatePropPanel } from '../ui/panels.js';
+import { refreshTreeSelection, refreshCompTimelines } from '../ui/tree.js';
+import { buildParticleIndex, buildTrackIndex, buildGroupIndex, buildOpDeltaCache, buildGroupXforms, buildFxSclTrackCache, currentVisual, velOffsetAt, rotVectorAt, trackValueAt, trackIntegral, trVersion, groupMemberIndexCache, groupXformCache, opTracksCache, fxSclTrackCache, fxOpDeltaCache } from '../core/animation-eval.js';
 import * as THREE from "three";
 /* =========================================================================
  * 渲染

@@ -5,14 +5,14 @@
  * ======================================================================= */
 
 
-import { t, tf } from './i18n.js';
-import { state, UV_MODES, autoFramesFor, effMaxFrame, defaultUV, getParticle, getFunction, isDerivedParticle, setDirty } from './constants.js';
-import { rebuildPoints, groupMemberIndexCache } from './animation.js';
-import { rebuildAtlas } from './scene.js';
-import { selectedGroupName } from './interaction.js';
-import { pushUndo } from './undo.js';
+import { t, tf } from '../core/i18n.js';
+import { state, UV_MODES, autoFramesFor, effMaxFrame, defaultUV, getParticle, getFunction, isDerivedParticle, setDirty } from '../core/constants.js';
+import { rebuildPoints, groupMemberIndexCache } from '../core/animation.js';
+import { rebuildAtlas } from '../scene/scene.js';
+import { selectedGroupName } from '../interaction/interaction.js';
+import { pushUndo } from '../state/undo.js';
 import { showContextMenu } from './tree.js';
-import { refreshTexBase64Cache } from './io.js';
+import { refreshTexBase64Cache } from '../io/io.js';
 import { modalAlert, modalPrompt, modalConfirm } from './ui.js';
 export const TEX_UV_COLOR = '#5b9dff'; // UV 预览描边（实线，与选中态 --accent 一致）
 export const TEX_SEL_COLOR = '#5b9dff'; // 选区描边（虚线，固定显示）

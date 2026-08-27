@@ -4,18 +4,18 @@
  * ======================================================================= */
 
 
-import { t, tf, _etf } from './i18n.js';
-import { state, getFunction } from './constants.js';
-import { ATTR_NAMES } from './easing.js';
+import { t, tf, _etf } from '../core/i18n.js';
+import { state, getFunction } from '../core/constants.js';
+import { ATTR_NAMES } from '../core/easing.js';
 import { modalAlert } from './ui.js';
-import { T_SCALAR, T_VEC, T_MAT, T_ANY, FUNC_BLOCKS, STMT_BLOCKS, PALETTE_GROUPS, OP_SYMBOLS, OP_LABELS, collectTemps, codeToStatements, statementsToCode, parseVarExpr, varExprToCode, exprType, typeAccepts, fmtNum } from './blocks.js';
+import { T_SCALAR, T_VEC, T_MAT, T_ANY, FUNC_BLOCKS, STMT_BLOCKS, PALETTE_GROUPS, OP_SYMBOLS, OP_LABELS, collectTemps, codeToStatements, statementsToCode, parseVarExpr, varExprToCode, exprType, typeAccepts, fmtNum } from '../core/blocks.js';
 import { makeFloatWindow } from './float-window.js';
-import { pushUndo, cloneVars } from './undo.js';
+import { pushUndo, cloneVars } from '../state/undo.js';
 import { commitFunctionRebuild, refreshFunctionPanel, drawTimeline } from './panels.js';
 import { refreshParticleTree } from './tree.js';
-import { rebuildPoints } from './animation.js';
-import { gizmoGroup } from './scene.js';
-import { resize } from './main.js';
+import { rebuildPoints } from '../core/animation.js';
+import { gizmoGroup } from '../scene/scene.js';
+import { resize } from '../main.js';
 export const TYPE_LABEL = { scalar: 'blk.type.scalar', vec: 'blk.type.vec', mat: 'blk.type.mat', any: 'blk.type.any' };
 /* —— 积木类别配色 —— */
 export const GROUP_COLOR = {

@@ -3,19 +3,19 @@
  * ======================================================================= */
 
 
-import { t, tf } from './i18n.js';
-import { state, COMP_LABELS, PARTICLE_TRACK_DEFS, GROUP_PROP_DEFS, FUNCTION_PROP_DEFS, TRACK_COMPS, compPr, splitCompPr, getParticle, getFunction, isDerivedParticle, nextGroupName } from './constants.js';
-import { shiftHeld, getDragIds, setDragIds } from './input-state.js';
+import { t, tf } from '../core/i18n.js';
+import { state, COMP_LABELS, PARTICLE_TRACK_DEFS, GROUP_PROP_DEFS, FUNCTION_PROP_DEFS, TRACK_COMPS, compPr, splitCompPr, getParticle, getFunction, isDerivedParticle, nextGroupName } from '../core/constants.js';
+import { shiftHeld, getDragIds, setDragIds } from '../interaction/input-state.js';
 import { modalAlert } from './ui.js';
-import { baseValue, componentValueAt, particleValueAt, trackValueAt, findTrackByPr, zeroArray, rebuildPoints, resetVelOffsets } from './animation.js';
-import { editComponentValue, removeKeyframe, renameParticle, renameGroup, moveParticlesToGroup, removeGroupAndTracks, baseValueFor } from './edit.js';
-import { pushUndo, popUndo } from './undo.js';
-import { deleteFunctionObject } from './generators.js';
-import { deleteSelected } from './interaction.js';
+import { baseValue, componentValueAt, particleValueAt, trackValueAt, findTrackByPr, zeroArray, rebuildPoints, resetVelOffsets } from '../core/animation.js';
+import { editComponentValue, removeKeyframe, renameParticle, renameGroup, moveParticlesToGroup, removeGroupAndTracks, baseValueFor } from '../core/edit.js';
+import { pushUndo, popUndo } from '../state/undo.js';
+import { deleteFunctionObject } from '../core/generators.js';
+import { deleteSelected } from '../interaction/interaction.js';
 import { makeEasingBtn, easingCurveSVG } from './easing-editor.js';
-import { r3 } from './io.js';
+import { r3 } from '../io/io.js';
 import { TL_PX_PER_TICK, compTimelineViewStart, setCompTimelineViewStart, COMP_TL_MIN_VIEW_START, scrubAutoPan, refreshFunctionPanel, syncFunctionVarValues } from './panels.js';
-import { updateTimeUI } from './main.js';
+import { updateTimeUI } from '../main.js';
 export function createGroup() {
   if (state.selected.size < 1) { modalAlert(t('tree.hint'), t('tree.selectParticlesFirst')); return; }
   pushUndo();

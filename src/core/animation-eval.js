@@ -7,8 +7,8 @@
 import { COMP_INDEX, compPr, DEG2RAD, state, getParticle, getFunction, particleIndexCache, setParticleIndex, setFunctionIndex } from './constants.js';
 import { easeVal, FUNC_IMPL, matMat } from './easing.js';
 import { evaluateParticleAt } from './generators.js';
-import { groupCentroidValue } from './tree.js';
-import { rotateVector } from './interaction.js';/* =========================================================================
+import { groupCentroidValue } from '../ui/tree.js';
+import { rotateVector } from '../interaction/interaction.js';/* =========================================================================
  * 动画状态查询与渲染缓冲区组装
  * 数据模型：分量级轨道（pr：pos.x / pos.y / ... / col.a / scl），kf 值为标量。
  * 职责：

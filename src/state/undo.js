@@ -3,10 +3,10 @@
  * ======================================================================= */
 
 
-import { state, setDirty } from './constants.js';
-import { rebuildPoints } from './animation.js';
-import { refreshParticleTree } from './tree.js';
-import { refreshFunctionPanel, updateLoopIndicator } from './panels.js';
+import { state, setDirty } from '../core/constants.js';
+import { rebuildPoints } from '../core/animation.js';
+import { refreshParticleTree } from '../ui/tree.js';
+import { refreshFunctionPanel, updateLoopIndicator } from '../ui/panels.js';
 export const undoStack = [];
 export const redoStack = [];
 

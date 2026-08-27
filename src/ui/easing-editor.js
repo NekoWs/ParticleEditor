@@ -3,9 +3,9 @@
  * ======================================================================= */
 
 
-import { t } from './i18n.js';
-import { EASINGS } from './constants.js';
-import { easeVal } from './easing.js';
+import { t } from '../core/i18n.js';
+import { EASINGS } from '../core/constants.js';
+import { easeVal } from '../core/easing.js';
 import { refreshParticleTree } from './tree.js';
 import { refreshFunctionPanel } from './panels.js';
 export function easingToBezier(easing) {

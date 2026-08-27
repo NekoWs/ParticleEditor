@@ -4,7 +4,7 @@
 
 
 import * as THREE from 'three';
-import { OrbitControls, state } from './constants.js';
+import { OrbitControls, state } from '../core/constants.js';
 export const viewport = document.getElementById('viewport');
 export const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));

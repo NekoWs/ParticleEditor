@@ -4,19 +4,19 @@
  * ======================================================================= */
 
 import * as THREE from 'three';
-import { t } from './i18n.js';
-import { state, getParticle, getFunction, isDerivedParticle, RAD2DEG, ROT_SNAP, PLANES, DEG2RAD, nextGroupName } from './constants.js';
+import { t } from '../core/i18n.js';
+import { state, getParticle, getFunction, isDerivedParticle, RAD2DEG, ROT_SNAP, PLANES, DEG2RAD, nextGroupName } from '../core/constants.js';
 import { shiftHeld } from './input-state.js';
-import { camera, renderer, controls, raycaster, pointer, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, AXIS_RING_COLORS, GIZMO_FACE_DEFS, resetWorldAxisState, focalLengthPx } from './scene.js';
-import { currentVisual, rebuildPoints, setPreview, clearPreview, rotVectorAt, trackValueAt, findTrackByPr } from './animation.js';
+import { camera, renderer, controls, raycaster, pointer, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, AXIS_RING_COLORS, GIZMO_FACE_DEFS, resetWorldAxisState, focalLengthPx } from '../scene/scene.js';
+import { currentVisual, rebuildPoints, setPreview, clearPreview, rotVectorAt, trackValueAt, findTrackByPr } from '../core/animation.js';
 import { screenToNdc, planePointAt, worldToUV, computeShapePositions, snapGrid, snapValue, pickParticleAt, particleAt, projectToScreen, distToSegment, planeInfo, selectionCentroid, updateGizmoFrame } from './gizmo.js';
-import { groupCurrentCentroid, groupCentroidValue, deleteGroup, refreshParticleTree, createGroup } from './tree.js';
-import { setFunctionTrackValue, setGroupTrackValue, editParticles, addParticle, autoGroup, removeGroupAndTracks } from './edit.js';
-import { pushUndo, restore, undoStack, undo, redo } from './undo.js';
-import { deleteFunctionObject } from './generators.js';
-import { texUndo, texRedo, texActive } from './texture-editor.js';
-import { togglePlay } from './main.js';
-import { saveFile, openFile, newFile } from './io.js';
+import { groupCurrentCentroid, groupCentroidValue, deleteGroup, refreshParticleTree, createGroup } from '../ui/tree.js';
+import { setFunctionTrackValue, setGroupTrackValue, editParticles, addParticle, autoGroup, removeGroupAndTracks } from '../core/edit.js';
+import { pushUndo, restore, undoStack, undo, redo } from '../state/undo.js';
+import { deleteFunctionObject } from '../core/generators.js';
+import { texUndo, texRedo, texActive } from '../ui/texture-editor.js';
+import { togglePlay } from '../main.js';
+import { saveFile, openFile, newFile } from '../io/io.js';
 
 export let drag = null;
 export let modal = null;
