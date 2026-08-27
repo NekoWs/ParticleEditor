@@ -342,25 +342,14 @@ resize();
 
 export let last = performance.now();
 const fpsFrameSamples = []; // 最近帧间隔采样
-let displayFps = 60;        // 估算出的显示器最大刷新率，显示在右下角
-// 常见显示器刷新率档位，仅用于 ±2 帧内的轻微吸附
 const COMMON_REFRESH_RATES = [60, 75, 90, 120, 144, 160, 165, 180, 240, 360];
 
-// 只做「±2 帧」内的轻微吸附：例如 159~161 → 160；离档位较远的实测值保持原样。
-function snapToDisplayRefresh(rawFps) {
+function snapToDisplayRefresh(rawFps, range = 2) {
   const rounded = Math.round(rawFps);
   for (const rate of COMMON_REFRESH_RATES) {
-    if (Math.abs(rounded - rate) <= 2) return rate;
+    if (Math.abs(rounded - rate) <= range) return rate;
   }
   return rounded;
-}
-
-function estimateDisplayRefresh() {
-  if (fpsFrameSamples.length < 8) return displayFps;
-  const sorted = [...fpsFrameSamples].sort((a, b) => a - b);
-  // 用较快的 10% 分位帧间隔近似 vsync 周期：即使当前帧率被场景拖低，仍能反映显示器上限
-  const fastestMs = sorted[Math.max(0, Math.floor(sorted.length * 0.1))] || 16.7;
-  return snapToDisplayRefresh(1000 / Math.max(1, fastestMs));
 }
 
 export function animate(now) {
@@ -368,12 +357,15 @@ export function animate(now) {
   const frameMs = now - last;
   const dt = Math.min(frameMs / 1000, 0.1);
   last = now;
-  // 更新 FPS 显示：估算显示器最大刷新率并吸附到常见档位，数值稳定
-  fpsFrameSamples.push(Math.min(frameMs, 250));
+  fpsFrameSamples.push(frameMs);
   if (fpsFrameSamples.length > 60) fpsFrameSamples.shift();
-  displayFps = estimateDisplayRefresh();
+
+  const sorted = [...fpsFrameSamples].sort((a, b) => a - b);
+  const middleFrame = Math.max(1, sorted[Math.max(0, Math.floor(sorted.length * 0.5))]);
+  let fps = Math.round(1000 / middleFrame);
+
   const fpsEl = document.getElementById('fps-counter');
-  if (fpsEl) fpsEl.textContent = displayFps + 'FPS';
+  if (fpsEl) fpsEl.textContent = snapToDisplayRefresh(fps) + 'FPS';
 
   if (camTransition) {
     const t = Math.min(1, (now - camTransition.t0) / camTransition.dur);
