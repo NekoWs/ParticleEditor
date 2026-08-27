@@ -177,9 +177,10 @@ export function updateTopbarTitle() {
 }
 
 export function nextId() {
-  let n = 0;
+  const idx = ensureParticleIndex();
   const pre = t('default.particleName');
-  while (state.particles.some(p => p.id === pre + n)) n++;
+  let n = 0;
+  while (idx.has(pre + n)) n++;
   return pre + n;
 }
 export function nextGroupName() {
@@ -202,6 +203,16 @@ export let functionIndexCache = null; // 函数对象索引（buildParticleIndex
 // 索引缓存由 animation.js 的 buildParticleIndex 重建；这里提供 setter 供其写入（ESM 导入绑定不可重新赋值）。
 export function setParticleIndex(map) { particleIndexCache = map; }
 export function setFunctionIndex(map) { functionIndexCache = map; }
+// 供 nextId / addParticle 在批量添加期间维护索引，避免 nextId 退化为 O(N²)。
+export function ensureParticleIndex() {
+  if (!particleIndexCache) {
+    const map = new Map();
+    for (const p of state.particles) map.set(p.id, p);
+    setParticleIndex(map);
+  }
+  return particleIndexCache;
+}
+export function indexParticle(p) { if (particleIndexCache) particleIndexCache.set(p.id, p); }
 export function getParticle(id) { return particleIndexCache ? particleIndexCache.get(id) : state.particles.find(p => p.id === id); }
 export function findTrack(prop, id) { return state.tracks.find(tr => tr.pr === prop && tr.ids.length === 1 && tr.ids[0] === id); }
 

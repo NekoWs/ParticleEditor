@@ -7,7 +7,7 @@
  * ======================================================================= */
 
 
-import { TRACK_COMPS, COMP_INDEX, compPr, state, getParticle, getFunction, isDerivedParticle, nextId, nextGroupName } from './constants.js';
+import { TRACK_COMPS, COMP_INDEX, compPr, state, getParticle, getFunction, isDerivedParticle, nextId, nextGroupName, indexParticle } from './constants.js';
 import { baseComponent, componentValueAt, findTrackByPr, PR_TO_IDX, trVersion, rebuildPoints } from './animation.js';
 import { refreshParticleTree, groupCentroidValue, targetComponentValue } from '../ui/tree.js';
 import { pushUndo } from '../state/undo.js';
@@ -331,6 +331,7 @@ export function addParticle(base) {
   const p = Object.assign({ id: nextId(), color: [1, 1, 1, 1], scale: [1, 1, 1], glow: false, lightLevel: 0, pos: [0, 0, 0], vel: [0, 0, 0], life: 20 }, base);
   if (!Array.isArray(p.scale)) p.scale = [p.scale, p.scale, p.scale];
   state.particles.push(p);
+  indexParticle(p);
   return p;
 }
 
