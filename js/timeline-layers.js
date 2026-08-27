@@ -15,6 +15,7 @@ import { TL_PX_PER_TICK, timelineViewStart, drawTimeline } from './panels.js';
 import { rebuildPoints, maxTick } from './animation.js';
 import { saveWorkspaceState } from './blocks-ui.js';
 import { resize } from './main.js';
+import { pushUndo } from './undo.js';
 export const TL_LAYER_ROW_H = 18;
 export const tlLayerState = { expanded: new Set(), scroll: 0, drag: null, hit: [] };
 

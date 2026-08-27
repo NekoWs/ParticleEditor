@@ -167,7 +167,13 @@ export const state = {
 
 export function setDirty(v) {
   state.dirty = v;
-  if (typeof updateTopbarTitle === 'function') updateTopbarTitle();
+  updateTopbarTitle();
+}
+
+// 顶栏标题：工程名 + 未保存标记（setDirty / 打开 / 保存后调用）。
+export function updateTopbarTitle() {
+  const el = document.getElementById('topbar-title');
+  if (el) el.textContent = state.name + '.pdraw' + (state.dirty ? ' *' : '');
 }
 
 export function nextId() {

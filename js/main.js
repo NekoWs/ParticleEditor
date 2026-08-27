@@ -6,7 +6,7 @@
  * ======================================================================= */
 
 import { t, applyI18nDom, setLanguage } from './i18n.js';
-import { state, FUNCTION_PRESETS, getParticle, isDerivedParticle } from './constants.js';
+import { state, FUNCTION_PRESETS, getParticle, isDerivedParticle, updateTopbarTitle } from './constants.js';
 import { setShiftHeld, getDragIds, setDragIds } from './input-state.js';
 import { showAboutModal } from './ui.js';
 import { easeInOut } from './easing.js';
@@ -22,7 +22,7 @@ import { syncFunctionVarValues, drawTimeline, updateLoopIndicator, hexToRgb, TL_
 import { drawTimelineLayers, tlInitLayerEvents, refreshAllPanelsLight } from './timeline-layers.js';
 import { initTextureEditor, syncTextureSelection, updateTexOverlay, texAnimOverlayActive, refreshTexturePanel } from './texture-editor.js';
 import { applyWorkspaceState, saveWorkspaceState } from './blocks-ui.js';
-import { newFile, openFile, saveFile, saveFileAs, exportAnimation, loadFile, confirmDiscardChanges, updateTopbarTitle } from './io.js';
+import { newFile, openFile, saveFile, saveFileAs, exportAnimation, loadFile, confirmDiscardChanges } from './io.js';
 import { drawAxisGizmo, slerp } from './axis-gizmo.js';
 import { updateGizmo, updateGizmoFrame, restoreAxisColors, setAxisGlow } from './gizmo.js';
 

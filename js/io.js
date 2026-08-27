@@ -280,11 +280,6 @@ export async function loadFile(file) {
   setDirty(false);
 }
 
-export function updateTopbarTitle() {
-  const el = document.getElementById('topbar-title');
-  if (el) el.textContent = state.name + '.pdraw' + (state.dirty ? ' *' : '');
-}
-
 export async function openFile() {
   if ((await confirmDiscardChanges(t('common.open'))) === 'cancel') return;
   if (window.showOpenFilePicker) {

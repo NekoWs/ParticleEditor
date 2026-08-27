@@ -10,12 +10,13 @@ import { shiftHeld } from './input-state.js';
 import { camera, renderer, controls, raycaster, pointer, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, AXIS_RING_COLORS, GIZMO_FACE_DEFS, resetWorldAxisState, focalLengthPx } from './scene.js';
 import { currentVisual, rebuildPoints, setPreview, clearPreview, rotVectorAt, trackValueAt, findTrackByPr } from './animation.js';
 import { screenToNdc, planePointAt, worldToUV, computeShapePositions, snapGrid, snapValue, pickParticleAt, particleAt, projectToScreen, distToSegment, planeInfo, selectionCentroid, updateGizmoFrame } from './gizmo.js';
-import { groupCurrentCentroid, groupCentroidValue, deleteGroup, refreshParticleTree } from './tree.js';
+import { groupCurrentCentroid, groupCentroidValue, deleteGroup, refreshParticleTree, createGroup } from './tree.js';
 import { setFunctionTrackValue, setGroupTrackValue, editParticles, addParticle, autoGroup, removeGroupAndTracks } from './edit.js';
 import { pushUndo, restore, undoStack, undo, redo } from './undo.js';
 import { deleteFunctionObject } from './generators.js';
 import { texUndo, texRedo, texActive } from './texture-editor.js';
 import { togglePlay } from './main.js';
+import { saveFile, openFile, newFile } from './io.js';
 
 export let drag = null;
 export let modal = null;

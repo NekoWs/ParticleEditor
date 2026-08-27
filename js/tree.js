@@ -8,7 +8,7 @@ import { state, COMP_LABELS, PARTICLE_TRACK_DEFS, GROUP_PROP_DEFS, FUNCTION_PROP
 import { shiftHeld, getDragIds, setDragIds } from './input-state.js';
 import { modalAlert } from './ui.js';
 import { baseValue, componentValueAt, particleValueAt, trackValueAt, findTrackByPr, zeroArray, rebuildPoints, resetVelOffsets } from './animation.js';
-import { editComponentValue, removeKeyframe, renameParticle, renameGroup, moveParticlesToGroup, removeGroupAndTracks } from './edit.js';
+import { editComponentValue, removeKeyframe, renameParticle, renameGroup, moveParticlesToGroup, removeGroupAndTracks, baseValueFor } from './edit.js';
 import { pushUndo, popUndo } from './undo.js';
 import { deleteFunctionObject } from './generators.js';
 import { deleteSelected } from './interaction.js';
