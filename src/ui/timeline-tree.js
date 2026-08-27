@@ -18,9 +18,12 @@ import { rebuildFunctionObject } from '../core/generators.js';
 import { pushUndo } from '../state/undo.js';
 import { varKfValue } from '../core/easing.js';
 import { modalAlert } from './ui.js';
+import { rebuildPoints } from '../core/animation.js';
+import { refreshFunctionPanel } from './panels.js';
 
 export const TL_TREE_ROW_H = 22;
 export const tlTreeState = { expanded: new Set() };
+let tlTreeAnchor = null; // Shift 连续选择锚点（粒子 id 或组名/函数对象 key）
 
 let lastSig = null;
 let eventsBound = false;
@@ -173,6 +176,9 @@ function renderFlatRow(row) {
 
   switch (row.kind) {
     case 'group': {
+      div.dataset.selkind = 'group';
+      div.dataset.gname = row.name;
+      if (state.selectedGroup === row.name) div.classList.add('selected');
       div.appendChild(makeArrow(row.key, expanded));
       const label = el('span', 'tt-label');
       label.textContent = row.name;
@@ -184,6 +190,9 @@ function renderFlatRow(row) {
       break;
     }
     case 'particle': {
+      div.dataset.selkind = 'particle';
+      div.dataset.pid = row.p.id;
+      if (state.selected.has(row.p.id)) div.classList.add('selected');
       div.appendChild(makeArrow(row.key, expanded));
       const label = el('span', 'tt-label');
       label.textContent = row.p.id;
@@ -192,6 +201,9 @@ function renderFlatRow(row) {
       break;
     }
     case 'fx': {
+      div.dataset.selkind = 'fx';
+      div.dataset.fxid = row.fx.id;
+      if (state.selectedFunction === row.fx.id) div.classList.add('selected');
       div.appendChild(makeArrow(row.key, expanded));
       const label = el('span', 'tt-label');
       label.textContent = row.fx.name;
@@ -380,7 +392,77 @@ function onTreeClick(ev) {
   const addVar = ev.target.closest('.tt-add-var-kf');
   if (addVar) {
     addVariableKeyframe(addVar.dataset.fxid, addVar.dataset.name);
+    return;
   }
+
+  // 选中底部列表中的组 / 粒子 / 函数对象；支持 Ctrl 多选与 Shift 连续选择。
+  const rowEl = ev.target.closest('.tt-row');
+  if (!rowEl) return;
+  const selkind = rowEl.dataset.selkind;
+  if (!selkind) return;
+  const multi = ev.ctrlKey || ev.metaKey;
+  if (selkind === 'particle') {
+    const pid = rowEl.dataset.pid;
+    if (!pid) return;
+    if (ev.shiftKey && tlTreeAnchor && tlTreeAnchor.kind === 'particle') {
+      const flat = tlTreeFlatRows();
+      const ids = flat.filter(r => r.kind === 'particle').map(r => r.p.id);
+      const a = ids.indexOf(tlTreeAnchor.id);
+      const b = ids.indexOf(pid);
+      if (a >= 0 && b >= 0) {
+        const lo = Math.min(a, b), hi = Math.max(a, b);
+        state.selected.clear();
+        for (let i = lo; i <= hi; i++) state.selected.add(ids[i]);
+      }
+    } else if (multi) {
+      state.selected.has(pid) ? state.selected.delete(pid) : state.selected.add(pid);
+    } else {
+      state.selected.clear();
+      state.selected.add(pid);
+    }
+    state.selectedGroup = null;
+    state.selectedFunction = null;
+    tlTreeAnchor = { kind: 'particle', id: pid };
+    rebuildPoints();
+    syncSelectionClasses();
+    return;
+  }
+  if (selkind === 'group') {
+    const gname = rowEl.dataset.gname;
+    if (!gname) return;
+    state.selected.clear();
+    state.selectedGroup = gname;
+    state.selectedFunction = null;
+    tlTreeAnchor = { kind: 'group', id: gname };
+    rebuildPoints();
+    syncSelectionClasses();
+    return;
+  }
+  if (selkind === 'fx') {
+    const fxid = rowEl.dataset.fxid;
+    if (!fxid) return;
+    state.selected.clear();
+    state.selectedGroup = null;
+    state.selectedFunction = fxid;
+    tlTreeAnchor = { kind: 'fx', id: fxid };
+    rebuildPoints();
+    refreshFunctionPanel();
+    syncSelectionClasses();
+  }
+}
+
+function syncSelectionClasses() {
+  const root = document.getElementById('tl-tree');
+  if (!root) return;
+  root.querySelectorAll('.tt-particle').forEach(r => {
+    r.classList.toggle('selected', state.selected.has(r.dataset.pid));
+  });
+  root.querySelectorAll('.tt-group').forEach(r => {
+    r.classList.toggle('selected', state.selectedGroup === r.dataset.gname);
+  });
+  root.querySelectorAll('.tt-fx').forEach(r => {
+    r.classList.toggle('selected', state.selectedFunction === r.dataset.fxid);
+  });
 }
 
 function onTreeChange(ev) {

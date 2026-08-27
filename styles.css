@@ -599,7 +599,7 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .tl-time-group #tl-time { width: 46px; background: none; border: none; padding: 0; height: auto; }
 .tl-time-group #tl-time:focus { border-color: transparent; }
 .tl-time-group .ticks { white-space: nowrap; }
-#timeline { flex: 0 0 28px; width: 100%; height: 28px; margin-top: 6px; cursor: crosshair; border-radius: var(--radius-sm); }
+#timeline { flex: 0 0 28px; width: 100%; height: 28px; margin-top: 6px; cursor: default; border-radius: 0; }
 #tl-module-resize {
   position: absolute; top: -3px; left: 0; right: 0; height: 7px;
   cursor: ns-resize; z-index: 6;
@@ -608,8 +608,8 @@ body.ctrl-held .kf-t { cursor: pointer; }
 #tl-layers-canvas {
   flex: 1 1 auto; min-height: 60px;
   width: 100%; display: block;
-  border-radius: var(--radius-sm);
-  background: #181b22; cursor: grab;
+  border-radius: 0;
+  background: #181b22; cursor: default;
 }
 
 /* ---- 底部时间轴左侧标签轨 + 右侧 lane 画布 ---- */
@@ -637,6 +637,7 @@ body.ctrl-held .kf-t { cursor: pointer; }
   border-bottom: 1px solid #232833;
 }
 .tt-row:hover { background: var(--accent-soft); }
+.tt-row.selected { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
 .tt-group .tt-label { color: #c9a24b; }
 .tt-fx .tt-label { color: #a99bf5; }
 .tt-particle .tt-label { color: #7fb3e8; }

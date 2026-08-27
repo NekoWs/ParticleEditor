@@ -726,7 +726,7 @@ export function onKfDocPointerDown(e) {
   if (keyframeEditorBox && !e.target.closest('#kf-editor-pop') && !e.target.closest('#easing-editor')) closeKeyframeEditor();
 }
 
-export function openKeyframeEditor(canvas, id, pr, tick) {
+export function openKeyframeEditor(canvas, id, pr, tick, clientX, clientY) {
   const tr = findTrackByPr(pr, id);
   const kf = tr && tr.kf.find(k => k[0] === tick);
   if (!kf) return;
@@ -795,12 +795,18 @@ export function openKeyframeEditor(canvas, id, pr, tick) {
 
   document.body.appendChild(box);
 
-  // 悬浮定位：水平对准关键帧菱形，垂直在其下方
-  const rect = canvas.getBoundingClientRect();
-  const kfX = rect.left + (tick - compTimelineViewStart) * TL_PX_PER_TICK;
-  box.style.left = Math.min(Math.max(8, kfX), window.innerWidth - box.offsetWidth - 8) + 'px';
-  const top = rect.bottom + 6;
-  box.style.top = (top + box.offsetHeight > window.innerHeight - 8 ? Math.max(8, rect.top - box.offsetHeight - 6) : top) + 'px';
+  if (clientX != null && clientY != null) {
+    // 在鼠标右下弹出，避免与关键帧/播放头重叠
+    box.style.left = Math.min(Math.max(8, clientX + 8), window.innerWidth - box.offsetWidth - 8) + 'px';
+    box.style.top = Math.min(Math.max(8, clientY + 8), window.innerHeight - box.offsetHeight - 8) + 'px';
+  } else {
+    // 悬浮定位：水平对准关键帧菱形，垂直在其下方
+    const rect = canvas.getBoundingClientRect();
+    const kfX = rect.left + (tick - compTimelineViewStart) * TL_PX_PER_TICK;
+    box.style.left = Math.min(Math.max(8, kfX), window.innerWidth - box.offsetWidth - 8) + 'px';
+    const top = rect.bottom + 6;
+    box.style.top = (top + box.offsetHeight > window.innerHeight - 8 ? Math.max(8, rect.top - box.offsetHeight - 6) : top) + 'px';
+  }
 
   keyframeEditorInputs = { tIn, vIn, kf };
   keyframeEditorBox = box;

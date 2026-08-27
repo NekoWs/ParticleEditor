@@ -341,9 +341,14 @@ export function tlInitLayerEvents() {
   canvas.addEventListener('pointermove', ev => {
     const d = tlLayerState.drag;
     if (!d) {
-      // 悬停光标反馈
+      // 光标：默认 default；关键帧上 pointer；粒子寿命条主体上 grab；两端手柄 ew-resize
+      const kf = hitKeyframeAt(ev.clientX, ev.clientY);
+      if (kf) { canvas.style.cursor = 'pointer'; return; }
       const res = tlLayerHitAt(ev.clientX, ev.clientY);
-      canvas.style.cursor = res && res.zone !== 'body' ? 'ew-resize' : 'grab';
+      if (!res) { canvas.style.cursor = 'default'; return; }
+      if (res.zone !== 'body') { canvas.style.cursor = 'ew-resize'; return; }
+      const kind = res.hit.r.kind;
+      canvas.style.cursor = (kind === 'particle' || kind === 'member') ? 'grab' : 'default';
       return;
     }
     if (d.kind === 'kf') {
@@ -394,7 +399,7 @@ export function tlInitLayerEvents() {
     const kfHit = hitKeyframeAt(ev.clientX, ev.clientY);
     if (!kfHit) return;
     ev.preventDefault();
-    openKeyframeEditor(canvas, kfHit.id, kfHit.pr, kfHit.tick);
+    openKeyframeEditor(canvas, kfHit.id, kfHit.pr, kfHit.tick, ev.clientX, ev.clientY);
   });
 
   // canvas 滚轮 → 滚动左侧 HTML 标签轨（其 scroll 事件会驱动本画布重绘）
