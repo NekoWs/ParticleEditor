@@ -343,17 +343,16 @@ resize();
 export let last = performance.now();
 const fpsFrameSamples = []; // 最近帧间隔采样
 let displayFps = 60;        // 估算出的显示器最大刷新率，显示在右下角
-// 常见显示器刷新率档位，用于把测量值吸附到最接近的档位，避免数字抖动
+// 常见显示器刷新率档位，仅用于 ±2 帧内的轻微吸附
 const COMMON_REFRESH_RATES = [60, 75, 90, 120, 144, 160, 165, 180, 240, 360];
 
+// 只做「±2 帧」内的轻微吸附：例如 159~161 → 160；离档位较远的实测值保持原样。
 function snapToDisplayRefresh(rawFps) {
-  let best = COMMON_REFRESH_RATES[0];
-  let bestDiff = Infinity;
+  const rounded = Math.round(rawFps);
   for (const rate of COMMON_REFRESH_RATES) {
-    const diff = Math.abs(rawFps - rate);
-    if (diff < bestDiff) { bestDiff = diff; best = rate; }
+    if (Math.abs(rounded - rate) <= 2) return rate;
   }
-  return best;
+  return rounded;
 }
 
 function estimateDisplayRefresh() {
