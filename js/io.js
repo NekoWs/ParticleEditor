@@ -325,42 +325,34 @@ export async function writeProjectText(handle, json) {
   }
 }
 
-export async function saveFileAs() {
-  await refreshTexBase64Cache();
-  const json = JSON.stringify(exportProject());
+// 通过系统文件选择器保存/导出，或在不支持 File System Access API 时回退为下载。
+// keepHandle=true 会更新 state.fileHandle（另存为）；markSaved=true 会在成功后清除 dirty。
+async function writeProjectWithPicker(json, { keepHandle, markSaved }) {
   if (window.showSaveFilePicker) {
     try {
       const h = await window.showSaveFilePicker({ suggestedName: state.name + '.pdraw', types: [{ description: t('filePicker.projectFile'), accept: { 'application/json': ['.pdraw'] } }] });
-      state.fileHandle = h;
+      if (keepHandle) state.fileHandle = h;
       const w = await h.createWritable();
       await w.write(json); await w.close();
-      setDirty(false);
-      return;
+      if (markSaved) setDirty(false);
     } catch (e) {
-      return; // 用户取消选择器 → 取消保存，不下载
+      // 用户取消选择器：不下载，也不改变当前状态
     }
+    return;
   }
-  // 无 File System Access API 时回退下载
   download(json, (state.name || 'my_animation') + '.pdraw');
-  setDirty(false);
+  if (markSaved) setDirty(false);
+}
+
+export async function saveFileAs() {
+  await refreshTexBase64Cache();
+  await writeProjectWithPicker(JSON.stringify(exportProject()), { keepHandle: true, markSaved: true });
 }
 
 // 导出动画（.pdraw 供模组 /pdraw play 播放），不改变当前工程 fileHandle
 export async function exportAnimation() {
   await refreshTexBase64Cache();
-  const json = JSON.stringify(exportProject());
-  if (window.showSaveFilePicker) {
-    try {
-      const h = await window.showSaveFilePicker({ suggestedName: state.name + '.pdraw', types: [{ description: t('filePicker.projectFile'), accept: { 'application/json': ['.pdraw'] } }] });
-      const w = await h.createWritable();
-      await w.write(json); await w.close();
-      return;
-    } catch (e) {
-      return; // 用户取消选择器 → 取消导出，不下载
-    }
-  }
-  // 无 File System Access API 时回退下载
-  download(json, (state.name || 'my_animation') + '.pdraw');
+  await writeProjectWithPicker(JSON.stringify(exportProject()), { keepHandle: false, markSaved: false });
 }
 
 // 新建空白动画
