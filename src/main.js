@@ -20,6 +20,7 @@ import { refreshParticleTree, createGroup, showContextMenu, refreshCompTimelines
 import { createFunctionObject } from './core/generators.js';
 import { syncFunctionVarValues, drawTimeline, updateLoopIndicator, hexToRgb, TL_PX_PER_TICK, timelineViewStart, setTimelineViewStart, scrubAutoPan, timelineXToTick, refreshFunctionPanel } from './ui/panels.js';
 import { drawTimelineLayers, tlInitLayerEvents, refreshAllPanelsLight } from './ui/timeline-layers.js';
+import { initTimelineTree, refreshTimelineTree, tlTreeState } from './ui/timeline-tree.js';
 import { initTextureEditor, syncTextureSelection, updateTexOverlay, texAnimOverlayActive, refreshTexturePanel } from './ui/texture-editor.js';
 import { applyWorkspaceState, saveWorkspaceState } from './ui/blocks-ui.js';
 import { newFile, openFile, saveFile, saveFileAs, exportAnimation, loadFile, confirmDiscardChanges } from './io/io.js';
@@ -161,6 +162,7 @@ export function initUI() {
   document.getElementById('tl-time').addEventListener('change', () => { state.scrubbing = false; });
   document.getElementById('tl-loop').addEventListener('change', (ev) => { state.loop = ev.target.checked; updateLoopIndicator(); });
   if (typeof tlInitLayerEvents === 'function') tlInitLayerEvents();
+  if (typeof initTimelineTree === 'function') initTimelineTree();
 
   // 文件导入
   document.getElementById('file-import').addEventListener('change', (ev) => {
@@ -212,6 +214,7 @@ export function initUI() {
 
   rebuildPoints();
   refreshParticleTree();
+  if (typeof refreshTimelineTree === 'function') refreshTimelineTree();
   // 恢复工作区状态（粒子列表宽）
   if (typeof applyWorkspaceState === 'function') applyWorkspaceState();
   // 栏宽恢复会改变视口尺寸：立即重设 renderer，避免首帧场景缺块
@@ -225,8 +228,9 @@ export function clearAll() {
   state.textures = {}; state.currentTexture = null; state.groupUV = {};
   state.selected.clear(); state.selectedGroup = null; state.selectedFunction = null;
   state.expandedParticles.clear(); state.expandedProps.clear();
+  if (tlTreeState && tlTreeState.expanded) tlTreeState.expanded.clear();
   state.time = 0;
-  updateTimeUI(); rebuildPoints(); refreshParticleTree(); refreshFunctionPanel();
+  updateTimeUI(); rebuildPoints(); refreshParticleTree(); refreshTimelineTree(); refreshFunctionPanel();
 }
 
 // 读取三个数值输入框组成的向量；任一框为空/非法时返回 null。

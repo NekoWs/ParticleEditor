@@ -16,6 +16,7 @@ import { rebuildPoints, maxTick } from '../core/animation.js';
 import { saveWorkspaceState } from './blocks-ui.js';
 import { resize } from '../main.js';
 import { pushUndo } from '../state/undo.js';
+import { refreshTimelineTree } from './timeline-tree.js';
 export const TL_LAYER_ROW_H = 18;
 export const tlLayerState = { expanded: new Set(), scroll: 0, drag: null, hit: [] };
 
@@ -73,6 +74,7 @@ export function rowSpan(r) {
 
 export function drawTimelineLayers() {
   const canvas = document.getElementById('tl-layers-canvas');
+  if (typeof refreshTimelineTree === 'function') refreshTimelineTree();
   if (!canvas) return;
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.clientWidth || 1, h = canvas.clientHeight || 1;

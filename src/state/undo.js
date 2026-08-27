@@ -13,7 +13,7 @@ export const redoStack = [];
 export function cloneVars(vars) {
   const o = {};
   for (const [name, v] of Object.entries(vars || {})) {
-    o[name] = { expr: v.expr, kf: (v.kf || []).map(k => [k[0], k[1], k[2]]) };
+    o[name] = { base: Number.isFinite(v.base) ? v.base : 0, kf: (v.kf || []).map(k => [k[0], k[1], k[2]]) };
   }
   return o;
 }

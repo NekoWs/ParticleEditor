@@ -13,9 +13,8 @@ import { currentVisual } from '../core/animation.js';
 import { currentSelected, selectedGroupName, fxPosDeltaAt, fxScaleValuesAt } from '../interaction/interaction.js';
 import { groupCurrentCentroid, refreshParticleTree } from './tree.js';
 import { modalAlert } from './ui.js';
-import { makeEasingBtn } from './easing-editor.js';
-import { ATTR_NAMES, evaluate, varKfValue } from '../core/easing.js';
-import { applyPresetBuild, rebuildFunctionObject, syncPresetCount } from '../core/generators.js';
+import { varKfValue } from '../core/easing.js';
+import { applyPresetBuild, rebuildFunctionObject } from '../core/generators.js';
 import { openBlockDrawer } from './blocks-ui.js';
 import { pushUndo } from '../state/undo.js';
 import { r3 } from '../io/io.js';
@@ -360,133 +359,6 @@ export function buildFunctionPanel(fx) {
   wrap.appendChild(codeArea);
 
   return wrap;
-}
-
-export function nextFreeTimeVar(kf, startTime) {
-  let t = Math.max(0, Math.round(startTime));
-  while (kf.some(k => k[0] === t)) t += 5;
-  return t;
-}
-
-// 变量关键帧区展开状态（fx.id|name → bool，默认折叠）
-export const varExpandState = {};
-// 每个变量一个色调（按变量顺序循环），关键帧列表背景色区分归属变量
-export const VAR_KF_PALETTE = ['#5b9dff', '#ffa94d', '#6bd489', '#e57fae', '#9d7bff', '#4fc3c9', '#e0c35b', '#ff7d6b'];
-export function varKfHue(fx, name) {
-  const keys = Object.keys(fx.vars);
-  return VAR_KF_PALETTE[Math.max(0, keys.indexOf(name)) % VAR_KF_PALETTE.length];
-}
-
-export function buildVarRow(fx, name) {
-  const v = fx.vars[name];
-  const wrap = document.createElement('div');
-  wrap.className = 'fx-var';
-  const key = fx.id + '|' + name;
-  const expanded = !!varExpandState[key];
-  const kfs = v.kf || [];
-  const hasKf = kfs.length > 0;
-
-  const row = document.createElement('div');
-  row.className = 'var-row';
-  // 下拉按钮：只在展开时显示该变量的关键帧列表
-  const fold = document.createElement('button');
-  fold.className = 'var-fold' + (expanded ? ' open' : '');
-  fold.textContent = expanded ? '▾' : '▸';
-  fold.title = expanded ? t('fx.collapseKf') : t('fx.expandKf');
-  fold.onclick = () => { varExpandState[key] = !expanded; refreshFunctionPanel(); };
-  row.appendChild(fold);
-
-  const nIn = document.createElement('input');
-  nIn.className = 'var-name'; nIn.type = 'text'; nIn.value = name;
-  const vIn = document.createElement('input');
-  vIn.className = 'var-value'; vIn.type = 'text';
-  vIn.disabled = hasKf;
-  if (hasKf) {
-    vIn.value = r3(varKfValue(kfs, state.time)).toFixed(2);
-    vIn.dataset.fxKf = fx.id + '|' + name;
-    vIn.classList.add('kf-synced');
-    vIn.title = t('fx.kfSyncedHint');
-  } else {
-    vIn.value = v.expr || '0';
-  }
-  nIn.onchange = () => {
-    pushUndo();
-    const nn = nIn.value.trim();
-    if (nn && nn !== name) {
-      if (ATTR_NAMES.includes(nn)) { modalAlert(t('fx.varNameError'), tf('fx.varNameReserved', nn)); nIn.value = name; refreshFunctionPanel(); return; }
-      fx.vars[nn] = fx.vars[name]; delete fx.vars[name];
-    }
-    commitFunctionRebuild(fx); refreshFunctionPanel();
-  };
-  vIn.onchange = () => { pushUndo(); fx.vars[name].expr = vIn.value.trim() || '0'; syncPresetCount(fx); commitFunctionRebuild(fx); };
-  const del = document.createElement('button');
-  del.className = 'del-x'; del.textContent = '×';
-  del.onclick = () => { pushUndo(); delete fx.vars[name]; commitFunctionRebuild(fx); refreshFunctionPanel(); };
-  row.appendChild(nIn); row.appendChild(vIn);
-  if (hasKf && !expanded) {
-    // 折叠时显示关键帧数量徽标（同变量色调）
-    const badge = document.createElement('span');
-    badge.className = 'kf-count';
-    badge.textContent = '◇ ' + kfs.length;
-    badge.title = t('fx.kfCountHint');
-    badge.style.color = varKfHue(fx, name);
-    row.appendChild(badge);
-  }
-  row.appendChild(del);
-  wrap.appendChild(row);
-
-  if (expanded) {
-    const kfWrap = document.createElement('div');
-    kfWrap.className = 'fx-kf';
-    const hue = varKfHue(fx, name);
-    kfWrap.style.background = hue + '1c';          // 低透明度背景
-    kfWrap.style.borderLeft = '3px solid ' + hue;  // 色调左边线，区分归属变量
-    kfs.forEach((k, idx) => kfWrap.appendChild(buildVarKfRow(fx, name, k, idx === 0)));
-    const addBtn = document.createElement('button');
-    addBtn.className = 'mini'; addBtn.textContent = t('fx.addKf');
-    addBtn.onclick = () => {
-      pushUndo();
-      const v = fx.vars[name];
-      if (!v.kf) v.kf = [];
-      const kf = v.kf;
-      const t = nextFreeTimeVar(kf, Math.round(state.time));
-      let val = 0;
-      if (kf.length === 0) {
-        try {
-          val = evaluate(v.expr || '0', { i: 0, n: fx.count, t: state.time });
-        } catch (e) { val = 0; }
-        if (typeof val !== 'number' || !isFinite(val)) val = 0;
-      }
-      kf.push([t, val, state.defaultEasing]);
-      kf.sort((a, b) => a[0] - b[0]);
-      commitFunctionRebuild(fx); refreshFunctionPanel();
-    };
-    kfWrap.appendChild(addBtn);
-    wrap.appendChild(kfWrap);
-  }
-  return wrap;
-}
-
-export function buildVarKfRow(fx, name, k, isFirst) {
-  const row = document.createElement('div');
-  row.className = 'kf-row';
-  const tIn = document.createElement('input');
-  tIn.className = 'kf-t'; tIn.type = 'number'; tIn.value = k[0];
-  tIn.onchange = () => { pushUndo(); k[0] = Math.max(0, parseInt(tIn.value) || 0); fx.vars[name].kf.sort((a, b) => a[0] - b[0]); commitFunctionRebuild(fx); refreshFunctionPanel(); };
-  row.appendChild(tIn);
-  const vIn = document.createElement('input');
-  vIn.className = 'kf-v'; vIn.type = 'number'; vIn.step = '0.01'; vIn.value = r3(k[1]);
-  vIn.onchange = () => { pushUndo(); k[1] = parseFloat(vIn.value) || 0; commitFunctionRebuild(fx); };
-  row.appendChild(vIn);
-  if (!isFirst) {
-    const easeBtn = makeEasingBtn(k[2], (easing) => { pushUndo(); k[2] = easing; commitFunctionRebuild(fx); });
-    row.appendChild(easeBtn);
-  }
-  const del = document.createElement('button');
-  del.className = 'del-x'; del.textContent = '×';
-  del.onclick = () => { pushUndo(); fx.vars[name].kf = fx.vars[name].kf.filter(x => x !== k); commitFunctionRebuild(fx); refreshFunctionPanel(); };
-  row.appendChild(del);
-  return row;
 }
 
 // 实时同步「有关键帧」变量输入框显示的当前帧插值值（不重建面板）
