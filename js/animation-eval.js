@@ -4,7 +4,7 @@
  * 本模块只做求值与索引缓存，不接触 DOM / THREE 渲染对象；渲染缓冲见 render.js。
  * ======================================================================= */
 
-import { COMP_INDEX, compPr, DEG2RAD, state, getParticle, getFunction, particleIndexCache, functionIndexCache, setParticleIndex, setFunctionIndex } from './constants.js';
+import { COMP_INDEX, compPr, DEG2RAD, state, getParticle, getFunction, particleIndexCache, setParticleIndex, setFunctionIndex } from './constants.js';
 import { easeVal, FUNC_IMPL, matMat } from './easing.js';
 import { evaluateParticleAt } from './generators.js';
 import { groupCentroidValue } from './tree.js';
