@@ -19,8 +19,11 @@ import { saveWorkspaceState } from './blocks-ui.js';
 import { resize } from '../main.js';
 import { pushUndo } from '../state/undo.js';
 import { refreshTimelineTree, tlTreeFlatRows, TL_TREE_ROW_H } from './timeline-tree.js';
+import { openKeyframeEditor } from './tree.js';
 
 export const tlLayerState = { scroll: 0, drag: null, hit: [] };
+const TL_KF_HIT_PX = 6;
+let laneKfHits = [];
 
 // 分量关键帧菱形配色（与旧的 .comp-timeline 视觉一致）
 const LANE_KF_COLORS = {
@@ -88,6 +91,7 @@ function drawKfsForTrack(ctx, tr, id, prop, comp, w, cy, color, X) {
     const x = X(kf[0]);
     if (x < -6 || x > w + 6) continue;
     drawDiamond(ctx, x, cy, color);
+    laneKfHits.push({ x, y: cy, id, pr: compPr(prop, comp), tick: kf[0], kf, tr });
   }
 }
 
@@ -203,6 +207,7 @@ export function drawTimelineLayers() {
   const rowH = TL_TREE_ROW_H;
   const rows = tlTreeFlatRows();
   tlLayerState.hit = [];
+  laneKfHits = [];
   let y = -tlLayerState.scroll;
   for (const row of rows) {
     if (y + rowH < 0) { y += rowH; continue; }
@@ -263,6 +268,18 @@ export function timelineXToTickL(clientX) {
   return timelineViewStart + (clientX - rect.left) / TL_PX_PER_TICK;
 }
 
+function hitKeyframeAt(clientX, clientY) {
+  const canvas = document.getElementById('tl-layers-canvas');
+  if (!canvas) return null;
+  const rect = canvas.getBoundingClientRect();
+  const lx = clientX - rect.left;
+  const ly = clientY - rect.top + tlLayerState.scroll;
+  for (const h of laneKfHits) {
+    if (Math.abs(lx - h.x) <= TL_KF_HIT_PX && Math.abs(ly - h.y) <= TL_KF_HIT_PX) return h;
+  }
+  return null;
+}
+
 /** 轻刷新：st/life 改动后同步时长显示、标尺、lane 区与预览。 */
 export function refreshAllPanelsLight() {
   const maxEl = document.getElementById('tl-max');
@@ -286,6 +303,13 @@ export function tlInitLayerEvents() {
   }
 
   canvas.addEventListener('pointerdown', ev => {
+    const kfHit = hitKeyframeAt(ev.clientX, ev.clientY);
+    if (kfHit) {
+      pushUndo();
+      canvas.setPointerCapture(ev.pointerId);
+      tlLayerState.drag = { kind: 'kf', ...kfHit, startX: ev.clientX };
+      return;
+    }
     const res = tlLayerHitAt(ev.clientX, ev.clientY);
     if (!res) return;
     const { hit, zone } = res;
@@ -322,6 +346,15 @@ export function tlInitLayerEvents() {
       canvas.style.cursor = res && res.zone !== 'body' ? 'ew-resize' : 'grab';
       return;
     }
+    if (d.kind === 'kf') {
+      const t = Math.max(0, Math.round(timelineXToTickL(ev.clientX)));
+      if (t !== d.kf[0]) {
+        d.kf[0] = t;
+        if (d.tr) d.tr.kf.sort((a, b) => a[0] - b[0]);
+        refreshAllPanelsLight();
+      }
+      return;
+    }
     const ptrTick = timelineXToTickL(ev.clientX);
     if (d.kind === 'start') {
       setRowStart(d.r, Math.max(0, Math.round(ptrTick - d.grabOff)));
@@ -354,6 +387,14 @@ export function tlInitLayerEvents() {
       p.life = -1; // 无限
     }
     refreshAllPanelsLight();
+  });
+
+  // 右键关键帧菱形 → 打开关键帧编辑器
+  canvas.addEventListener('contextmenu', ev => {
+    const kfHit = hitKeyframeAt(ev.clientX, ev.clientY);
+    if (!kfHit) return;
+    ev.preventDefault();
+    openKeyframeEditor(canvas, kfHit.id, kfHit.pr, kfHit.tick);
   });
 
   // canvas 滚轮 → 滚动左侧 HTML 标签轨（其 scroll 事件会驱动本画布重绘）

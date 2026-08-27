@@ -167,10 +167,12 @@ export function drawTimeline() {
     if (((t % 10) + 10) % 10 === 0) ctx.fillText(String(t), x + 2, 2);
     ctx.strokeStyle = '#3a3f4b'; ctx.beginPath(); ctx.moveTo(x, h / 2 - 6); ctx.lineTo(x, h / 2 + 6); ctx.stroke();
   }
-  const phx = (state.time - timelineViewStart) * pxPerTick;
+  const phx = Math.max(0, Math.min(w, (state.time - timelineViewStart) * pxPerTick));
   ctx.strokeStyle = '#ffcc55'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(phx, 0); ctx.lineTo(phx, h); ctx.stroke();
-  ctx.fillStyle = '#ffcc55'; ctx.beginPath(); ctx.moveTo(phx - 5, 0); ctx.lineTo(phx + 5, 0); ctx.lineTo(phx, 8); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#ffcc55'; ctx.beginPath();
+  ctx.moveTo(Math.max(0, phx - 5), 0); ctx.lineTo(Math.min(w, phx + 5), 0); ctx.lineTo(phx, 8);
+  ctx.closePath(); ctx.fill();
 }
 
 export function niceStep(range) {
