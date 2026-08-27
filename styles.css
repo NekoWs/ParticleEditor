@@ -634,6 +634,7 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .tt-row {
   display: flex; align-items: center; gap: 4px;
   min-width: 0; padding-right: 4px; box-sizing: border-box;
+  border-bottom: 1px solid #232833;
 }
 .tt-row:hover { background: var(--accent-soft); }
 .tt-group .tt-label { color: #c9a24b; }

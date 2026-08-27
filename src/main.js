@@ -192,10 +192,10 @@ export function initUI() {
   tlCanvas.addEventListener('pointermove', (ev) => {
     if (!tlDrag) return;
     if (tlDrag.mode === 'pan') {
-      setTimelineViewStart(Math.max(-25, timelineViewStart - (ev.clientX - tlDrag.lastX) / TL_PX_PER_TICK));
+      setTimelineViewStart(Math.max(0, timelineViewStart - (ev.clientX - tlDrag.lastX) / TL_PX_PER_TICK));
     } else {
       // scrub：AE 式滞后自动平移（越界时视图单向外追、游标钉边缘；反向时若指针仍在可视区外则视图不回缩）
-      const r = scrubAutoPan(tlDrag, ev.clientX, tlCanvas.getBoundingClientRect(), timelineViewStart, state.time, TL_PX_PER_TICK, -25);
+      const r = scrubAutoPan(tlDrag, ev.clientX, tlCanvas.getBoundingClientRect(), timelineViewStart, state.time, TL_PX_PER_TICK, 0);
       setTimelineViewStart(r.viewStart);
       state.time = r.time;
       updateTimeUI();
@@ -208,7 +208,7 @@ export function initUI() {
   tlCanvas.addEventListener('pointerleave', () => { tlDrag = null; state.scrubbing = false; });
   tlCanvas.addEventListener('wheel', (ev) => {
     ev.preventDefault();
-    setTimelineViewStart(Math.max(-25, timelineViewStart + ev.deltaY / TL_PX_PER_TICK));
+    setTimelineViewStart(Math.max(0, timelineViewStart + ev.deltaY / TL_PX_PER_TICK));
     drawTimeline();
   }, { passive: false });
 

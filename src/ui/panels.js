@@ -131,7 +131,7 @@ export function hexToRgb(hex) {
  * ======================================================================= */
 
 export const TL_PX_PER_TICK = 4;
-export let timelineViewStart = -25;
+export let timelineViewStart = 0;
 // 组件时间轴左侧负轴（负几个 tick）：tick 0 不贴画布左缘，
 // 配合钉边缘余量让播放头/关键帧能真正停在 0t 上
 export const COMP_TL_MIN_VIEW_START = -5;
