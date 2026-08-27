@@ -340,14 +340,19 @@ window.addEventListener('resize', resize);
 resize();
 
 export let last = performance.now();
-let fpsEma = 60; // 帧率指数移动平均，供右下角 FPS 显示
+const fpsFrameSamples = []; // 最近帧间隔采样，取中位数后再平滑，避免抖动
+let fpsEma = 60;            // 帧率指数移动平均，供右下角 FPS 显示
 export function animate(now) {
   requestAnimationFrame(animate);
   const frameMs = now - last;
   const dt = Math.min(frameMs / 1000, 0.1);
   last = now;
-  // 更新场景刷新率显示（指数平滑，避免数字抖动过大）
-  fpsEma = fpsEma * 0.9 + (1000 / Math.max(1, frameMs)) * 0.1;
+  // 更新场景刷新率显示：中位数 + EMA，稳定收敛到显示器 vsync 帧率
+  fpsFrameSamples.push(Math.min(frameMs, 250));
+  if (fpsFrameSamples.length > 30) fpsFrameSamples.shift();
+  const sorted = [...fpsFrameSamples].sort((a, b) => a - b);
+  const medianMs = sorted[Math.floor(sorted.length / 2)] || frameMs;
+  fpsEma = fpsEma * 0.9 + (1000 / Math.max(1, medianMs)) * 0.1;
   const fpsEl = document.getElementById('fps-counter');
   if (fpsEl) fpsEl.textContent = Math.max(0, Math.round(fpsEma)) + 'FPS';
 
