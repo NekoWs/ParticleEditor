@@ -222,6 +222,17 @@ export function makeChainAppend(chain) {
 
 export function makeStatementBlock(s, isChain, chainIndex) {
   const el = document.createElement('div');
+  if (s.kind === 'raw') {
+    el.className = 'blk-stmt blk-raw blk-drag';
+    el._stmt = s;
+    el._dragLabel = s.text || '';
+    el._info = s.text || '';
+    const txt = document.createElement('span');
+    txt.className = 'blk-raw-text';
+    txt.textContent = s.text || '';
+    el.appendChild(txt);
+    return el;
+  }
   const cls = GROUP_COLOR[STMT_BLOCKS[s.kind].group] || 'blk-var';
   el.className = 'blk-stmt ' + cls + (BIG_BLOCKS[s.kind] ? ' big' : '') + ' blk-drag';
   el._stmt = s;
@@ -1179,9 +1190,22 @@ export function ensurePuzzleDom() {
   const chainCanvas = document.createElement('div');
   chainCanvas.className = 'chain-canvas';
   chainCanvas.id = 'chain-canvas';
+  const setupBox = document.createElement('div');
+  setupBox.className = 'setup-editor';
+  setupBox.id = 'setup-editor';
+  const setupLabel = document.createElement('div');
+  setupLabel.className = 'setup-label';
+  setupLabel.textContent = t('fx.setupBlock');
+  const setupArea = document.createElement('textarea');
+  setupArea.id = 'setup-text';
+  setupArea.className = 'fx-code';
+  setupArea.rows = 4;
+  setupBox.appendChild(setupLabel);
+  setupBox.appendChild(setupArea);
   const chainVars = document.createElement('div');
   chainVars.className = 'chain-vars';
   chainVars.id = 'chain-vars';
+  workspace.appendChild(setupBox);
   workspace.appendChild(chainCanvas);
   workspace.appendChild(chainVars);
   main.appendChild(palette);
@@ -1307,13 +1331,14 @@ export function openBlockDrawer(fx) {
     chain,
     frags: (saved.frags || []).map(f => ({ stmts: codeToStatements(f.code || ''), x: f.x, y: f.y })),
     varExprs, varOrder,
-    snapshot: { process: fx.process, vars: cloneVars(fx.vars), preset: fx.preset, params: fx.params },
+    snapshot: { setup: fx.setup || '', process: fx.process, vars: cloneVars(fx.vars), preset: fx.preset, params: fx.params },
     undoStack: [], redoStack: [],
     layout: {
       chain: saved.chain || { x: 40, y: 40 },
       view: saved.view || { x: 0, y: 0, scale: 1 },
     },
   };
+  document.getElementById('setup-text').value = fx.setup || '';
   // 窗口位置状态从 localStorage 工作区恢复
   applyWorkspaceState();
 
@@ -1340,18 +1365,21 @@ export function closeBlockDrawer(commit) {
   const fx = getFunction(bctx.fxId);
   if (commit && fx) {
     const newCode = statementsToCode(bctx.chain);
+    const setupText = document.getElementById('setup-text')?.value ?? '';
     fx.process = newCode;
+    fx.setup = setupText;
     for (const name of bctx.varOrder) {
       if (name in bctx.varExprs) {
         const v = fx.vars[name];
         if (v && (v.kf || []).length === 0) v.base = Number.isFinite(bctx.varExprs[name]) ? bctx.varExprs[name] : 0;
       }
     }
-    if (newCode !== bctx.snapshot.process) { fx.preset = null; fx.params = null; }
+    if (newCode !== bctx.snapshot.process || setupText !== bctx.snapshot.setup) { fx.preset = null; fx.params = null; }
     pushUndo();
     commitFunctionRebuild(fx);
   } else if (fx) {
     fx.process = bctx.snapshot.process;
+    fx.setup = bctx.snapshot.setup;
     fx.vars = cloneVars(bctx.snapshot.vars);
     fx.preset = bctx.snapshot.preset;
     fx.params = bctx.snapshot.params;
@@ -1402,6 +1430,8 @@ export function blockPreview() {
   const fx = getFunction(bctx.fxId);
   if (!fx) return;
   fx.process = statementsToCode(bctx.chain);
+  const setupText = document.getElementById('setup-text')?.value ?? '';
+  fx.setup = setupText;
   for (const name of bctx.varOrder) {
     if (name in bctx.varExprs) {
       const v = fx.vars[name];

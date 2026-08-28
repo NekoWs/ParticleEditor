@@ -236,6 +236,7 @@ export function stmtToCode(s) {
     case 'light': return 'light = ' + exprToCode(s.expr, 0);
     case 'attr': return s.name + ' = ' + exprToCode(s.expr, 0);
     case 'set': return s.name + ' = ' + exprToCode(s.expr, 0);
+    case 'raw': return s.text || '';
     default: throw new Error(_etf('err.unknownStmt', s.kind));
   }
 }
@@ -411,9 +412,44 @@ export function stmtToNode(stmt) {
   return { kind: 'set', name: lhs, expr: parseExpr(rhs) };
 }
 
-/** 代码文本 → 语句列表。解析失败抛错（调用方按 q24 提示并禁止打开）。 */
+/** 把代码文本拆成顶层语句（尊重字符串 / 括号 / 花括号，避免在 if/for/while 体内误拆）。 */
+export function splitStatements(code) {
+  const out = [];
+  let cur = '';
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < (code || '').length; i++) {
+    const c = code[i];
+    if (inStr) {
+      cur += c;
+      if (esc) { esc = false; }
+      else if (c === '\\') { esc = true; }
+      else if (c === '"') { inStr = false; }
+      continue;
+    }
+    if (c === '"') { inStr = true; cur += c; continue; }
+    if (c === '(' || c === '[' || c === '{') { depth++; cur += c; continue; }
+    if (c === ')' || c === ']' || c === '}') { depth = Math.max(0, depth - 1); cur += c; continue; }
+    if (c === ';' && depth === 0) {
+      const s = cur.trim();
+      if (s) out.push(s);
+      cur = '';
+      continue;
+    }
+    cur += c;
+  }
+  const tail = cur.trim();
+  if (tail) out.push(tail);
+  return out;
+}
+
+/** 代码文本 → 语句列表。无法用积木表达的语句保留为 raw 文本块，确保往返不丢代码。 */
 export function codeToStatements(code) {
-  return (code || '').split(';').map(s => s.trim()).filter(Boolean).map(stmtToNode);
+  return splitStatements(code).map(stmt => {
+    try { return stmtToNode(stmt); }
+    catch (e) { return { kind: 'raw', text: stmt }; }
+  });
 }
 
 /** 收集语句列表里的临时变量名（set 块）。 */
