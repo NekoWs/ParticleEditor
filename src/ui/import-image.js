@@ -2,6 +2,7 @@
  * 「导入」菜单：导入图片 / 导入动图，按像素生成粒子并自动建组
  *
  * - 选中文件后先读取图片尺寸，弹窗询问横向/纵向粒子数（默认=图片像素分辨率）；
+ * - 缩放采样：按目标网格做面积平均（box filter），避免最近邻抽点丢失细节；
  * - 静态图片：createImageBitmap 解码，透明像素跳过；
  * - GIF：WebCodecs ImageDecoder 逐帧解析，复用 col.r/g/b/a 颜色关键帧驱动粒子变色；
  * - GIF 优化：某像素从某帧起永久透明 → 粒子寿命截止到该帧；
@@ -10,6 +11,7 @@
 
 import { t, tf } from '../core/i18n.js';
 import { state, EASING_NONE } from '../core/constants.js';
+import { resampleRGBA } from '../core/resample.js';
 import { addParticle, autoGroup } from '../core/edit.js';
 import { pushUndo } from '../state/undo.js';
 import { rebuildPoints } from '../core/animation.js';
@@ -145,22 +147,19 @@ async function importStaticPrepared(prepared, cols, rows) {
   const ctx = cnv.getContext('2d', { willReadFrequently: true });
   ctx.drawImage(bitmap, 0, 0);
   const data = ctx.getImageData(0, 0, w, h).data;
+  const rgba = resampleRGBA(data, w, h, cols, rows);
 
-  const stepX = w / cols, stepY = h / rows;
   pushUndo();
   const ids = [];
   const offX = (cols - 1) / 2 * SPACING;
   const offZ = (rows - 1) / 2 * SPACING;
   for (let r = 0; r < rows; r++) {
-    const py = Math.min(h - 1, Math.floor((r + 0.5) * stepY));
     for (let c = 0; c < cols; c++) {
-      const px = Math.min(w - 1, Math.floor((c + 0.5) * stepX));
-      const i = (py * w + px) * 4;
-      const a = data[i + 3];
-      if (a < ALPHA_THRESHOLD) continue;
+      const o = (r * cols + c) * 4;
+      if (rgba[o + 3] < ALPHA_THRESHOLD_N) continue;
       const p = addParticle({
         pos: [c * SPACING - offX, 0, offZ - r * SPACING],
-        color: [data[i] / 255, data[i + 1] / 255, data[i + 2] / 255, a / 255],
+        color: [rgba[o], rgba[o + 1], rgba[o + 2], rgba[o + 3]],
         scale: [1, 1, 1],
         glow: false,
         lightLevel: 0,
@@ -185,41 +184,36 @@ async function importGifPrepared(prepared, cols, rows) {
   cnv.width = w; cnv.height = h;
   const ctx = cnv.getContext('2d', { willReadFrequently: true });
   const gridCount = cols * rows;
-  const stepX = w / cols, stepY = h / rows;
 
   const firstColor = new Float32Array(gridCount * 4);
   const prev = new Float32Array(gridCount * 4);
   const lastVisible = new Int32Array(gridCount).fill(-1);
   const frameDurTicks = new Int32Array(frameCount);
   const changes = []; // [gridIndex, comp, frameIndex, value]
+  const sampleBuf = new Float32Array(gridCount * 4); // 逐帧采样复用缓冲
 
   const sampleFrame = (videoFrame, frameIndex) => {
     ctx.clearRect(0, 0, w, h);
     ctx.drawImage(videoFrame, 0, 0);
     const d = ctx.getImageData(0, 0, w, h).data;
     frameDurTicks[frameIndex] = Math.max(1, Math.round((videoFrame.duration || 0) / 1000 / 50));
-    for (let r = 0; r < rows; r++) {
-      const py = Math.min(h - 1, Math.floor((r + 0.5) * stepY));
-      for (let c = 0; c < cols; c++) {
-        const gi = r * cols + c;
-        const px = Math.min(w - 1, Math.floor((c + 0.5) * stepX));
-        const i = (py * w + px) * 4;
-        const R = d[i] / 255, G = d[i + 1] / 255, B = d[i + 2] / 255, A = d[i + 3] / 255;
-        const base = gi * 4;
-        if (frameIndex === 0) {
-          firstColor[base] = R; firstColor[base + 1] = G; firstColor[base + 2] = B; firstColor[base + 3] = A;
-          prev[base] = R; prev[base + 1] = G; prev[base + 2] = B; prev[base + 3] = A;
-          if (A >= ALPHA_THRESHOLD_N) lastVisible[gi] = 0;
-        } else if (A >= ALPHA_THRESHOLD_N) {
-          lastVisible[gi] = frameIndex;
-          const vals = [R, G, B, A];
-          for (let comp = 0; comp < 4; comp++) {
-            const v = vals[comp];
-            if (Math.abs(v - prev[base + comp]) > 1e-6) {
-              changes.push([gi, comp, frameIndex, v]);
-              prev[base + comp] = v;
-              if (changes.length > MAX_CHANGES) throw new Error(tf('import.tooComplex', MAX_CHANGES));
-            }
+    resampleRGBA(d, w, h, cols, rows, sampleBuf);
+    for (let gi = 0; gi < gridCount; gi++) {
+      const base = gi * 4;
+      const R = sampleBuf[base], G = sampleBuf[base + 1], B = sampleBuf[base + 2], A = sampleBuf[base + 3];
+      if (frameIndex === 0) {
+        firstColor[base] = R; firstColor[base + 1] = G; firstColor[base + 2] = B; firstColor[base + 3] = A;
+        prev[base] = R; prev[base + 1] = G; prev[base + 2] = B; prev[base + 3] = A;
+        if (A >= ALPHA_THRESHOLD_N) lastVisible[gi] = 0;
+      } else if (A >= ALPHA_THRESHOLD_N) {
+        lastVisible[gi] = frameIndex;
+        const vals = [R, G, B, A];
+        for (let comp = 0; comp < 4; comp++) {
+          const v = vals[comp];
+          if (Math.abs(v - prev[base + comp]) > 1e-6) {
+            changes.push([gi, comp, frameIndex, v]);
+            prev[base + comp] = v;
+            if (changes.length > MAX_CHANGES) throw new Error(tf('import.tooComplex', MAX_CHANGES));
           }
         }
       }
