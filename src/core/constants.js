@@ -132,7 +132,7 @@ export const SNAP_STEP = 1.0;
 export const DEG2RAD = Math.PI / 180;
 export const RAD2DEG = 180 / Math.PI;
 export const ROT_SNAP = 45; // 按住 Shift 时旋转吸附的步长（角度）
-export const PARTICLE_SIZE_FACTOR = 0.2; // 编辑器渲染缩放：与游戏端 BridgeParticle.EDITOR_TO_MC_SCALE 一致
+export const PARTICLE_SIZE_FACTOR = 0.2; // 编辑器点整宽因子；游戏端 quad 半宽因子为其一半（EDITOR_TO_MC_SCALE=0.1）
 
 /* =========================================================================
  * 状态
