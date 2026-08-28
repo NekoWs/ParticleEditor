@@ -22,7 +22,8 @@ const MAX_PARTICLES = 100000;
 const MAX_CHANGES = 300000;    // GIF 颜色关键帧变化总量上限
 const MAX_DIMENSION = 4096;    // 单边粒子数上限
 const SPACING = 0.5;           // 相邻粒子中心距（blocks）
-const ALPHA_THRESHOLD = 10;    // alpha < 10/255 视为透明并跳过
+const ALPHA_THRESHOLD = 10;          // alpha < 10/255 视为透明并跳过
+const ALPHA_THRESHOLD_N = ALPHA_THRESHOLD / 255;  // 归一化 0..1 阈值（GIF 采样值已 /255）
 const COLOR_COMPS = ['r', 'g', 'b', 'a'];
 
 export function initImportMenu() {
@@ -208,8 +209,8 @@ async function importGifPrepared(prepared, cols, rows) {
         if (frameIndex === 0) {
           firstColor[base] = R; firstColor[base + 1] = G; firstColor[base + 2] = B; firstColor[base + 3] = A;
           prev[base] = R; prev[base + 1] = G; prev[base + 2] = B; prev[base + 3] = A;
-          if (A >= ALPHA_THRESHOLD) lastVisible[gi] = 0;
-        } else if (A >= ALPHA_THRESHOLD) {
+          if (A >= ALPHA_THRESHOLD_N) lastVisible[gi] = 0;
+        } else if (A >= ALPHA_THRESHOLD_N) {
           lastVisible[gi] = frameIndex;
           const vals = [R, G, B, A];
           for (let comp = 0; comp < 4; comp++) {
