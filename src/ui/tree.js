@@ -116,6 +116,8 @@ export function startRename(el, onCommit, onCancel) {
   input.value = el.textContent;
   input.className = 'rename-input';
   el.replaceWith(input);
+  syncRenameWidth(input);
+  input.addEventListener('input', () => syncRenameWidth(input));
   input.focus();
   input.select();
   let done = false;
@@ -127,6 +129,16 @@ export function startRename(el, onCommit, onCancel) {
     if (e.key === 'Enter') commit();
     else if (e.key === 'Escape') cancel();
   });
+}
+
+// 让重命名输入框宽度随内容变化（保留左右各 5px padding + 各 1px border）
+let renameMeasureCtx = null;
+function syncRenameWidth(input) {
+  if (!renameMeasureCtx) renameMeasureCtx = document.createElement('canvas').getContext('2d');
+  renameMeasureCtx.font = getComputedStyle(input).font;
+  const text = input.value || 'M';
+  const contentW = Math.max(1, renameMeasureCtx.measureText(text).width);
+  input.style.width = Math.ceil(contentW + 12) + 'px';   // 12 = 5*2 padding + 1*2 border
 }
 
 /* =========================================================================

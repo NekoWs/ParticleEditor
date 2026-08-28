@@ -549,8 +549,8 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .ptree-member .pm-style { color: var(--muted); font-size: 11px; }
 
 .rename-input {
-  flex: 1; min-width: 0; background: var(--panel-3); border: 1px solid var(--accent);
-  color: var(--text); border-radius: 4px; padding: 3px 6px; font-size: 12px;
+  flex: 0 0 auto; background: var(--panel-3); border: 1px solid var(--accent);
+  color: var(--text); border-radius: 4px; padding: 3px 5px; font-size: 12px;
   font-family: "SFMono-Regular", Consolas, monospace;
 }
 
