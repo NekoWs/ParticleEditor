@@ -4,11 +4,12 @@
 
 
 import { t } from '../core/i18n.js';
-import { EASINGS } from '../core/constants.js';
+import { EASINGS, EASING_NONE } from '../core/constants.js';
 import { easeVal, cubicBezierX, cubicBezierY } from '../core/easing.js';
 import { refreshParticleTree } from './tree.js';
 import { refreshFunctionPanel } from './panels.js';
 export function easingToBezier(easing) {
+  if (easing === EASING_NONE) return null; // 无缓动不是贝塞尔，编辑器以阶跃曲线展示
   if (Array.isArray(easing)) return easing.slice(0, 4);
   const p = EASINGS[easing] || EASINGS[0];
   return [p[1], p[2], p[3], p[4]];
@@ -44,8 +45,9 @@ export function openEasingEditor(easing, applyFn, anchor) {
   closeEasingEditor();
   // 立即清掉仍在播放收起动画的旧弹窗，避免与新弹窗重叠
   document.querySelectorAll('#easing-editor.closing').forEach(e => e.remove());
-  const bezier = easingToBezier(easing);
-  easingEditor = { bezier, apply: applyFn, anchor, dragging: -1, inputs: {} };
+  const isNone = easing === EASING_NONE;
+  const bezier = easingToBezier(easing) || [0, 0, 0, 0];
+  easingEditor = { bezier, apply: applyFn, anchor, dragging: -1, inputs: {}, none: isNone, inputsEl: null };
   const pop = document.createElement('div');
   pop.id = 'easing-editor';
   pop.className = 'easing-editor';
@@ -89,6 +91,8 @@ export function openEasingEditor(easing, applyFn, anchor) {
   inputs.appendChild(mkRow('P1', 0, 1));
   inputs.appendChild(mkRow('P2', 2, 3));
   pop.appendChild(inputs);
+  easingEditor.inputsEl = inputs;
+  if (isNone) inputs.style.display = 'none';
 
   const canvas = document.createElement('canvas');
   canvas.className = 'ee-canvas';
@@ -99,17 +103,29 @@ export function openEasingEditor(easing, applyFn, anchor) {
   const opt0 = document.createElement('option');
   opt0.value = ''; opt0.textContent = t('easing.presets');
   presetSel.appendChild(opt0);
+  const noneOpt = document.createElement('option');
+  noneOpt.value = String(EASING_NONE); noneOpt.textContent = t('easing.none');
+  presetSel.appendChild(noneOpt);
   for (let i = 0; i < EASINGS.length; i++) {
     const o = document.createElement('option');
     o.value = i; o.textContent = t(EASINGS[i][0]);
     presetSel.appendChild(o);
   }
-  if (Number.isInteger(easing)) presetSel.value = String(easing); // 预设下拉回显当前缓动
+  if (Number.isInteger(easing)) presetSel.value = String(easing); // 预设/无缓动下拉回显当前值
   presetSel.onchange = () => {
     if (presetSel.value === '') return;
-    easingEditor.bezier = easingToBezier(parseInt(presetSel.value));
-    easingEditor.apply(parseInt(presetSel.value));
-    syncEasingInputs();
+    if (presetSel.value === String(EASING_NONE)) {
+      easingEditor.none = true;
+      if (easingEditor.inputsEl) easingEditor.inputsEl.style.display = 'none';
+      easingEditor.apply(EASING_NONE);
+    } else {
+      easingEditor.none = false;
+      if (easingEditor.inputsEl) easingEditor.inputsEl.style.display = '';
+      const idx = parseInt(presetSel.value, 10);
+      easingEditor.bezier = easingToBezier(idx);
+      easingEditor.apply(idx);
+      syncEasingInputs();
+    }
     drawEasingEditor();
     refreshParticleTree();
     refreshFunctionPanel();
@@ -130,7 +146,7 @@ export function openEasingEditor(easing, applyFn, anchor) {
 }
 
 export function syncEasingInputs() {
-  if (!easingEditor) return;
+  if (!easingEditor || easingEditor.none) return;
   for (let i = 0; i < 4; i++) {
     const inp = easingEditor.inputs[i];
     if (inp && document.activeElement !== inp) inp.value = easingEditor.bezier[i].toFixed(3);
@@ -187,6 +203,18 @@ export function drawEasingEditor() {
   ctx.stroke();
   ctx.setLineDash([]);
 
+  if (easingEditor.none) {
+    // 无缓动：阶跃曲线（0 保持到 x=1，再跳到 1）
+    ctx.strokeStyle = '#5b9dff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(eePx(0), eePy(0));
+    ctx.lineTo(eePx(1), eePy(0));
+    ctx.lineTo(eePx(1), eePy(1));
+    ctx.stroke();
+    return;
+  }
+
   // 曲线（y 超出 [0,1] 时延伸到方框外）
   ctx.strokeStyle = '#5b9dff';
   ctx.lineWidth = 2;
@@ -223,7 +251,7 @@ export function drawPoint(ctx, x, y, color) {
 }
 
 export function onEasingPointerDown(e) {
-  if (!easingEditor) return;
+  if (!easingEditor || easingEditor.none) return;
   const canvas = document.getElementById('easing-editor').querySelector('.ee-canvas');
   const rect = canvas.getBoundingClientRect();
   const mx = (e.clientX - rect.left - EE_MX) / EE_BOX_W;
@@ -236,7 +264,7 @@ export function onEasingPointerDown(e) {
 }
 
 export function onEasingPointerMove(e) {
-  if (!easingEditor || easingEditor.dragging < 0) return;
+  if (!easingEditor || easingEditor.none || easingEditor.dragging < 0) return;
   const canvas = document.getElementById('easing-editor').querySelector('.ee-canvas');
   const rect = canvas.getBoundingClientRect();
   let mx = (e.clientX - rect.left - EE_MX) / EE_BOX_W;

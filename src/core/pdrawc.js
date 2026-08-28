@@ -5,6 +5,7 @@
  * ======================================================================= */
 
 import { base64ToBytes, bytesToBase64, signData, verifyData } from './crypto.js';
+import { EASING_NONE } from './easing-constants.js';
 
 export const PDRAWC_MAGIC = new Uint8Array([0x50, 0x44, 0x43, 0x31]); // "PDC1"
 export const PDRAWC_VERSION = 2;
@@ -129,7 +130,9 @@ function writeEnt(w, ent) {
 }
 
 function writeEasing(w, e) {
-  if (Number.isInteger(e)) {
+  if (e === EASING_NONE) {
+    w.u8(2); // 无缓动（阶跃）
+  } else if (Number.isInteger(e)) {
     w.u8(0);
     w.varint(Math.max(0, Math.min(13, e)));
   } else if (Array.isArray(e)) {
@@ -347,6 +350,7 @@ function readEasing(r) {
   const tag = r.u8();
   if (tag === 0) return r.varint();
   if (tag === 1) return [r.f32(), r.f32(), r.f32(), r.f32()];
+  if (tag === 2) return EASING_NONE; // 无缓动（阶跃）
   throw new Error('pdrawc: unknown easing tag');
 }
 

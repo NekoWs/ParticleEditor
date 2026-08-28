@@ -90,6 +90,7 @@ export var LANGS = {
     'about.developer': '开发者',
     // —— 缓动编辑器 ——
     'easing.editTitle': '编辑缓动函数', 'easing.editorTitle': '缓动函数编辑器', 'easing.presets': '预设…',
+    'easing.none': '无缓动',
     // —— 悬浮窗 ——
     'fwin.minimize': '最小化',
     // —— 默认命名 ——
@@ -260,6 +261,7 @@ export var LANGS = {
     'about.developer': 'Developer',
     // —— 缓动编辑器 ——
     'easing.editTitle': 'Edit Easing', 'easing.editorTitle': 'Easing Editor', 'easing.presets': 'Presets…',
+    'easing.none': 'None',
     // —— 悬浮窗 ——
     'fwin.minimize': 'Minimize',
     // —— 默认命名 ——

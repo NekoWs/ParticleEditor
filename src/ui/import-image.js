@@ -9,7 +9,7 @@
  * ======================================================================= */
 
 import { t, tf } from '../core/i18n.js';
-import { state } from '../core/constants.js';
+import { state, EASING_NONE } from '../core/constants.js';
 import { addParticle, autoGroup } from '../core/edit.js';
 import { pushUndo } from '../state/undo.js';
 import { rebuildPoints } from '../core/animation.js';
@@ -247,7 +247,7 @@ async function importGifPrepared(prepared, cols, rows) {
     if (!m) { m = new Map(); changeMap.set(gi, m); }
     let arr = m.get(comp);
     if (!arr) { arr = []; m.set(comp, arr); }
-    arr.push([tickOf[fi], value, 0]);
+    arr.push([tickOf[fi], value, EASING_NONE]);
   }
 
   pushUndo();
@@ -273,7 +273,7 @@ async function importGifPrepared(prepared, cols, rows) {
     for (let comp = 0; comp < 4; comp++) {
       const arr = m.get(comp);
       if (arr && arr.length) {
-        const kf = [[0, firstColor[base + comp], 0], ...arr];
+        const kf = [[0, firstColor[base + comp], EASING_NONE], ...arr];
         state.tracks.push({ pr: 'col.' + COLOR_COMPS[comp], m: 'set', ids: [p.id], kf });
       }
     }

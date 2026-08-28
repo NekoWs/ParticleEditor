@@ -190,6 +190,7 @@ easing                     缓动编码（§6）
 tag                        1 byte：
                              0 → presetIdx varint（0..13，见 .pdraw 文档 §8）
                              1 → custom：4 × float32 [cx1,cy1,cx2,cy2]
+                             2 → none（无缓动 / 阶跃）：无附加数据
 ```
 
 ---

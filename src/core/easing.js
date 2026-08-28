@@ -10,6 +10,7 @@
 
 import { _et, _etf } from './i18n.js';
 import { EASINGS } from './constants.js';
+import { EASING_NONE } from './easing-constants.js';
 export function cubicBezierX(t, x1, x2) {
   const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx;
   return ((ax * t + bx) * t + cx) * t;
@@ -31,6 +32,7 @@ export const EASE_CACHE_Q = 1000; // t 量化精度（1/1000，视觉无感，�
 export const easeCache = [];     // easing → 长度 EASE_CACHE_Q+1 的数组，惰性分配
 export function easeVal(t, easing) {
   const t1 = t < 0 ? 0 : (t > 1 ? 1 : t);
+  if (easing === EASING_NONE) return t1 >= 1 ? 1 : 0; // 无缓动：阶跃（保持到下一关键帧）
   if (Array.isArray(easing)) return cubicBezier(t1, easing[0], easing[1], easing[2], easing[3]);
   const p = EASINGS[easing] || EASINGS[0];
   // LINEAR：x1==y1 && x2==y2（对角贝塞尔），直接返回 t，跳过牛顿迭代

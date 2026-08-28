@@ -6,13 +6,17 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { t } from './i18n.js';
+import { EASING_NONE } from './easing-constants.js';
 
 export { OrbitControls };
+export { EASING_NONE };
 
 /* =========================================================================
  * 常量
  * ======================================================================= */
 
+// 缓动预设：关键帧 kf[2] 可用 EASINGS 下标（0..13）、自定义贝塞尔数组，
+// 或 EASING_NONE（无缓动 / 阶跃，见 easing-constants.js）。
 export const EASINGS = [
   ['LINEAR', 0, 0, 1, 1],
   ['EASE_IN', 0.42, 0, 1, 1],
