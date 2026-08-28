@@ -10,7 +10,7 @@
  * ======================================================================= */
 
 import { t } from '../core/i18n.js';
-import { state, TRACK_COMPS, compPr, getFunction } from '../core/constants.js';
+import { state, TRACK_COMPS, compPr, getFunction, getParticle } from '../core/constants.js';
 import { TL_PX_PER_TICK, timelineViewStart, setTimelineViewStart, drawTimeline, scrubAutoPan, tlNiceStep } from './panels.js';
 import { rebuildPoints, maxTick } from '../core/animation.js';
 import { findTrackByPr } from '../core/animation-eval.js';
@@ -43,7 +43,7 @@ export function rowSpan(r) {
   if (r.kind === 'group') {
     let lo = Infinity, hi = -Infinity, anyInf = false;
     for (const id of r.members) {
-      const p = state.particles.find(q => q.id === id);
+      const p = getParticle(id);
       if (!p) continue;
       const e = particleLifeEnd(p), s = p.st || 0;
       lo = Math.min(lo, s);
@@ -267,7 +267,7 @@ export function setParticleLife(p, v) {
 export function shiftGroup(r, delta) {
   if (!delta) return;
   for (const id of r.members) {
-    const p = state.particles.find(q => q.id === id);
+    const p = getParticle(id);
     if (p) p.st = Math.max(0, (p.st || 0) + delta);
   }
 }
@@ -414,7 +414,7 @@ export function tlInitLayerEvents() {
       const delta = t - d.lastTick;
       if (delta) {
         for (const id of d.r.members) {
-          const p = state.particles.find(q => q.id === id);
+          const p = getParticle(id);
           if (p && p.life != null && p.life >= 0) {
             setParticleLife(p, Math.max(1, p.life + delta));
           }
