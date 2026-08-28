@@ -13,10 +13,10 @@ import {
   getParticle, getFunction, isDerivedParticle,
 } from '../core/constants.js';
 import { editComponentValue } from '../core/edit.js';
-import { targetComponentValue } from './tree.js';
+import { targetComponentValue, startRename } from './tree.js';
 import { rebuildFunctionObject } from '../core/generators.js';
 import { pushUndo } from '../state/undo.js';
-import { varKfValue } from '../core/easing.js';
+import { varKfValue, ATTR_NAMES, FUNCS } from '../core/easing.js';
 import { modalAlert } from './ui.js';
 import { rebuildPoints } from '../core/animation.js';
 import { refreshFunctionPanel } from './panels.js';
@@ -27,6 +27,10 @@ let tlTreeAnchor = null; // Shift 连续选择锚点（粒子 id 或组名/函�
 
 let lastSig = null;
 let eventsBound = false;
+
+// 变量名约束：必须能作为公式标识符，且不能与属性保留字、内置变量/常量、函数名冲突
+const VAR_IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const VAR_RESERVED = new Set([...ATTR_NAMES, 'i', 'n', 't', 'cx', 'cy', 'cz', 'out', 'pi', 'e', ...Object.keys(FUNCS)]);
 
 /* =========================================================================
  * 小工具
@@ -304,7 +308,11 @@ function renderFlatRow(row) {
       div.appendChild(makeSpacer());
       const label = el('span', 'tt-vname');
       label.textContent = row.name;
-      label.title = row.name;
+      label.title = row.name + ' · ' + t('tree.dblclickRename');
+      label.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
+        startRename(label, (v) => renameVariable(row.fx, row.name, v), () => refreshTimelineTree(true));
+      });
       const inp = el('input', 'tt-var-val');
       inp.type = 'number';
       inp.step = '0.01';
@@ -359,12 +367,13 @@ export function drawTimelineTree() {
   });
 }
 
-// 结构刷新：仅在对象/展开状态/语言变化时重建 HTML，随后更新数值
-export function refreshTimelineTree() {
+// 结构刷新：仅在对象/展开状态/语言变化时重建 HTML，随后更新数值。
+// force=true 时无条件重建（用于行内重命名等需要恢复原始 DOM 的场景）。
+export function refreshTimelineTree(force = false) {
   const root = document.getElementById('tl-tree');
   if (!root) return;
   const sig = structureSignature();
-  if (sig !== lastSig) {
+  if (force || sig !== lastSig) {
     lastSig = sig;
     const prevScroll = root.scrollTop || 0;
     root.innerHTML = '';
@@ -521,6 +530,31 @@ function onTreeChange(ev) {
     rebuildFxSafe(fx);
     refreshTimelineTree();
   }
+}
+
+function renameVariable(fx, oldName, raw) {
+  const nn = (raw || '').trim();
+  if (!nn || nn === oldName) { refreshTimelineTree(true); return; }
+  if (!VAR_IDENT_RE.test(nn)) {
+    modalAlert(t('fx.varNameError'), tf('fx.varNameInvalid', nn));
+    refreshTimelineTree(true);
+    return;
+  }
+  if (VAR_RESERVED.has(nn)) {
+    modalAlert(t('fx.varNameError'), tf('fx.varNameReserved', nn));
+    refreshTimelineTree(true);
+    return;
+  }
+  if (Object.prototype.hasOwnProperty.call(fx.vars || {}, nn)) {
+    modalAlert(t('fx.varNameError'), tf('fx.varNameExists', nn));
+    refreshTimelineTree(true);
+    return;
+  }
+  pushUndo();
+  fx.vars[nn] = fx.vars[oldName];
+  delete fx.vars[oldName];
+  rebuildFxSafe(fx);
+  refreshTimelineTree(true);
 }
 
 function addVariable(fxId) {
