@@ -1291,7 +1291,7 @@ export function applyChainView() {
 export function openBlockDrawer(fx) {
   ensurePuzzleDom();
   let chain;
-  try { chain = codeToStatements(fx.code); }
+  try { chain = codeToStatements(fx.process || ''); }
   catch (e) { modalAlert(t('blk.openFailTitle'), tf('blk.parseFail', e.message)); return; }
   const varExprs = {};
   const varOrder = [];
@@ -1307,7 +1307,7 @@ export function openBlockDrawer(fx) {
     chain,
     frags: (saved.frags || []).map(f => ({ stmts: codeToStatements(f.code || ''), x: f.x, y: f.y })),
     varExprs, varOrder,
-    snapshot: { code: fx.code, vars: cloneVars(fx.vars), preset: fx.preset, params: fx.params },
+    snapshot: { process: fx.process, vars: cloneVars(fx.vars), preset: fx.preset, params: fx.params },
     undoStack: [], redoStack: [],
     layout: {
       chain: saved.chain || { x: 40, y: 40 },
@@ -1340,18 +1340,18 @@ export function closeBlockDrawer(commit) {
   const fx = getFunction(bctx.fxId);
   if (commit && fx) {
     const newCode = statementsToCode(bctx.chain);
-    fx.code = newCode;
+    fx.process = newCode;
     for (const name of bctx.varOrder) {
       if (name in bctx.varExprs) {
         const v = fx.vars[name];
         if (v && (v.kf || []).length === 0) v.base = Number.isFinite(bctx.varExprs[name]) ? bctx.varExprs[name] : 0;
       }
     }
-    if (newCode !== bctx.snapshot.code) { fx.preset = null; fx.params = null; }
+    if (newCode !== bctx.snapshot.process) { fx.preset = null; fx.params = null; }
     pushUndo();
     commitFunctionRebuild(fx);
   } else if (fx) {
-    fx.code = bctx.snapshot.code;
+    fx.process = bctx.snapshot.process;
     fx.vars = cloneVars(bctx.snapshot.vars);
     fx.preset = bctx.snapshot.preset;
     fx.params = bctx.snapshot.params;
@@ -1401,7 +1401,7 @@ export function blockPreview() {
   if (!bctx) return;
   const fx = getFunction(bctx.fxId);
   if (!fx) return;
-  fx.code = statementsToCode(bctx.chain);
+  fx.process = statementsToCode(bctx.chain);
   for (const name of bctx.varOrder) {
     if (name in bctx.varExprs) {
       const v = fx.vars[name];

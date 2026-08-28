@@ -361,7 +361,17 @@ export function buildFunctionPanel(fx) {
   durRow.appendChild(stepIn);
   wrap.appendChild(durRow);
 
-  // 公式代码块
+  // 随机种子
+  const seedRow = document.createElement('label');
+  seedRow.className = 'row';
+  seedRow.textContent = t('fx.seed');
+  const seedIn = document.createElement('input');
+  seedIn.type = 'number'; seedIn.step = '1'; seedIn.value = fx.seed | 0;
+  seedIn.onchange = () => { pushUndo(); fx.seed = parseInt(seedIn.value) || 0; commitFunctionRebuild(fx); };
+  seedRow.appendChild(seedIn);
+  wrap.appendChild(seedRow);
+
+  // 拼图入口
   const codeLabel = document.createElement('div');
   codeLabel.className = 'row';
   codeLabel.textContent = t('fx.codeBlock');
@@ -372,12 +382,30 @@ export function buildFunctionPanel(fx) {
   puzzleBtn.onclick = () => openBlockDrawer(fx);
   codeLabel.appendChild(puzzleBtn);
   wrap.appendChild(codeLabel);
-  const codeArea = document.createElement('textarea');
-  codeArea.className = 'fx-code';
-  codeArea.rows = 7;
-  codeArea.value = fx.code;
-  codeArea.onchange = () => { pushUndo(); fx.code = codeArea.value; commitFunctionRebuild(fx); };
-  wrap.appendChild(codeArea);
+
+  // Setup（对象初始化一次）
+  const setupLabel = document.createElement('div');
+  setupLabel.className = 'row';
+  setupLabel.textContent = t('fx.setupBlock');
+  wrap.appendChild(setupLabel);
+  const setupArea = document.createElement('textarea');
+  setupArea.className = 'fx-code';
+  setupArea.rows = 4;
+  setupArea.value = fx.setup || '';
+  setupArea.onchange = () => { pushUndo(); fx.setup = setupArea.value; commitFunctionRebuild(fx); };
+  wrap.appendChild(setupArea);
+
+  // Process（每粒子每帧）
+  const processLabel = document.createElement('div');
+  processLabel.className = 'row';
+  processLabel.textContent = t('fx.processBlock');
+  wrap.appendChild(processLabel);
+  const processArea = document.createElement('textarea');
+  processArea.className = 'fx-code';
+  processArea.rows = 7;
+  processArea.value = fx.process || '';
+  processArea.onchange = () => { pushUndo(); fx.process = processArea.value; commitFunctionRebuild(fx); };
+  wrap.appendChild(processArea);
 
   return wrap;
 }

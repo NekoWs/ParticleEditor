@@ -1,73 +1,79 @@
 /* =========================================================================
  * 函数对象：活源重算
  * 职责：
- *   1) 公式代码/变量表达式的编译缓存（getCompiledFn / getConstVarVals / resolveVarVals）
- *   2) 派生粒子与派生轨道的重建（rebuildFunctionObject / buildDerivedTracks）
- *   3) 预设应用与采样数联动（applyPreset / syncPresetCount / createFunctionObject）
+ *   1) 脚本编译缓存（setup / process → AST）
+ *   2) setup（对象级）与 process（粒子级）求值
+ *   3) 派生粒子与派生轨道的重建（rebuildFunctionObject / buildDerivedTracks）
+ *   4) 预设应用与采样数联动（applyPreset / syncPresetCount / createFunctionObject）
  * ======================================================================= */
 
-
 import { _etf, t } from './i18n.js';
-import { FUNCTION_PRESETS, state, nextFunctionId, setDirty, compPr } from './constants.js';
-import { ATTR_NAMES, tokenize, evaluate, compileFunctionCode, execFunctionCode, varKfValue, tryCompileFunction } from './easing.js';
+import { FUNCTION_PRESETS, state, nextFunctionId, setDirty, compPr, getParticle } from './constants.js';
+import { varKfValue, evaluate, ATTR_NAMES } from './easing.js';
 import { modalAlert } from '../ui/ui.js';
 import { pushUndo } from '../state/undo.js';
 import { rebuildPoints } from './animation.js';
 import { refreshParticleTree } from '../ui/tree.js';
 import { refreshFunctionPanel } from '../ui/panels.js';
-// 代码块编译缓存：fx.code 变化时重新编译（避免每粒子重复 split/tokenize）
-export function getCompiledCode(fx) {
-  const code = fx.code || '';
-  if (fx._compiledCode === undefined || fx._compiledSrc !== code) {
-    fx._compiledCode = compileFunctionCode(code);
-    fx._compiledSrc = code;
-  }
-  return fx._compiledCode;
+import { parseProgram, createObjectState, runSetup, createStatics, evalProcess } from './script-lang.js';
+
+// 主循环中 1 秒 = 20 tick（见 main.js 的 `state.time += dt * 20`）。
+const TICKS_PER_SEC = 20;
+const DT_PER_TICK = 1 / TICKS_PER_SEC;
+
+/* -------------------------------------------------------------------------
+ * 脚本编译缓存
+ * ---------------------------------------------------------------------- */
+
+function scriptSource(fx) {
+  const s = (fx.setup || '').trim();
+  const p = (fx.process || '').trim();
+  return 'setup {\n' + s + '\n}\nprocess {\n' + p + '\n}\n';
 }
 
-// 变量名列表缓存（fx.vars 的 key 顺序；重建函数对象时失效）
+export function getProgram(fx) {
+  const src = scriptSource(fx);
+  if (fx._program === undefined || fx._programSrc !== src) {
+    fx._program = parseProgram(src);
+    fx._programSrc = src;
+  }
+  return fx._program;
+}
+
+/* -------------------------------------------------------------------------
+ * 变量（fx.vars，时间轴动画变量，只读注入）
+ * ---------------------------------------------------------------------- */
+
 export function getVarNames(fx) {
   if (fx._varNames === undefined) fx._varNames = Object.keys(fx.vars || {});
   return fx._varNames;
 }
 
-// 常量变量值缓存：所有变量均无关键帧时，预计算一次常量数组（否则 null）。
-export function getConstVarVals(fx) {
-  if (fx._constVarVals !== undefined) return fx._constVarVals;
-  const names = getVarNames(fx);
-  let vals = (names.length === 0) ? [] : null;
-  if (names.length > 0) {
-    vals = new Array(names.length);
-    for (let k = 0; k < names.length; k++) {
-      const v = fx.vars[names[k]];
-      if (!v || (v.kf && v.kf.length > 0)) { vals = null; break; }
-      vals[k] = Number.isFinite(v.base) ? v.base : 0;
-    }
-  }
-  fx._constVarVals = vals;
-  return vals;
-}
-
-// 代码块原生编译缓存：fx.code 变化时重新编译（纯标量代码块可编译为原生 JS 函数，否则 null）
-export function getCompiledFn(fx) {
-  const code = fx.code || '';
-  if (fx._compiledFn === undefined || fx._compiledFnSrc !== code) {
-    fx._compiledFn = tryCompileFunction(code, getVarNames(fx));
-    fx._compiledFnSrc = code;
-  }
-  return fx._compiledFn;
-}
-
-// 变量当前值：有关键帧按 t 插值，否则取 base。
 export function varValueAt(v, t) {
   const kf = v && v.kf ? v.kf : [];
   return (kf.length > 0) ? varKfValue(kf, t || 0) : (v && Number.isFinite(v.base) ? v.base : 0);
 }
 
-// 解析变量值数组（按 getVarNames 顺序；关键帧按 t 插值，否则用常数 base），供原生编译函数调用。
+function varsAt(fx, t) {
+  const env = {};
+  for (const name in (fx.vars || {})) env[name] = varValueAt(fx.vars[name], t || 0);
+  return env;
+}
+
+// 旧 API 兼容：渲染快路径预热时返回 null（新运行时无原生编译快路径）。
+export function getCompiledFn(fx) {
+  fx._compiledFn = null;
+  return null;
+}
+
+// 旧 API 兼容：预计算常量变量数组；新路径不再使用。
+export function getConstVarVals(fx) {
+  fx._constVarVals = null;
+  return null;
+}
+
+// 解析变量值数组（按 getVarNames 顺序；关键帧按 t 插值，否则用常数 base）。
 export function resolveVarVals(fx, i, n, t) {
-  const constVals = getConstVarVals(fx);
-  if (constVals) return constVals;
   const vars = fx.vars || {};
   const names = getVarNames(fx);
   const out = new Array(names.length);
@@ -82,34 +88,67 @@ export function resolveVarVals(fx, i, n, t) {
   return out;
 }
 
-// 变量环境：vars 为 { name: { base, kf } }，关键帧优先按 t 插值，否则使用常数 base。
+// 旧 API 兼容：构造变量环境（仅测试/外部调用使用）。
 export function buildEnv(vars, ctx) {
   const env = { i: ctx.i, n: ctx.n, t: ctx.t || 0 };
-  for (const name in vars) {
+  for (const name in (vars || {})) {
     if (ATTR_NAMES.includes(name)) throw new Error(_etf('err.varReserved', name));
-    const v = vars[name];
-    if (!v) throw new Error(_etf('err.unknownVar', name));
-    env[name] = varValueAt(v, ctx.t);
+    env[name] = varValueAt(vars[name], ctx.t);
   }
   return env;
 }
 
-export function exprUsesT(expr) {
-  const e = (expr || '').trim();
-  if (!e) return false;
-  try { return tokenize(e).some(tk => tk.t === 'var' && tk.name === 't'); }
-  catch (err) { return false; }
+/* -------------------------------------------------------------------------
+ * setup / process 求值
+ * ---------------------------------------------------------------------- */
+
+function gridCols(fx, n) {
+  const v = fx.vars && fx.vars['grid_cols'];
+  if (v && Number.isFinite(v.base)) return Math.max(1, Math.round(v.base));
+  return Math.max(1, Math.ceil(Math.sqrt(n)));
 }
 
-// 求值单个粒子在某时刻的完整状态（执行公式代码块）
-export function evaluateParticleAt(fx, i, n, t) {
-  const fn = getCompiledFn(fx);
-  if (fn) {
-    const center = fx.center || [0, 0, 0];
-    return fn(i, n, t, center[0], center[1], center[2], ...resolveVarVals(fx, i, n, t), { pos: [0, 0, 0], color: [0, 0, 0, 0], vel: [0, 0, 0], scale: 1, glow: false, light: 0 });
-  }
-  const env = buildEnv(fx.vars || {}, { i, n, t });
-  const out = execFunctionCode(getCompiledCode(fx), env);
+function uvFor(fx, n, i) {
+  const C = gridCols(fx, n);
+  const R = Math.max(1, Math.ceil(n / C));
+  const col = i % C;
+  const row = Math.floor(i / C);
+  return {
+    uv_x: (C === 1) ? 0 : col / (C - 1),
+    uv_y: (R === 1) ? 0 : row / (R - 1),
+  };
+}
+
+function lifeAt(fx, t) {
+  const dur = fx.duration || 0;
+  if (dur <= 0) return 0;
+  const st = fx.st || 0;
+  return Math.min(1, Math.max(0, (t - st) / dur));
+}
+
+function getObjectState(fx) {
+  if (fx._objState !== undefined) return fx._objState;
+  const program = getProgram(fx);
+  const n = Math.max(1, Math.round(fx.count) || 1);
+  const st = fx.st || 0;
+  const objState = createObjectState(fx.seed | 0);
+  runSetup(program, objState, { n, t: st, vars: varsAt(fx, st) });
+  fx._objState = objState;
+  return objState;
+}
+
+function evalParticleFor(fx, objState, statics, i, n, t, dt) {
+  const program = getProgram(fx);
+  const uv = uvFor(fx, n, i);
+  const ctx = {
+    i, n, t: t || 0, dt: dt || 0,
+    life: lifeAt(fx, t || 0),
+    uv_x: uv.uv_x, uv_y: uv.uv_y,
+    vars: varsAt(fx, t || 0),
+    out: { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0 },
+  };
+  evalProcess(program, objState, statics, ctx);
+  const out = ctx.out;
   const center = fx.center || [0, 0, 0];
   const clamp01 = x => (Number.isFinite(x) ? Math.min(1, Math.max(0, x)) : 0);
   return {
@@ -121,70 +160,57 @@ export function evaluateParticleAt(fx, i, n, t) {
     light: Math.max(0, Math.min(15, Math.round(out.light))),
   };
 }
-export function evaluateParticleBase(fx, i, n) { return evaluateParticleAt(fx, i, n, 0); }
+
+// 求值单个粒子在某时刻的完整状态（供 currentVisualDerived 等外部调用）。
+export function evaluateParticleAt(fx, i, n, t) {
+  const objState = getObjectState(fx);
+  const p = getParticle(fx.id + ':p' + i);
+  const statics = (p && p._statics) || createStatics();
+  return evalParticleFor(fx, objState, statics, i, Math.max(1, Math.round(n) || 1), t || 0, 0);
+}
+
+export function evaluateParticleBase(fx, i, n) {
+  return evaluateParticleAt(fx, i, n, 0);
+}
 
 export const eq3 = (a, b) => a.length === b.length && a.every((x, i) => Math.abs(x - b[i]) < 1e-9);
 
-// 生成函数派生轨道（公式/变量随时间变化时按 duration/step 采样）
+/* -------------------------------------------------------------------------
+ * 派生轨道采样
+ * ---------------------------------------------------------------------- */
+
 export function buildDerivedTracks(fx) {
   const n = Math.max(1, Math.round(fx.count) || 1);
   const duration = Math.max(0, Math.round(fx.duration) || 0);
   const step = Math.max(1, Math.round(fx.step) || 1);
   if (duration <= 0) return;
-  const hasVarAnim = Object.values(fx.vars || {}).some(v => (v.kf || []).length > 1);
-  if (!exprUsesT(fx.code) && !hasVarAnim) return;
+  const hasAnim = Object.values(fx.vars || {}).some(v => (v.kf || []).length > 1) ||
+    (fx.setup || '').trim() !== '' || (fx.process || '').trim() !== '';
+  if (!hasAnim) return;
 
-  // 收集动画源关键帧（变量 kf + 整体轨道 kf）
-  const sources = [];
-  for (const v of Object.values(fx.vars || {})) {
-    const kf = (v.kf || []).slice().sort((a, b) => a[0] - b[0]);
-    if (kf.length > 1) sources.push(kf);
-  }
-  for (const tr of state.tracks) {
-    if (tr.ids.some(id => id.startsWith('f:'))) {
-      const kf = tr.kf.slice().sort((a, b) => a[0] - b[0]);
-      if (kf.length > 1) sources.push(kf);
-    }
-  }
-
-  // 关键帧 tick 对齐 + 各段缓动一致 → 用「关键帧 + 缓动」（连续、丝滑、体积小）；否则均匀采样 + LINEAR
-  let uniform = !exprUsesT(fx.code) && sources.length > 0;
-  if (uniform) {
-    const baseTicks = sources[0].map(k => k[0]).join(',');
-    for (const src of sources) {
-      if (src.map(k => k[0]).join(',') !== baseTicks) { uniform = false; break; }
-    }
-  }
-  if (uniform) {
-    for (let i = 1; i < sources[0].length; i++) {
-      const e = sources[0][i][2];
-      for (const src of sources) {
-        if (src[i][2] !== e) { uniform = false; break; }
-      }
-      if (!uniform) break;
-    }
-  }
-
-  let times, easingAt;
-  if (uniform) {
-    times = sources[0].map(k => k[0]).filter(t => t <= duration);
-    if (times.length < 2) times = [0, duration];
-    // 编辑器 b[2] 语义：关键帧 idx 的 easing 控制 idx-1→idx 段
-    easingAt = (idx) => (idx === 0 || idx >= sources[0].length) ? 0 : sources[0][idx][2];
-  } else {
-    times = [0];
-    for (let t = step; t <= duration; t += step) times.push(t);
-    easingAt = () => 0;
-  }
+  const objState = getObjectState(fx);
+  const times = [0];
+  for (let t = step; t <= duration; t += step) times.push(t);
 
   for (let i = 0; i < n; i++) {
     const pid = fx.id + ':p' + i;
-    const samples = times.map(t => evaluateParticleAt(fx, i, n, t));
+    const p = getParticle(pid);
+    if (!p) continue;
+    const statics = createStatics();
+    p._statics = statics;
+
+    const samples = [];
+    for (let si = 0; si < times.length; si++) {
+      const t = times[si];
+      const dt = si === 0 ? 0 : (times[si] - times[si - 1]) * DT_PER_TICK;
+      samples.push(evalParticleFor(fx, objState, statics, i, n, t, dt));
+    }
+
     const base = samples[0];
     const changed = (key) => samples.some(s => s !== base && !eq3(s[key], base[key]));
     const pushComp = (prop, comps, getVal) => {
       comps.forEach((comp, ci) => {
-        const kfs = samples.map((_, idx) => [times[idx], getVal(idx, ci), easingAt(idx)]);
+        const kfs = samples.map((_, idx) => [times[idx], getVal(idx, ci), 0]);
         if (kfs.some(k => Math.abs(k[1] - kfs[0][1]) > 1e-9)) {
           state.tracks.push({ pr: compPr(prop, comp), m: 'set', ids: [pid], kf: kfs, fx: fx.id });
         }
@@ -194,7 +220,7 @@ export function buildDerivedTracks(fx) {
     if (changed('color')) pushComp('col', ['r', 'g', 'b', 'a'], (idx, ci) => samples[idx].color[ci]);
     if (changed('vel')) pushComp('vel', ['x', 'y', 'z'], (idx, ci) => samples[idx].vel[ci]);
     if (samples.some(s => Math.abs(s.scale - base.scale) > 1e-9)) {
-      const kfs = samples.map((_, idx) => [times[idx], samples[idx].scale, easingAt(idx)]);
+      const kfs = samples.map((_, idx) => [times[idx], samples[idx].scale, 0]);
       ['x', 'y', 'z'].forEach(comp => {
         state.tracks.push({ pr: 'scl.' + comp, m: 'set', ids: [pid], kf: kfs.map(k => k.slice()), fx: fx.id });
       });
@@ -202,14 +228,20 @@ export function buildDerivedTracks(fx) {
   }
 }
 
-// 活源重算：按当前函数定义重建派生粒子与派生轨道。
-// 派生粒子 id 约定为 `fxId:p<i>`，据此清理旧格式（无 fx 标记）残留的派生粒子与派生轨道。
+/* -------------------------------------------------------------------------
+ * 函数对象重建
+ * ---------------------------------------------------------------------- */
+
 export function rebuildFunctionObject(fx) {
-  // 失效编译缓存（code/vars/count 可能已变）
+  // 失效脚本与对象级缓存
+  fx._program = undefined;
+  fx._programSrc = undefined;
+  fx._objState = undefined;
   fx._compiledFn = undefined;
   fx._compiledCode = undefined;
   fx._varNames = undefined;
   fx._constVarVals = undefined;
+
   const n = Math.max(1, Math.round(fx.count) || 1);
   const prefix = fx.id + ':p';
   // 移除函数派生轨道：新格式（带 fx 标记）+ 旧格式（ids 命中 fxId:p 前缀）一并清除
@@ -225,17 +257,23 @@ export function rebuildFunctionObject(fx) {
       state.selected.delete(p.id);
     }
   }
+
+  // setup 执行一次得到对象级环境（含 global、数组、PRNG 状态）。
+  const objState = getObjectState(fx);
+
   const kept = new Set();
   for (let i = 0; i < n; i++) {
     const id = fx.id + ':p' + i;
     kept.add(id);
-    const base = evaluateParticleBase(fx, i, n);
     let p = existing.get(id);
     if (!p) {
       p = { id, fx: fx.id, color: [1, 1, 1, 1], scale: [1, 1, 1], glow: false, lightLevel: 0, pos: [0, 0, 0], vel: [0, 0, 0] };
       state.particles.push(p);
     }
-    p._fxIdx = i; // 缓存粒子序号，避免 currentVisualDerived 里 parse id
+    p._fxIdx = i;
+    const statics = createStatics();
+    const base = evalParticleFor(fx, objState, statics, i, n, 0, 0);
+    p._statics = statics;
     p.color = base.color.slice();
     p.scale = [base.scale, base.scale, base.scale];
     p.glow = base.glow;
@@ -256,13 +294,18 @@ export function rebuildFunctionObject(fx) {
   setDirty(true);
 }
 
-// 预设：按参数生成代码块 + 变量（改参数时不重置 count）
+/* -------------------------------------------------------------------------
+ * 预设
+ * ---------------------------------------------------------------------- */
+
+// 预设：按参数生成 setup/process + 变量（改参数时不重置 count）
 export function applyPresetBuild(fx) {
   const preset = FUNCTION_PRESETS[fx.preset];
   if (!preset) return;
   const built = preset.build(fx.params || {});
   fx.vars = { ...built.vars };
-  fx.code = built.code;
+  fx.setup = built.setup || '';
+  fx.process = built.process || '';
 }
 
 // 分辨率变量联动 count：改 m/k/cols/rows/turns/ppr 时重算 count=乘积
@@ -300,7 +343,8 @@ export function applyPreset(fx, presetId) {
   for (const p of preset.params) fx.params[p.key] = p.def;
   const built = preset.build(fx.params);
   fx.vars = { ...built.vars };
-  fx.code = built.code;
+  fx.setup = built.setup || '';
+  fx.process = built.process || '';
   // 声明了 countVars/countExpr 的预设：采样数按变量联动求值；否则用模板默认值
   if (preset.countExpr || (preset.countVars && preset.countVars.length)) syncPresetCount(fx);
   else fx.count = built.count;
@@ -311,7 +355,9 @@ export function createFunctionObject(presetId) {
   const fx = {
     id: nextFunctionId(), name: presetId ? t('fx.preset.' + presetId) : t('fx.defaultName'),
     center: [0, 0, 0], count: 30,
-    code: '[x,y,z] = [0, 0, 0];\n[r,g,b,a] = [1,1,1,1];\nglow = 0;\nlight = 0',
+    setup: '',
+    process: '[x,y,z] = [0, 0, 0];\n[r,g,b,a] = [1,1,1,1];\nglow = 0;\nlight = 0',
+    seed: 0,
     vars: {}, duration: 100, step: 5, preset: null, params: null,
   };
   state.functions.push(fx);

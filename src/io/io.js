@@ -156,7 +156,9 @@ export function parseVars(vars) {
 export function serializeFunction(fx) {
   const o = {
     id: fx.id, name: fx.name, center: fx.center.slice(), count: fx.count,
-    code: fx.code || '',
+    setup: fx.setup || '',
+    process: fx.process || '',
+    seed: Number.isInteger(fx.seed) ? fx.seed : 0,
     vars: serializeVars(fx.vars),
     duration: fx.duration, step: fx.step,
   };
@@ -171,7 +173,9 @@ export function serializeFunction(fx) {
 export function parseFunction(o) {
   return {
     id: o.id, name: o.name || '函数对象', center: (o.center || [0, 0, 0]).slice(0, 3), count: o.count || 30,
-    code: o.code != null ? String(o.code) : "",
+    setup: o.setup != null ? String(o.setup) : '',
+    process: o.process != null ? String(o.process) : '',
+    seed: Number.isInteger(o.seed) ? o.seed : 0,
     vars: parseVars(o.vars),
     duration: o.duration || 0, step: o.step || 5,
     st: o.st || 0,
@@ -207,7 +211,7 @@ export function exportProject() {
   }
   const guv = {};
   for (const [name, uv] of Object.entries(state.groupUV || {})) if (uv && uv.texture) guv[name] = serializeUV(uv);
-  const result = { v: 5, loop: state.loop, g, p, t, f, tex, guv };
+  const result = { v: 6, loop: state.loop, g, p, t, f, tex, guv };
   if (state.key) result.key = { alg: KEY_ALG, private: state.key.private, public: state.key.public };
   if (Object.keys(texData).length > 0) result.texData = texData;
   return result;
@@ -305,8 +309,16 @@ export function download(json, filename) {
 export async function loadFile(file) {
   const text = await file.text();
   const obj = JSON.parse(text);
-  if (file.name.toLowerCase().endsWith('.pdraw') || obj.v >= 2 || obj.f) await importProject(obj);
-  else await importJSON(obj);
+  if (file.name.toLowerCase().endsWith('.pdraw') || obj.f || obj.v >= 2) {
+    if (obj.v !== 6) {
+      modalAlert(t('filePicker.oldVersionTitle'), t('filePicker.oldVersionMsg'));
+      return;
+    }
+    await importProject(obj);
+  } else {
+    modalAlert(t('filePicker.oldVersionTitle'), t('filePicker.oldVersionMsg'));
+    return;
+  }
   state.name = file.name.replace(/\.(json|pdraw)$/i, '');
   setDirty(state.dirty); // 刷新标题，保留导入阶段「自动生成密钥」的未保存标记
 }
