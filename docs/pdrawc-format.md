@@ -18,7 +18,7 @@
 ```
 +--------------------+
 | magic     4 bytes  |  ASCII "PDC1" = 0x50 0x44 0x43 0x31
-| version   varint   |  2（当前）；1 = 旧版未压缩 body
+| version   varint   |  3（当前）；1/2 = 旧版，已拒绝
 | pubkey    32 bytes |  Ed25519 公钥（原始字节）
 +--------------------+
 | body（见 §2）      |  ← 签名覆盖范围：从 magic 到压缩 body 末尾
@@ -29,8 +29,8 @@
 ```
 
 **版本**：
-- `v2`（当前）：`body` 为 **raw DEFLATE**（RFC 1951，无 zlib/gzip 头尾）压缩后的字节。
-- `v1`（旧版）：`body` 为未压缩字节，读取端仍兼容。
+- `v3`（当前）：`body` 为 **raw DEFLATE**（RFC 1951，无 zlib/gzip 头尾）压缩后的字节；函数对象使用 `setup/process/seed`。
+- `v1`/`v2`（旧版）：读取端**拒绝**。
 
 **签名** = Ed25519 对「从 `magic` 起，到压缩 body 末尾为止」的全部字节做签名；
 即**整个文件去掉末尾 64 字节签名**。验签用文件内嵌公钥，**先验签再解压**。
@@ -114,8 +114,11 @@ count                       varint
 count × {
   center                    3 × float32：[x,y,z]
   count                     varint：派生粒子数
-  codeLen                   varint
-  code                      codeLen 字节 UTF-8（公式代码块，原样保留）
+  setupLen                  varint
+  setup                     setupLen 字节 UTF-8（setup 代码块，原样保留）
+  processLen                varint
+  process                   processLen 字节 UTF-8（process 代码块，原样保留）
+  seed                      varint：随机种子（有符号截断后按 int 解释）
   duration                  varint：tick
   st                        varint：入场 tick
   flags                     1 byte：bit0=hasEnt, bit1=hasUV
@@ -134,7 +137,7 @@ count × {
 
 函数对象 id 不存储；解码时按顺序合成为 `fx0, fx1, …`，派生粒子 id 为 `fx<i>:p<j>`。
 
-> 变量使用**数值基值 + 关键帧**模型（与当前编辑器一致，无表达式字符串）。
+> 函数对象脚本语法见 `docs/script-lang-spec.md`；变量使用**数值基值 + 关键帧**模型。
 
 ### 2.6 tracks
 
@@ -239,7 +242,7 @@ index                       varint：对应数组的 0-based 索引
 
 ## 7. 版本与拒绝语义
 
-- 魔数不是 `PDC1`、版本不是 1 或 2、或数据截断/越界 → **拒绝**。
+- 魔数不是 `PDC1`、版本不是 3、或数据截断/越界 → **拒绝**。
 - 签名验证失败 → **拒绝播放**。
 - raw DEFLATE 解压失败 → **拒绝**。
 - 未知 `pr` 枚举、未知 UV mode、未知 easing tag 等 → 视为损坏数据拒绝。

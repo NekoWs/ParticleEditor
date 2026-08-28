@@ -1891,6 +1891,7 @@ const BUILTIN_TABLE = new Map([
   // —— 构造 / 变换 ——
   builtin('vec2', 2, 2, (args, rt, node) => vec2(expectNum(args[0], 'vec2', node), expectNum(args[1], 'vec2', node))),
   builtin('vec3', 3, 3, (args, rt, node) => vec3(expectNum(args[0], 'vec3', node), expectNum(args[1], 'vec3', node), expectNum(args[2], 'vec3', node))),
+  builtin('vec', 3, 3, (args, rt, node) => vec3(expectNum(args[0], 'vec', node), expectNum(args[1], 'vec', node), expectNum(args[2], 'vec', node))),
   builtin('mat3', 3, 3, (args, rt, node) => {
     const r0 = expectVec(args[0], 'mat3', node);
     const r1 = expectVec(args[1], 'mat3', node);
