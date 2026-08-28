@@ -8,7 +8,7 @@ import { t } from '../core/i18n.js';
 import { state, getParticle, getFunction, isDerivedParticle, RAD2DEG, ROT_SNAP, PLANES, DEG2RAD, nextGroupName } from '../core/constants.js';
 import { shiftHeld } from './input-state.js';
 import { camera, renderer, controls, raycaster, pointer, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, AXIS_RING_COLORS, GIZMO_FACE_DEFS, resetWorldAxisState, focalLengthPx } from '../scene/scene.js';
-import { currentVisual, rebuildPoints, setPreview, clearPreview, rotVectorAt, trackValueAt, findTrackByPr } from '../core/animation.js';
+import { currentVisual, rebuildPoints, setPreview, clearPreview, rotVectorAt, trackValueAt, findTrackByPr, groupScaleAt } from '../core/animation.js';
 import { screenToNdc, planePointAt, worldToUV, computeShapePositions, snapGrid, snapValue, pickParticleAt, particleAt, projectToScreen, distToSegment, planeInfo, selectionCentroid, updateGizmoFrame } from './gizmo.js';
 import { groupCurrentCentroid, groupCentroidValue, deleteGroup, refreshParticleTree, createGroup } from '../ui/tree.js';
 import { setFunctionTrackValue, setGroupTrackValue, editParticles, addParticle, autoGroup, removeGroupAndTracks } from '../core/edit.js';
@@ -137,7 +137,7 @@ export function enterScale(clientX) {
     const p = getParticle(id);
     if (p) origins.set(id, currentVisual(p).scale);
   }
-  modal = { type: 'scale', groupName: gname, origins, startClient: { x: clientX } };
+  modal = { type: 'scale', groupName: gname, origins, startScale: groupScaleAt(gname, Math.round(state.time)), startClient: { x: clientX } };
   controls.enabled = false;
 }
 
@@ -479,7 +479,7 @@ export function updateScale(clientX) {
     return;
   }
   if (m.groupName && state.captureKeyframes) {
-    const base = groupCentroidValue(m.groupName, 'scl');
+    const base = m.startScale || [1, 1, 1];
     const ns = base.map(v => Math.max(0.02, v * factor));
     setGroupTrackValue(m.groupName, 'scl', 'set', Math.round(state.time), ns);
     return;

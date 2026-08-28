@@ -4,7 +4,7 @@
 
 
 import { t, tf } from '../core/i18n.js';
-import { state, COMP_LABELS, PARTICLE_TRACK_DEFS, GROUP_PROP_DEFS, FUNCTION_PROP_DEFS, TRACK_COMPS, compPr, splitCompPr, getParticle, getFunction, isDerivedParticle, nextGroupName } from '../core/constants.js';
+import { state, COMP_LABELS, PARTICLE_TRACK_DEFS, GROUP_PROP_DEFS, FUNCTION_PROP_DEFS, TRACK_COMPS, propComps, compPr, splitCompPr, getParticle, getFunction, isDerivedParticle, nextGroupName } from '../core/constants.js';
 import { shiftHeld, getDragIds, setDragIds } from '../interaction/input-state.js';
 import { modalAlert } from './ui.js';
 import { baseValue, componentValueAt, particleValueAt, trackValueAt, findTrackByPr, zeroArray, rebuildPoints, resetVelOffsets } from '../core/animation.js';
@@ -225,7 +225,7 @@ export function renderPropSection(id, props) {
 }
 
 export function renderPropNode(id, prop) {
-  const comps = TRACK_COMPS[prop];
+  const comps = propComps(id, prop);
   const wrap = document.createElement('div');
   wrap.className = 'ptree-prop';
   const key = id + '|' + prop;
@@ -471,6 +471,7 @@ export function renderFunctionMembersNode(fx) {
 
 export function groupCentroidValue(name, prop) {
   if (prop === 'rot') return [0, 0, 0];
+  if (prop === 'scl') return [1, 1, 1]; // 组缩放基准为 1（整体位置缩放，与粒子大小无关）
   const members = (state.groups[name] || []).map(getParticle).filter(Boolean);
   if (members.length === 0) return zeroArray(prop);
   const sum = zeroArray(prop);

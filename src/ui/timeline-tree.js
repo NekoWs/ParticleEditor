@@ -9,7 +9,7 @@
 
 import { t, tf, LANG } from '../core/i18n.js';
 import {
-  state, TRACK_COMPS, COMP_LABELS, GROUP_PROP_DEFS, PARTICLE_TRACK_DEFS, FUNCTION_PROP_DEFS,
+  state, TRACK_COMPS, propComps, COMP_LABELS, GROUP_PROP_DEFS, PARTICLE_TRACK_DEFS, FUNCTION_PROP_DEFS,
   getParticle, getFunction, isDerivedParticle,
 } from '../core/constants.js';
 import { editComponentValue } from '../core/edit.js';
@@ -113,7 +113,7 @@ function pushPropRows(rows, id, prop, depth, readOnly) {
   const expanded = tlTreeState.expanded.has(key);
   rows.push({ key, kind: 'prop', id, prop, readOnly, expanded, depth });
   if (expanded) {
-    for (const comp of TRACK_COMPS[prop]) {
+    for (const comp of propComps(id, prop)) {
       rows.push({ key: key + '|' + comp, kind: 'comp', id, prop, comp, readOnly, depth: depth + 1 });
     }
   }
@@ -256,7 +256,7 @@ function renderFlatRow(row) {
       // XYZ 行：[x, y, z] 三个可编辑当前值
       const vec = el('span', 'tt-vec');
       vec.appendChild(document.createTextNode('['));
-      TRACK_COMPS[row.prop].forEach((comp, i) => {
+      propComps(row.id, row.prop).forEach((comp, i) => {
         if (i > 0) vec.appendChild(document.createTextNode(','));
         const inp = el('input', 'tt-val');
         inp.type = 'number';

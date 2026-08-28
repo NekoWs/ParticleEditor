@@ -269,7 +269,11 @@ export function applyPositionFromInputs() {
 }
 
 export function applyScaleFromInputs() {
-  const v = readVec3Inputs(['prop-scale-x', 'prop-scale-y', 'prop-scale-z']);
+  // 粒子缩放只有 X/Y；函数对象整体缩放才有 Z
+  const ids = state.selectedFunction
+    ? ['prop-scale-x', 'prop-scale-y', 'prop-scale-z']
+    : ['prop-scale-x', 'prop-scale-y'];
+  const v = readVec3Inputs(ids);
   if (v) editSelectionUniform('scl', v);
 }
 

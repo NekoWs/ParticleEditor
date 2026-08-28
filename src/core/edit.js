@@ -7,7 +7,7 @@
  * ======================================================================= */
 
 
-import { TRACK_COMPS, COMP_INDEX, compPr, state, getParticle, getFunction, isDerivedParticle, nextId, nextGroupName, indexParticle } from './constants.js';
+import { TRACK_COMPS, PARTICLE_SCALE_COMPS, COMP_INDEX, compPr, state, getParticle, getFunction, isDerivedParticle, nextId, nextGroupName, indexParticle } from './constants.js';
 import { baseComponent, componentValueAt, findTrackByPr, PR_TO_IDX, trVersion, rebuildPoints } from './animation.js';
 import { refreshParticleTree, groupCentroidValue, targetComponentValue } from '../ui/tree.js';
 import { pushUndo } from '../state/undo.js';
@@ -18,7 +18,7 @@ export function applyBaseValue(p, prop, values) {
   if (prop === 'pos') p.pos = values.slice(0, 3);
   else if (prop === 'col') p.color = values.slice(0, 4);
   else if (prop === 'vel') p.vel = values.slice(0, 3);
-  else if (prop === 'scl') p.scale = values.slice(0, 3);
+  else if (prop === 'scl') p.scale = [values[0], values[1], 1]; // 粒子缩放无 Z 分量
 }
 
 // 某 id（'p0' | 'g:g0' | 'f:fx0'）在某分量的基础值
@@ -64,7 +64,7 @@ export function setComponentKeyframe(id, prop, comp, time, value, mode) {
 // 为多个粒子在同一时间写统一值（每分量独立轨道）
 export function setValueAtTime(ids, prop, values) {
   const t = Math.round(state.time);
-  const comps = TRACK_COMPS[prop];
+  const comps = prop === 'scl' ? PARTICLE_SCALE_COMPS : TRACK_COMPS[prop];
   for (const id of ids) {
     const p = getParticle(id);
     if (!p) continue;
@@ -77,7 +77,7 @@ export function setValueAtTime(ids, prop, values) {
 
 // 直接修改基础值（不创建关键帧），并同步 t=0 关键帧（若存在）
 export function editBaseValue(ids, prop, values) {
-  const comps = TRACK_COMPS[prop];
+  const comps = prop === 'scl' ? PARTICLE_SCALE_COMPS : TRACK_COMPS[prop];
   for (const id of ids) {
     const p = getParticle(id);
     if (!p) continue;
@@ -98,7 +98,7 @@ export function editBaseValue(ids, prop, values) {
 // 供拖动 5w 粒子等热点路径使用。语义与 setComponentKeyframe 完全一致。
 export function setValuesAtTime(entries, prop) {
   const t = Math.round(state.time);
-  const comps = TRACK_COMPS[prop];
+  const comps = prop === 'scl' ? PARTICLE_SCALE_COMPS : TRACK_COMPS[prop];
   const prs = comps.map(c => prop + '.' + c);
   const idxs = prs.map(pr => PR_TO_IDX[pr]);
   for (const [id, values] of entries) {

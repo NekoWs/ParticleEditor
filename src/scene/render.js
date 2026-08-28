@@ -238,7 +238,7 @@ function writePointBuffers(full) {
         let xf = null;
         if (gs.size === 1) xf = xforms.get(gs.values().next().value);
         if (xf) {
-          // 单组快路径：set 覆盖 → 组旋转 → op 增量 → vel 积分
+          // 单组快路径：set 覆盖 → 组整体缩放 → 组旋转 → op 增量 → vel 积分
           if (xf.hasSet) {
             px = xf.setTr[0] ? trackValueAt(xf.setTr[0], T, p.pos[0]) : p.pos[0];
             py = xf.setTr[1] ? trackValueAt(xf.setTr[1], T, p.pos[1]) : p.pos[1];
@@ -247,12 +247,18 @@ function writePointBuffers(full) {
             cg = xf.setTr[4] ? trackValueAt(xf.setTr[4], T, p.color[1]) : p.color[1];
             cb = xf.setTr[5] ? trackValueAt(xf.setTr[5], T, p.color[2]) : p.color[2];
             ca = xf.setTr[6] ? trackValueAt(xf.setTr[6], T, p.color[3]) : p.color[3];
-            ssx = xf.setTr[7] ? trackValueAt(xf.setTr[7], T, p.scale[0]) : p.scale[0];
-            ssy = xf.setTr[8] ? trackValueAt(xf.setTr[8], T, p.scale[1]) : p.scale[1];
+            ssx = p.scale[0]; ssy = p.scale[1];
           } else {
             px = p.pos[0]; py = p.pos[1]; pz = p.pos[2];
             cr = p.color[0]; cg = p.color[1]; cb = p.color[2]; ca = p.color[3];
             ssx = p.scale[0]; ssy = p.scale[1];
+          }
+          if (xf.hasScale) {
+            const pivot = xf.pivot || [0, 0, 0];
+            const sc = xf.scale;
+            px = pivot[0] + (px - pivot[0]) * sc[0];
+            py = pivot[1] + (py - pivot[1]) * sc[1];
+            pz = pivot[2] + (pz - pivot[2]) * sc[2];
           }
           if (xf.rotMat) {
             const m = xf.rotMat;
@@ -265,7 +271,7 @@ function writePointBuffers(full) {
           if (xf.hasOp) {
             px += xf.op[0]; py += xf.op[1]; pz += xf.op[2];
             cr += xf.op[3]; cg += xf.op[4]; cb += xf.op[5]; ca += xf.op[6];
-            ssx += xf.op[7]; ssy += xf.op[8];
+            // scl op 已并入 xf.scale（位置级缩放），不再叠加粒子大小
           }
           if (xf.hasVel) {
             px += xf.velTr[0] ? trackIntegral(xf.velTr[0], T) : p.vel[0] * T;

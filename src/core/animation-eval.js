@@ -247,8 +247,20 @@ export function buildGroupXforms(T) {
     const opMap = groupOpDeltaCache ? groupOpDeltaCache.get(gname) : null;
     const op = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
     if (opMap) for (let i = 0; i < 10; i++) op[i] = opMap.get(TRACK_COMP_ORDER[i]) || 0;
+    // 组整体缩放（位置级）：set scl 覆盖默认 1，op scl 在 1 上叠加增量。
+    const scale = [
+      setTr[7] ? trackValueAt(setTr[7], T, 1) : 1,
+      setTr[8] ? trackValueAt(setTr[8], T, 1) : 1,
+      setTr[9] ? trackValueAt(setTr[9], T, 1) : 1,
+    ];
+    if (opMap) {
+      scale[0] += opMap.get('scl.x') || 0;
+      scale[1] += opMap.get('scl.y') || 0;
+      scale[2] += opMap.get('scl.z') || 0;
+    }
     xforms.set(gname, {
       setTr, velTr, op, rotMat, pivot: groupCentroidPosCache.get(gname),
+      scale, hasScale: scale[0] !== 1 || scale[1] !== 1 || scale[2] !== 1,
       hasSet: setTr.some(t => t !== null), hasRot: rotMat !== null,
       hasOp: op.some(v => v !== 0), hasVel: velTr.some(t => t !== null),
     });
@@ -344,7 +356,37 @@ export function applyGroupRotation(p, value, T) {
   return [pivot[0] + r[0], pivot[1] + r[1], pivot[2] + r[2]];
 }
 
-// 粒子位置：set 覆盖 → 组旋转 → op 增量
+// 组整体缩放向量（作用于成员相对组中心的偏移，而非粒子大小）。默认 [1,1,1]。
+export function groupScaleAt(gname, T) {
+  return ['x', 'y', 'z'].map(c => {
+    const tr = findTrackByPr('scl.' + c, 'g:' + gname);
+    if (tr && tr.kf.length > 0) {
+      if (tr.m === 'op') return 1 + trackValueAt(tr, T, 0);
+      return trackValueAt(tr, T, 1);
+    }
+    return 1;
+  });
+}
+
+// 把粒子位置按所属组的整体缩放变换（围绕组质心，使用相对坐标）。
+export function applyGroupScale(p, value, T) {
+  const gs = groupMemberIndexCache && groupMemberIndexCache.get(p.id);
+  if (gs) {
+    for (const gname of gs) {
+      const s = groupScaleAt(gname, T);
+      if (s[0] === 1 && s[1] === 1 && s[2] === 1) continue;
+      const pivot = (groupCentroidPosCache && groupCentroidPosCache.get(gname)) || groupCentroidValue(gname, 'pos');
+      return [
+        pivot[0] + (value[0] - pivot[0]) * s[0],
+        pivot[1] + (value[1] - pivot[1]) * s[1],
+        pivot[2] + (value[2] - pivot[2]) * s[2],
+      ];
+    }
+  }
+  return value;
+}
+
+// 粒子位置：set 覆盖 → 组整体缩放 → 组旋转 → op 增量
 export function particlePosition(p, T) {
   let pos = ['x', 'y', 'z'].map(c => {
     let v = baseComponent(p, 'pos', c);
@@ -352,6 +394,7 @@ export function particlePosition(p, T) {
     if (tr && tr.kf.length > 0) v = trackValueAt(tr, T, v);
     return v;
   });
+  pos = applyGroupScale(p, pos, T);
   pos = applyGroupRotation(p, pos, T);
   pos = pos.map((v, i) => v + compOpDelta(p, 'pos', ['x', 'y', 'z'][i], T));
   return pos;
@@ -406,7 +449,8 @@ export function currentVisualDerived(p, T) {
     // 快速路径：无组关联、无函数 op、无函数旋转
     return { pos: r.pos, color: r.color, scale: scaleVec };
   }
-  let pos = applyGroupRotation(p, r.pos.slice(), T);
+  let pos = applyGroupScale(p, r.pos.slice(), T);
+  pos = applyGroupRotation(p, pos, T);
   pos = pos.map((v, ci) => v + compOpDelta(p, 'pos', ['x', 'y', 'z'][ci], T));
   return { pos, color: r.color, scale: scaleVec };
 }

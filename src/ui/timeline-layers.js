@@ -10,7 +10,7 @@
  * ======================================================================= */
 
 import { t } from '../core/i18n.js';
-import { state, TRACK_COMPS, compPr, getFunction, getParticle } from '../core/constants.js';
+import { state, TRACK_COMPS, propComps, compPr, getFunction, getParticle } from '../core/constants.js';
 import { TL_PX_PER_TICK, timelineViewStart, setTimelineViewStart, drawTimeline, scrubAutoPan, tlNiceStep } from './panels.js';
 import { rebuildPoints, maxTick } from '../core/animation.js';
 import { findTrackByPr } from '../core/animation-eval.js';
@@ -101,7 +101,7 @@ function drawKfsForTrack(ctx, tr, id, prop, comp, w, cy, color, X) {
 
 function drawPropLane(ctx, row, y, w, rowH, X) {
   const cy = y + rowH / 2;
-  for (const comp of TRACK_COMPS[row.prop] || []) {
+  for (const comp of propComps(row.id, row.prop)) {
     const tr = findTrackByPr(compPr(row.prop, comp), row.id);
     if (!tr) continue;
     drawKfsForTrack(ctx, tr, row.id, row.prop, comp, w, cy, LANE_KF_COLORS[comp] || '#ffcc55', X);

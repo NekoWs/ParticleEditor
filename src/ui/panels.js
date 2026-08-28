@@ -35,6 +35,9 @@ export function updatePropPanel() {
   const isFx = !!fxId;
   const gname = selectedGroupName();
   if (sel.length === 0 && !isFx && !gname) return;
+  // 粒子缩放无 Z 分量：Z 输入仅在函数对象（整体缩放）时显示
+  const scaleZ = document.getElementById('prop-scale-z');
+  if (scaleZ) scaleZ.style.display = isFx ? '' : 'none';
   // 派生粒子基础属性只读；函数对象 pos/scl 可编辑（写整体轨道）
   const readOnly = !isFx && !gname && sel.some(isDerivedParticle);
   ['prop-color', 'prop-alpha', 'prop-glow', 'prop-light'].forEach(id => {
@@ -83,8 +86,7 @@ export function updatePropPanel() {
 
   const sxSame = same(q => q.scale && q.scale[0]);
   const sySame = same(q => q.scale && q.scale[1]);
-  const szSame = same(q => q.scale && q.scale[2]);
-  setScaleInputs([sxSame ? first.scale[0] : null, sySame ? first.scale[1] : null, szSame ? first.scale[2] : null]);
+  setScaleInputs([sxSame ? first.scale[0] : null, sySame ? first.scale[1] : null]);
 
   const gSame = same(q => q.glow);
   const gInput = document.getElementById('prop-glow');

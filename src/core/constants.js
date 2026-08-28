@@ -54,6 +54,15 @@ export const TRACK_COMPS = {
 // 分量键 → 在向量中的下标
 export const COMP_INDEX = { x: 0, y: 1, z: 2, r: 0, g: 1, b: 2, a: 3 };
 
+// 粒子缩放只有 X/Y 两个有效分量（billboard 无 Z 缩放）；组/函数对象缩放仍为 XYZ 三分量
+export const PARTICLE_SCALE_COMPS = ['x', 'y'];
+
+// 按对象 id 取属性的可编辑分量列表：粒子 scl 仅 X/Y，其余按 TRACK_COMPS
+export function propComps(id, prop) {
+  if (prop === 'scl' && id && !id.startsWith('g:') && !id.startsWith('f:')) return PARTICLE_SCALE_COMPS;
+  return TRACK_COMPS[prop];
+}
+
 // 属性 / 分量 显示标签
 export const PROP_LABELS = { pos: '位置', rot: '旋转', vel: '速度', col: '颜色', scl: '缩放' };
 export const COMP_LABELS = { x: 'X', y: 'Y', z: 'Z', r: 'R', g: 'G', b: 'B', a: 'A' };
