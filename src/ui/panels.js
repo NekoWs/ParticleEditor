@@ -130,7 +130,8 @@ export function hexToRgb(hex) {
  * 时间轴（底部：仅播放进度）
  * ======================================================================= */
 
-export const TL_PX_PER_TICK = 4;
+export let TL_PX_PER_TICK = 4;   // 每 tick 像素（可缩放，见 setTLPxPerTick）
+export function setTLPxPerTick(v) { TL_PX_PER_TICK = Math.max(0.25, Math.min(128, v)); }
 export let timelineViewStart = 0;
 // 组件时间轴左侧负轴（负几个 tick）：tick 0 不贴画布左缘，
 // 配合钉边缘余量让播放头/关键帧能真正停在 0t 上
@@ -158,21 +159,45 @@ export function drawTimeline() {
   const viewEnd = timelineViewStart + w / pxPerTick;
   ctx.fillStyle = '#1f222a'; ctx.fillRect(0, 0, w, h);
   ctx.strokeStyle = '#3a3f4b'; ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
-  // 每 5 tick 一条刻度线；每 10 tick 显示一次数字（图层区只画线不标数，避免重复）
-  const step = 5;
+
+  // 缩放自适应的刻度：主刻度带数字（放大后自动细分到 0.5/0.2/0.1 tick）。
+  const major = tlNiceStep(pxPerTick, 40);
+  const minor = major / 5;
+  const start = Math.max(0, Math.floor(timelineViewStart / minor) * minor);
+  const count = Math.ceil((viewEnd - start) / minor) + 1;
   ctx.fillStyle = '#9aa0ad'; ctx.font = '10px sans-serif'; ctx.textBaseline = 'top';
-  for (let t = Math.floor(timelineViewStart / step) * step; t <= viewEnd; t += step) {
-    if (t < 0) continue;
+  for (let i = 0; i < count; i++) {
+    const t = start + i * minor;
+    if (t < 0 || t > viewEnd + minor) continue;
     const x = (t - timelineViewStart) * pxPerTick;
-    if (((t % 10) + 10) % 10 === 0) ctx.fillText(String(t), x + 2, 2);
-    ctx.strokeStyle = '#3a3f4b'; ctx.beginPath(); ctx.moveTo(x, h / 2 - 6); ctx.lineTo(x, h / 2 + 6); ctx.stroke();
+    const isMajor = Math.abs(t / major - Math.round(t / major)) < 1e-6;
+    ctx.strokeStyle = '#3a3f4b';
+    ctx.beginPath();
+    ctx.moveTo(x, h / 2 - (isMajor ? 8 : 4));
+    ctx.lineTo(x, h / 2 + (isMajor ? 8 : 4));
+    ctx.stroke();
+    if (isMajor) ctx.fillText(tlFormatTick(t), x + 2, 2);
   }
+
   const phx = Math.max(0, Math.min(w, (state.time - timelineViewStart) * pxPerTick));
   ctx.strokeStyle = '#ffcc55'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(phx, 0); ctx.lineTo(phx, h); ctx.stroke();
   ctx.fillStyle = '#ffcc55'; ctx.beginPath();
   ctx.moveTo(Math.max(0, phx - 5), 0); ctx.lineTo(Math.min(w, phx + 5), 0); ctx.lineTo(phx, 8);
   ctx.closePath(); ctx.fill();
+}
+
+/** 根据缩放选出「好看」的主刻度间隔（tick）。targetPx 为主刻度目标像素间距。 */
+export function tlNiceStep(pxPerTick, targetPx = 64) {
+  const rough = Math.max(0.001, targetPx / pxPerTick);
+  const steps = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
+  for (const s of steps) if (s >= rough - 1e-9) return s;
+  return 2000;
+}
+
+export function tlFormatTick(v) {
+  if (Math.abs(v - Math.round(v)) < 1e-9) return String(Math.round(v));
+  return String(Math.round(v * 100) / 100);
 }
 
 export function niceStep(range) {

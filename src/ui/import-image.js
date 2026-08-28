@@ -1,0 +1,295 @@
+/* =========================================================================
+ * 「导入」菜单：导入图片 / 导入动图，按像素生成粒子并自动建组
+ *
+ * - 选中文件后先读取图片尺寸，弹窗询问横向/纵向粒子数（默认=图片像素分辨率）；
+ * - 静态图片：createImageBitmap 解码，透明像素跳过；
+ * - GIF：WebCodecs ImageDecoder 逐帧解析，复用 col.r/g/b/a 颜色关键帧驱动粒子变色；
+ * - GIF 优化：某像素从某帧起永久透明 → 粒子寿命截止到该帧；
+ * - 所有生成粒子归入新组。
+ * ======================================================================= */
+
+import { t, tf } from '../core/i18n.js';
+import { state } from '../core/constants.js';
+import { addParticle, autoGroup } from '../core/edit.js';
+import { pushUndo } from '../state/undo.js';
+import { rebuildPoints } from '../core/animation.js';
+import { buildModal, modalAlert } from './ui.js';
+import { refreshTimelineTree } from './timeline-tree.js';
+import { refreshAllPanelsLight } from './timeline-layers.js';
+import { refreshParticleTree } from './tree.js';
+
+const MAX_PARTICLES = 100000;
+const MAX_CHANGES = 300000;    // GIF 颜色关键帧变化总量上限
+const MAX_DIMENSION = 4096;    // 单边粒子数上限
+const SPACING = 0.5;           // 相邻粒子中心距（blocks）
+const ALPHA_THRESHOLD = 10;    // alpha < 10/255 视为透明并跳过
+const COLOR_COMPS = ['r', 'g', 'b', 'a'];
+
+export function initImportMenu() {
+  const fileEl = document.getElementById('import-file');
+  const btnImage = document.getElementById('btn-import-image');
+  const btnGif = document.getElementById('btn-import-gif');
+  if (!fileEl || !btnImage || !btnGif) return;
+
+  let pendingKind = null;
+  const closeMenus = () => document.querySelectorAll('.menu').forEach(m => m.classList.remove('open'));
+  const pick = (kind) => {
+    pendingKind = kind;
+    fileEl.accept = kind === 'gif' ? 'image/gif,.gif' : 'image/*';
+    closeMenus();
+    fileEl.click();
+  };
+  btnImage.addEventListener('click', () => pick('image'));
+  btnGif.addEventListener('click', () => pick('gif'));
+
+  fileEl.addEventListener('change', async () => {
+    const file = fileEl.files && fileEl.files[0];
+    const kind = pendingKind;
+    pendingKind = null;
+    fileEl.value = '';
+    if (!file) return;
+    try {
+      const prepared = await (kind === 'gif' ? prepareGif(file) : prepareStatic(file));
+      const vals = await askResolution(prepared.w, prepared.h);
+      if (!vals) {
+        cleanupPrepared(prepared);
+        return;
+      }
+      const cols = clampDim(vals.cols, prepared.w);
+      const rows = clampDim(vals.rows, prepared.h);
+      if (prepared.kind === 'gif') await importGifPrepared(prepared, cols, rows);
+      else await importStaticPrepared(prepared, cols, rows);
+    } catch (e) {
+      modalAlert(t('alert.importFailed'), e.message || String(e));
+    }
+  });
+}
+
+function clampDim(v, fallback) {
+  const n = parseInt(v, 10);
+  if (!isFinite(n) || n <= 0) return Math.max(1, Math.min(MAX_DIMENSION, fallback));
+  return Math.max(1, Math.min(MAX_DIMENSION, n));
+}
+
+async function prepareStatic(file) {
+  const bitmap = await createImageBitmap(file);
+  return { kind: 'image', bitmap, w: bitmap.width, h: bitmap.height };
+}
+
+async function prepareGif(file) {
+  if (typeof ImageDecoder === 'undefined') {
+    throw new Error(t('import.gifUnsupported'));
+  }
+  const decoder = new ImageDecoder({ data: await file.arrayBuffer(), type: 'image/gif' });
+  await decoder.tracks.ready;
+  if (!decoder.tracks.selectedTrack.frameCount) throw new Error(t('import.empty'));
+  const firstRes = await decoder.decode({ frameIndex: 0 });
+  const firstFrame = firstRes.image;
+  return {
+    kind: 'gif',
+    decoder,
+    firstFrame,
+    w: firstFrame.displayWidth || firstFrame.codedWidth,
+    h: firstFrame.displayHeight || firstFrame.codedHeight,
+  };
+}
+
+function cleanupPrepared(prepared) {
+  if (prepared && prepared.kind === 'gif') {
+    if (prepared.firstFrame) { try { prepared.firstFrame.close(); } catch (_) {} }
+    try { prepared.decoder.close(); } catch (_) {}
+  } else if (prepared && prepared.bitmap && prepared.bitmap.close) {
+    try { prepared.bitmap.close(); } catch (_) {}
+  }
+}
+
+async function askResolution(defCols, defRows) {
+  const parseVals = (vals) => {
+    const c = parseInt(vals.cols, 10);
+    const r = parseInt(vals.rows, 10);
+    return { c, r };
+  };
+  return buildModal({
+    title: t('import.resolutionTitle'),
+    fields: [
+      { id: 'cols', label: t('import.cols'), value: defCols, min: 1, max: MAX_DIMENSION, step: 1, type: 'number' },
+      { id: 'rows', label: t('import.rows'), value: defRows, min: 1, max: MAX_DIMENSION, step: 1, type: 'number' },
+    ],
+    status: (vals) => {
+      const { c, r } = parseVals(vals);
+      if (!isFinite(c) || !isFinite(r) || c <= 0 || r <= 0) return '';
+      return tf('import.particleCount', c * r);
+    },
+    validate: (vals) => {
+      const { c, r } = parseVals(vals);
+      if (isFinite(c) && isFinite(r) && c > 0 && r > 0 && c * r > MAX_PARTICLES) {
+        return { ok: false, message: tf('import.tooMany', MAX_PARTICLES) };
+      }
+      return { ok: true, message: '' };
+    },
+    buttons: [
+      { label: t('common.cancel'), value: null },
+      { label: t('common.ok'), value: null, primary: true, inputValue: true },
+    ],
+  });
+}
+
+async function importStaticPrepared(prepared, cols, rows) {
+  const bitmap = prepared.bitmap;
+  const w = prepared.w, h = prepared.h;
+  if (cols * rows > MAX_PARTICLES) throw new Error(tf('import.tooMany', MAX_PARTICLES));
+
+  const cnv = document.createElement('canvas');
+  cnv.width = w; cnv.height = h;
+  const ctx = cnv.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(bitmap, 0, 0);
+  const data = ctx.getImageData(0, 0, w, h).data;
+
+  const stepX = w / cols, stepY = h / rows;
+  pushUndo();
+  const ids = [];
+  const offX = (cols - 1) / 2 * SPACING;
+  const offZ = (rows - 1) / 2 * SPACING;
+  for (let r = 0; r < rows; r++) {
+    const py = Math.min(h - 1, Math.floor((r + 0.5) * stepY));
+    for (let c = 0; c < cols; c++) {
+      const px = Math.min(w - 1, Math.floor((c + 0.5) * stepX));
+      const i = (py * w + px) * 4;
+      const a = data[i + 3];
+      if (a < ALPHA_THRESHOLD) continue;
+      const p = addParticle({
+        pos: [c * SPACING - offX, 0, offZ - r * SPACING],
+        color: [data[i] / 255, data[i + 1] / 255, data[i + 2] / 255, a / 255],
+        scale: [1, 1, 1],
+        glow: false,
+        lightLevel: 0,
+        life: 20,
+      });
+      ids.push(p.id);
+    }
+  }
+
+  if (ids.length === 0) throw new Error(t('import.empty'));
+  return finishImport(ids, cols, rows);
+}
+
+async function importGifPrepared(prepared, cols, rows) {
+  const decoder = prepared.decoder;
+  const firstFrame = prepared.firstFrame;
+  const w = prepared.w, h = prepared.h;
+  const frameCount = decoder.tracks.selectedTrack.frameCount;
+  if (cols * rows > MAX_PARTICLES) throw new Error(tf('import.tooMany', MAX_PARTICLES));
+
+  const cnv = document.createElement('canvas');
+  cnv.width = w; cnv.height = h;
+  const ctx = cnv.getContext('2d', { willReadFrequently: true });
+  const gridCount = cols * rows;
+  const stepX = w / cols, stepY = h / rows;
+
+  const firstColor = new Float32Array(gridCount * 4);
+  const prev = new Float32Array(gridCount * 4);
+  const lastVisible = new Int32Array(gridCount).fill(-1);
+  const frameDurTicks = new Int32Array(frameCount);
+  const changes = []; // [gridIndex, comp, frameIndex, value]
+
+  const sampleFrame = (videoFrame, frameIndex) => {
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(videoFrame, 0, 0);
+    const d = ctx.getImageData(0, 0, w, h).data;
+    frameDurTicks[frameIndex] = Math.max(1, Math.round((videoFrame.duration || 0) / 1000 / 50));
+    for (let r = 0; r < rows; r++) {
+      const py = Math.min(h - 1, Math.floor((r + 0.5) * stepY));
+      for (let c = 0; c < cols; c++) {
+        const gi = r * cols + c;
+        const px = Math.min(w - 1, Math.floor((c + 0.5) * stepX));
+        const i = (py * w + px) * 4;
+        const R = d[i] / 255, G = d[i + 1] / 255, B = d[i + 2] / 255, A = d[i + 3] / 255;
+        const base = gi * 4;
+        if (frameIndex === 0) {
+          firstColor[base] = R; firstColor[base + 1] = G; firstColor[base + 2] = B; firstColor[base + 3] = A;
+          prev[base] = R; prev[base + 1] = G; prev[base + 2] = B; prev[base + 3] = A;
+          if (A >= ALPHA_THRESHOLD) lastVisible[gi] = 0;
+        } else if (A >= ALPHA_THRESHOLD) {
+          lastVisible[gi] = frameIndex;
+          const vals = [R, G, B, A];
+          for (let comp = 0; comp < 4; comp++) {
+            const v = vals[comp];
+            if (Math.abs(v - prev[base + comp]) > 1e-6) {
+              changes.push([gi, comp, frameIndex, v]);
+              prev[base + comp] = v;
+              if (changes.length > MAX_CHANGES) throw new Error(tf('import.tooComplex', MAX_CHANGES));
+            }
+          }
+        }
+      }
+    }
+  };
+
+  sampleFrame(firstFrame, 0);
+  firstFrame.close();
+  for (let i = 1; i < frameCount; i++) {
+    const res = await decoder.decode({ frameIndex: i });
+    sampleFrame(res.image, i);
+    res.image.close();
+  }
+
+  // 帧起始 tick（20 tick/s）
+  const tickOf = new Int32Array(frameCount);
+  let acc = 0;
+  for (let i = 0; i < frameCount; i++) { tickOf[i] = acc; acc += frameDurTicks[i]; }
+  const totalTicks = acc;
+
+  // 按粒子/分量归组颜色关键帧
+  const changeMap = new Map();
+  for (const [gi, comp, fi, value] of changes) {
+    let m = changeMap.get(gi);
+    if (!m) { m = new Map(); changeMap.set(gi, m); }
+    let arr = m.get(comp);
+    if (!arr) { arr = []; m.set(comp, arr); }
+    arr.push([tickOf[fi], value, 0]);
+  }
+
+  pushUndo();
+  const ids = [];
+  const offX = (cols - 1) / 2 * SPACING;
+  const offZ = (rows - 1) / 2 * SPACING;
+  for (let gi = 0; gi < gridCount; gi++) {
+    if (lastVisible[gi] < 0) continue;   // 全程透明 → 不生成
+    const r = Math.floor(gi / cols), c = gi % cols;
+    const base = gi * 4;
+    const p = addParticle({
+      pos: [c * SPACING - offX, 0, offZ - r * SPACING],
+      color: [firstColor[base], firstColor[base + 1], firstColor[base + 2], firstColor[base + 3]],
+      scale: [1, 1, 1],
+      glow: false,
+      lightLevel: 0,
+      life: lastVisible[gi] === frameCount - 1 ? Math.max(1, totalTicks) : Math.max(1, tickOf[lastVisible[gi] + 1]),
+    });
+    ids.push(p.id);
+
+    const m = changeMap.get(gi);
+    if (!m) continue;
+    for (let comp = 0; comp < 4; comp++) {
+      const arr = m.get(comp);
+      if (arr && arr.length) {
+        const kf = [[0, firstColor[base + comp], 0], ...arr];
+        state.tracks.push({ pr: 'col.' + COLOR_COMPS[comp], m: 'set', ids: [p.id], kf });
+      }
+    }
+  }
+
+  if (ids.length === 0) throw new Error(t('import.empty'));
+  return finishImport(ids, cols, rows);
+}
+
+function finishImport(ids, cols, rows) {
+  const groupName = autoGroup(ids);
+  state.selected.clear();
+  state.selectedGroup = groupName;
+  state.selectedFunction = null;
+  rebuildPoints();
+  refreshParticleTree();
+  refreshTimelineTree();
+  refreshAllPanelsLight();
+  return { group: groupName, particles: ids.length, cols, rows };
+}

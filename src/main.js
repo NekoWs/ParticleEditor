@@ -18,11 +18,12 @@ import { pushUndo, undo, redo, beginContinuous, endContinuous } from './state/un
 import { currentSelected, selectedGroupName, deleteSelected, selectAll } from './interaction/interaction.js';
 import { refreshParticleTree, createGroup, showContextMenu, refreshCompTimelines } from './ui/tree.js';
 import { createFunctionObject } from './core/generators.js';
-import { syncFunctionVarValues, drawTimeline, updateLoopIndicator, hexToRgb, TL_PX_PER_TICK, timelineViewStart, setTimelineViewStart, scrubAutoPan, timelineXToTick, refreshFunctionPanel } from './ui/panels.js';
+import { syncFunctionVarValues, drawTimeline, updateLoopIndicator, hexToRgb, TL_PX_PER_TICK, setTLPxPerTick, timelineViewStart, setTimelineViewStart, scrubAutoPan, timelineXToTick, refreshFunctionPanel } from './ui/panels.js';
 import { drawTimelineLayers, tlInitLayerEvents, refreshAllPanelsLight } from './ui/timeline-layers.js';
 import { initTimelineTree, refreshTimelineTree, tlTreeState } from './ui/timeline-tree.js';
 import { initTextureEditor, syncTextureSelection, updateTexOverlay, texAnimOverlayActive, refreshTexturePanel } from './ui/texture-editor.js';
 import { applyWorkspaceState, saveWorkspaceState } from './ui/blocks-ui.js';
+import { initImportMenu } from './ui/import-image.js';
 import { newFile, openFile, saveFile, saveFileAs, exportAnimation, loadFile, confirmDiscardChanges, ensureProjectKey } from './io/io.js';
 import { drawAxisGizmo, slerp } from './interaction/axis-gizmo.js';
 import { updateGizmo, updateGizmoFrame, restoreAxisColors, setAxisGlow } from './interaction/gizmo.js';
@@ -71,6 +72,7 @@ export function refreshFxPresetOptions() {
 export function initUI() {
   applyI18nDom();
   ensureProjectKey(); // 启动即确保密钥存在：未点「新建」直接编辑保存也能带私钥
+  initImportMenu();
   syncPlayButton();
   const tlEase = document.getElementById('tl-easing');
   tlEase.innerHTML = easingCurveSVG(state.defaultEasing);
@@ -209,8 +211,15 @@ export function initUI() {
   tlCanvas.addEventListener('pointerleave', () => { tlDrag = null; state.scrubbing = false; });
   tlCanvas.addEventListener('wheel', (ev) => {
     ev.preventDefault();
-    setTimelineViewStart(Math.max(0, timelineViewStart + ev.deltaY / TL_PX_PER_TICK));
+    // 悬停上方标尺滚轮缩放：以指针位置为锚点，放大/缩小每 tick 像素
+    const rect = tlCanvas.getBoundingClientRect();
+    const mx = ev.clientX - rect.left;
+    const anchorTick = timelineViewStart + mx / TL_PX_PER_TICK;
+    const factor = ev.deltaY < 0 ? 1.2 : 1 / 1.2;
+    setTLPxPerTick(TL_PX_PER_TICK * factor);
+    setTimelineViewStart(Math.max(0, anchorTick - mx / TL_PX_PER_TICK));
     drawTimeline();
+    if (typeof drawTimelineLayers === 'function') drawTimelineLayers();
   }, { passive: false });
 
   rebuildPoints();
@@ -264,53 +273,10 @@ export function applyScaleFromInputs() {
   if (v) editSelectionUniform('scl', v);
 }
 
-/* 左侧面板拖拽缩放 + 拖拽移出组 */
+/* 右侧栏拖拽调整大小（左侧粒子列表已移除，仅保留时间轴粒子列表） */
 (function setupPanelResizeAndDrop() {
-  const tree = document.getElementById('particle-tree');
-  tree.addEventListener('dragover', (e) => { if (getDragIds()) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; } });
-  tree.addEventListener('drop', (e) => {
-    const ids = getDragIds();
-    if (ids && !e.target.closest('.ptree-head.group')) {
-      e.preventDefault();
-      removeParticlesFromGroups(ids);
-    }
-    setDragIds(null);
-  });
-  tree.addEventListener('contextmenu', (e) => {
-    if (e.target.closest('.ptree-head')) return;
-    e.preventDefault();
-    showContextMenu(e.clientX, e.clientY, [
-      { label: t('tree.addParticle'), action: () => { pushUndo(); addParticle({}); rebuildPoints(); refreshParticleTree(); } },
-    ]);
-  });
-  tree.addEventListener('pointerdown', (e) => {
-    if (!e.target.closest('.ptree-particle')) {
-      state.selected.clear(); state.selectedGroup = null; state.selectedFunction = null;
-      rebuildPoints();
-      refreshFunctionPanel();
-    }
-  });
-
-  const handle = document.getElementById('resize-handle');
-  let resizing = false;
-  handle.addEventListener('pointerdown', (e) => {
-    resizing = true;
-    handle.classList.add('dragging');
-    handle.setPointerCapture(e.pointerId);
-  });
-  handle.addEventListener('pointermove', (e) => {
-    if (!resizing) return;
-    const layout = document.querySelector('.layout');
-    const rect = layout.getBoundingClientRect();
-    let w = e.clientX - rect.left;
-    w = Math.max(220, Math.min(600, w));
-    layout.style.setProperty('--left-w', w + 'px');
-    resize();
-  });
-  handle.addEventListener('pointerup', () => { resizing = false; handle.classList.remove('dragging'); if (typeof saveWorkspaceState === 'function') saveWorkspaceState(); });
-
-  // 右侧栏拖拽调整大小
   const handleR = document.getElementById('resize-handle-r');
+  if (!handleR) return;
   let resizingR = false;
   handleR.addEventListener('pointerdown', (e) => {
     resizingR = true;

@@ -9,12 +9,12 @@ export var LANGS = {
     'common.new': '新建', 'common.open': '打开', 'common.save': '保存', 'common.undo': '撤回', 'common.redo': '重做',
     'common.close': '关闭', 'common.color': '颜色',
     // —— 菜单 ——
-    'menu.file': '文件', 'menu.edit': '编辑', 'menu.lang': '语言', 'menu.about': '关于',
+    'menu.file': '文件', 'menu.import': '导入', 'menu.edit': '编辑', 'menu.lang': '语言', 'menu.about': '关于',
     'menu.openEllipsis': '打开…', 'menu.saveAs': '另存为…', 'menu.exportAnim': '导出动画…', 'menu.clear': '清空',
     'menu.selectAll': '全选', 'menu.deleteSelected': '删除选中', 'menu.group': '建立组',
     // —— 面板 / 选项卡 ——
     'panel.particleList': '粒子列表',
-    'tab.props': '属性', 'tab.fx': '函数对象', 'tab.texture': '贴图 / UV',
+    'tab.props': '属性', 'tab.fx': '函数对象', 'tab.texture': '贴图 / UV', 'tab.import': '导入',
     // —— 场景工具栏 ——
     'tool.select': '选择（框选）', 'tool.move': '移动', 'tool.rotate': '旋转',
     'tool.pencil': '铅笔（点按放置）', 'tool.line': '直线', 'tool.circle': '圆', 'tool.rect': '矩形', 'tool.freehand': '手绘',
@@ -59,6 +59,7 @@ export var LANGS = {
     'timeline.easing': '缓动函数', 'timeline.play': '▶ 播放', 'timeline.pause': '⏸ 暂停',
     // —— 粒子列表 / 树 ——
     'tree.addParticle': '添加粒子',
+    'tree.edit': '编辑',
     'tree.hint': '提示', 'tree.selectParticlesFirst': '请先选中粒子', 'tree.derivedNoGroup': '派生粒子不可建立普通组',
     'tree.empty': '暂无粒子，请使用右侧工具绘制', 'tree.dblclickRename': '双击重命名',
     'tree.trackCount': '{0} 轨道', 'tree.deleteParticle': '删除粒子', 'tree.addKfHint': '添加关键帧（当前时间）',
@@ -73,6 +74,14 @@ export var LANGS = {
     'confirm.discard': '不保存', 'confirm.saveAnd': '保存并',
     'filePicker.project': 'ParticleDrawing 工程', 'filePicker.projectFile': '工程文件',
     'filePicker.playback': 'ParticleDrawing 播放文件', 'filePicker.playbackFile': '播放文件 (.pdrawc)',
+    'import.hint': '选择图片或 GIF，按像素生成粒子并自动建组（GIF 取第一帧）',
+    'import.image': '导入图片', 'import.gif': '导入动图',
+    'import.resolution': '分辨率（横向粒子数）', 'import.button': '选择图片 / GIF',
+    'import.resolutionTitle': '导入分辨率', 'import.cols': '横向粒子数', 'import.rows': '纵向粒子数',
+    'import.particleCount': '粒子数：{0}',
+    'import.tooMany': '粒子数超过上限 {0}，请降低分辨率', 'import.empty': '图片中没有不透明像素',
+    'import.gifUnsupported': '当前浏览器不支持 GIF 逐帧解析，请使用 Chrome/Edge', 'import.tooComplex': 'GIF 颜色变化过多（超过 {0} 个关键帧），请降低分辨率',
+    'alert.importFailed': '导入失败',
     'alert.cryptoUnsupported': '当前浏览器不支持 Ed25519 签名，请升级浏览器后再导出',
     'alert.exportKeyMissing': '工程缺少签名私钥，请先保存工程后再导出',
     // —— 关于 ——
@@ -167,12 +176,12 @@ export var LANGS = {
     'common.new': 'New', 'common.open': 'Open', 'common.save': 'Save', 'common.undo': 'Undo', 'common.redo': 'Redo',
     'common.close': 'Close', 'common.color': 'Color',
     // —— 菜单 ——
-    'menu.file': 'File', 'menu.edit': 'Edit', 'menu.lang': 'Language', 'menu.about': 'About',
+    'menu.file': 'File', 'menu.import': 'Import', 'menu.edit': 'Edit', 'menu.lang': 'Language', 'menu.about': 'About',
     'menu.openEllipsis': 'Open…', 'menu.saveAs': 'Save As…', 'menu.exportAnim': 'Export Animation…', 'menu.clear': 'Clear',
     'menu.selectAll': 'Select All', 'menu.deleteSelected': 'Delete Selected', 'menu.group': 'Group',
     // —— 面板 / 选项卡 ——
     'panel.particleList': 'Particle List',
-    'tab.props': 'Properties', 'tab.fx': 'Function Object', 'tab.texture': 'Texture / UV',
+    'tab.props': 'Properties', 'tab.fx': 'Function Object', 'tab.texture': 'Texture / UV', 'tab.import': 'Import',
     // —— 场景工具栏 ——
     'tool.select': 'Select (Box)', 'tool.move': 'Move', 'tool.rotate': 'Rotate',
     'tool.pencil': 'Pencil (Click to Place)', 'tool.line': 'Line', 'tool.circle': 'Circle', 'tool.rect': 'Rectangle', 'tool.freehand': 'Freehand',
@@ -217,6 +226,7 @@ export var LANGS = {
     'timeline.easing': 'Easing', 'timeline.play': '▶ Play', 'timeline.pause': '⏸ Pause',
     // —— 粒子列表 / 树 ——
     'tree.addParticle': 'Add Particle',
+    'tree.edit': 'Edit',
     'tree.hint': 'Notice', 'tree.selectParticlesFirst': 'Please select particles first', 'tree.derivedNoGroup': 'Derived particles cannot form a regular group',
     'tree.empty': 'No particles yet. Use the tools on the right to draw.',
     'tree.dblclickRename': 'Double-click to rename',
@@ -232,6 +242,16 @@ export var LANGS = {
     'confirm.discard': "Don't Save", 'confirm.saveAnd': 'Save & ',
     'filePicker.project': 'ParticleDrawing Project', 'filePicker.projectFile': 'Project File',
     'filePicker.playback': 'ParticleDrawing Playback File', 'filePicker.playbackFile': 'Playback File (.pdrawc)',
+    'import.hint': 'Choose an image or GIF to generate particles by pixels and auto-group them (GIF uses the first frame)',
+    'import.image': 'Import Image', 'import.gif': 'Import GIF',
+    'import.resolution': 'Resolution (particles across)', 'import.button': 'Choose Image / GIF',
+    'import.resolutionTitle': 'Import Resolution', 'import.cols': 'Horizontal particles', 'import.rows': 'Vertical particles',
+    'import.particleCount': 'Particle count: {0}',
+    'import.tooMany': 'Particle count exceeds the limit of {0}. Lower the resolution.',
+    'import.empty': 'No opaque pixels found in the image',
+    'import.gifUnsupported': 'GIF frame decoding is not supported in this browser. Use Chrome or Edge.',
+    'import.tooComplex': 'Too many GIF color changes (more than {0} keyframes). Lower the resolution.',
+    'alert.importFailed': 'Import Failed',
     'alert.cryptoUnsupported': 'This browser does not support Ed25519 signing. Please upgrade your browser before exporting.',
     'alert.exportKeyMissing': 'The project has no signing key. Save the project first, then export.',
     // —— 关于 ——

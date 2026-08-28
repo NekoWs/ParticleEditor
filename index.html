@@ -23,6 +23,13 @@
         </div>
       </div>
       <div class="menu">
+        <button class="menu-btn" data-menu="import" data-i18n="menu.import">导入</button>
+        <div class="dropdown" id="menu-import">
+          <button id="btn-import-image" class="dd-item"><span data-i18n="import.image">导入图片</span></button>
+          <button id="btn-import-gif" class="dd-item"><span data-i18n="import.gif">导入动图</span></button>
+        </div>
+      </div>
+      <div class="menu">
         <button class="menu-btn" data-menu="edit" data-i18n="menu.edit">编辑</button>
         <div class="dropdown" id="menu-edit">
           <button id="btn-undo" class="dd-item"><span data-i18n="common.undo">撤回</span><kbd>Ctrl+Z</kbd></button>
@@ -49,12 +56,6 @@
   </header>
 
   <main class="layout">
-    <aside class="left-panel" id="left-panel">
-      <div class="panel-title" data-i18n="panel.particleList">粒子列表</div>
-      <div id="particle-tree" class="particle-tree"></div>
-    </aside>
-    <div class="resize-handle" id="resize-handle"></div>
-
     <section id="viewport" class="viewport">
       <canvas id="axis-gizmo"></canvas>
       <div id="box-overlay"></div>
@@ -83,7 +84,7 @@
         <button class="tab" data-tab="texture" data-i18n-title="tab.texture" title="贴图 / UV">
           <svg viewBox="0 0 18 18"><rect x="3" y="3" width="12" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 9h12M9 3v12" stroke="currentColor" stroke-width="1.2"/><circle cx="9" cy="9" r="1.4" fill="currentColor"/></svg>
         </button>
-      </div>
+        </div>
 
       <div class="tab-pane active" id="pane-props">
         <label class="row"><span data-i18n="common.color">颜色</span> <input id="prop-color" type="color" value="#ffffff" /></label>
@@ -168,6 +169,7 @@
   </footer>
 
   <input id="file-import" type="file" accept=".pdraw,.json" hidden />
+  <input id="import-file" type="file" hidden />
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

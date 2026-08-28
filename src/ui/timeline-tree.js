@@ -79,6 +79,12 @@ function hashStr(s, h) {
 function structureSignature() {
   const parts = [];
   parts.push('L:' + LANG);
+  const groupedIds = new Set();
+  for (const members of Object.values(state.groups)) for (const id of members) groupedIds.add(id);
+  const loose = state.particles.filter(p => !p.fx && !groupedIds.has(p.id));
+  let looseH = loose.length;
+  for (const p of loose) looseH = hashStr(p.id, looseH);
+  parts.push('P:' + looseH);
   for (const [name, members] of Object.entries(state.groups)) {
     let h = members.length;
     if (tlTreeState.expanded.has('g:' + name + '|@members')) {
@@ -115,6 +121,19 @@ function pushPropRows(rows, id, prop, depth, readOnly) {
 
 export function tlTreeFlatRows() {
   const rows = [];
+
+  // 未成组、非派生的独立粒子（左侧列表已移除，这里是它们唯一入口）
+  const groupedIds = new Set();
+  for (const members of Object.values(state.groups)) for (const id of members) groupedIds.add(id);
+  for (const p of state.particles) {
+    if (p.fx || groupedIds.has(p.id)) continue;
+    const pkey = 'p:' + p.id;
+    const pexpanded = tlTreeState.expanded.has(pkey);
+    rows.push({ key: pkey, kind: 'particle', p, expanded: pexpanded, depth: 0 });
+    if (pexpanded) {
+      for (const prop of PARTICLE_TRACK_DEFS) pushPropRows(rows, p.id, prop, 1, isDerivedParticle(p));
+    }
+  }
 
   for (const name of Object.keys(state.groups)) {
     const members = state.groups[name] || [];

@@ -133,7 +133,7 @@ body {
 /* ---- layout ---- */
 .layout {
   display: grid;
-  grid-template-columns: var(--left-w, 340px) 5px 1fr 5px var(--right-w, 320px);
+  grid-template-columns: 1fr 5px var(--right-w, 320px);
   min-height: 0;
 }
 .left-panel {
@@ -345,6 +345,13 @@ body {
 .ui-modal-msg { color: var(--muted); font-size: 13px; white-space: pre-wrap; word-break: break-word; line-height: 1.6; }
 .ui-modal-input { background: var(--panel-3); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 8px 11px; font-size: 13px; }
 .ui-modal-input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 2px var(--accent-soft); }
+.ui-modal-fields { display: flex; flex-direction: column; gap: 8px; margin-top: 2px; }
+.ui-modal-field-row { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.ui-modal-field-row span { color: var(--text); font-size: 13px; }
+.ui-modal-field-row .ui-modal-input { width: 140px; }
+.ui-modal-status { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.ui-modal-error { color: var(--danger); font-size: 12px; margin-top: 2px; }
+.ui-modal-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .ui-modal-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 .ui-modal-btn { background: var(--panel-3); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 7px 16px; cursor: pointer; font-size: 13px; transition: all 0.12s ease; }
 .ui-modal-btn:hover { border-color: var(--accent); color: var(--accent); }

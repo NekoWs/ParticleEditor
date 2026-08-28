@@ -9,19 +9,20 @@
  * - 垂直滚动由 #tl-tree 的 scrollTop 驱动（tlLayerState.scroll）。
  * ======================================================================= */
 
+import { t } from '../core/i18n.js';
 import { state, TRACK_COMPS, compPr, getFunction } from '../core/constants.js';
-import { TL_PX_PER_TICK, timelineViewStart, drawTimeline } from './panels.js';
+import { TL_PX_PER_TICK, timelineViewStart, setTimelineViewStart, drawTimeline, scrubAutoPan, tlNiceStep } from './panels.js';
 import { rebuildPoints, maxTick } from '../core/animation.js';
 import { findTrackByPr } from '../core/animation-eval.js';
 import { varKfValue } from '../core/easing.js';
-import { baseValueFor } from '../core/edit.js';
+import { baseValueFor, removeKeyframe } from '../core/edit.js';
 import { saveWorkspaceState } from './blocks-ui.js';
-import { resize } from '../main.js';
+import { resize, applyTimeChange } from '../main.js';
 import { pushUndo } from '../state/undo.js';
 import { refreshTimelineTree, tlTreeFlatRows, TL_TREE_ROW_H } from './timeline-tree.js';
-import { openKeyframeEditor } from './tree.js';
+import { openKeyframeEditor, showContextMenu } from './tree.js';
 
-export const tlLayerState = { scroll: 0, drag: null, hit: [] };
+export const tlLayerState = { scroll: 0, drag: null, hit: [], selectedKf: null };
 const TL_KF_HIT_PX = 6;
 let laneKfHits = [];
 
@@ -90,8 +91,11 @@ function drawKfsForTrack(ctx, tr, id, prop, comp, w, cy, color, X) {
     if (isDefaultKf(tr, id, prop, comp, kf)) continue;
     const x = X(kf[0]);
     if (x < -6 || x > w + 6) continue;
-    drawDiamond(ctx, x, cy, color);
-    laneKfHits.push({ x, y: cy, id, pr: compPr(prop, comp), tick: kf[0], kf, tr });
+    const pr = compPr(prop, comp);
+    const sel = tlLayerState.selectedKf && tlLayerState.selectedKf.id === id &&
+      tlLayerState.selectedKf.pr === pr && tlLayerState.selectedKf.tick === kf[0];
+    drawDiamond(ctx, x, cy, sel ? '#5b9dff' : color);
+    laneKfHits.push({ x, y: cy, id, pr, tick: kf[0], kf, tr });
   }
 }
 
@@ -198,9 +202,15 @@ export function drawTimelineLayers() {
   const X = t => (t - timelineViewStart) * pxPerTick;
   const viewEnd = timelineViewStart + w / pxPerTick;
 
-  // 每 5 tick 一条竖刻度线（与上方标尺同一视口；数字只在上方标尺显示）
+  // 与上方标尺同一缩放：主/次刻度随 TL_PX_PER_TICK 自适应（数字只在上方标尺显示）
+  const major = tlNiceStep(pxPerTick, 40);
+  const minor = major / 5;
+  const start = Math.max(0, Math.floor(timelineViewStart / minor) * minor);
+  const count = Math.ceil((viewEnd - start) / minor) + 1;
   ctx.strokeStyle = '#262b34';
-  for (let t = Math.max(0, Math.floor(timelineViewStart / 5) * 5); t <= viewEnd; t += 5) {
+  for (let i = 0; i < count; i++) {
+    const t = start + i * minor;
+    if (t < 0 || t > viewEnd + minor) continue;
     ctx.beginPath(); ctx.moveTo(X(t), 0); ctx.lineTo(X(t), h); ctx.stroke();
   }
 
@@ -233,7 +243,7 @@ export function tlLayerHitAt(clientX, clientY) {
   if (!canvas) return null;
   const rect = canvas.getBoundingClientRect();
   const lx = clientX - rect.left;
-  const ly = clientY - rect.top + tlLayerState.scroll;
+  const ly = clientY - rect.top;   // 命中坐标与绘制坐标同为画布视觉坐标（不再加 scroll）
   for (const hsp of tlLayerState.hit) {
     if (ly < hsp.y || ly >= hsp.y + hsp.rowH) continue;
     if (lx < hsp.bx - 5 || lx > hsp.bx + hsp.bw + 5) continue;
@@ -273,7 +283,7 @@ function hitKeyframeAt(clientX, clientY) {
   if (!canvas) return null;
   const rect = canvas.getBoundingClientRect();
   const lx = clientX - rect.left;
-  const ly = clientY - rect.top + tlLayerState.scroll;
+  const ly = clientY - rect.top;   // 命中坐标与绘制坐标同为画布视觉坐标（不再加 scroll）
   for (const h of laneKfHits) {
     if (Math.abs(lx - h.x) <= TL_KF_HIT_PX && Math.abs(ly - h.y) <= TL_KF_HIT_PX) return h;
   }
@@ -303,21 +313,40 @@ export function tlInitLayerEvents() {
   }
 
   canvas.addEventListener('pointerdown', ev => {
+    if (ev.button !== 0) return;
     const kfHit = hitKeyframeAt(ev.clientX, ev.clientY);
     if (kfHit) {
-      pushUndo();
+      // 点击即选中；拖动时才 pushUndo（见 pointermove）
+      tlLayerState.selectedKf = { id: kfHit.id, pr: kfHit.pr, tick: kfHit.tick };
       canvas.setPointerCapture(ev.pointerId);
-      tlLayerState.drag = { kind: 'kf', ...kfHit, startX: ev.clientX };
+      tlLayerState.drag = { kind: 'kf', ...kfHit, startX: ev.clientX, undoPushed: false };
+      drawTimelineLayers();
       return;
     }
+    tlLayerState.selectedKf = null;
     const res = tlLayerHitAt(ev.clientX, ev.clientY);
-    if (!res) return;
+    if (!res) {
+      // 空白区域拖动：scrub 播放头（无关键帧/对象时也能拖动标尺）
+      canvas.setPointerCapture(ev.pointerId);
+      state.scrubbing = true;
+      state.time = Math.max(0, timelineXToTickL(ev.clientX));
+      applyTimeChange();
+      tlLayerState.drag = { kind: 'scrub' };
+      drawTimeline();
+      drawTimelineLayers();
+      return;
+    }
     const { hit, zone } = res;
     pushUndo();
     canvas.setPointerCapture(ev.pointerId);
     const ptrTick = Math.round(timelineXToTickL(ev.clientX));
     if (hit.r.kind === 'group') {
-      tlLayerState.drag = { kind: 'shift', r: hit.r, lastTick: ptrTick };
+      if (zone === 'life') {
+        // 组寿命终点手柄：整体拉长/缩短成员寿命
+        tlLayerState.drag = { kind: 'grouplife', r: hit.r, lastTick: ptrTick };
+      } else {
+        tlLayerState.drag = { kind: 'shift', r: hit.r, lastTick: ptrTick };
+      }
       return;
     }
     // 点击瞬间不跳位：记录「指针-当前值」抓取偏移，拖动后按偏移平移
@@ -336,6 +365,7 @@ export function tlInitLayerEvents() {
       const cur = hit.r.kind === 'fx' ? (hit.r.fx.st || 0) : (hit.r.p.st || 0);
       tlLayerState.drag = { kind: 'start', r: hit.r, grabOff: ptrTick - cur };
     }
+    drawTimelineLayers();
   });
 
   canvas.addEventListener('pointermove', ev => {
@@ -354,10 +384,22 @@ export function tlInitLayerEvents() {
     if (d.kind === 'kf') {
       const t = Math.max(0, Math.round(timelineXToTickL(ev.clientX)));
       if (t !== d.kf[0]) {
+        if (!d.undoPushed) { pushUndo(); d.undoPushed = true; }
         d.kf[0] = t;
         if (d.tr) d.tr.kf.sort((a, b) => a[0] - b[0]);
+        tlLayerState.selectedKf = { id: d.id, pr: d.pr, tick: t };
         refreshAllPanelsLight();
       }
+      return;
+    }
+    if (d.kind === 'scrub') {
+      const rect = canvas.getBoundingClientRect();
+      const r = scrubAutoPan(d, ev.clientX, rect, timelineViewStart, state.time, TL_PX_PER_TICK, 0, 0);
+      setTimelineViewStart(r.viewStart);
+      state.time = r.time;
+      applyTimeChange();
+      drawTimeline();
+      drawTimelineLayers();
       return;
     }
     const ptrTick = timelineXToTickL(ev.clientX);
@@ -367,6 +409,18 @@ export function tlInitLayerEvents() {
       setParticleLife(d.p, Math.max(1, Math.round(ptrTick - d.grabOff)));
     } else if (d.kind === 'fxdur') {
       d.fx.duration = Math.max(1, Math.round(ptrTick - d.grabOff));
+    } else if (d.kind === 'grouplife') {
+      const t = Math.round(ptrTick);
+      const delta = t - d.lastTick;
+      if (delta) {
+        for (const id of d.r.members) {
+          const p = state.particles.find(q => q.id === id);
+          if (p && p.life != null && p.life >= 0) {
+            setParticleLife(p, Math.max(1, p.life + delta));
+          }
+        }
+        d.lastTick += delta;
+      }
     } else {
       const t = Math.round(ptrTick);
       const delta = t - d.lastTick;
@@ -375,7 +429,7 @@ export function tlInitLayerEvents() {
     refreshAllPanelsLight();
   });
 
-  const endDrag = () => { tlLayerState.drag = null; };
+  const endDrag = () => { tlLayerState.drag = null; state.scrubbing = false; };
   canvas.addEventListener('pointerup', endDrag);
   canvas.addEventListener('pointercancel', endDrag);
 
@@ -394,12 +448,28 @@ export function tlInitLayerEvents() {
     refreshAllPanelsLight();
   });
 
-  // 右键关键帧菱形 → 打开关键帧编辑器
+  // 右键关键帧菱形 → 「编辑 / 删除」菜单
   canvas.addEventListener('contextmenu', ev => {
     const kfHit = hitKeyframeAt(ev.clientX, ev.clientY);
     if (!kfHit) return;
     ev.preventDefault();
-    openKeyframeEditor(canvas, kfHit.id, kfHit.pr, kfHit.tick, ev.clientX, ev.clientY);
+    tlLayerState.selectedKf = { id: kfHit.id, pr: kfHit.pr, tick: kfHit.tick };
+    drawTimelineLayers();
+    showContextMenu(ev.clientX, ev.clientY, [
+      {
+        label: t('tree.edit'),
+        action: () => openKeyframeEditor(canvas, kfHit.id, kfHit.pr, kfHit.tick, ev.clientX, ev.clientY),
+      },
+      {
+        label: t('common.delete'),
+        danger: true,
+        action: () => {
+          removeKeyframe(kfHit.id, kfHit.pr, kfHit.tick);
+          tlLayerState.selectedKf = null;
+          refreshAllPanelsLight();
+        },
+      },
+    ]);
   });
 
   // canvas 滚轮 → 滚动左侧 HTML 标签轨（其 scroll 事件会驱动本画布重绘）
