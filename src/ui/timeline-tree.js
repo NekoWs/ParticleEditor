@@ -245,6 +245,11 @@ function renderFlatRow(row) {
       const label = el('span', 'tt-sub-label');
       label.textContent = t('fx.varList') + ' (' + row.count + ')';
       div.appendChild(label);
+      const add = el('button', 'tt-add-var');
+      add.textContent = '+';
+      add.title = t('fx.addVar');
+      add.dataset.fxid = row.fx.id;
+      div.appendChild(add);
       break;
     }
     case 'prop': {
@@ -398,6 +403,11 @@ function onTreeClick(ev) {
     toggleKey(arrow.dataset.key);
     return;
   }
+  const addVar = ev.target.closest('.tt-add-var');
+  if (addVar) {
+    addVariable(addVar.dataset.fxid);
+    return;
+  }
   const addKf = ev.target.closest('.tt-add-kf');
   if (addKf) {
     const id = addKf.dataset.id;
@@ -408,9 +418,9 @@ function onTreeClick(ev) {
     refreshTimelineTree();
     return;
   }
-  const addVar = ev.target.closest('.tt-add-var-kf');
-  if (addVar) {
-    addVariableKeyframe(addVar.dataset.fxid, addVar.dataset.name);
+  const addVarKf = ev.target.closest('.tt-add-var-kf');
+  if (addVarKf) {
+    addVariableKeyframe(addVarKf.dataset.fxid, addVarKf.dataset.name);
     return;
   }
 
@@ -511,6 +521,20 @@ function onTreeChange(ev) {
     rebuildFxSafe(fx);
     refreshTimelineTree();
   }
+}
+
+function addVariable(fxId) {
+  const fx = getFunction(fxId);
+  if (!fx) return;
+  pushUndo();
+  if (!fx.vars) fx.vars = {};
+  let k = 0;
+  while (('v' + k) in fx.vars) k++;
+  fx.vars['v' + k] = { base: 0, kf: [] };
+  // 展开变量行，让新建变量立即可见并可直接编辑
+  tlTreeState.expanded.add('f:' + fx.id + '|@vars');
+  rebuildFxSafe(fx);
+  refreshTimelineTree();
 }
 
 function addVariableKeyframe(fxId, name) {

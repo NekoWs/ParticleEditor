@@ -686,13 +686,13 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .tt-val:focus, .tt-var-val:focus { border-color: var(--accent); outline: none; }
 .tt-val:disabled, .tt-var-val:disabled { opacity: 0.55; }
 
-.tt-add-kf, .tt-add-var-kf {
+.tt-add-kf, .tt-add-var-kf, .tt-add-var {
   flex: 0 0 auto; width: 22px; height: 18px; padding: 0;
   font-size: 11px; line-height: 1; border-radius: 4px;
   background: transparent; color: #9aa0ad;
   border: 1px solid #3a3f4b; cursor: pointer;
 }
-.tt-add-kf:hover, .tt-add-var-kf:hover { color: #ffcc55; border-color: #ffcc55; }
+.tt-add-kf:hover, .tt-add-var-kf:hover, .tt-add-var:hover { color: #ffcc55; border-color: #ffcc55; }
 .tt-add-kf:disabled, .tt-add-var-kf:disabled { opacity: 0.4; cursor: default; }
 .tl-loop {
   margin: 0; padding: 4px 10px; gap: 6px; height: 30px; display: inline-flex; align-items: center;
