@@ -10,7 +10,7 @@
  * ======================================================================= */
 
 import { t, tf } from '../core/i18n.js';
-import { state, EASING_NONE } from '../core/constants.js';
+import { state, EASING_NONE, PARTICLE_SIZE_FACTOR } from '../core/constants.js';
 import { resampleRGBA } from '../core/resample.js';
 import { addParticle, autoGroup } from '../core/edit.js';
 import { pushUndo } from '../state/undo.js';
@@ -23,7 +23,6 @@ import { refreshParticleTree } from './tree.js';
 const MAX_PARTICLES = 100000;
 const MAX_CHANGES = 300000;    // GIF 颜色关键帧变化总量上限
 const MAX_DIMENSION = 4096;    // 单边粒子数上限
-const SPACING = 0.5;           // 相邻粒子中心距（blocks）
 const ALPHA_THRESHOLD = 10;          // alpha < 10/255 视为透明并跳过
 const ALPHA_THRESHOLD_N = ALPHA_THRESHOLD / 255;  // 归一化 0..1 阈值（GIF 采样值已 /255）
 const COLOR_COMPS = ['r', 'g', 'b', 'a'];
@@ -148,19 +147,25 @@ async function importStaticPrepared(prepared, cols, rows) {
   ctx.drawImage(bitmap, 0, 0);
   const data = ctx.getImageData(0, 0, w, h).data;
   const rgba = resampleRGBA(data, w, h, cols, rows);
+  // 粒子间距 = 粒子实际显示大小；缩小时每个粒子代表多个源像素，按比例放大粒子与间距，
+  // 使导入后的整体尺寸不随目标分辨率变化，且相邻粒子互相贴合。
+  const scaleX = w / cols, scaleY = h / rows;
+  const cellW = PARTICLE_SIZE_FACTOR * scaleX;
+  const cellH = PARTICLE_SIZE_FACTOR * scaleY;
 
   pushUndo();
   const ids = [];
-  const offX = (cols - 1) / 2 * SPACING;
-  const offZ = (rows - 1) / 2 * SPACING;
+  const offX = (cols - 1) / 2 * cellW;
+  const offZ = (rows - 1) / 2 * cellH;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const o = (r * cols + c) * 4;
       if (rgba[o + 3] < ALPHA_THRESHOLD_N) continue;
       const p = addParticle({
-        pos: [c * SPACING - offX, 0, offZ - r * SPACING],
+        // 源图行 0 = 顶部；世界 Z 越小离相机越远，故 row 0 放最远处（屏幕上方），避免上下镜像
+        pos: [c * cellW - offX, 0, r * cellH - offZ],
         color: [rgba[o], rgba[o + 1], rgba[o + 2], rgba[o + 3]],
-        scale: [1, 1, 1],
+        scale: [scaleX, scaleY, 1],
         glow: false,
         lightLevel: 0,
         life: 20,
@@ -244,18 +249,23 @@ async function importGifPrepared(prepared, cols, rows) {
     arr.push([tickOf[fi], value, EASING_NONE]);
   }
 
+  const scaleX = w / cols, scaleY = h / rows;
+  const cellW = PARTICLE_SIZE_FACTOR * scaleX;
+  const cellH = PARTICLE_SIZE_FACTOR * scaleY;
+
   pushUndo();
   const ids = [];
-  const offX = (cols - 1) / 2 * SPACING;
-  const offZ = (rows - 1) / 2 * SPACING;
+  const offX = (cols - 1) / 2 * cellW;
+  const offZ = (rows - 1) / 2 * cellH;
   for (let gi = 0; gi < gridCount; gi++) {
     if (lastVisible[gi] < 0) continue;   // 全程透明 → 不生成
     const r = Math.floor(gi / cols), c = gi % cols;
     const base = gi * 4;
     const p = addParticle({
-      pos: [c * SPACING - offX, 0, offZ - r * SPACING],
+      // 源图行 0 = 顶部；世界 Z 越小离相机越远，故 row 0 放最远处（屏幕上方），避免上下镜像
+      pos: [c * cellW - offX, 0, r * cellH - offZ],
       color: [firstColor[base], firstColor[base + 1], firstColor[base + 2], firstColor[base + 3]],
-      scale: [1, 1, 1],
+      scale: [scaleX, scaleY, 1],
       glow: false,
       lightLevel: 0,
       life: lastVisible[gi] === frameCount - 1 ? Math.max(1, totalTicks) : Math.max(1, tickOf[lastVisible[gi] + 1]),
