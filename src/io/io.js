@@ -12,11 +12,41 @@ import { updateLoopIndicator } from '../ui/panels.js';
 import { updateTimeUI } from '../main.js';
 import { rebuildFunctionObject } from '../core/generators.js';
 import { markTextureChanged, refreshTexturePanel } from '../ui/texture-editor.js';
-import { buildModal, modalPrompt } from '../ui/ui.js';
+import { buildModal, modalPrompt, modalAlert } from '../ui/ui.js';
+import { generateKeyPair, KEY_ALG, base64ToBytes } from '../core/crypto.js';
+import { buildPdrawc } from '../core/pdrawc.js';
 
 export const r3 = x => Math.round(x * 1000) / 1000;
 export const roundArr = a => a.map(r3);
 export function encodeEasing(e) { return Array.isArray(e) ? e.map(r3) : e; }
+
+/* 解析 .pdraw 工程中的密钥；无效/缺失返回 null。 */
+export function parseProjectKey(k) {
+  if (k && k.alg === KEY_ALG && typeof k.private === 'string' && typeof k.public === 'string') {
+    return { alg: KEY_ALG, private: k.private, public: k.public };
+  }
+  return null;
+}
+
+/* 确保 state.key 存在：已有有效密钥直接返回 true；否则生成，失败返回 false。 */
+export async function ensureProjectKey() {
+  if (state.key && state.key.alg === KEY_ALG && state.key.private && state.key.public) return true;
+  try {
+    const pair = await generateKeyPair();
+    state.key = { alg: KEY_ALG, private: pair.private, public: pair.public };
+    return true;
+  } catch (_) {
+    return false; // 浏览器不支持：保持无密钥，保存仍可进行，导出时再提示
+  }
+}
+
+/* 应用工程密钥：有则采用；无则自动生成并返回 true（调用方据此标记未保存）。 */
+export async function applyProjectKey(obj) {
+  const existing = parseProjectKey(obj.key);
+  if (existing) { state.key = existing; return false; }
+  state.key = null;
+  return ensureProjectKey();
+}
 
 // 贴图 → base64 PNG（同步导出用；贴图变化时调用 refreshTexBase64Cache 预计算）
 export async function textureToBase64(t) {
@@ -180,7 +210,8 @@ export function exportProject() {
   }
   const guv = {};
   for (const [name, uv] of Object.entries(state.groupUV || {})) if (uv && uv.texture) guv[name] = serializeUV(uv);
-  const result = { v: 4, loop: state.loop, g, p, t, f, tex, guv };
+  const result = { v: 5, loop: state.loop, g, p, t, f, tex, guv };
+  if (state.key) result.key = { alg: KEY_ALG, private: state.key.private, public: state.key.public };
   if (Object.keys(texData).length > 0) result.texData = texData;
   return result;
 }
@@ -217,9 +248,10 @@ export function parseParticlesTracks(obj) {
   state.loop = !!obj.loop;
 }
 
-export function importJSON(obj) {
+export async function importJSON(obj) {
   pushUndo();
   parseParticlesTracks(obj);
+  const keyGenerated = await applyProjectKey(obj);
   state.functions = [];
   state.textures = {};
   state.currentTexture = null;
@@ -229,12 +261,13 @@ export function importJSON(obj) {
   state.selected.clear(); state.selectedGroup = null; state.time = 0;
   state.expandedParticles.clear(); state.expandedProps.clear();
   updateTimeUI(); rebuildPoints(); refreshParticleTree();
-  setDirty(false);
+  setDirty(keyGenerated);
 }
 
-export function importProject(obj) {
+export async function importProject(obj) {
   pushUndo();
   parseParticlesTracks(obj);
+  const keyGenerated = await applyProjectKey(obj);
   state.functions = (obj.f || []).map(parseFunction);
   state.textures = {};
   state.currentTexture = null;
@@ -259,7 +292,7 @@ export function importProject(obj) {
     });
   }
   updateTimeUI(); rebuildPoints(); refreshParticleTree();
-  setDirty(false);
+  setDirty(keyGenerated);
 }
 
 export function download(json, filename) {
@@ -275,10 +308,10 @@ export function download(json, filename) {
 export async function loadFile(file) {
   const text = await file.text();
   const obj = JSON.parse(text);
-  if (file.name.toLowerCase().endsWith('.pdraw') || obj.v >= 2 || obj.f) importProject(obj);
-  else importJSON(obj);
+  if (file.name.toLowerCase().endsWith('.pdraw') || obj.v >= 2 || obj.f) await importProject(obj);
+  else await importJSON(obj);
   state.name = file.name.replace(/\.(json|pdraw)$/i, '');
-  setDirty(false);
+  setDirty(state.dirty); // 刷新标题，保留导入阶段「自动生成密钥」的未保存标记
 }
 
 export async function openFile() {
@@ -306,6 +339,7 @@ export async function saveFile() {
     await saveFileAs();
     return;
   }
+  await ensureProjectKey();
   await refreshTexBase64Cache();
   const json = JSON.stringify(exportProject());
   await writeProjectText(state.fileHandle, json);
@@ -341,14 +375,51 @@ async function writeProjectWithPicker(json, { keepHandle, markSaved }) {
 }
 
 export async function saveFileAs() {
+  await ensureProjectKey();
   await refreshTexBase64Cache();
   await writeProjectWithPicker(JSON.stringify(exportProject()), { keepHandle: true, markSaved: true });
 }
 
-// 导出动画（.pdraw 供模组 /pdraw play 播放），不改变当前工程 fileHandle
+// 导出动画（.pdrawc 二进制，供模组 /pdraw play 播放），不改变当前工程 fileHandle
 export async function exportAnimation() {
+  const hasKey = await ensureProjectKey();
+  if (!hasKey) {
+    modalAlert(t('alert.exportFailed'), t('alert.cryptoUnsupported'));
+    return;
+  }
   await refreshTexBase64Cache();
-  await writeProjectWithPicker(JSON.stringify(exportProject()), { keepHandle: false, markSaved: false });
+  const bytes = await buildPdrawc(state, name => {
+    const b64 = _texBase64Cache[name];
+    return b64 ? base64ToBytes(b64) : null;
+  });
+  await writeBinaryWithPicker(bytes, { keepHandle: false, markSaved: false });
+}
+
+// 通过系统保存选择器写二进制 .pdrawc，或在不支持 File System Access API 时回退为下载。
+async function writeBinaryWithPicker(bytes, { keepHandle, markSaved }) {
+  const suggestedName = (state.name || 'my_animation') + '.pdrawc';
+  if (window.showSaveFilePicker) {
+    try {
+      const h = await window.showSaveFilePicker({
+        suggestedName,
+        types: [{ description: t('filePicker.playback'), accept: { 'application/octet-stream': ['.pdrawc'] } }],
+      });
+      if (keepHandle) state.fileHandle = h;
+      const w = await h.createWritable();
+      await w.write(bytes); await w.close();
+      if (markSaved) setDirty(false);
+    } catch (e) {
+      // 用户取消选择器：不下载，也不改变当前状态
+    }
+    return;
+  }
+  const blob = new Blob([bytes], { type: 'application/octet-stream' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = suggestedName;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  if (markSaved) setDirty(false);
 }
 
 // 新建空白动画
@@ -366,6 +437,11 @@ export async function newFile() {
   state.name = name.trim() || 'my_animation';
   state.fileHandle = null;
   state.loop = true;
+  state.key = null;
+  try {
+    const pair = await generateKeyPair();
+    state.key = { alg: KEY_ALG, private: pair.private, public: pair.public };
+  } catch (_) { /* 浏览器不支持：导出时再提示 */ }
   document.getElementById('tl-loop').checked = true;
   updateTimeUI(); rebuildPoints(); refreshParticleTree();
   if (typeof refreshTexturePanel === 'function') refreshTexturePanel();

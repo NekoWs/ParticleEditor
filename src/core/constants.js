@@ -138,6 +138,7 @@ export const PARTICLE_SIZE_FACTOR = 0.5; // 编辑器渲染缩放（与游戏内
  */
 export const state = {
   name: 'my_animation',
+  key: null,              // Ed25519 密钥对 { alg:'Ed25519', private, public }（base64）；旧工程打开时自动生成
   loop: true,
   particles: [],
   groups: {},

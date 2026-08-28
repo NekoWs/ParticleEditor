@@ -23,7 +23,7 @@ import { drawTimelineLayers, tlInitLayerEvents, refreshAllPanelsLight } from './
 import { initTimelineTree, refreshTimelineTree, tlTreeState } from './ui/timeline-tree.js';
 import { initTextureEditor, syncTextureSelection, updateTexOverlay, texAnimOverlayActive, refreshTexturePanel } from './ui/texture-editor.js';
 import { applyWorkspaceState, saveWorkspaceState } from './ui/blocks-ui.js';
-import { newFile, openFile, saveFile, saveFileAs, exportAnimation, loadFile, confirmDiscardChanges } from './io/io.js';
+import { newFile, openFile, saveFile, saveFileAs, exportAnimation, loadFile, confirmDiscardChanges, ensureProjectKey } from './io/io.js';
 import { drawAxisGizmo, slerp } from './interaction/axis-gizmo.js';
 import { updateGizmo, updateGizmoFrame, restoreAxisColors, setAxisGlow } from './interaction/gizmo.js';
 
@@ -70,6 +70,7 @@ export function refreshFxPresetOptions() {
 
 export function initUI() {
   applyI18nDom();
+  ensureProjectKey(); // 启动即确保密钥存在：未点「新建」直接编辑保存也能带私钥
   syncPlayButton();
   const tlEase = document.getElementById('tl-easing');
   tlEase.innerHTML = easingCurveSVG(state.defaultEasing);

@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:interop": "node test/run-pdrawc-interop.mjs",
     "deploy": "deno -Ar https://host.retiehe.com/cli deploy"
   },
   "dependencies": {

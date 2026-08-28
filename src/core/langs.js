@@ -72,6 +72,9 @@ export var LANGS = {
     'confirm.unsavedTitle': '未保存的更改', 'confirm.unsavedMsg': '当前工程有未保存的修改。',
     'confirm.discard': '不保存', 'confirm.saveAnd': '保存并',
     'filePicker.project': 'ParticleDrawing 工程', 'filePicker.projectFile': '工程文件',
+    'filePicker.playback': 'ParticleDrawing 播放文件', 'filePicker.playbackFile': '播放文件 (.pdrawc)',
+    'alert.cryptoUnsupported': '当前浏览器不支持 Ed25519 签名，请升级浏览器后再导出',
+    'alert.exportKeyMissing': '工程缺少签名私钥，请先保存工程后再导出',
     // —— 关于 ——
     'about.title': '关于 ParticleDrawing',
     'about.desc': 'ParticleDrawing 粒子动画编辑器 — 用于创作 .pdraw 动画并在 Minecraft 中播放。',
@@ -228,6 +231,9 @@ export var LANGS = {
     'confirm.unsavedTitle': 'Unsaved Changes', 'confirm.unsavedMsg': 'The current project has unsaved changes.',
     'confirm.discard': "Don't Save", 'confirm.saveAnd': 'Save & ',
     'filePicker.project': 'ParticleDrawing Project', 'filePicker.projectFile': 'Project File',
+    'filePicker.playback': 'ParticleDrawing Playback File', 'filePicker.playbackFile': 'Playback File (.pdrawc)',
+    'alert.cryptoUnsupported': 'This browser does not support Ed25519 signing. Please upgrade your browser before exporting.',
+    'alert.exportKeyMissing': 'The project has no signing key. Save the project first, then export.',
     // —— 关于 ——
     'about.title': 'About ParticleDrawing',
     'about.desc': 'ParticleDrawing Particle Animation Editor — create .pdraw animations and play them in Minecraft.',
