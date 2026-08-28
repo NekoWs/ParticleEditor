@@ -182,7 +182,8 @@ export function findSetTrackFor(id, prop, comp) {
   const own = findTrackByPr(pr, id);
   if (own && own.m !== 'op') return own;
   const gs = groupMemberIndexCache && groupMemberIndexCache.get(id);
-  if (gs) {
+  if (gs && prop !== 'scl') {
+    // 组 scl 只做成员位置的整体缩放，不覆盖粒子大小（粒子 scl 仍可取函数对象/自身轨道）
     for (const gname of gs) {
       const tr = findTrackByPr(pr, 'g:' + gname);
       if (tr && tr.m !== 'op') return tr;
@@ -406,11 +407,12 @@ export function particlePosition(p, T) {
 }
 
 // 粒子某分量值：基础 → set 覆盖 → op 增量
+// 注意：scl 不走 compOpDelta——组 scl op 只作用于成员位置的整体缩放，不缩放粒子大小。
 export function componentValueAt(p, prop, comp, T) {
   let v = baseComponent(p, prop, comp);
   const tr = findSetTrackFor(p.id, prop, comp);
   if (tr && tr.kf.length > 0) v = trackValueAt(tr, T, v);
-  v += compOpDelta(p, prop, comp, T);
+  if (prop !== 'scl') v += compOpDelta(p, prop, comp, T);
   return v;
 }
 
