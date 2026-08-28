@@ -4,6 +4,16 @@
 
 import { t } from '../core/i18n.js';
 
+export function rgbToHex(r, g, b) {
+  const c = v => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, '0');
+  return '#' + c(r) + c(g) + c(b);
+}
+
+export function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255];
+}
+
 export let uiModalOverlay = null;
 export let uiModalClosePromise = Promise.resolve();
 

@@ -87,7 +87,7 @@ export function enterGrab(clientX, clientY, axis, face) {
   if (fx) {
     pushUndo();
     const startDelta = fxPosDeltaAt(fx.id, Math.round(state.time));
-    const c = [fx.center[0] + startDelta[0], fx.center[1] + startDelta[1], fx.center[2] + startDelta[2]];
+    const c = fxCurrentPos(fx.id, Math.round(state.time));
     const pt = planePointAt(clientX, clientY);
     modal = { type: 'fx-grab', fxId: fx.id, startDelta, centroid: c, axis: axis || null, axisKey: axis, face: face || null, startWorld: pt ? { x: pt.x, z: pt.z } : null, startClient: { x: clientX, y: clientY }, y: c[1], faceStart: null };
     setDragAxisHighlight(modal);
@@ -162,26 +162,19 @@ export function angleInBasis(point, centroid, u, v) {
 
 export function groupRotationValueAt(gname, T) { return rotVectorAt('g:' + gname, T); }
 
-export function groupPosDeltaAt(gname, T) {
+function posDeltaAt(prefix, T) {
   return ['x', 'y', 'z'].map(c => {
-    const tr = findTrackByPr('pos.' + c, 'g:' + gname);
+    const tr = findTrackByPr('pos.' + c, prefix);
     return (tr && tr.m === 'op' && tr.kf.length > 0) ? trackValueAt(tr, T, 0) : 0;
   });
 }
 
-export function fxPosDeltaAt(fxId, T) {
-  return ['x', 'y', 'z'].map(c => {
-    const tr = findTrackByPr('pos.' + c, 'f:' + fxId);
-    return (tr && tr.m === 'op' && tr.kf.length > 0) ? trackValueAt(tr, T, 0) : 0;
-  });
-}
+export function groupPosDeltaAt(gname, T) { return posDeltaAt('g:' + gname, T); }
+export function fxPosDeltaAt(fxId, T) { return posDeltaAt('f:' + fxId, T); }
 
 export function fxRotationValueAt(fxId, T) { return rotVectorAt('f:' + fxId, T); }
 
-export function fxScaleValueAt(fxId, T) {
-  const tr = findTrackByPr('scl.x', 'f:' + fxId);
-  return (tr && tr.kf.length > 0) ? trackValueAt(tr, T, 1) : 1;
-}
+export function fxScaleValueAt(fxId, T) { return fxScaleValuesAt(fxId, T)[0]; }
 
 export function fxScaleValuesAt(fxId, T) {
   return ['x', 'y', 'z'].map(c => {
@@ -190,18 +183,31 @@ export function fxScaleValuesAt(fxId, T) {
   });
 }
 
+// 函数对象当前整体位置 = center + 当前 pos 增量
+export function fxCurrentPos(fxId, T) {
+  const fx = getFunction(fxId);
+  if (!fx) return null;
+  const d = fxPosDeltaAt(fxId, T);
+  return [fx.center[0] + d[0], fx.center[1] + d[1], fx.center[2] + d[2]];
+}
+
+// 旋转轴 → 正对相机平面的一组正交基（用于平面求交 + 角度测量）
+export function rotationBasis(axis) {
+  const axArr = AXIS_VECTORS[axis] || AXIS_VECTORS.Y;
+  const a = new THREE.Vector3(axArr[0], axArr[1], axArr[2]);
+  let u = new THREE.Vector3(1, 0, 0);
+  if (Math.abs(a.dot(u)) > 0.9) u.set(0, 1, 0);
+  u.crossVectors(a, u).normalize();
+  const v = new THREE.Vector3().crossVectors(a, u).normalize();
+  return { axArr, u, v };
+}
+
 export function enterRotate(clientX, clientY, axis) {
   const fx = getFunction(state.selectedFunction);
   if (fx) {
     pushUndo();
-    const d = fxPosDeltaAt(fx.id, Math.round(state.time));
-    const c = [fx.center[0] + d[0], fx.center[1] + d[1], fx.center[2] + d[2]];
-    const axArr = AXIS_VECTORS[axis] || AXIS_VECTORS.Y;
-    const a = new THREE.Vector3(axArr[0], axArr[1], axArr[2]);
-    let u = new THREE.Vector3(1, 0, 0);
-    if (Math.abs(a.dot(u)) > 0.9) u.set(0, 1, 0);
-    u.crossVectors(a, u).normalize();
-    const v = new THREE.Vector3().crossVectors(a, u).normalize();
+    const c = fxCurrentPos(fx.id, Math.round(state.time));
+    const { axArr, u, v } = rotationBasis(axis);
     const p0 = rayOnAxisPlane(clientX, clientY, axArr, c);
     const startAngle = p0 ? angleInBasis(p0, c, u, v) : 0;
     const startRot = fxRotationValueAt(fx.id, Math.round(state.time));
@@ -220,12 +226,7 @@ export function enterRotate(clientX, clientY, axis) {
   if (gname && selectionHasDerived()) state.captureKeyframes = true;
   pushUndo();
   const c = gname ? groupCurrentCentroid(gname, 'pos') : selectionCentroid();
-  const axArr = AXIS_VECTORS[axis] || AXIS_VECTORS.Y;
-  const a = new THREE.Vector3(axArr[0], axArr[1], axArr[2]);
-  let u = new THREE.Vector3(1, 0, 0);
-  if (Math.abs(a.dot(u)) > 0.9) u.set(0, 1, 0);
-  u.crossVectors(a, u).normalize();
-  const v = new THREE.Vector3().crossVectors(a, u).normalize();
+  const { axArr, u, v } = rotationBasis(axis);
   const p0 = rayOnAxisPlane(clientX, clientY, axArr, c);
   const startAngle = p0 ? angleInBasis(p0, c, u, v) : 0;
   const origins = new Map();
@@ -308,8 +309,7 @@ export function enterViewRotate(clientX, clientY) {
   const fx = getFunction(state.selectedFunction);
   if (fx) {
     pushUndo();
-    const d = fxPosDeltaAt(fx.id, Math.round(state.time));
-    const c = [fx.center[0] + d[0], fx.center[1] + d[1], fx.center[2] + d[2]];
+    const c = fxCurrentPos(fx.id, Math.round(state.time));
     const startRot = fxRotationValueAt(fx.id, Math.round(state.time));
     modal = { type: 'fx-view-rotate', fxId: fx.id, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
     controls.enabled = false;

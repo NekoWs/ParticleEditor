@@ -13,7 +13,7 @@ import { updateTimeUI } from '../main.js';
 import { rebuildFunctionObject } from '../core/generators.js';
 import { markTextureChanged, refreshTexturePanel } from '../ui/texture-editor.js';
 import { buildModal, modalPrompt, modalAlert } from '../ui/ui.js';
-import { generateKeyPair, KEY_ALG, base64ToBytes } from '../core/crypto.js';
+import { generateKeyPair, KEY_ALG, base64ToBytes, bytesToBase64 } from '../core/crypto.js';
 import { buildPdrawc } from '../core/pdrawc.js';
 
 export const r3 = x => Math.round(x * 1000) / 1000;
@@ -55,14 +55,11 @@ export async function textureToBase64(t) {
   ctx.putImageData(new ImageData(t.data.slice(), t.width, t.height), 0, 0);
   const blob = await new Promise(r => cnv.toBlob(r, 'image/png'));
   const buf = await blob.arrayBuffer();
-  let bin = ''; for (const b of new Uint8Array(buf)) bin += String.fromCharCode(b);
-  return btoa(bin);
+  return bytesToBase64(new Uint8Array(buf));
 }
 export function base64ToTexture(name, b64) {
   return new Promise((resolve, reject) => {
-    const bin = atob(b64);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const bytes = base64ToBytes(b64);
     const blob = new Blob([bytes], { type: 'image/png' });
     createImageBitmap(blob).then(async bmp => {
       const w = bmp.width, h = bmp.height;

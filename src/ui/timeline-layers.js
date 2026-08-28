@@ -20,7 +20,7 @@ import { saveWorkspaceState } from './blocks-ui.js';
 import { resize, applyTimeChange } from '../main.js';
 import { pushUndo } from '../state/undo.js';
 import { refreshTimelineTree, tlTreeFlatRows, TL_TREE_ROW_H } from './timeline-tree.js';
-import { openKeyframeEditor, showContextMenu } from './tree.js';
+import { openKeyframeEditor, showContextMenu, drawDiamond } from './tree.js';
 
 export const tlLayerState = { scroll: 0, drag: null, hit: [], selectedKf: null };
 const TL_KF_HIT_PX = 6;
@@ -68,16 +68,7 @@ function barRowFor(row) {
   return { kind: 'fx', fx: row.fx };
 }
 
-function drawDiamond(ctx, x, cy, color) {
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.moveTo(x, cy - 4);
-  ctx.lineTo(x + 4, cy);
-  ctx.lineTo(x, cy + 4);
-  ctx.lineTo(x - 4, cy);
-  ctx.closePath();
-  ctx.fill();
-}
+
 
 // 0t 默认关键帧（轨道创建时写入的基线 kf0）不画菱形
 function isDefaultKf(tr, id, prop, comp, kf) {
@@ -94,7 +85,7 @@ function drawKfsForTrack(ctx, tr, id, prop, comp, w, cy, color, X) {
     const pr = compPr(prop, comp);
     const sel = tlLayerState.selectedKf && tlLayerState.selectedKf.id === id &&
       tlLayerState.selectedKf.pr === pr && tlLayerState.selectedKf.tick === kf[0];
-    drawDiamond(ctx, x, cy, sel ? '#5b9dff' : color);
+    drawDiamond(ctx, x, cy, 4, sel ? '#5b9dff' : color);
     laneKfHits.push({ x, y: cy, id, pr, tick: kf[0], kf, tr });
   }
 }
@@ -121,7 +112,7 @@ function drawVarLane(ctx, row, y, w, rowH, X) {
   for (const kf of kfs) {
     const x = X(kf[0]);
     if (x < -6 || x > w + 6) continue;
-    drawDiamond(ctx, x, cy, '#ffcc55');
+    drawDiamond(ctx, x, cy, 4, '#ffcc55');
   }
 }
 

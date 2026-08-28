@@ -38,6 +38,16 @@ export function baseValueFor(id, prop, comp) {
   return p ? baseComponent(p, prop, comp) : 0;
 }
 
+// 在关键帧数组中按 tick 插入/更新，保持按时间排序（返回该关键帧）。
+export function upsertKeyframe(kfArr, tick, value, easing) {
+  const kf = kfArr.find(k => k[0] === tick);
+  if (kf) { kf[1] = value; return kf; }
+  const nk = [tick, value, easing];
+  kfArr.push(nk);
+  kfArr.sort((a, b) => a[0] - b[0]);
+  return nk;
+}
+
 // 写某 id 在某分量的关键帧（标量值）
 export function setComponentKeyframe(id, prop, comp, time, value, mode) {
   const pr = compPr(prop, comp);
@@ -56,9 +66,7 @@ export function setComponentKeyframe(id, prop, comp, time, value, mode) {
     tr.kf = tr.kf.filter(k => k[0] !== time);
     return;
   }
-  let kf = tr.kf.find(k => k[0] === time);
-  if (!kf) { kf = [time, value, state.defaultEasing]; tr.kf.push(kf); tr.kf.sort((a, b) => a[0] - b[0]); }
-  else kf[1] = value;
+  upsertKeyframe(tr.kf, time, value, state.defaultEasing);
 }
 
 // 为多个粒子在同一时间写统一值（每分量独立轨道）
@@ -204,14 +212,7 @@ export function setComponentValue(id, prop, comp, time, value) {
     tr = { pr, m: 'set', ids: [id], kf: [[0, baseValueFor(id, prop, comp), state.defaultEasing]] };
     state.tracks.push(tr);
   }
-  let kf = tr.kf.find(k => k[0] === time);
-  if (!kf) {
-    const cur = componentValueAt(p, prop, comp, time);
-    kf = [time, cur, state.defaultEasing];
-    tr.kf.push(kf);
-    tr.kf.sort((a, b) => a[0] - b[0]);
-  }
-  kf[1] = value;
+  upsertKeyframe(tr.kf, time, value, state.defaultEasing);
   if (time === 0 && !isDerivedParticle(p)) {
     if (prop === 'pos') p.pos[COMP_INDEX[comp]] = value;
     else if (prop === 'col') p.color[COMP_INDEX[comp]] = value;
@@ -234,14 +235,7 @@ export function editComponentValue(id, prop, comp, time, value) {
     tr = { pr, m: defaultMode, ids: [id], kf: [[0, base, state.defaultEasing]] };
     state.tracks.push(tr);
   }
-  let kf = tr.kf.find(k => k[0] === time);
-  if (!kf) {
-    const cur = targetComponentValue(id, prop, comp, time);
-    kf = [time, cur, state.defaultEasing];
-    tr.kf.push(kf);
-    tr.kf.sort((a, b) => a[0] - b[0]);
-  }
-  kf[1] = tr.m === 'op' ? (value - baseValueFor(id, prop, comp)) : value;
+  upsertKeyframe(tr.kf, time, tr.m === 'op' ? (value - baseValueFor(id, prop, comp)) : value, state.defaultEasing);
   const p = getParticle(id);
   if (p && time === 0 && !isDerivedParticle(p)) {
     if (prop === 'pos') p.pos[COMP_INDEX[comp]] = value;
@@ -287,41 +281,35 @@ export function removeKeyframe(id, pr, t) {
  * 组 / 函数对象：向量级便捷写入（内部拆分量）
  * ======================================================================= */
 
-export function setGroupTrackValue(groupName, prop, mode, time, values) {
+function setTrackValues(prefix, prop, mode, time, values) {
   const comps = TRACK_COMPS[prop];
-  comps.forEach((comp, i) => setComponentKeyframe('g:' + groupName, prop, comp, time, values[i], mode));
+  comps.forEach((comp, i) => setComponentKeyframe(prefix, prop, comp, time, values[i], mode));
   rebuildPoints();
   refreshParticleTree();
 }
 
-export function setGroupTrackMode(groupName, prop, mode) {
+function setTrackMode(prefix, prop, mode) {
   pushUndo();
   const comps = TRACK_COMPS[prop];
   for (const comp of comps) {
-    const tr = findTrackByPr(compPr(prop, comp), 'g:' + groupName);
+    const tr = findTrackByPr(compPr(prop, comp), prefix);
     if (tr) tr.m = mode;
   }
   rebuildPoints();
   refreshParticleTree();
 }
+
+export function setGroupTrackValue(groupName, prop, mode, time, values) {
+  setTrackValues('g:' + groupName, prop, mode, time, values);
+}
+
+export function setGroupTrackMode(groupName, prop, mode) { setTrackMode('g:' + groupName, prop, mode); }
 
 export function setFunctionTrackValue(fxId, prop, mode, time, values) {
-  const comps = TRACK_COMPS[prop];
-  comps.forEach((comp, i) => setComponentKeyframe('f:' + fxId, prop, comp, time, values[i], mode));
-  rebuildPoints();
-  refreshParticleTree();
+  setTrackValues('f:' + fxId, prop, mode, time, values);
 }
 
-export function setFunctionTrackMode(fxId, prop, mode) {
-  pushUndo();
-  const comps = TRACK_COMPS[prop];
-  for (const comp of comps) {
-    const tr = findTrackByPr(compPr(prop, comp), 'f:' + fxId);
-    if (tr) tr.m = mode;
-  }
-  rebuildPoints();
-  refreshParticleTree();
-}
+export function setFunctionTrackMode(fxId, prop, mode) { setTrackMode('f:' + fxId, prop, mode); }
 
 /* =========================================================================
  * 粒子 / 组 操作

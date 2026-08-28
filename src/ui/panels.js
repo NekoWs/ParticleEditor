@@ -12,7 +12,7 @@ import { state, FUNCTION_PRESETS, getFunction, isDerivedParticle } from '../core
 import { currentVisual } from '../core/animation.js';
 import { currentSelected, selectedGroupName, fxPosDeltaAt, fxScaleValuesAt } from '../interaction/interaction.js';
 import { groupCurrentCentroid, refreshParticleTree } from './tree.js';
-import { modalAlert } from './ui.js';
+import { modalAlert, rgbToHex, hexToRgb } from './ui.js';
 import { varKfValue } from '../core/easing.js';
 import { applyPresetBuild, rebuildFunctionObject } from '../core/generators.js';
 import { openBlockDrawer } from './blocks-ui.js';
@@ -118,15 +118,7 @@ export function updatePropPanel() {
   setPos('prop-posz', pos[2].toFixed(2), zSame);
 }
 
-export function rgbToHex(r, g, b) {
-  const c = v => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, '0');
-  return '#' + c(r) + c(g) + c(b);
-}
-
-export function hexToRgb(hex) {
-  const n = parseInt(hex.slice(1), 16);
-  return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255];
-}
+export { rgbToHex, hexToRgb };
 
 /* =========================================================================
  * 时间轴（底部：仅播放进度）

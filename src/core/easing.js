@@ -10,15 +10,21 @@
 
 import { _et, _etf } from './i18n.js';
 import { EASINGS } from './constants.js';
+export function cubicBezierX(t, x1, x2) {
+  const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx;
+  return ((ax * t + bx) * t + cx) * t;
+}
+export function cubicBezierY(t, y1, y2) {
+  const cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
+  return ((ay * t + by) * t + cy) * t;
+}
 export function cubicBezier(t, x1, y1, x2, y2) {
   if (x1 === y1 && x2 === y2) return t; // 对角贝塞尔（含 LINEAR）即线性，避免牛顿迭代浮点误差
   const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx;
-  const cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
-  const xFor = s => ((ax * s + bx) * s + cx) * s;
   const dxFor = s => (3 * ax * s + 2 * bx) * s + cx;
   let s = t;
-  for (let i = 0; i < 8; i++) { const e = xFor(s) - t; if (Math.abs(e) < 1e-6) break; s -= e / dxFor(s); }
-  return ((ay * s + by) * s + cy) * s;
+  for (let i = 0; i < 8; i++) { const e = cubicBezierX(s, x1, x2) - t; if (Math.abs(e) < 1e-6) break; s -= e / dxFor(s); }
+  return cubicBezierY(s, y1, y2);
 }
 
 export const EASE_CACHE_Q = 1000; // t 量化精度（1/1000，视觉无感，用于缓存去重）

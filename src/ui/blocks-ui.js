@@ -7,7 +7,7 @@
 import { t, tf, _etf } from '../core/i18n.js';
 import { state, getFunction } from '../core/constants.js';
 import { ATTR_NAMES } from '../core/easing.js';
-import { modalAlert } from './ui.js';
+import { modalAlert, rgbToHex, hexToRgb } from './ui.js';
 import { T_SCALAR, T_VEC, T_MAT, T_ANY, FUNC_BLOCKS, STMT_BLOCKS, PALETTE_GROUPS, OP_SYMBOLS, OP_LABELS, collectTemps, codeToStatements, statementsToCode, exprType, typeAccepts, fmtNum } from '../core/blocks.js';
 import { makeFloatWindow } from './float-window.js';
 import { pushUndo, cloneVars } from '../state/undo.js';
@@ -361,13 +361,9 @@ export function renameRefsInStmts(stmts, oldName, newName) {
 }
 export function rgbToHexColor(rNode, gNode, bNode) {
   const v = n => (n && n.kind === 'num') ? Math.round(Math.min(1, Math.max(0, n.value)) * 255) : 255;
-  const c = x => x.toString(16).padStart(2, '0');
-  return '#' + c(v(rNode)) + c(v(gNode)) + c(v(bNode));
+  return rgbToHex(v(rNode), v(gNode), v(bNode));
 }
-export function hexToRgbColor(hex) {
-  const n = parseInt(hex.slice(1), 16);
-  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
-}
+export function hexToRgbColor(hex) { return hexToRgb(hex); }
 
 /* =========================================================================
  * 默认值 / 定位

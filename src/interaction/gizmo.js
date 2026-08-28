@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { state, PLANES, SNAP_STEP, getFunction } from '../core/constants.js';
 import { shiftHeld } from './input-state.js';
 import { camera, renderer, raycaster, pointer, points, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, gizmoAxisHint, AXIS_RING_COLORS, RING_NORMALS, GIZMO_FACE_DEFS, planePulse, setPlanePulse, setWorldAxisVisible, setWorldAxisGlow, resetWorldAxisState } from '../scene/scene.js';
-import { AXIS_COLORS, AXIS_VECTORS, modal, setGizmoHover, selectedGroupName, selectionHasDerived, derivedFxIdFromSelection, fxPosDeltaAt } from './interaction.js';
+import { AXIS_COLORS, AXIS_VECTORS, modal, setGizmoHover, selectedGroupName, selectionHasDerived, derivedFxIdFromSelection, fxCurrentPos, hoverColor } from './interaction.js';
 import { currentVisual } from '../core/animation.js';
 import { groupCurrentCentroid } from '../ui/tree.js';
 export function snapValue(v) {
@@ -45,7 +45,7 @@ export const GIZMO_SCREEN_SCALE = 0.14; // 屏幕恒定大小系数：世界缩�
 export const TRANSFORM_TOOLS = ['move', 'rotate']; // 仅移动/旋转工具显示 gizmo
 export const _gizmoTmp = new THREE.Vector3();
 // 拖拽中选中的控制器高亮：向白色混合 30%
-export function gizmoHl(c) { return new THREE.Color(c).lerp(new THREE.Color(1, 1, 1), 0.3); }
+export function gizmoHl(c) { return hoverColor(c); }
 
 
 export function updateGizmo() {
@@ -59,15 +59,14 @@ export function updateGizmo() {
   const fx = getFunction(state.selectedFunction);
   if (fx) {
     // 函数对象：gizmo 跟随整体位置（center + 当前 pos 增量），随拖动/时间轴移动
-    const d = fxPosDeltaAt(fx.id, state.time);
-    c = [fx.center[0] + d[0], fx.center[1] + d[1], fx.center[2] + d[2]];
+    c = fxCurrentPos(fx.id, state.time);
   } else {
     const gname = selectedGroupName();
     if (gname) c = groupCurrentCentroid(gname, 'pos');
     else if (selectionHasDerived()) {
       // 派生粒子选中：gizmo 显示在所属函数对象中心
       const fxId = derivedFxIdFromSelection();
-      if (fxId) { const f = getFunction(fxId); if (f) { const d = fxPosDeltaAt(fxId, state.time); c = [f.center[0] + d[0], f.center[1] + d[1], f.center[2] + d[2]]; } }
+      if (fxId) c = fxCurrentPos(fxId, state.time);
     } else c = selectionCentroid();
   }
   if (!c) { gizmoGroup.visible = false; return; }

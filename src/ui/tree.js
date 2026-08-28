@@ -199,17 +199,9 @@ export function renderParticleNode(p) {
 // 目标分量值（id 可为 'p0' | 'g:g0' | 'f:fx0'）
 export function targetComponentValue(id, prop, comp, T) {
   const pr = compPr(prop, comp);
-  if (id.startsWith('g:')) {
-    const gname = id.slice(2);
+  if (id.startsWith('g:') || id.startsWith('f:')) {
     const base = baseValueFor(id, prop, comp);
-    const tr = findTrackByPr(pr, 'g:' + gname);
-    if (!tr || tr.kf.length === 0) return base;
-    return tr.m === 'op' ? base + trackValueAt(tr, T, 0) : trackValueAt(tr, T, base);
-  }
-  if (id.startsWith('f:')) {
-    const fxId = id.slice(2);
-    const base = baseValueFor(id, prop, comp);
-    const tr = findTrackByPr(pr, 'f:' + fxId);
+    const tr = findTrackByPr(pr, id);
     if (!tr || tr.kf.length === 0) return base;
     return tr.m === 'op' ? base + trackValueAt(tr, T, 0) : trackValueAt(tr, T, base);
   }

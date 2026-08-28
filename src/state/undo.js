@@ -27,10 +27,17 @@ export function cloneFunctions(fs) {
   }));
 }
 
+function cloneParticles(particles) {
+  return particles.map(p => ({ ...p, color: p.color.slice(), pos: p.pos.slice(), vel: p.vel ? p.vel.slice() : [0, 0, 0] }));
+}
+function cloneTracks(tracks) {
+  return tracks.map(tr => ({ pr: tr.pr, m: tr.m, ids: tr.ids.slice(), kf: tr.kf.map(k => [k[0], k[1], k[2]]) }));
+}
+
 export function snapshot() {
   return {
-    particles: state.particles.map(p => ({ ...p, color: p.color.slice(), pos: p.pos.slice(), vel: p.vel ? p.vel.slice() : [0, 0, 0] })),
-    tracks: state.tracks.map(tr => ({ pr: tr.pr, m: tr.m, ids: tr.ids.slice(), kf: tr.kf.map(k => [k[0], k[1], k[2]]) })),
+    particles: cloneParticles(state.particles),
+    tracks: cloneTracks(state.tracks),
     groups: JSON.parse(JSON.stringify(state.groups)),
     functions: cloneFunctions(state.functions),
     name: state.name,
@@ -42,8 +49,8 @@ export function snapshot() {
 }
 
 export function restore(s) {
-  state.particles = s.particles.map(p => ({ ...p, color: p.color.slice(), pos: p.pos.slice(), vel: p.vel ? p.vel.slice() : [0, 0, 0] }));
-  state.tracks = s.tracks.map(tr => ({ pr: tr.pr, m: tr.m, ids: tr.ids.slice(), kf: tr.kf.map(k => [k[0], k[1], k[2]]) }));
+  state.particles = cloneParticles(s.particles);
+  state.tracks = cloneTracks(s.tracks);
   state.groups = JSON.parse(JSON.stringify(s.groups));
   state.functions = cloneFunctions(s.functions);
   state.name = s.name;

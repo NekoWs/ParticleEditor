@@ -324,6 +324,11 @@ export function rotVectorAt(id, T) {
   });
 }
 
+// 组变换 pivot（优先索引缓存，回退到质心重算）
+export function groupPivot(gname) {
+  return (groupCentroidPosCache && groupCentroidPosCache.get(gname)) || groupCentroidValue(gname, 'pos');
+}
+
 // 组旋转信息（组件/函数对象的 rot + pivot）
 export function groupRotationInfo(p, T) {
   const gs = groupMemberIndexCache && groupMemberIndexCache.get(p.id);
@@ -331,7 +336,7 @@ export function groupRotationInfo(p, T) {
     for (const gname of gs) {
       const rot = rotVectorAt('g:' + gname, T);
       if (rot[0] === 0 && rot[1] === 0 && rot[2] === 0) continue;
-      const pivot = (groupCentroidPosCache && groupCentroidPosCache.get(gname)) || groupCentroidValue(gname, 'pos');
+      const pivot = groupPivot(gname);
       return { rot, pivot };
     }
   }
@@ -375,7 +380,7 @@ export function applyGroupScale(p, value, T) {
     for (const gname of gs) {
       const s = groupScaleAt(gname, T);
       if (s[0] === 1 && s[1] === 1 && s[2] === 1) continue;
-      const pivot = (groupCentroidPosCache && groupCentroidPosCache.get(gname)) || groupCentroidValue(gname, 'pos');
+      const pivot = groupPivot(gname);
       return [
         pivot[0] + (value[0] - pivot[0]) * s[0],
         pivot[1] + (value[1] - pivot[1]) * s[1],

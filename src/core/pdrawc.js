@@ -359,13 +359,17 @@ function readKf(r) {
   return kf;
 }
 
-export async function decodePdrawc(bytes) {
-  const r = new ByteReader(bytes);
+function readMagic(r) {
   const magic = r.bytes(4);
   if (magic[0] !== PDRAWC_MAGIC[0] || magic[1] !== PDRAWC_MAGIC[1] ||
       magic[2] !== PDRAWC_MAGIC[2] || magic[3] !== PDRAWC_MAGIC[3]) {
     throw new Error('pdrawc: bad magic');
   }
+}
+
+export async function decodePdrawc(bytes) {
+  const r = new ByteReader(bytes);
+  readMagic(r);
   const version = r.varint();
   if (version !== 1 && version !== 2) throw new Error('pdrawc: unsupported version');
   const pubKeyBytes = r.bytes(PDRAWC_PUB_LEN);
@@ -466,11 +470,7 @@ export async function decodePdrawc(bytes) {
 /** 从完整 .pdrawc 提取公钥 base64（用于验签）。 */
 export function readPubKeyBase64(bytes) {
   const r = new ByteReader(bytes);
-  const magic = r.bytes(4);
-  if (magic[0] !== PDRAWC_MAGIC[0] || magic[1] !== PDRAWC_MAGIC[1] ||
-      magic[2] !== PDRAWC_MAGIC[2] || magic[3] !== PDRAWC_MAGIC[3]) {
-    throw new Error('pdrawc: bad magic');
-  }
+  readMagic(r);
   r.varint();
   return bytesToBase64(r.bytes(PDRAWC_PUB_LEN));
 }

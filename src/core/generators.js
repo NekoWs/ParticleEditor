@@ -58,6 +58,12 @@ export function getCompiledFn(fx) {
   return fx._compiledFn;
 }
 
+// 变量当前值：有关键帧按 t 插值，否则取 base。
+export function varValueAt(v, t) {
+  const kf = v && v.kf ? v.kf : [];
+  return (kf.length > 0) ? varKfValue(kf, t || 0) : (v && Number.isFinite(v.base) ? v.base : 0);
+}
+
 // 解析变量值数组（按 getVarNames 顺序；关键帧按 t 插值，否则用常数 base），供原生编译函数调用。
 export function resolveVarVals(fx, i, n, t) {
   const constVals = getConstVarVals(fx);
@@ -71,8 +77,7 @@ export function resolveVarVals(fx, i, n, t) {
     if (ATTR_NAMES.includes(name)) throw new Error(_etf('err.varReserved', name));
     const v = vars[name];
     if (!v) throw new Error(_etf('err.unknownVar', name));
-    const kf = v.kf || [];
-    out[k] = (kf.length > 0) ? varKfValue(kf, t0) : (Number.isFinite(v.base) ? v.base : 0);
+    out[k] = varValueAt(v, t0);
   }
   return out;
 }
@@ -84,8 +89,7 @@ export function buildEnv(vars, ctx) {
     if (ATTR_NAMES.includes(name)) throw new Error(_etf('err.varReserved', name));
     const v = vars[name];
     if (!v) throw new Error(_etf('err.unknownVar', name));
-    const kf = v.kf || [];
-    env[name] = (kf.length > 0) ? varKfValue(kf, ctx.t || 0) : (Number.isFinite(v.base) ? v.base : 0);
+    env[name] = varValueAt(v, ctx.t);
   }
   return env;
 }
@@ -269,8 +273,7 @@ export function syncPresetCount(fx) {
   const scope = { i: 0, n: 1, t: 0 };
   for (const name in fx.vars) {
     const v = fx.vars[name];
-    const kf = v.kf || [];
-    scope[name] = (kf.length > 0) ? varKfValue(kf, 0) : (Number.isFinite(v.base) ? v.base : 0);
+    scope[name] = varValueAt(v, 0);
   }
   let count;
   if (preset.countExpr) {

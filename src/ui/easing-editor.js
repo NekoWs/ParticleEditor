@@ -5,7 +5,7 @@
 
 import { t } from '../core/i18n.js';
 import { EASINGS } from '../core/constants.js';
-import { easeVal } from '../core/easing.js';
+import { easeVal, cubicBezierX, cubicBezierY } from '../core/easing.js';
 import { refreshParticleTree } from './tree.js';
 import { refreshFunctionPanel } from './panels.js';
 export function easingToBezier(easing) {
@@ -148,16 +148,6 @@ export function closeEasingEditor() {
   if (!pop || pop.classList.contains('closing')) return;
   pop.classList.add('closing');
   setTimeout(() => pop.remove(), 160); // 等收起动画播完再移除
-}
-
-export function cubicBezierX(t, x1, x2) {
-  const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx;
-  return ((ax * t + bx) * t + cx) * t;
-}
-
-export function cubicBezierY(t, y1, y2) {
-  const cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
-  return ((ay * t + by) * t + cy) * t;
 }
 
 // 绘制区常量：方框 x∈[0,1]（几乎占满宽度），y∈[0,1] 允许溢出到 [EE_Y_LO, EE_Y_HI]
