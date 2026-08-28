@@ -227,9 +227,14 @@ export function makeStatementBlock(s, isChain, chainIndex) {
     el._stmt = s;
     el._dragLabel = s.text || '';
     el._info = s.text || '';
-    const txt = document.createElement('span');
+    const txt = document.createElement('textarea');
     txt.className = 'blk-raw-text';
-    txt.textContent = s.text || '';
+    txt.rows = 1;
+    txt.value = s.text || '';
+    txt.spellcheck = false;
+    txt.addEventListener('pointerdown', e => e.stopPropagation());
+    txt.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); txt.blur(); } });
+    txt.addEventListener('change', () => { s.text = txt.value; refreshCodeEcho(); blockPreview(); });
     el.appendChild(txt);
     return el;
   }
