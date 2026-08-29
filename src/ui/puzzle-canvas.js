@@ -30,7 +30,7 @@ const TEXT_H = 16;
 
 const STMT_PAD_X = 12, STMT_PAD_Y = 7;
 const SLOT_PAD_X = 7, SLOT_PAD_Y = 4;
-const EXPR_PAD_X = 8, EXPR_PAD_Y = 2;
+const EXPR_PAD_X = 8, EXPR_PAD_Y = 3;
 const EXPR_H = 20;
 const BUMP_H = 12, BUMP_X = 14, BUMP_W = 26;
 const HAT_H = 24;
@@ -274,44 +274,62 @@ function layoutSlot(ref, slotType, label, x, y, out, ctx) {
 function inlineFlow(parts, x, y, out, seg, ctx) {
   let cx = x;
   let h = EXPR_H;
+  const children = [];
+  const textSegs = [];
+  const spans = [];
   for (const p of parts) {
+    const start = children.length;
+    let partH = EXPR_H;
     if (p.text != null) {
       const tw = textW(ctx, p.text, FONT);
-      seg.push({ text: p.text, x: cx, y: y + EXPR_H / 2, font: FONT });
+      textSegs.push({ text: p.text, x: cx, y: y, font: FONT });
       cx += tw;
     } else if (p.slot) {
-      const r = layoutSlot(p.slot.ref, p.slot.type, p.slot.label, cx, y, out, ctx);
-      cx += r.w; h = Math.max(h, r.h);
+      const r = layoutSlot(p.slot.ref, p.slot.type, p.slot.label, cx, y, children, ctx);
+      cx += r.w; h = Math.max(h, r.h); partH = r.h;
     } else if (p.op) {
-      out.push({ kind: 'op', shape: 'op', opSlot: p.op, x: cx, y: y + (EXPR_H - OP_H) / 2, w: OP_W, h: OP_H, segments: [{ text: p.op.chain.ops[p.op.index] || '?', x: cx + OP_W / 2, y: y + EXPR_H / 2, font: FONT, align: 'center' }] });
-      cx += OP_W;
+      children.push({ kind: 'op', shape: 'op', opSlot: p.op, x: cx, y, w: OP_W, h: OP_H, segments: [{ text: p.op.chain.ops[p.op.index] || '?', x: cx + OP_W / 2, y: y + OP_H / 2, font: FONT, align: 'center' }] });
+      cx += OP_W; partH = OP_H;
     } else if (p.append) {
-      out.push({ kind: 'append', shape: 'append', chainAppend: p.append, x: cx, y: y + (EXPR_H - OP_H) / 2, w: APPEND_W, h: OP_H, segments: [{ text: '+', x: cx + APPEND_W / 2, y: y + EXPR_H / 2, font: FONT, align: 'center' }] });
-      cx += APPEND_W;
+      children.push({ kind: 'append', shape: 'append', chainAppend: p.append, x: cx, y, w: APPEND_W, h: OP_H, segments: [{ text: '+', x: cx + APPEND_W / 2, y: y + OP_H / 2, font: FONT, align: 'center' }] });
+      cx += APPEND_W; partH = OP_H;
     } else if (p.comp) {
       const label = '.' + p.comp.node.axis;
       const tw = textW(ctx, label, FONT);
-      out.push({ kind: 'comp', shape: 'comp', comp: p.comp, x: cx, y: y, w: tw + 4, h: EXPR_H, segments: [{ text: label, x: cx + 2, y: y + EXPR_H / 2, font: FONT }] });
-      cx += tw + 4;
+      children.push({ kind: 'comp', shape: 'comp', comp: p.comp, x: cx, y, w: tw + 4, h: EXPR_H, segments: [{ text: label, x: cx + 2, y: y + EXPR_H / 2, font: FONT }] });
+      cx += tw + 4; partH = EXPR_H;
     } else if (p.edit) {
       const val = p.edit.value == null ? '' : String(p.edit.value);
       const tw = textW(ctx, val, FONT) + 8;
-      out.push({ kind: 'edit', shape: 'edit', edit: p.edit, x: cx, y: y + (EXPR_H - EDIT_H) / 2, w: tw, h: EDIT_H, segments: [{ text: val, x: cx + 4, y: y + EXPR_H / 2, font: FONT }] });
-      cx += tw;
+      children.push({ kind: 'edit', shape: 'edit', edit: p.edit, x: cx, y, w: tw, h: EDIT_H, segments: [{ text: val, x: cx + 4, y: y + EDIT_H / 2, font: FONT }] });
+      cx += tw; partH = EDIT_H;
     } else if (p.attr) {
       const val = p.attr.stmt.name || '';
       const tw = textW(ctx, val, FONT) + 8;
-      out.push({ kind: 'attr', shape: 'attr', attr: p.attr, x: cx, y: y + (EXPR_H - ATTR_H) / 2, w: tw, h: ATTR_H, segments: [{ text: val, x: cx + 4, y: y + EXPR_H / 2, font: FONT }] });
-      cx += tw;
+      children.push({ kind: 'attr', shape: 'attr', attr: p.attr, x: cx, y, w: tw, h: ATTR_H, segments: [{ text: val, x: cx + 4, y: y + ATTR_H / 2, font: FONT }] });
+      cx += tw; partH = ATTR_H;
     } else if (p.toggle) {
       const tw = textW(ctx, p.toggle.label, FONT) + 16;
-      out.push({ kind: 'toggle', shape: 'toggle', toggle: p.toggle, x: cx, y: y + (EXPR_H - TOGGLE_H) / 2, w: tw, h: TOGGLE_H, segments: [{ text: p.toggle.label, x: cx + 8, y: y + EXPR_H / 2, font: FONT }] });
-      cx += tw;
+      children.push({ kind: 'toggle', shape: 'toggle', toggle: p.toggle, x: cx, y, w: tw, h: TOGGLE_H, segments: [{ text: p.toggle.label, x: cx + 8, y: y + TOGGLE_H / 2, font: FONT }] });
+      cx += tw; partH = TOGGLE_H;
     } else if (p.color) {
-      out.push({ kind: 'color', shape: 'color', color: p.color, x: cx, y: y + (EXPR_H - COLOR_H) / 2, w: COLOR_W, h: COLOR_H, segments: [] });
-      cx += COLOR_W;
+      children.push({ kind: 'color', shape: 'color', color: p.color, x: cx, y, w: COLOR_W, h: COLOR_H, segments: [] });
+      cx += COLOR_W; partH = COLOR_H;
+    }
+    spans.push({ start, end: children.length, h: partH });
+  }
+  // 以整行高度为基准做垂直居中
+  const centerY = y + h / 2;
+  for (const s of textSegs) s.y = centerY;
+  for (const span of spans) {
+    const dy = centerY - (y + span.h / 2);
+    for (let i = span.start; i < span.end; i++) {
+      children[i].y += dy;
+      for (const sg of children[i].segments || []) sg.y += dy;
     }
   }
+  for (const c of children) out.push(c);
+  for (const s of textSegs) seg.push(s);
   return { w: cx - x, h };
 }
 
@@ -882,7 +900,8 @@ function drawExprRegion(ctx, r) {
   ctx.strokeStyle = 'rgba(0,0,0,0.25)';
   ctx.lineWidth = 1;
   ctx.stroke();
-  drawSegments(ctx, r.segments, '#fff');
+  if (S.edit && S.edit.region === r) drawInlineEditContent(ctx, r, S.edit.buffer);
+  else drawSegments(ctx, r.segments, '#fff');
   ctx.restore();
 }
 
@@ -896,7 +915,8 @@ function drawStmtRegion(ctx, r) {
   ctx.strokeStyle = 'rgba(0,0,0,0.25)';
   ctx.lineWidth = 1;
   ctx.stroke();
-  drawSegments(ctx, r.segments, '#fff');
+  if (S.edit && S.edit.region === r) drawInlineEditContent(ctx, r, S.edit.buffer);
+  else drawSegments(ctx, r.segments, '#fff');
   ctx.restore();
 }
 
@@ -949,12 +969,24 @@ function drawAppendRegion(ctx, r) {
   ctx.restore();
 }
 
-function drawEditRegion(ctx, r) {
-  ctx.save();
-  ctx.fillStyle = 'rgba(0,0,0,0.22)';
-  rrPath(ctx, r.x, r.y, r.w, r.h, 4);
-  ctx.fill();
-  drawSegments(ctx, r.segments, '#fff');
+function drawInlineEditContent(ctx, r, text) {
+  const font = (r.segments && r.segments[0] && r.segments[0].font) || FONT;
+  ctx.font = font;
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  const tx = r.x + 4;
+  const ty = r.y + r.h / 2;
+  ctx.fillText(text, tx, ty);
+  if (S.edit && S.edit.region === r) {
+    const tw = ctx.measureText(text).width;
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(tx + tw + 1, r.y + 3);
+    ctx.lineTo(tx + tw + 1, r.y + r.h - 3);
+    ctx.stroke();
+  }
   ctx.beginPath();
   ctx.strokeStyle = 'rgba(255,255,255,0.35)';
   ctx.setLineDash([3, 2]);
@@ -963,6 +995,15 @@ function drawEditRegion(ctx, r) {
   ctx.lineTo(r.x + r.w - 3, r.y + r.h - 2);
   ctx.stroke();
   ctx.setLineDash([]);
+}
+
+function drawEditRegion(ctx, r) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  rrPath(ctx, r.x, r.y, r.w, r.h, 4);
+  ctx.fill();
+  const text = (S.edit && S.edit.region === r) ? S.edit.buffer : ((r.segments && r.segments[0]) ? r.segments[0].text : '');
+  drawInlineEditContent(ctx, r, text);
   ctx.restore();
 }
 
@@ -1156,10 +1197,10 @@ function renderWorkCanvas() {
 
   layoutWorkspace();
   ctx.setTransform(S.dpr * scale, 0, 0, S.dpr * scale, S.dpr * v.x, S.dpr * v.y);
-  for (const r of S.wsRegions) if (r.kind === 'drop') drawRegion(ctx, r, S.dropHover);
   for (const r of S.wsRegions) if (r.kind === 'head') drawRegion(ctx, r, null);
   for (const r of S.wsRegions) if (r.kind !== 'drop' && r.kind !== 'head') drawRegion(ctx, r, null);
-  for (const r of S.wsRegions) if (r.kind === 'drop' && S.dropHover && S.dropHover.region === r) drawDropRegion(ctx, r, S.dropHover);
+  // 可放置区域画在拼图上层，避免被积木遮挡
+  for (const r of S.wsRegions) if (r.kind === 'drop') drawRegion(ctx, r, S.dropHover);
 
   if (S.dropHover && S.dropHover.region && S.dropHover.region.kind !== 'drop') {
     const r = S.dropHover.region;
@@ -1170,7 +1211,8 @@ function renderWorkCanvas() {
   if (S.dropHover && S.dropHover.valid && S.dropHover.region && S.dropHover.region.kind === 'drop' && S.dropHover.previewH) {
     const r = S.dropHover.region;
     const ph = S.dropHover.previewH;
-    const py = r.y + r.h / 2 - ph / 2;
+    // 插入点与落点带上边缘对齐（普通落点带高 10，边界在其中心；空链落点带从其上边缘开始）
+    const py = r.h > 12 ? r.y + r.h / 2 : r.y;
     ctx.save();
     ctx.fillStyle = 'rgba(91,157,255,0.16)';
     ctx.strokeStyle = 'rgba(91,157,255,0.85)';
@@ -1359,7 +1401,8 @@ function hitWorkspace(mx, my, dropMode) {
   const wy = (my - v.y) / v.scale;
 
   if (dropMode) {
-    for (let i = S.wsRegions.length - 1; i >= 0; i--) {
+    // 正向遍历优先命中最内层槽（拖到嵌套表达式内部时进入内部槽，而不是替换整个外层块）
+    for (let i = 0; i < S.wsRegions.length; i++) {
       const r = S.wsRegions[i];
       if ((r.kind === 'slot' || r.kind === 'op' || r.kind === 'append') && contains(r, wx, wy)) return r;
     }
@@ -1430,58 +1473,28 @@ function varToScreenRect(r) {
 
 /* ============================ 编辑浮层 ============================ */
 
-function closeEdit() {
+function beginInlineEdit(region) {
+  if (!region || !region.edit) return;
+  if (S.edit) commitEdit();
+  S.edit = {
+    region,
+    kind: region.edit.kind,
+    buffer: String(region.edit.value == null ? '' : region.edit.value),
+  };
+  puzzleCanvasRender();
+}
+function commitEdit() {
   if (!S.edit) return;
-  const e = S.edit;
-  if (e.el && e.el.parentNode) e.el.parentNode.removeChild(e.el);
+  const edit = S.edit;
   S.edit = null;
+  const ok = edit.region.edit.commit(edit.buffer) !== false;
+  if (ok && H) H.refreshPreview();
+  puzzleCanvasRender();
 }
 function cancelEdit() {
   if (!S.edit) return;
-  closeEdit();
+  S.edit = null;
   puzzleCanvasRender();
-}
-function beginEdit(region, space) {
-  if (!region || !region.edit) return;
-  const e = region.edit;
-  const rect = space === 'var' ? varToScreenRect(region) : worldToScreenRect(region);
-
-  let el;
-  if (e.kind === 'area') {
-    el = document.createElement('textarea');
-    el.className = 'pc-edit-textarea';
-    el.rows = 2;
-  } else {
-    el = document.createElement('input');
-    el.className = 'pc-edit-input';
-    if (e.kind === 'num') { el.type = 'number'; el.step = 'any'; }
-  }
-  el.value = e.value == null ? '' : String(e.value);
-  el.style.left = (rect.left - 2) + 'px';
-  el.style.top = (rect.top - 2) + 'px';
-  el.style.width = Math.max(60, rect.width + 4) + 'px';
-  el.style.height = Math.max(24, rect.height + 4) + 'px';
-  document.body.appendChild(el);
-  el.focus();
-  if (el.select) el.select();
-
-  const finish = (commit) => {
-    if (!S.edit || S.edit.el !== el) return;
-    const val = el.value;
-    let ok = true;
-    if (commit) ok = e.commit(val) !== false;
-    closeEdit();
-    if (ok) { H.refreshPreview(); puzzleCanvasRender(); }
-    else puzzleCanvasRender();
-  };
-  el.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Enter' && e.kind !== 'area') { ev.preventDefault(); finish(true); }
-    else if (ev.key === 'Escape') { ev.preventDefault(); closeEdit(); puzzleCanvasRender(); }
-    else if (ev.key === 'Enter' && e.kind === 'area' && !ev.shiftKey) { ev.preventDefault(); finish(true); }
-    ev.stopPropagation();
-  });
-  el.addEventListener('blur', () => finish(true));
-  S.edit = { el, region };
 }
 
 function openColorEdit(region) {
@@ -1833,6 +1846,7 @@ function endLens() { S.lens = null; renderGhost(); }
 function onPalDown(e) {
   if (!H || !H.getBctx()) return;
   if (e.button !== 0) return;
+  if (S.edit) commitEdit();
   const rect = S.palCanvas.getBoundingClientRect();
   const hit = hitPalette(e.clientX - rect.left, e.clientY - rect.top);
   if (hit && hit.kind === 'pal-item') {
@@ -1844,13 +1858,14 @@ function onPalDown(e) {
 function onWorkDown(e) {
   if (!H || !H.getBctx()) return;
   if (e.button !== 0) return;
+  if (S.edit) commitEdit();
   const rect = S.workCanvas.getBoundingClientRect();
   const mx = e.clientX - rect.left, my = e.clientY - rect.top;
   const ch = S.workCanvas.clientHeight || S.workCanvas.height;
 
   if (my >= ch - VARS_H) {
     const hit = hitVars(mx, my);
-    if (hit && hit.kind === 'edit') { e.preventDefault(); beginEdit(hit, 'var'); return; }
+    if (hit && hit.kind === 'edit') { e.preventDefault(); beginInlineEdit(hit); return; }
     if (hit && hit.kind === 'attr-var') {
       e.preventDefault();
       const r = hit;
@@ -1873,7 +1888,7 @@ function onWorkDown(e) {
   if (hit.kind === 'head' && hit.head.frag) { e.preventDefault(); startFragMove(hit, e); return; }
   if (hit.kind === 'expr') { e.preventDefault(); startExprDrag(hit, e); return; }
   if (hit.kind === 'op') { e.preventDefault(); startOpRemove(hit, e); return; }
-  if (hit.kind === 'edit') { e.preventDefault(); beginEdit(hit, 'work'); return; }
+  if (hit.kind === 'edit') { e.preventDefault(); beginInlineEdit(hit); return; }
   if (hit.kind === 'attr') {
     e.preventDefault();
     if (hit.attr && hit.attr.onClick && hit.attr.onClick()) { H.refreshPreview(); puzzleCanvasRender(); }
@@ -1894,7 +1909,7 @@ function onWorkDown(e) {
     puzzleCanvasRender();
     return;
   }
-  if (hit.kind === 'stmt' && hit.stmt && hit.stmt.kind === 'raw') { e.preventDefault(); beginEdit(hit, 'work'); return; }
+  if (hit.kind === 'stmt' && hit.stmt && hit.stmt.kind === 'raw') { e.preventDefault(); beginInlineEdit(hit); return; }
   if (hit.kind === 'stmt') { e.preventDefault(); startStmtGroupPending(hit, e); return; }
   if (hit.kind === 'blank') { e.preventDefault(); startPan(e); return; }
 }
@@ -1949,7 +1964,7 @@ function onWindowUp(e) {
       S.drag = null;
       S.dropHover = null;
       renderGhost();
-      beginEdit({
+      beginInlineEdit({
         ...region,
         edit: {
           kind: 'num',
@@ -1962,7 +1977,7 @@ function onWindowUp(e) {
             return true;
           },
         },
-      }, 'work');
+      });
       return;
     }
     endDrag(e);
@@ -2057,7 +2072,18 @@ export function initPuzzleCanvas() {
   window.addEventListener('keydown', (ev) => {
     if (!H || !H.getBctx()) return;
     if (S.edit) {
-      if (ev.key === 'Escape') { ev.preventDefault(); cancelEdit(); }
+      ev.preventDefault();
+      if (ev.key === 'Enter') {
+        commitEdit();
+      } else if (ev.key === 'Escape') {
+        cancelEdit();
+      } else if (ev.key === 'Backspace' || ev.key === 'Delete') {
+        S.edit.buffer = S.edit.buffer.slice(0, -1);
+        puzzleCanvasRender();
+      } else if (ev.key.length === 1 && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
+        S.edit.buffer += ev.key;
+        puzzleCanvasRender();
+      }
       return;
     }
     if (ev.ctrlKey && (ev.key === 'z' || ev.key === 'Z')) {
