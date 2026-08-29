@@ -121,9 +121,10 @@ count × {
   seed                      varint：随机种子（有符号截断后按 int 解释）
   duration                  varint：tick
   st                        varint：入场 tick
-  flags                     1 byte：bit0=hasEnt, bit1=hasUV, bit2=fastMath
+  flags                     1 byte：bit0=hasEnt, bit1=hasUV, bit2=fastMath, bit3=hasFuncs
   [ent]                     仅 flags.hasEnt 时存在：见 §3.2
   [uv]                      仅 flags.hasUV 时存在：见 §3.1
+  [funcs]                   仅 flags.hasFuncs 时存在：funcsLen varint + funcs 字节 UTF-8（顶层函数定义）
   varCount                  varint
   varCount × {
     nameLen                 varint

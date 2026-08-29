@@ -161,6 +161,7 @@ export function serializeFunction(fx) {
     vars: serializeVars(fx.vars),
     duration: fx.duration, step: fx.step,
   };
+  if (fx.funcs) o.funcs = fx.funcs;
   if (fx.st) o.st = fx.st;
   if (fx.ent) o.ent = { p: fx.ent.p, d: fx.ent.d != null ? fx.ent.d : 5 };
   if (fx.preset) o.preset = fx.preset;
@@ -175,6 +176,7 @@ export function parseFunction(o) {
     id: o.id, name: o.name || '函数对象', center: (o.center || [0, 0, 0]).slice(0, 3), count: o.count || 30,
     setup: o.setup != null ? String(o.setup) : '',
     process: o.process != null ? String(o.process) : '',
+    funcs: o.funcs != null ? String(o.funcs) : '',
     seed: Number.isInteger(o.seed) ? o.seed : 0,
     vars: parseVars(o.vars),
     duration: o.duration || 0, step: o.step || 5,

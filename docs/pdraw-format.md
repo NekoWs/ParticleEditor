@@ -141,6 +141,7 @@
   "count": 200,                 // 派生粒子采样数
   "setup": "arr = []; ...",     // setup 代码块（对象初始化一次；空字符串省略式写 ""）
   "process": "x = arr[i]; ...", // process 代码块（每粒子每帧）
+  "funcs": "func f(a) { ... }", // 可选，顶层函数定义代码块（script-lang §4；缺省 = ""）
   "seed": 0,                    // 随机种子（整数；rand()/noise 默认使用）
   "vars": {                     // 变量表
     "amp": { "b": 2, "kf": [[0, 2, 3], [20, 4, 3]] }
@@ -160,7 +161,7 @@
 - `vars`：`{ 变量名: { b: 数值基值, kf: [[tick,value,easing],...] } }`。
   当前编辑器使用**数值基值 + 关键帧**模型（不再使用表达式字符串）。
 - 函数对象脚本语法见 [`script-lang-spec.md`](./script-lang-spec.md)。
-- 解析回退：`name→'函数对象'`、`center→[0,0,0]`、`count→30`、`duration→0`、`step→5`、`st→0`、`setup/process→''`、`seed→0`、`fm→false`。
+- 解析回退：`name→'函数对象'`、`center→[0,0,0]`、`count→30`、`duration→0`、`step→5`、`st→0`、`setup/process/funcs→''`、`seed→0`、`fm→false`。
 
 ---
 

@@ -24,14 +24,21 @@ const DT_PER_TICK = 1 / TICKS_PER_SEC;
  * 脚本编译缓存
  * ---------------------------------------------------------------------- */
 
+export function buildScriptSource(setup, process, funcs) {
+  const f = (funcs || '').trim();
+  return (f ? f + '\n' : '') + 'setup {\n' + (setup || '').trim() + '\n}\nprocess {\n' + (process || '').trim() + '\n}\n';
+}
+
 export function getProgram(fx) {
   // 只比较两端源码，避免每次调用拼接整段字符串（getProgram 处于每粒子热路径）。
   const setup = (fx.setup || '').trim();
   const process = (fx.process || '').trim();
-  if (fx._program === undefined || fx._programSrcSetup !== setup || fx._programSrcProcess !== process) {
-    fx._program = parseProgram('setup {\n' + setup + '\n}\nprocess {\n' + process + '\n}\n');
+  const funcs = (fx.funcs || '').trim();
+  if (fx._program === undefined || fx._programSrcSetup !== setup || fx._programSrcProcess !== process || fx._programSrcFuncs !== funcs) {
+    fx._program = parseProgram(buildScriptSource(setup, process, funcs));
     fx._programSrcSetup = setup;
     fx._programSrcProcess = process;
+    fx._programSrcFuncs = funcs;
   }
   return fx._program;
 }
@@ -159,10 +166,11 @@ export function evaluateParticleBase(fx, i, n) {
 }
 
 /* 校验脚本但不改动任何粒子/轨道状态；成功返回 null，失败返回 Error（含行列号）。 */
-export function validateFunctionScript(fx, setupOverride, processOverride) {
+export function validateFunctionScript(fx, setupOverride, processOverride, funcsOverride) {
   const setup = (setupOverride != null ? setupOverride : (fx.setup || '')).trim();
   const process = (processOverride != null ? processOverride : (fx.process || '')).trim();
-  const program = parseProgram('setup {\n' + setup + '\n}\nprocess {\n' + process + '\n}\n');
+  const funcs = (funcsOverride != null ? funcsOverride : (fx.funcs || '')).trim();
+  const program = parseProgram(buildScriptSource(setup, process, funcs));
   const n = Math.max(1, Math.round(fx.count) || 1);
   const objState = createObjectState(fx.seed | 0);
   runSetup(program, objState, { n, t: fx.st || 0, vars: varsAt(fx, fx.st || 0) });
@@ -312,6 +320,7 @@ export function applyPresetBuild(fx) {
   fx.vars = { ...built.vars };
   fx.setup = built.setup || '';
   fx.process = built.process || '';
+  fx.funcs = '';
 }
 
 // 分辨率变量联动 count：改 m/k/cols/rows/turns/ppr 时重算 count=乘积
@@ -351,6 +360,7 @@ export function applyPreset(fx, presetId) {
   fx.vars = { ...built.vars };
   fx.setup = built.setup || '';
   fx.process = built.process || '';
+  fx.funcs = '';
   // 声明了 countVars/countExpr 的预设：采样数按变量联动求值；否则用模板默认值
   if (preset.countExpr || (preset.countVars && preset.countVars.length)) syncPresetCount(fx);
   else fx.count = built.count;
@@ -363,6 +373,7 @@ export function createFunctionObject(presetId) {
     center: [0, 0, 0], count: 30,
     setup: '',
     process: '[x,y,z] = [0, 0, 0];\n[r,g,b,a] = [1,1,1,1];\nglow = 0;\nlight = 0',
+    funcs: '',
     seed: 0,
     vars: {}, duration: 100, step: 5, preset: null, params: null,
     fastMath: false,

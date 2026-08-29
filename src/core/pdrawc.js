@@ -249,9 +249,11 @@ function encodeBody(state, texPngOf) {
     const hasEnt = !!(fx.ent && fx.ent.p);
     const hasUV = !!(fx.uv && fx.uv.texture && texIndex.has(fx.uv.texture));
     const fastMath = !!fx.fastMath;
-    w.u8((hasEnt ? 1 : 0) | (hasUV ? 2 : 0) | (fastMath ? 4 : 0));
+    const hasFuncs = !!(fx.funcs && String(fx.funcs).trim());
+    w.u8((hasEnt ? 1 : 0) | (hasUV ? 2 : 0) | (fastMath ? 4 : 0) | (hasFuncs ? 8 : 0));
     if (hasEnt) writeEnt(w, fx.ent);
     if (hasUV) writeUV(w, fx.uv, texIndex.get(fx.uv.texture));
+    if (hasFuncs) w.str(fx.funcs);
     const vars = Object.entries(fx.vars || {});
     w.varint(vars.length);
     for (const [name, v] of vars) {
@@ -444,6 +446,7 @@ export async function decodePdrawc(bytes) {
     const ent = (flags & 1) ? readEnt(br) : null;
     const uv = (flags & 2) ? readUV(br) : null;
     const fastMath = !!(flags & 4);
+    const funcs = (flags & 8) ? br.str() : '';
     const varCount = br.varint();
     const vars = [];
     for (let j = 0; j < varCount; j++) {
@@ -452,7 +455,7 @@ export async function decodePdrawc(bytes) {
       const kf = readKf(br);
       vars.push({ name, base, kf });
     }
-    functions.push({ center, count, setup, process, seed, duration, st, ent, uv, vars, fastMath });
+    functions.push({ center, count, setup, process, funcs, seed, duration, st, ent, uv, vars, fastMath });
   }
 
   const trackCount = br.varint();
