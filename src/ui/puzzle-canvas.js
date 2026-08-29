@@ -30,13 +30,13 @@ const TEXT_H = 16;
 
 const STMT_PAD_X = 12, STMT_PAD_Y = 7;
 const SLOT_PAD_X = 7, SLOT_PAD_Y = 4;
-const EXPR_PAD_X = 8, EXPR_PAD_Y = 5;
-const EXPR_H = 22;
+const EXPR_PAD_X = 8, EXPR_PAD_Y = 2;
+const EXPR_H = 20;
 const BUMP_H = 12, BUMP_X = 14, BUMP_W = 26;
-const HAT_H = 22;
+const HAT_H = 24;
 const BODY_INDENT = 20;
 const CTL_PAD = 8;
-const CTL_MOUTH = 16;   // 控制流块左侧 C 形开口深度
+const CTL_MOUTH = 0;    // 左侧 C 形开口已按需求移除，子块仍缩进
 const OP_W = 20, OP_H = 18;
 const APPEND_W = 22;
 const COLOR_W = 26, COLOR_H = 18;
@@ -213,16 +213,20 @@ function hexPath(c, x, y, w, h) {
   c.lineTo(x, y + h / 2);
   c.closePath();
 }
-/** 普通语句块：顶部凸起 + 底部凹槽（凹槽由下一块的凸起填补）。 */
-function stmtPath(c, x, y, w, h) {
+/** 普通语句块：顶部凸起 + 底部凹槽；noBump 时去掉顶部凸起（起点块下方第一块）。 */
+function stmtPath(c, x, y, w, h, noBump) {
   const T = BUMP_H, bx = BUMP_X, bw = BUMP_W;
   const bxl = x + bx, bxr = bxl + bw;
   const r = Math.min(10, w / 2, h / 2);
   const top = y, bot = y + h;
   c.beginPath();
-  c.moveTo(bxl + T / 2, top - T);
-  c.arcTo(bxr, top - T, bxr, top, T / 2);
-  c.lineTo(bxr, top);
+  if (noBump) {
+    c.moveTo(x + r, top);
+  } else {
+    c.moveTo(bxl + T / 2, top - T);
+    c.arcTo(bxr, top - T, bxr, top, T / 2);
+    c.lineTo(bxr, top);
+  }
   c.lineTo(x + w - r, top);
   c.arcTo(x + w, top, x + w, top + r, r);
   c.lineTo(x + w, bot - r);
@@ -234,45 +238,15 @@ function stmtPath(c, x, y, w, h) {
   c.arcTo(x, bot, x, bot - r, r);
   c.lineTo(x, top + r);
   c.arcTo(x, top, x + r, top, r);
-  c.lineTo(bxl, top);
-  c.quadraticCurveTo(bxl, top - T, bxl + T / 2, top - T);
+  if (!noBump) {
+    c.lineTo(bxl, top);
+    c.quadraticCurveTo(bxl, top - T, bxl + T / 2, top - T);
+  }
   c.closePath();
 }
-/** hat 起点块：圆头 + 底部凹槽。 */
+/** hat 起点块：圆头，无底部凹槽（避免下方内容溢出）。 */
 function hatPath(c, x, y, w, h) {
-  const T = BUMP_H, bx = BUMP_X, bw = BUMP_W;
-  const bxl = x + bx, bxr = bxl + bw;
-  const r = Math.min(10, w / 2, h / 2);
-  const bot = y + h;
-  c.beginPath();
-  c.moveTo(x + r, y);
-  c.arcTo(x + w, y, x + w, y + r, r);
-  c.lineTo(x + w, bot - r);
-  c.arcTo(x + w, bot, x + w - r, bot, r);
-  c.lineTo(bxr, bot);
-  c.quadraticCurveTo(bxr, bot - T, bxl + bw / 2, bot - T);
-  c.quadraticCurveTo(bxl, bot - T, bxl, bot);
-  c.lineTo(x + r, bot);
-  c.arcTo(x, bot, x, bot - r, r);
-  c.lineTo(x, y + r);
-  c.arcTo(x, y, x + r, y, r);
-  c.closePath();
-}
-/** 控制流 C 形块：左侧挖出开口，子块从开口内缩进。 */
-function ctlPath(c, x, y, w, h) {
-  const d = CTL_MOUTH, m = 14, r = 10;
-  c.beginPath();
-  c.moveTo(x + r, y);
-  c.arcTo(x + w, y, x + w, y + r, r);
-  c.arcTo(x + w, y + h, x + w - r, y + h, r);
-  c.arcTo(x, y + h, x, y + h - r, r);
-  c.lineTo(x, y + h - m);
-  c.lineTo(x + d, y + h - m);
-  c.lineTo(x + d, y + m);
-  c.lineTo(x, y + m);
-  c.lineTo(x, y + r);
-  c.arcTo(x, y, x + r, y, r);
-  c.closePath();
+  rrPath(c, x, y, w, h, Math.min(12, w / 2, h / 2));
 }
 
 /* ============================ 布局：表达式 ============================ */
@@ -309,10 +283,10 @@ function inlineFlow(parts, x, y, out, seg, ctx) {
       const r = layoutSlot(p.slot.ref, p.slot.type, p.slot.label, cx, y, out, ctx);
       cx += r.w; h = Math.max(h, r.h);
     } else if (p.op) {
-      out.push({ kind: 'op', shape: 'op', opSlot: p.op, x: cx, y: y + (EXPR_H - OP_H) / 2, w: OP_W, h: OP_H, segments: [{ text: p.op.chain.ops[p.op.index] || '?', x: cx + OP_W / 2, y: y + EXPR_H / 2, font: FONT }] });
+      out.push({ kind: 'op', shape: 'op', opSlot: p.op, x: cx, y: y + (EXPR_H - OP_H) / 2, w: OP_W, h: OP_H, segments: [{ text: p.op.chain.ops[p.op.index] || '?', x: cx + OP_W / 2, y: y + EXPR_H / 2, font: FONT, align: 'center' }] });
       cx += OP_W;
     } else if (p.append) {
-      out.push({ kind: 'append', shape: 'append', chainAppend: p.append, x: cx, y: y + (EXPR_H - OP_H) / 2, w: APPEND_W, h: OP_H, segments: [{ text: '+', x: cx + APPEND_W / 2, y: y + EXPR_H / 2, font: FONT }] });
+      out.push({ kind: 'append', shape: 'append', chainAppend: p.append, x: cx, y: y + (EXPR_H - OP_H) / 2, w: APPEND_W, h: OP_H, segments: [{ text: '+', x: cx + APPEND_W / 2, y: y + EXPR_H / 2, font: FONT, align: 'center' }] });
       cx += APPEND_W;
     } else if (p.comp) {
       const label = '.' + p.comp.node.axis;
@@ -495,18 +469,18 @@ function stmtParts(s) {
   ];
 }
 
-function layoutSimpleStmt(s, x, y, out, ctx) {
+function layoutSimpleStmt(s, x, y, out, ctx, opts) {
   const seg = [];
   const children = [];
   const flow = inlineFlow(stmtParts(s), x + STMT_PAD_X, y + STMT_PAD_Y, children, seg, ctx);
   const w = flow.w + STMT_PAD_X * 2;
   const h = Math.max(EXPR_H, flow.h + STMT_PAD_Y * 2);
-  out.push({ kind: 'stmt', shape: 'stmt', cls: stmtCls(s), stmt: s, x, y, w, h, segments: seg });
+  out.push({ kind: 'stmt', shape: 'stmt', cls: stmtCls(s), stmt: s, x, y, w, h, segments: seg, noBump: !!(opts && opts.noBump) });
   for (const c of children) out.push(c);
   return { w, h };
 }
 
-function layoutBigStmt(s, x, y, out, ctx) {
+function layoutBigStmt(s, x, y, out, ctx, opts) {
   const seg = [];
   const children = [];
   const head = t(STMT_BLOCKS[s.kind].label);
@@ -530,7 +504,7 @@ function layoutBigStmt(s, x, y, out, ctx) {
   for (const r of rows) {
     seg.push({ text: r.lab, x: r.lx, y: r.y + EXPR_H / 2, font: FONT });
   }
-  out.push({ kind: 'stmt', shape: 'stmt', cls: stmtCls(s), stmt: s, x, y, w, h, segments: seg });
+  out.push({ kind: 'stmt', shape: 'stmt', cls: stmtCls(s), stmt: s, x, y, w, h, segments: seg, noBump: !!(opts && opts.noBump) });
   for (const c of children) out.push(c);
   return { w, h };
 }
@@ -603,7 +577,7 @@ function layoutBody(list, bx, by, out, ctx, ref) {
   }
   for (let i = 0; i < arr.length; i++) {
     out.push(dropRegion(ref, i, bx, cy - 5, 200, 10));
-    const d = layoutStmt(arr[i], bx, cy, out, ctx);
+    const d = layoutStmt(arr[i], bx, cy, out, ctx, { noBump: i === 0 });
     maxW = Math.max(maxW, d.w);
     cy += d.h;
   }
@@ -611,18 +585,18 @@ function layoutBody(list, bx, by, out, ctx, ref) {
   return { w: maxW, h: cy - by };
 }
 
-function layoutSimpleCtl(s, x, y, out, ctx) {
+function layoutSimpleCtl(s, x, y, out, ctx, opts) {
   const seg = [];
   const children = [];
   const flow = inlineFlow(ctlHeaderParts(s), x + STMT_PAD_X, y + STMT_PAD_Y, children, seg, ctx);
   const w = flow.w + STMT_PAD_X * 2;
   const h = Math.max(EXPR_H, flow.h + STMT_PAD_Y * 2);
-  out.push({ kind: 'stmt', shape: 'stmt', cls: 'blk-ctl', stmt: s, x, y, w, h, segments: seg });
+  out.push({ kind: 'stmt', shape: 'stmt', cls: 'blk-ctl', stmt: s, x, y, w, h, segments: seg, noBump: !!(opts && opts.noBump) });
   for (const c of children) out.push(c);
   return { w, h };
 }
 
-function layoutCtlStmt(s, x, y, out, ctx) {
+function layoutCtlStmt(s, x, y, out, ctx, opts) {
   const seg = [];
   const children = [];
   const hx = x + CTL_MOUTH + CTL_PAD;
@@ -668,18 +642,18 @@ function layoutCtlStmt(s, x, y, out, ctx) {
   contentW = Math.max(contentW, bodyW + BODY_INDENT);
   const w = contentW + CTL_PAD * 2 + CTL_MOUTH;
   const h = (tailY - y) + CTL_PAD;
-  out.push({ kind: 'stmt', shape: 'ctl', cls: 'blk-ctl', stmt: s, x, y, w, h, segments: seg });
+  out.push({ kind: 'stmt', shape: 'stmt', cls: 'blk-ctl', stmt: s, x, y, w, h, segments: seg, noBump: !!(opts && opts.noBump) });
   for (const c of children) out.push(c);
   return { w, h };
 }
 
-function layoutStmt(s, x, y, out, ctx) {
+function layoutStmt(s, x, y, out, ctx, opts) {
   if (s.kind === 'raw') return layoutRawStmt(s, x, y, out, ctx);
-  if (CTL_KINDS.has(s.kind)) return layoutCtlStmt(s, x, y, out, ctx);
-  if (SIMPLE_CTL.has(s.kind)) return layoutSimpleCtl(s, x, y, out, ctx);
-  if (s.kind === 'col' || s.kind === 'glow') return layoutSimpleStmt(s, x, y, out, ctx);
-  if (BIG_BLOCKS[s.kind]) return layoutBigStmt(s, x, y, out, ctx);
-  return layoutSimpleStmt(s, x, y, out, ctx);
+  if (CTL_KINDS.has(s.kind)) return layoutCtlStmt(s, x, y, out, ctx, opts);
+  if (SIMPLE_CTL.has(s.kind)) return layoutSimpleCtl(s, x, y, out, ctx, opts);
+  if (s.kind === 'col' || s.kind === 'glow') return layoutSimpleStmt(s, x, y, out, ctx, opts);
+  if (BIG_BLOCKS[s.kind]) return layoutBigStmt(s, x, y, out, ctx, opts);
+  return layoutSimpleStmt(s, x, y, out, ctx, opts);
 }
 
 /* ============================ 布局：链 / 工作区 ============================ */
@@ -688,12 +662,13 @@ function layoutChain(arr, x, y, out, ctx, opts) {
   const headH = HAT_H;
   let cy = y + headH;
   let stackW = 0;
-  for (const s of arr) {
-    const d = layoutStmt(s, x, cy, out, ctx);
+  for (let i = 0; i < arr.length; i++) {
+    const d = layoutStmt(arr[i], x, cy, out, ctx, { noBump: i === 0 });
     stackW = Math.max(stackW, d.w);
     cy += d.h;
   }
-  const headW = Math.max(opts.titleW || 60, stackW);
+  const titleW = textW(ctx, opts.title, FONT) + 28;
+  const headW = Math.max(titleW, stackW, 60);
   out.push({
     kind: 'head', shape: 'hat', head: opts.head, cls: opts.frag ? 'blk-frag' : 'blk-start',
     x, y, w: headW, h: headH,
@@ -881,7 +856,7 @@ function drawSegments(ctx, segs, color) {
   for (const s of segs || []) {
     ctx.font = s.font || FONT;
     ctx.fillStyle = color || '#fff';
-    ctx.textAlign = 'left';
+    ctx.textAlign = s.align || 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText(s.text, s.x, s.y);
   }
@@ -907,9 +882,6 @@ function drawExprRegion(ctx, r) {
   ctx.strokeStyle = 'rgba(0,0,0,0.25)';
   ctx.lineWidth = 1;
   ctx.stroke();
-  ctx.fillStyle = 'rgba(255,255,255,0.16)';
-  rrPath(ctx, r.x + 1, r.y + 1, r.w - 2, Math.min(5, r.h / 2), 4);
-  ctx.fill();
   drawSegments(ctx, r.segments, '#fff');
   ctx.restore();
 }
@@ -919,17 +891,11 @@ function drawStmtRegion(ctx, r) {
   ctx.save();
   ctx.fillStyle = color;
   if (r.shape === 'raw') rrPath(ctx, r.x, r.y, r.w, r.h, 6);
-  else if (r.shape === 'ctl') ctlPath(ctx, r.x, r.y, r.w, r.h);
-  else stmtPath(ctx, r.x, r.y, r.w, r.h);
+  else stmtPath(ctx, r.x, r.y, r.w, r.h, !!r.noBump);
   ctx.fill();
   ctx.strokeStyle = 'rgba(0,0,0,0.25)';
   ctx.lineWidth = 1;
   ctx.stroke();
-  ctx.fillStyle = 'rgba(255,255,255,0.14)';
-  if (r.shape === 'stmt') rrPath(ctx, r.x + 3, r.y + 3, r.w - 6, 4, 2);
-  else if (r.shape === 'ctl') rrPath(ctx, r.x + CTL_MOUTH + 2, r.y + 2, r.w - CTL_MOUTH - 4, 4, 2);
-  else rrPath(ctx, r.x + 2, r.y + 1, r.w - 4, 3, 2);
-  ctx.fill();
   drawSegments(ctx, r.segments, '#fff');
   ctx.restore();
 }
@@ -1118,8 +1084,7 @@ function drawPalItemRegion(ctx, r) {
     ctx.strokeStyle = 'rgba(0,0,0,0.25)';
     ctx.lineWidth = 1;
     ctx.stroke();
-    const tw = textW(ctx, item.op, FONT);
-    drawSegments(ctx, [{ text: item.op, x: r.x + r.w / 2 - tw / 2 + 4, y: r.y + r.h / 2, font: FONT }], '#fff');
+    drawSegments(ctx, [{ text: item.op, x: r.x + r.w / 2, y: r.y + r.h / 2, font: FONT, align: 'center' }], '#fff');
     ctx.restore();
     return;
   }
@@ -1199,6 +1164,21 @@ function renderWorkCanvas() {
   if (S.dropHover && S.dropHover.region && S.dropHover.region.kind !== 'drop') {
     const r = S.dropHover.region;
     drawHighlight(ctx, r, S.dropHover.valid ? 'rgba(255,255,255,0.85)' : 'rgba(255,107,107,0.9)', 1 / scale);
+  }
+
+  // Scratch 式落点预览：在有效语句落点处画一个占位块
+  if (S.dropHover && S.dropHover.valid && S.dropHover.region && S.dropHover.region.kind === 'drop' && S.dropHover.previewH) {
+    const r = S.dropHover.region;
+    const ph = S.dropHover.previewH;
+    const py = r.y + r.h / 2 - ph / 2;
+    ctx.save();
+    ctx.fillStyle = 'rgba(91,157,255,0.16)';
+    ctx.strokeStyle = 'rgba(91,157,255,0.85)';
+    ctx.lineWidth = 1.5 / scale;
+    rrPath(ctx, r.x, py, Math.max(r.w, 120), ph, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
   }
 
   renderVars(ctx, cw, ch, th);
@@ -1319,8 +1299,7 @@ function renderGhost() {
     ctx.fillStyle = blockColor('blk-math');
     capsulePath(ctx, 0, 0, tw, EXPR_H);
     ctx.fill();
-    const optw = textW(ctx, op, FONT);
-    drawSegments(ctx, [{ text: op, x: tw / 2 - optw / 2 + 4, y: EXPR_H / 2, font: FONT }], '#fff');
+    drawSegments(ctx, [{ text: op, x: tw / 2, y: EXPR_H / 2, font: FONT, align: 'center' }], '#fff');
   } else if (d.source.type === 'expr') {
     const tmp = [];
     layoutExpr(d.source.node, 0, 0, tmp, ctx);
@@ -1397,6 +1376,21 @@ function hitWorkspace(mx, my, dropMode) {
     if (contains(r, wx, wy)) return r;
   }
   return { kind: 'blank', wx, wy };
+}
+
+function dragPreviewH(source) {
+  if (!S.workCtx) return 20;
+  if (source.type === 'palette' && source.stmt) {
+    try { return Math.max(20, layoutStmtHeight(H.newStmtNode(source.stmtKind), S.workCtx)); } catch (e) { return 20; }
+  }
+  if (source.type === 'stmt-group' && Array.isArray(source.group)) {
+    let h = 0;
+    for (const s of source.group) {
+      try { h += layoutStmtHeight(s, S.workCtx); } catch (e) { h += 20; }
+    }
+    return Math.max(20, h);
+  }
+  return 20;
 }
 
 function nearestDropWorld(gx, gy, scale) {
@@ -1538,7 +1532,7 @@ function startExprDrag(r, e) {
   const rect = worldToScreenRect(r);
   S.drag = {
     mode: 'ghost',
-    source: { type: 'expr', node: r.node, detach: H.findExprDetach(r.node) },
+    source: { type: 'expr', node: r.node, region: r, detach: H.findExprDetach(r.node) },
     startX: e.clientX, startY: e.clientY, curX: e.clientX, curY: e.clientY,
     grabDx: e.clientX - rect.left, grabDy: e.clientY - rect.top,
     ghostScale: H.getBctx().layout.view.scale,
@@ -1638,7 +1632,7 @@ function computeDropTarget(e) {
     if (nearest) {
       d.target = { kind: 'stmt-drop', drop: nearest.drop };
       d.valid = src.type === 'palette' ? src.stmt : true;
-      S.dropHover = { region: nearest, valid: d.valid };
+      S.dropHover = { region: nearest, valid: d.valid, previewH: dragPreviewH(src) };
       return;
     }
   }
@@ -1685,6 +1679,7 @@ function updateDrag(e) {
     d.source.type = 'stmt-group';
     d.source.group = group || [];
     d.mode = 'ghost';
+    pruneEmptyFrags();
     puzzleCanvasRender();
     renderGhost();
     return;
@@ -1695,6 +1690,12 @@ function updateDrag(e) {
     renderGhost();
     puzzleCanvasRender();
   }
+}
+
+function pruneEmptyFrags() {
+  const bctx = H && H.getBctx();
+  if (!bctx || !Array.isArray(bctx.frags)) return;
+  bctx.frags = bctx.frags.filter(f => f && Array.isArray(f.stmts) && f.stmts.length > 0);
 }
 
 function endDrag(e) {
@@ -1713,6 +1714,7 @@ function endDrag(e) {
   if (target.kind === 'delete') {
     if (source.type === 'expr') { H.pushUndo(); if (source.detach) source.detach(); H.refreshPreview(); }
     else if (source.type === 'op-remove') { H.pushUndo(); H.removeChainOp(source.chain, source.index); H.refreshPreview(); }
+    else if (source.type === 'stmt-group') { pruneEmptyFrags(); }
     puzzleCanvasRender();
     return;
   }
@@ -1775,6 +1777,7 @@ function endDrag(e) {
       if (target.drop.frag) target.drop.frag.stmts.splice(target.drop.index, 0, ...source.group);
       else if (target.drop.chain) target.drop.chain.splice(target.drop.index, 0, ...source.group);
       H.refreshPreview();
+      pruneEmptyFrags();
     }
     puzzleCanvasRender();
     return;
@@ -1788,6 +1791,7 @@ function endDrag(e) {
     } else if (source.type === 'stmt-group') {
       H.getBctx().frags.push({ stmts: source.group, x: target.x, y: target.y });
       H.refreshPreview();
+      pruneEmptyFrags();
     }
     puzzleCanvasRender();
     return;
@@ -1937,7 +1941,33 @@ function onWindowMove(e) {
 function onWindowUp(e) {
   if (S.edit) return;
   if (S.lens) { endLens(); return; }
-  if (S.drag) { endDrag(e); return; }
+  if (S.drag) {
+    // 数字块：未拖动的点击直接进入输入浮层编辑
+    const d = S.drag;
+    if (d.mode === 'ghost' && !d.started && d.source.type === 'expr' && d.source.node && d.source.node.kind === 'num' && d.source.region) {
+      const region = d.source.region;
+      S.drag = null;
+      S.dropHover = null;
+      renderGhost();
+      beginEdit({
+        ...region,
+        edit: {
+          kind: 'num',
+          value: region.node.value,
+          commit: (v) => {
+            const n = parseFloat(v);
+            if (!Number.isFinite(n)) return false;
+            H.pushUndo();
+            region.node.value = n;
+            return true;
+          },
+        },
+      }, 'work');
+      return;
+    }
+    endDrag(e);
+    return;
+  }
 }
 
 function updateHover(e) {

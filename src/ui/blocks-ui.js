@@ -590,7 +590,7 @@ export function openBlockDrawer(fx) {
     fxId: fx.id,
     chain,
     setupChain: codeToStatements(fx.setup || ''),
-    frags: (saved.frags || []).map(f => ({ stmts: codeToStatements(f.code || ''), x: f.x, y: f.y })),
+    frags: (saved.frags || []).map(f => ({ stmts: codeToStatements(f.code || ''), x: f.x, y: f.y })).filter(f => f.stmts.length > 0),
     varExprs, varOrder,
     snapshot: { setup: fx.setup || '', process: fx.process, vars: cloneVars(fx.vars), preset: fx.preset, params: fx.params },
     undoStack: [], redoStack: [],
@@ -651,7 +651,7 @@ export function closeBlockDrawer(commit) {
       chain: bctx.layout.chain,
       setup: bctx.layout.setup,
       view: bctx.layout.view,
-      frags: bctx.frags.map(f => ({ code: statementsToCode(f.stmts), x: f.x, y: f.y })),
+      frags: bctx.frags.filter(f => f.stmts.length > 0).map(f => ({ code: statementsToCode(f.stmts), x: f.x, y: f.y })),
     };
   }
   // 窗口位置状态保存到 localStorage 工作区
