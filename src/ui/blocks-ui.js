@@ -12,7 +12,7 @@ import { t, tf, _etf } from '../core/i18n.js';
 import { state, getFunction } from '../core/constants.js';
 import { ATTR_NAMES } from '../core/easing.js';
 import { modalAlert } from './ui.js';
-import { T_SCALAR, T_VEC, T_MAT, T_ANY, FUNC_BLOCKS, STMT_BLOCKS, PALETTE_GROUPS, OP_SYMBOLS, OP_LABELS, collectTemps, walkStatements, codeToStatements, statementsToCode, exprType, typeAccepts, fmtNum, STMT_SLOTS, BIG_BLOCKS, BUILTIN_VAR_INFO, BUILTIN_VAR_NAMES, GROUP_COLOR, isBoolOp, opSlotType, slotRef, N0 } from '../core/blocks.js';
+import { T_SCALAR, T_VEC, T_MAT, T_ANY, FUNC_BLOCKS, STMT_BLOCKS, PALETTE_GROUPS, OP_SYMBOLS, OP_LABELS, collectTemps, walkStatements, codeToStatements, statementsToCode, exprType, typeAccepts, fmtNum, STMT_SLOTS, BIG_BLOCKS, BUILTIN_VAR_INFO, BUILTIN_VAR_NAMES, GROUP_COLOR, isBoolOp, opSlotType, slotRef, N0, METHOD_ARITY } from '../core/blocks.js';
 import { makeFloatWindow } from './float-window.js';
 import { pushUndo, cloneVars } from '../state/undo.js';
 import { commitFunctionRebuild, refreshFunctionPanel, drawTimeline } from './panels.js';
@@ -204,7 +204,7 @@ export function newExprNodeFromTemplate(template) {
   if (template.kind === 'not') return { kind: 'not', a: N0() };
   if (template.kind === 'ternary') return { kind: 'ternary', cond: N0(), a: N0(), b: N0() };
   if (template.kind === 'index') return { kind: 'index', target: N0(), index: N0() };
-  if (template.kind === 'method') return { kind: 'method', obj: N0(), method: template.method, args: [] };
+  if (template.kind === 'method') return { kind: 'method', obj: N0(), method: template.method, args: Array.from({ length: METHOD_ARITY[template.method] ?? 0 }, () => N0()) };
   if (template.kind === 'array') return { kind: 'array', items: [N0(), N0()] };
   return N0();
 }
@@ -278,8 +278,9 @@ export function buildPaletteGroup(g) {
     items.push({ key: 'expr:comp', type: 'expr', template: { kind: 'comp', axis: 'x', target: null }, label: t('blk.comp'), info: t('blk.compDesc') });
     items.push({ key: 'expr:array', type: 'expr', template: { kind: 'array' }, label: '[]', info: t('blk.arrayDesc') });
     items.push({ key: 'expr:index', type: 'expr', template: { kind: 'index' }, label: '[ ]', info: t('blk.indexDesc') });
-    items.push({ key: 'expr:method:push', type: 'expr', template: { kind: 'method', method: 'push' }, label: '.push()', info: t('blk.methodDesc') });
-    items.push({ key: 'expr:method:size', type: 'expr', template: { kind: 'method', method: 'size' }, label: '.size()', info: t('blk.methodDesc') });
+    for (const method of Object.keys(METHOD_ARITY)) {
+      items.push({ key: 'expr:method:' + method, type: 'expr', template: { kind: 'method', method }, label: '.' + method + '()', info: t('blk.methodDesc') });
+    }
   } else if (g.id === 'mat') {
     ['rotX', 'rotY', 'rotZ', 'rotAxis'].forEach(name => items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name, info: funcInfo(name) }));
   }

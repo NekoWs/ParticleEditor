@@ -44,6 +44,12 @@ export const STMT_SLOTS = {
 };
 export const BIG_BLOCKS = { pos: true, vel: true };
 
+// 数组方法默认参数个数（用于从调色板新建 method 块时预置正确数量的参数槽）。
+export const METHOD_ARITY = {
+  push: 1, insert: 2, remove: 1, slice: 2, size: 0,
+  find: 1, includes: 1, sort: 0, unique: 0, reverse: 0,
+};
+
 export const BUILTIN_VAR_INFO = {
   i: 'blk.var.i',
   n: 'blk.var.n',
@@ -298,6 +304,7 @@ export function stmtToCode(s) {
     case 'light': return 'light = ' + exprToCode(s.expr, 0);
     case 'attr': return s.name + ' = ' + exprToCode(s.expr, 0);
     case 'set': return s.name + ' = ' + exprToCode(s.expr, 0);
+    case 'expr': return exprToCode(s.expr, 0) + ';';
     case 'raw': return s.text || '';
     case 'break': return 'break;';
     case 'continue': return 'continue;';
@@ -353,6 +360,14 @@ export function blockTokenize(expr) {
   while (i < expr.length) {
     const c = expr[i];
     if (c === ' ' || c === '\t' || c === '\n') { i++; continue; }
+    // 字符串字面量：拼图表达式不支持字符串，仅保证 token 化不破坏其后内容；
+    // parseExpr 遇到 str token 会抛错，使语句降级为 raw 而非被错误解析。
+    if (c === '"') {
+      let j = i + 1;
+      while (j < expr.length && expr[j] !== '"') j++;
+      tokens.push({ t: 'str', v: expr.slice(i + 1, j) });
+      i = j + 1; expectOperand = false; continue;
+    }
     // 多字符运算符
     const two = expr.slice(i, i + 2);
     if (two === '==' || two === '!=' || two === '<=' || two === '>=' || two === '&&' || two === '||') {
@@ -399,13 +414,33 @@ export function parseExpr(str) {
   const expect = (t) => { const tk = next(); if (!tk || tk.t !== t) throw new Error(_etf('err.exprNeed', t, str)); return tk; };
   const isOpTok = (t, ops) => !!t && ((t.t === 'op' && ops.includes(t.op)) || ops.includes(t.t));
 
+  function parseCallArgs() {
+    const args = [];
+    if (peek() && peek().t !== ')') {
+      args.push(parseTernary());
+      while (peek() && peek().t === ',') { next(); args.push(parseTernary()); }
+    }
+    expect(')');
+    return args;
+  }
+
   function parsePrimary() {
     const tk = next();
     if (!tk) throw new Error(_et('err.exprEnd'));
     let node;
     if (tk.t === 'num') node = { kind: 'num', value: tk.v };
     else if (tk.t === 'bool') node = { kind: 'bool', value: tk.v };
-    else if (tk.t === 'var') node = { kind: 'var', name: tk.name };
+    else if (tk.t === 'var') {
+      // 标识符后跟 '(' 视为函数调用：内建函数、用户函数、变量保存的函数值均可调用。
+      // 不再依赖 FUNCS 白名单，因此 script-lang 新增的内建函数（noise/fbm/map_range 等）
+      // 都能被拼图解析为 func 节点。
+      if (peek() && peek().t === '(') {
+        next(); // '('
+        node = { kind: 'func', name: tk.name, args: parseCallArgs() };
+      } else {
+        node = { kind: 'var', name: tk.name };
+      }
+    }
     else if (tk.t === 'neg') {
       const inner = parsePower();
       if (inner.kind === 'num') node = { kind: 'num', value: -inner.value };
@@ -415,13 +450,7 @@ export function parseExpr(str) {
     } else if (tk.t === 'func') {
       if (!peek() || peek().t !== '(') throw new Error(_etf('err.funcNoParen', tk.name));
       next(); // '('
-      const args = [];
-      if (peek() && peek().t !== ')') {
-        args.push(parseTernary());
-        while (peek() && peek().t === ',') { next(); args.push(parseTernary()); }
-      }
-      expect(')');
-      node = { kind: 'func', name: tk.name, args };
+      node = { kind: 'func', name: tk.name, args: parseCallArgs() };
     } else if (tk.t === '[') {
       const items = [];
       if (peek() && peek().t !== ']') {
@@ -453,16 +482,11 @@ export function parseExpr(str) {
       } else if (peek().t === 'dot') {
         next();
         const m = next();
-        if (!m || m.t !== 'var') throw new Error(_etf('err.exprNeed', 'method', str));
+        // 方法名可能恰为内建函数名（blockTokenize 会标记为 func），此处两种 token 都接受。
+        if (!m || (m.t !== 'var' && m.t !== 'func')) throw new Error(_etf('err.exprNeed', 'method', str));
         if (!peek() || peek().t !== '(') { node = { kind: 'var', name: m.name }; continue; }
         next(); // '('
-        const args = [];
-        if (peek() && peek().t !== ')') {
-          args.push(parseTernary());
-          while (peek() && peek().t === ',') { next(); args.push(parseTernary()); }
-        }
-        expect(')');
-        node = { kind: 'method', obj: node, method: m.name, args };
+        node = { kind: 'method', obj: node, method: m.name, args: parseCallArgs() };
       } else {
         break;
       }
@@ -679,7 +703,11 @@ export function stmtToNode(stmt) {
   }
 
   const eq = s.indexOf('=');
-  if (eq < 0) throw new Error(_etf('err.stmtMissingEq', stmt));
+  if (eq < 0) {
+    // 无 '=' 的顶层语句：作为表达式语句（函数/方法调用等，如 arr.push(1)、noise(...)）。
+    // 解析失败时让调用方（codeToStatements）降级为 raw 块。
+    return { kind: 'expr', expr: parseExpr(s.replace(/;$/, '').trim()) };
+  }
   const lhs = s.slice(0, eq).trim();
   const rhs = s.slice(eq + 1).trim();
   if (lhs.startsWith('[')) {

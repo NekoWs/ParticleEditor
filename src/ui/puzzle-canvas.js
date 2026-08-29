@@ -404,6 +404,11 @@ function layoutExpr(node, x, y, out, ctx) {
 /* ============================ 布局：语句 ============================ */
 
 function stmtParts(s) {
+  if (s.kind === 'expr') {
+    return [
+      { slot: { ref: slotRef(() => s.expr, v => { s.expr = v; }, T_ANY), type: T_ANY, label: '' } },
+    ];
+  }
   if (s.kind === 'set') {
     return [
       { edit: { kind: 'text', value: s.name, commit: (v) => {
@@ -1045,10 +1050,12 @@ function drawCompRegion(ctx, r) {
 }
 
 function drawDropRegion(ctx, r, th) {
-  ctx.save();
+  // 块与块之间的落点区域不再常驻绘制虚线提示框；仅在拖拽经过时显示高亮目标。
   const active = th && th.region === r;
-  ctx.fillStyle = active ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.05)';
-  ctx.strokeStyle = active ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.22)';
+  if (!active) return;
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.16)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.8)';
   ctx.setLineDash([4, 3]);
   ctx.lineWidth = 1;
   rrPath(ctx, r.x, r.y, r.w, r.h, 3);
