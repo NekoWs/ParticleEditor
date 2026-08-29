@@ -268,9 +268,14 @@ export function refreshFunctionPanel() {
   box.appendChild(buildFunctionPanel(fx));
 }
 
-export function commitFunctionRebuild(fx) {
-  try { rebuildFunctionObject(fx); }
-  catch (e) { modalAlert(t('fx.exprError'), e.message); }
+export function commitFunctionRebuild(fx, opts) {
+  try {
+    rebuildFunctionObject(fx);
+    fx._error = null;
+  } catch (e) {
+    fx._error = e.message;
+    if (!(opts && opts.silent)) modalAlert(t('fx.exprError'), e.message);
+  }
 }
 
 export function buildFunctionPanel(fx) {

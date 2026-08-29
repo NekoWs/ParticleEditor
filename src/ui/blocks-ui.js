@@ -12,7 +12,8 @@ import { t, tf, _etf } from '../core/i18n.js';
 import { state, getFunction } from '../core/constants.js';
 import { ATTR_NAMES } from '../core/easing.js';
 import { modalAlert } from './ui.js';
-import { T_SCALAR, T_VEC, T_MAT, T_ANY, FUNC_BLOCKS, STMT_BLOCKS, PALETTE_GROUPS, OP_SYMBOLS, OP_LABELS, collectTemps, walkStatements, codeToStatements, statementsToCode, exprType, typeAccepts, fmtNum, STMT_SLOTS, BIG_BLOCKS, BUILTIN_VAR_INFO, BUILTIN_VAR_NAMES, GROUP_COLOR, isBoolOp, opSlotType, slotRef, N0, METHOD_ARITY } from '../core/blocks.js';
+import { T_SCALAR, T_VEC, T_MAT, T_ANY, FUNC_BLOCKS, STMT_BLOCKS, PALETTE_GROUPS, OP_SYMBOLS, OP_LABELS, collectTemps, walkStatements, codeToStatements, statementsToCode, statementsToCodeSpans, exprType, typeAccepts, fmtNum, STMT_SLOTS, BIG_BLOCKS, BUILTIN_VAR_INFO, BUILTIN_VAR_NAMES, GROUP_COLOR, isBoolOp, opSlotType, slotRef, N0, METHOD_ARITY } from '../core/blocks.js';
+import { validateFunctionScript } from '../core/generators.js';
 import { makeFloatWindow } from './float-window.js';
 import { pushUndo, cloneVars } from '../state/undo.js';
 import { commitFunctionRebuild, refreshFunctionPanel, drawTimeline } from './panels.js';
@@ -99,7 +100,7 @@ export function findAllStmts() {
 export function findSlotRefByNode(stmts, node) {
   let result = null;
   const walkExpr = (n, get, set) => {
-    if (result) return;
+    if (result || !n) return;
     if (n.kind === 'func') {
       const spec = FUNC_BLOCKS[n.name];
       for (let i = 0; i < n.args.length; i++) {
@@ -132,7 +133,7 @@ export function findSlotRefByNode(stmts, node) {
       for (let i = 0; i < s.slots.length; i++) {
         const slotType = T_ANY;
         if (s.slots[i] === node) { result = slotRef(() => s.slots[i], v => { s.slots[i] = v; }, slotType); return; }
-        if (s.slots[i]) walkExpr(s.slots[i], () => s.slots[i], v => { s.slots[i] = v; });
+        if (s.slots[i] != null) walkExpr(s.slots[i], () => s.slots[i], v => { s.slots[i] = v; });
       }
     }
     if (s.expr) {
@@ -169,49 +170,49 @@ export const NVEC = () => ({ kind: 'func', name: 'vec', args: [N0(), N0(), N0()]
 
 export function newStmtNode(kind) {
   switch (kind) {
-    case 'pos': return { kind, slots: [N0(), N0(), N0()] };
-    case 'vel': return { kind, slots: [N0(), N0(), N0()] };
-    case 'col': return { kind, slots: [N0(), N0(), N0(), N0()] };
-    case 'scl': return { kind, expr: N0() };
-    case 'light': return { kind, expr: N0() };
+    case 'pos': return { kind, slots: [null, null, null] };
+    case 'vel': return { kind, slots: [null, null, null] };
+    case 'col': return { kind, slots: [null, null, null, null] };
+    case 'scl': return { kind, expr: null };
+    case 'light': return { kind, expr: null };
     case 'glow': return { kind, on: true };
-    case 'set': return { kind, name: freshTempName(), expr: N0() };
-    case 'attr': return { kind, name: 'x', expr: N0() };
-    case 'pos_vec': case 'vel_vec': return { kind, expr: NVEC() };
-    case 'if': return { kind: 'if', cond: N0(), body: [], elseBody: null };
-    case 'while': return { kind: 'while', cond: N0(), body: [] };
-    case 'for': return { kind: 'for', init: 'k = 0', cond: 'k < 10', inc: 'k = k + 1', body: [] };
-    case 'do': return { kind: 'do', body: [], cond: N0() };
-    case 'func': return { kind: 'func', name: 'f', params: [], body: [] };
-    case 'global': case 'static': return { kind, name: 'v0', expr: N0() };
+    case 'set': return { kind, name: freshTempName(), expr: null };
+    case 'attr': return { kind, name: 'x', expr: null };
+    case 'pos_vec': case 'vel_vec': return { kind, expr: null };
+    case 'if': return { kind: 'if', cond: null, body: [], elseBody: null };
+    case 'while': return { kind: 'while', cond: null, body: [] };
+    case 'for': return { kind: 'for', init: '', cond: '', inc: '', body: [] };
+    case 'do': return { kind: 'do', body: [], cond: null };
+    case 'func': return { kind: 'func', name: '', params: [], body: [] };
+    case 'global': case 'static': return { kind, name: '', expr: null };
+    case 'comment': return { kind: 'comment', text: '' };
     case 'break': return { kind: 'break' };
     case 'continue': return { kind: 'continue' };
-    case 'return': return { kind: 'return', expr: N0() };
+    case 'return': return { kind: 'return', expr: null };
     default: throw new Error(_etf('err.unknownStmt', kind));
   }
 }
 export function newExprNodeFromTemplate(template) {
   if (template.kind === 'num') return { kind: 'num', value: 1 };
   if (template.kind === 'var') return { kind: 'var', name: template.name };
-  if (template.kind === 'comp') return { kind: 'comp', axis: 'x', target: NVEC() };
+  if (template.kind === 'comp') return { kind: 'comp', axis: 'x', target: null };
   if (template.kind === 'func') {
     const n = FUNC_BLOCKS[template.name].args.length;
-    return { kind: 'func', name: template.name, args: Array.from({ length: n }, () => N0()) };
+    return { kind: 'func', name: template.name, args: Array.from({ length: n }, () => null) };
   }
-  if (template.kind === 'op') return { kind: 'op', op: template.op, a: N0(), b: N0() };
-  if (template.kind === 'chain') return { kind: 'chain', terms: [N0(), N0()], ops: ['+'] };
+  if (template.kind === 'op') return { kind: 'op', op: template.op, a: null, b: null };
+  if (template.kind === 'chain') return { kind: 'chain', terms: [null, null], ops: ['+'] };
   if (template.kind === 'bool') return { kind: 'bool', value: template.value };
-  if (template.kind === 'not') return { kind: 'not', a: N0() };
-  if (template.kind === 'ternary') return { kind: 'ternary', cond: N0(), a: N0(), b: N0() };
-  if (template.kind === 'index') return { kind: 'index', target: N0(), index: N0() };
-  if (template.kind === 'method') return { kind: 'method', obj: N0(), method: template.method, args: Array.from({ length: METHOD_ARITY[template.method] ?? 0 }, () => N0()) };
-  if (template.kind === 'array') return { kind: 'array', items: [N0(), N0()] };
-  return N0();
+  if (template.kind === 'not') return { kind: 'not', a: null };
+  if (template.kind === 'ternary') return { kind: 'ternary', cond: null, a: null, b: null };
+  if (template.kind === 'index') return { kind: 'index', target: null, index: null };
+  if (template.kind === 'method') return { kind: 'method', obj: null, method: template.method, args: Array.from({ length: METHOD_ARITY[template.method] ?? 0 }, () => null) };
+  if (template.kind === 'array') return { kind: 'array', items: [null, null] };
+  return null;
 }
 export function defaultExprFor(type) {
-  if (type === T_VEC) return NVEC();
-  if (type === T_MAT) return { kind: 'func', name: 'rotZ', args: [N0()] };
-  return N0();
+  // 默认留空：从槽位拖走表达式后槽位回到「未填写」状态。
+  return null;
 }
 
 /* =========================================================================
@@ -257,6 +258,7 @@ export function buildPaletteGroup(g) {
     ['if', 'while', 'for', 'do', 'break', 'continue', 'return', 'func', 'global', 'static'].forEach(k => {
       items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: t('blk.stmt.' + k), info: t('blk.stmt.' + k) });
     });
+    items.push({ key: 'stmt:comment', type: 'stmt', kind: 'comment', label: t('blk.stmt.comment.label'), info: t('blk.stmt.comment.desc') });
     items.push({ key: 'expr:ternary', type: 'expr', template: { kind: 'ternary' }, label: '?:', info: t('blk.ternaryDesc') });
     items.push({ key: 'expr:not', type: 'expr', template: { kind: 'not' }, label: '!', info: t('blk.notDesc') });
     items.push({ key: 'expr:bool:true', type: 'expr', template: { kind: 'bool', value: true }, label: 'true', info: t('blk.constNum') });
@@ -395,7 +397,7 @@ function makePuzzleHost() {
     undo: () => bctxUndo(),
     redo: () => bctxRedo(),
     refreshPreview: () => refreshCodeEcho(),
-    commitCount: (fx) => commitFunctionRebuild(fx),
+    commitCount: (fx) => commitFunctionRebuild(fx, { silent: true }),
     close: (commit) => closeBlockDrawer(commit),
     newStmtNode: (kind) => newStmtNode(kind),
     newExprNodeFromTemplate: (tpl) => newExprNodeFromTemplate(tpl),
@@ -412,6 +414,7 @@ function makePuzzleHost() {
     canPlaceIntoTarget: (slotType, source) => canPlaceIntoTarget(slotType, source),
     renameVarGlobal: (oldName, newName) => renameVarGlobal(oldName, newName),
     renameRefsInAll: (oldName, newName) => renameRefsInAll(oldName, newName),
+    getErrors: () => (bctx ? (bctx.errors || []) : []),
   };
 }
 
@@ -447,6 +450,11 @@ export function ensurePuzzleDom() {
   const ghostCanvas = document.createElement('canvas');
   ghostCanvas.id = 'puzzle-ghost-canvas';
   document.body.appendChild(ghostCanvas);
+
+  // 取色器（canvas 浮层）
+  const colorCanvas = document.createElement('canvas');
+  colorCanvas.id = 'puzzle-color-canvas';
+  document.body.appendChild(colorCanvas);
 
   // 顶部工具栏
   const toolbar = document.createElement('div');
@@ -529,6 +537,7 @@ export function openBlockDrawer(fx) {
     setupChain: codeToStatements(fx.setup || ''),
     frags: (saved.frags || []).map(f => ({ stmts: codeToStatements(f.code || ''), x: f.x, y: f.y })).filter(f => f.stmts.length > 0),
     varExprs, varOrder,
+    errors: [],
     snapshot: { setup: fx.setup || '', process: fx.process, vars: cloneVars(fx.vars), preset: fx.preset, params: fx.params },
     undoStack: [], redoStack: [],
     layout: {
@@ -537,6 +546,9 @@ export function openBlockDrawer(fx) {
       view: saved.view || { x: 0, y: 0, scale: 1 },
     },
   };
+  bctx.errors = computeBctxErrors();
+  if (bctx.errors.length) fx._error = bctx.errors[0].message;
+  else fx._error = null;
   // 窗口位置状态从 localStorage 工作区恢复
   applyWorkspaceState();
 
@@ -575,14 +587,22 @@ export function closeBlockDrawer(commit) {
     }
     if (newCode !== bctx.snapshot.process || setupText !== bctx.snapshot.setup) { fx.preset = null; fx.params = null; }
     pushUndo();
-    commitFunctionRebuild(fx);
+    const err = validateFunctionScript(fx, setupText, newCode);
+    if (err) {
+      // 保留已保存的代码与错误标记；不重建粒子，避免把半成品渲染写入场景。
+      fx._error = err.message;
+    } else {
+      fx._error = null;
+      commitFunctionRebuild(fx, { silent: true });
+    }
   } else if (fx) {
     fx.process = bctx.snapshot.process;
     fx.setup = bctx.snapshot.setup;
     fx.vars = cloneVars(bctx.snapshot.vars);
     fx.preset = bctx.snapshot.preset;
     fx.params = bctx.snapshot.params;
-    commitFunctionRebuild(fx);
+    fx._error = null;
+    commitFunctionRebuild(fx, { silent: true });
   }
   if (fx) {
     fx.ui = {
@@ -617,24 +637,76 @@ export function closeBlockDrawer(commit) {
 
 export function refreshCodeEcho() {
   if (!bctx) return;
-  puzzleCanvasRender();
-  // 实时生效：每次拼图变化后自动预览
   blockPreview();
+  puzzleCanvasRender();
+}
+
+/* —— 错误定位（把 script-lang 的 line/col 映射回积木） —— */
+function lineCountOf(str) { return (str === '') ? 0 : str.split('\n').length; }
+
+function parseErrorLine(msg) {
+  const m = /\(line\s+(\d+),\s*col\s+(\d+)\)/.exec(msg || '');
+  return m ? { line: parseInt(m[1], 10), col: parseInt(m[2], 10) } : null;
+}
+
+function findSpanIn(spans, line) {
+  for (const span of (spans || [])) {
+    if (line >= span.start && line <= span.end) return span.stmt;
+  }
+  return null;
+}
+
+function mapErrorToStmt(setupSpans, processSpans, setupCode, processCode, message) {
+  const loc = parseErrorLine(message);
+  if (!loc) return null;
+  const setupLineCount = lineCountOf(setupCode);
+  if (loc.line <= 1 + setupLineCount) return findSpanIn(setupSpans, loc.line - 1);
+  const processPrefixLines = lineCountOf('setup {\n' + setupCode + '\n}\nprocess {\n') - 1;
+  if (loc.line > processPrefixLines) return findSpanIn(processSpans, loc.line - processPrefixLines);
+  return null;
+}
+
+function errorsFromValidation(fx, setupCode, processCode, err) {
+  const setupSpans = statementsToCodeSpans(bctx.setupChain).spans;
+  const processSpans = statementsToCodeSpans(bctx.chain).spans;
+  const stmt = mapErrorToStmt(setupSpans, processSpans, setupCode, processCode, err && err.message);
+  return stmt ? [{ stmt, message: err.message }] : [];
+}
+
+function computeBctxErrors() {
+  if (!bctx) return [];
+  const fx = getFunction(bctx.fxId);
+  if (!fx) return [];
+  const setupCode = statementsToCode(bctx.setupChain);
+  const processCode = statementsToCode(bctx.chain);
+  const err = validateFunctionScript(fx, setupCode, processCode);
+  if (!err) return [];
+  return errorsFromValidation(fx, setupCode, processCode, err);
 }
 
 export function blockPreview() {
   if (!bctx) return;
   const fx = getFunction(bctx.fxId);
   if (!fx) return;
-  fx.process = statementsToCode(bctx.chain);
-  fx.setup = statementsToCode(bctx.setupChain);
+  const code = statementsToCode(bctx.chain);
+  const setupText = statementsToCode(bctx.setupChain);
+  fx.process = code;
+  fx.setup = setupText;
   for (const name of bctx.varOrder) {
     if (name in bctx.varExprs) {
       const v = fx.vars[name];
       if (v && (v.kf || []).length === 0) v.base = Number.isFinite(bctx.varExprs[name]) ? bctx.varExprs[name] : 0;
     }
   }
-  commitFunctionRebuild(fx);
+  const err = validateFunctionScript(fx, setupText, code);
+  if (err) {
+    fx._error = err.message;
+    bctx.errors = errorsFromValidation(fx, setupText, code, err);
+  } else {
+    fx._error = null;
+    bctx.errors = [];
+    commitFunctionRebuild(fx, { silent: true });
+  }
 }
 
 /* =========================================================================

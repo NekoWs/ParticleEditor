@@ -66,6 +66,7 @@ const CLS_COLORS = {
   'blk-logic': '#e0a01f',
   'blk-array': '#d9537f',
   'blk-raw': '#1b1f28',
+  'blk-comment': '#4f5d75',
   'blk-ctl': '#202838',
   'blk-start': '#6a8f3c',
   'blk-frag': '#7a6a3c',
@@ -74,21 +75,26 @@ const CLS_COLORS = {
 /* ============================ 运行状态 ============================ */
 
 const S = {
-  palCanvas: null, workCanvas: null, echoCanvas: null, ghostCanvas: null,
-  palCtx: null, workCtx: null, echoCtx: null, ghostCtx: null,
+  palCanvas: null, workCanvas: null, echoCanvas: null, ghostCanvas: null, colorCanvas: null,
+  palCtx: null, workCtx: null, echoCtx: null, ghostCtx: null, colorCtx: null,
   dpr: 1,
   palScroll: 0,
+  palScrollDrag: null,
+  palContentPx: 0,
   varsScroll: 0,
   echoScroll: 0,
   wsRegions: [],
   varRegions: [],
   palRegions: [],
+  errors: [],
   drag: null,
   edit: null,
   editMouse: null,
   lens: null,
   dropHover: null,
   hover: null,
+  colorPicker: null,
+  colorDrag: null,
 };
 
 /* ============================ 小工具 ============================ */
@@ -251,7 +257,7 @@ function layoutSlot(ref, slotType, label, x, y, out, ctx) {
 }
 
 /** 行内流动布局：把 parts 依次排到一行，返回总宽/高；子区域与文本段写入 out/seg。 */
-function inlineFlow(parts, x, y, out, seg, ctx) {
+function inlineFlow(parts, x, y, out, seg, ctx, owner) {
   let cx = x;
   let h = EXPR_H;
   const children = [];
@@ -279,9 +285,11 @@ function inlineFlow(parts, x, y, out, seg, ctx) {
       children.push({ kind: 'comp', shape: 'comp', comp: p.comp, x: cx, y, w: tw + 4, h: EXPR_H, segments: [{ text: label, x: cx + 2, y: y + EXPR_H / 2, font: FONT }] });
       cx += tw + 4; partH = EXPR_H;
     } else if (p.edit) {
-      const val = p.edit.value == null ? '' : String(p.edit.value);
+      const key = p.edit.key || '';
+      const isEditing = S.edit && S.edit.regionKey === key && (!owner || S.edit.stmt === owner);
+      const val = isEditing ? S.edit.buffer : (p.edit.value == null ? '' : String(p.edit.value));
       const tw = textW(ctx, val, FONT) + 8;
-      children.push({ kind: 'edit', shape: 'edit', edit: p.edit, x: cx, y, w: tw, h: EDIT_H, segments: [{ text: val, x: cx + 4, y: y + EDIT_H / 2, font: FONT }] });
+      children.push({ kind: 'edit', shape: 'edit', edit: p.edit, editKey: key, stmt: owner, x: cx, y, w: tw, h: EDIT_H, segments: [{ text: val, x: cx + 4, y: y + EDIT_H / 2, font: FONT }] });
       cx += tw; partH = EDIT_H;
     } else if (p.attr) {
       const val = p.attr.stmt.name || '';
@@ -316,7 +324,7 @@ function inlineFlow(parts, x, y, out, seg, ctx) {
 function exprParts(node) {
   const P = [];
   switch (node.kind) {
-    case 'num': P.push({ text: fmtNum(node.value) }); break;
+    case 'num': P.push({ text: (S.edit && S.edit.node === node) ? S.edit.buffer : fmtNum(node.value) }); break;
     case 'bool': P.push({ text: node.value ? 'true' : 'false' }); break;
     case 'var': P.push({ text: node.name }); break;
     case 'func': {
@@ -399,7 +407,7 @@ function layoutExpr(node, x, y, out, ctx) {
   const w = flow.w + EXPR_PAD_X * 2;
   const h = Math.max(EXPR_H, flow.h + EXPR_PAD_Y * 2);
   out.push({ kind: 'expr', shape: exprShape(node), cls: exprCls(node), node, x, y, w, h, segments: seg });
-  for (const c of children) out.push(c);
+  for (const c of children) { c.expr = node; out.push(c); }
   return { w, h };
 }
 
@@ -413,7 +421,7 @@ function stmtParts(s) {
   }
   if (s.kind === 'set') {
     return [
-      { edit: { kind: 'text', value: s.name, commit: (v) => {
+      { edit: { kind: 'text', key: 'name', ident: true, value: s.name, commit: (v) => {
         const nn = String(v).trim();
         if (!nn || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(nn) || ATTR_NAMES.includes(nn) || BUILTIN_VAR_NAMES.includes(nn) || nn === s.name) return false;
         H.pushUndo();
@@ -475,11 +483,11 @@ function stmtParts(s) {
 function layoutSimpleStmt(s, x, y, out, ctx, opts) {
   const seg = [];
   const children = [];
-  const flow = inlineFlow(stmtParts(s), x + STMT_PAD_X, y + STMT_PAD_Y, children, seg, ctx);
+  const flow = inlineFlow(stmtParts(s), x + STMT_PAD_X, y + STMT_PAD_Y, children, seg, ctx, s);
   const w = flow.w + STMT_PAD_X * 2;
   const h = Math.max(EXPR_H, flow.h + STMT_PAD_Y * 2);
   out.push({ kind: 'stmt', shape: 'stmt', cls: stmtCls(s), stmt: s, x, y, w, h, segments: seg, noBump: !!(opts && opts.noBump) });
-  for (const c of children) out.push(c);
+  for (const c of children) { c.stmt = s; out.push(c); }
   return { w, h };
 }
 
@@ -513,7 +521,8 @@ function layoutBigStmt(s, x, y, out, ctx, opts) {
 }
 
 function layoutRawStmt(s, x, y, out, ctx) {
-  const text = s.text || '';
+  const isEditing = S.edit && S.edit.stmt === s;
+  const text = isEditing ? S.edit.buffer : (s.text || '');
   const tw = Math.max(textW(ctx, text, FONT_MONO), 80);
   const w = Math.max(140, tw + 16);
   const h = 26;
@@ -521,6 +530,21 @@ function layoutRawStmt(s, x, y, out, ctx) {
     kind: 'stmt', shape: 'raw', cls: 'blk-raw', stmt: s, x, y, w, h,
     edit: { kind: 'area', value: text, commit: (v) => { s.text = String(v); return true; } },
     segments: [{ text: text || '…', x: x + 8, y: y + h / 2, font: FONT_MONO }],
+  });
+  return { w, h };
+}
+
+function layoutCommentStmt(s, x, y, out, ctx) {
+  const isEditing = S.edit && S.edit.stmt === s;
+  const text = isEditing ? S.edit.buffer : (s.text || '');
+  const shown = '// ' + text;
+  const tw = Math.max(textW(ctx, shown, FONT_MONO), 60);
+  const w = Math.max(120, tw + 16);
+  const h = 24;
+  out.push({
+    kind: 'stmt', shape: 'raw', cls: 'blk-comment', stmt: s, x, y, w, h,
+    edit: { kind: 'text', value: text, commit: (v) => { s.text = String(v); return true; } },
+    segments: [{ text: shown || '// …', x: x + 8, y: y + h / 2, font: FONT_MONO }],
   });
   return { w, h };
 }
@@ -539,33 +563,31 @@ function ctlHeaderParts(s) {
     P.push({ slot: { ref: slotRef(() => s.cond, v => { s.cond = v; }, T_ANY), type: T_ANY, label: '' } });
   } else if (s.kind === 'for') {
     P.push({ text: t('blk.stmt.for') + ' ' });
-    P.push({ edit: { kind: 'text', value: s.init, commit: (v) => { s.init = String(v); return true; } } });
+    P.push({ edit: { kind: 'text', key: 'init', value: s.init, commit: (v) => { s.init = String(v); return true; } } });
     P.push({ text: ' ' });
-    P.push({ edit: { kind: 'text', value: s.cond, commit: (v) => { s.cond = String(v); return true; } } });
+    P.push({ edit: { kind: 'text', key: 'cond', value: s.cond, commit: (v) => { s.cond = String(v); return true; } } });
     P.push({ text: ' ' });
-    P.push({ edit: { kind: 'text', value: s.inc, commit: (v) => { s.inc = String(v); return true; } } });
+    P.push({ edit: { kind: 'text', key: 'inc', value: s.inc, commit: (v) => { s.inc = String(v); return true; } } });
   } else if (s.kind === 'do') {
     P.push({ text: t('blk.stmt.do') + ' ' });
   } else if (s.kind === 'func') {
     P.push({ text: t('blk.stmt.func') + ' ' });
-    P.push({ edit: { kind: 'text', value: s.name, commit: (v) => { s.name = String(v).trim(); return true; } } });
+    P.push({ edit: { kind: 'text', key: 'name', ident: true, value: s.name, commit: (v) => { s.name = String(v).trim(); return true; } } });
     P.push({ text: '(' });
-    P.push({ edit: { kind: 'text', value: (s.params || []).join(', '), commit: (v) => { s.params = String(v).split(',').map(x => x.trim()).filter(Boolean); return true; } } });
+    P.push({ edit: { kind: 'text', key: 'params', value: (s.params || []).join(', '), commit: (v) => { s.params = String(v).split(',').map(x => x.trim()).filter(Boolean); return true; } } });
     P.push({ text: ') ' });
   } else if (s.kind === 'global' || s.kind === 'static') {
     P.push({ text: t('blk.stmt.' + s.kind) + ' ' });
-    P.push({ edit: { kind: 'text', value: s.name, commit: (v) => { s.name = String(v).trim(); return true; } } });
-    if (s.expr != null) {
-      P.push({ text: ' = ' });
-      P.push({ slot: { ref: slotRef(() => s.expr, v => { s.expr = v; }, T_ANY), type: T_ANY, label: '' } });
-    }
+    P.push({ edit: { kind: 'text', key: 'name', ident: true, value: s.name, commit: (v) => { s.name = String(v).trim(); return true; } } });
+    P.push({ text: ' = ' });
+    P.push({ slot: { ref: slotRef(() => s.expr, v => { s.expr = v; }, T_ANY), type: T_ANY, label: '' } });
   } else if (s.kind === 'break') {
     P.push({ text: t('blk.stmt.break') });
   } else if (s.kind === 'continue') {
     P.push({ text: t('blk.stmt.continue') });
   } else if (s.kind === 'return') {
     P.push({ text: t('blk.stmt.return') + ' ' });
-    if (s.expr != null) P.push({ slot: { ref: slotRef(() => s.expr, v => { s.expr = v; }, T_ANY), type: T_ANY, label: '' } });
+    P.push({ slot: { ref: slotRef(() => s.expr, v => { s.expr = v; }, T_ANY), type: T_ANY, label: '' } });
   }
   return P;
 }
@@ -591,11 +613,11 @@ function layoutBody(list, bx, by, out, ctx, ref) {
 function layoutSimpleCtl(s, x, y, out, ctx, opts) {
   const seg = [];
   const children = [];
-  const flow = inlineFlow(ctlHeaderParts(s), x + STMT_PAD_X, y + STMT_PAD_Y, children, seg, ctx);
+  const flow = inlineFlow(ctlHeaderParts(s), x + STMT_PAD_X, y + STMT_PAD_Y, children, seg, ctx, s);
   const w = flow.w + STMT_PAD_X * 2;
   const h = Math.max(EXPR_H, flow.h + STMT_PAD_Y * 2);
   out.push({ kind: 'stmt', shape: 'stmt', cls: 'blk-ctl', stmt: s, x, y, w, h, segments: seg, noBump: !!(opts && opts.noBump) });
-  for (const c of children) out.push(c);
+  for (const c of children) { c.stmt = s; out.push(c); }
   return { w, h };
 }
 
@@ -604,7 +626,7 @@ function layoutCtlStmt(s, x, y, out, ctx, opts) {
   const children = [];
   const hx = x + CTL_MOUTH + CTL_PAD;
   const hy = y + CTL_PAD;
-  const flow = inlineFlow(ctlHeaderParts(s), hx, hy, children, seg, ctx);
+  const flow = inlineFlow(ctlHeaderParts(s), hx, hy, children, seg, ctx, s);
   let contentW = flow.w;
   let bodyY = hy + Math.max(EXPR_H, flow.h) + 8;
   let bodyH = 0, bodyW = 0;
@@ -646,12 +668,13 @@ function layoutCtlStmt(s, x, y, out, ctx, opts) {
   const w = contentW + CTL_PAD * 2 + CTL_MOUTH;
   const h = (tailY - y) + CTL_PAD;
   out.push({ kind: 'stmt', shape: 'stmt', cls: 'blk-ctl', stmt: s, x, y, w, h, segments: seg, noBump: !!(opts && opts.noBump) });
-  for (const c of children) out.push(c);
+  for (const c of children) { c.stmt = s; out.push(c); }
   return { w, h };
 }
 
 function layoutStmt(s, x, y, out, ctx, opts) {
   if (s.kind === 'raw') return layoutRawStmt(s, x, y, out, ctx);
+  if (s.kind === 'comment') return layoutCommentStmt(s, x, y, out, ctx);
   if (CTL_KINDS.has(s.kind)) return layoutCtlStmt(s, x, y, out, ctx, opts);
   if (SIMPLE_CTL.has(s.kind)) return layoutSimpleCtl(s, x, y, out, ctx, opts);
   if (s.kind === 'col' || s.kind === 'glow') return layoutSimpleStmt(s, x, y, out, ctx, opts);
@@ -662,7 +685,8 @@ function layoutStmt(s, x, y, out, ctx, opts) {
 /* ============================ 布局：链 / 工作区 ============================ */
 
 function layoutChain(arr, x, y, out, ctx, opts) {
-  const headH = HAT_H;
+  const isFrag = !!opts.frag;
+  const headH = isFrag ? 10 : HAT_H;
   let cy = y + headH;
   let stackW = 0;
   for (let i = 0; i < arr.length; i++) {
@@ -675,7 +699,8 @@ function layoutChain(arr, x, y, out, ctx, opts) {
   out.push({
     kind: 'head', shape: 'hat', head: opts.head, cls: opts.frag ? 'blk-frag' : 'blk-start',
     x, y, w: headW, h: headH,
-    segments: [{ text: opts.title, x: x + 14, y: y + headH / 2, font: FONT }],
+    frag: opts.frag || null,
+    segments: isFrag ? [] : [{ text: opts.title, x: x + 14, y: y + headH / 2, font: FONT }],
   });
   const dropRef = { chain: opts.dropRef.chain || null, frag: opts.dropRef.frag || null };
   if (arr.length === 0) {
@@ -701,7 +726,7 @@ function layoutWorkspace() {
   const bctx = H.getBctx();
   const l = bctx.layout;
   const ctx = S.workCtx;
-  layoutChain(bctx.setupChain, l.setup.x, l.setup.y, out, ctx, { title: t('fx.setupBlock'), head: { key: 'setup' }, dropRef: { chain: bctx.setupChain } });
+  layoutChain(bctx.setupChain, l.setup.x, l.setup.y, out, ctx, { title: t('blk.setup'), head: { key: 'setup' }, dropRef: { chain: bctx.setupChain } });
   layoutChain(bctx.chain, l.chain.x, l.chain.y, out, ctx, { title: t('blk.start'), head: { key: 'chain' }, dropRef: { chain: bctx.chain } });
   for (const f of bctx.frags) {
     layoutChain(f.stmts, f.x, f.y, out, ctx, { title: t('blk.fragment'), head: { frag: f }, frag: f, dropRef: { frag: f } });
@@ -731,7 +756,8 @@ function layoutVars(cw) {
   // 采样数
   {
     const lab = t('blk.sampleCount');
-    const val = fx ? String(fx.count) : '1';
+    const isEditingCount = S.edit && S.edit.space === 'var' && S.edit.regionKey === 'count';
+    const val = isEditingCount ? S.edit.buffer : (fx ? String(fx.count) : '1');
     const lw = textW(ctx, lab, FONT);
     const eqw = textW(ctx, ' = ', FONT);
     const vw = textW(ctx, val, FONT) + 12;
@@ -741,7 +767,7 @@ function layoutVars(cw) {
     row.segments.push({ text: lab, x: row.x + 7, y: row.y + VARS_ROW_H / 2, font: FONT });
     row.segments.push({ text: ' = ', x: row.x + 7 + lw, y: row.y + VARS_ROW_H / 2, font: FONT });
     out.push({
-      kind: 'edit', shape: 'edit', space: 'var',
+      kind: 'edit', shape: 'edit', space: 'var', editKey: 'count',
       edit: { kind: 'num', value: val, commit: (v) => {
         if (!fx) return false;
         fx.count = Math.max(1, Math.round(parseInt(v) || 1));
@@ -766,16 +792,22 @@ function layoutVars(cw) {
       place(row, tw);
       continue;
     }
+    const nameKey = 'name:' + name;
+    const valKey = 'val:' + name;
+    const isEditingName = S.edit && S.edit.space === 'var' && S.edit.regionKey === nameKey;
+    const isEditingVal = S.edit && S.edit.space === 'var' && S.edit.regionKey === valKey;
+    const shownName = isEditingName ? S.edit.buffer : name;
+    const shownVal = isEditingVal ? S.edit.buffer : val;
     const eqw = textW(ctx, ' = ', FONT);
-    const lw = textW(ctx, name, FONT) + 10;
-    const vw = textW(ctx, val, FONT) + 12;
+    const lw = textW(ctx, shownName, FONT) + 10;
+    const vw = textW(ctx, shownVal, FONT) + 12;
     const w = 14 + lw + eqw + vw + 8;
     const row = { kind: 'var-row', shape: 'row', varRow: { name }, x, y, w, h: VARS_ROW_H, segments: [] };
     place(row, w);
     row.segments.push({ text: ' = ', x: row.x + 7 + lw, y: row.y + VARS_ROW_H / 2, font: FONT });
     const nameEdit = {
-      kind: 'edit', shape: 'edit', space: 'var',
-      edit: { kind: 'text', value: name, commit: (v) => {
+      kind: 'edit', shape: 'edit', space: 'var', editKey: nameKey,
+      edit: { kind: 'text', ident: true, value: name, commit: (v) => {
         const nn = String(v).trim();
         if (!nn || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(nn) || ATTR_NAMES.includes(nn) || BUILTIN_VAR_NAMES.includes(nn) || nn === name) return false;
         if (nn in bctx.varExprs) return false;
@@ -784,17 +816,17 @@ function layoutVars(cw) {
         return true;
       } },
       x: row.x + 7, y: row.y + (VARS_ROW_H - EDIT_H) / 2, w: lw, h: EDIT_H,
-      segments: [{ text: name, x: row.x + 12, y: row.y + VARS_ROW_H / 2, font: FONT }],
+      segments: [{ text: shownName, x: row.x + 12, y: row.y + VARS_ROW_H / 2, font: FONT }],
     };
     const valEdit = {
-      kind: 'edit', shape: 'edit', space: 'var',
+      kind: 'edit', shape: 'edit', space: 'var', editKey: valKey,
       edit: { kind: 'num', value: val, commit: (v) => {
         const n = parseFloat(v);
         if (Number.isFinite(n)) { H.pushUndo(); bctx.varExprs[name] = n; return true; }
         return false;
       } },
       x: row.x + 7 + lw + eqw, y: row.y + (VARS_ROW_H - EDIT_H) / 2, w: vw, h: EDIT_H,
-      segments: [{ text: val, x: row.x + 7 + lw + eqw + 6, y: row.y + VARS_ROW_H / 2, font: FONT }],
+      segments: [{ text: shownVal, x: row.x + 7 + lw + eqw + 6, y: row.y + VARS_ROW_H / 2, font: FONT }],
     };
     out.push(nameEdit, valEdit);
   }
@@ -850,6 +882,7 @@ function layoutPalette(contentW) {
     cy += rowH + 10;
   }
   S.palRegions = out;
+  S.palContentPx = PAL_SCALE * (cy + 10) + PAL_TOP;
 }
 
 /* ============================ 绘制 ============================ */
@@ -872,6 +905,62 @@ function drawHighlight(ctx, region, color, scale) {
   else rrPath(ctx, region.x - 3, region.y - 3, region.w + 6, region.h + 6, 8);
   ctx.stroke();
   ctx.restore();
+}
+
+function drawErrorMark(ctx, region, scale) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,80,90,0.16)';
+  ctx.strokeStyle = 'rgba(255,90,100,0.95)';
+  ctx.lineWidth = 2 / (scale || 1);
+  rrPath(ctx, region.x - 3, region.y - 3, region.w + 6, region.h + 6, 8);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+function errorForStmt(stmt) {
+  for (const e of S.errors || []) if (e.stmt === stmt) return e;
+  return null;
+}
+
+function drawErrorTooltip(ctx, msg) {
+  if (!ctx || !msg) return;
+  const c = S.workCanvas;
+  if (!c || !H || !H.getBctx()) return;
+  const cRect = c.getBoundingClientRect ? c.getBoundingClientRect() : { left: 0, top: 0 };
+  const r = worldToScreenRect(S.hover);
+  const font = FONT;
+  ctx.font = font;
+  const maxW = 260;
+  const words = String(msg).split(/\s+/);
+  const lines = [];
+  let cur = '';
+  for (const w of words) {
+    const test = cur ? cur + ' ' + w : w;
+    if (cur && ctx.measureText(test).width > maxW) { lines.push(cur); cur = w; }
+    else cur = test;
+  }
+  if (cur) lines.push(cur);
+  if (!lines.length) return;
+  const lh = 15;
+  const w = Math.min(maxW + 20, Math.max(...lines.map(l => ctx.measureText(l).width)) + 20);
+  const h = lines.length * lh + 14;
+  const cw = c.clientWidth || c.width;
+  const ch = c.clientHeight || c.height;
+  let x = r.left - cRect.left + r.width + 10;
+  let y = r.top - cRect.top - 6;
+  if (x + w > cw - 6) x = Math.max(6, r.left - cRect.left - w - 10);
+  if (y + h > ch - VARS_H - 6) y = Math.max(6, ch - VARS_H - h - 6);
+  ctx.fillStyle = 'rgba(47,52,64,0.97)';
+  rrPath(ctx, x, y, w, h, 6);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,120,130,0.6)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = '#ffe1e3';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  lines.forEach((ln, i) => ctx.fillText(ln, x + 10, y + 12 + i * lh));
 }
 
 function strokeRegionSegments(ctx, r, strokeStyle, segColor) {
@@ -917,6 +1006,7 @@ function drawStmtRegion(ctx, r) {
 }
 
 function drawHeadRegion(ctx, r) {
+  if (r.frag) return; // 碎片起始块隐藏（保留顶部细条作为拖动把手）
   const color = blockColor(r.cls);
   ctx.save();
   ctx.fillStyle = color;
@@ -1139,6 +1229,26 @@ function clearCanvas(ctx, c, color) {
   ctx.fillRect(0, 0, c.width, c.height);
 }
 
+function palMaxScroll() {
+  if (!S.palCanvas) return 0;
+  const ch = S.palCanvas.clientHeight || S.palCanvas.height || 0;
+  return Math.max(0, S.palContentPx - ch);
+}
+function clampPalScroll(v) { return Math.max(0, Math.min(v, palMaxScroll())); }
+function palScrollbarGeom() {
+  const max = palMaxScroll();
+  if (max <= 0 || !S.palCanvas) return null;
+  const cw = S.palCanvas.clientWidth || S.palCanvas.width || 0;
+  const ch = S.palCanvas.clientHeight || S.palCanvas.height || 0;
+  const trackX = cw - 9;
+  const trackW = 6;
+  const trackTop = 2;
+  const trackH = ch - 4;
+  const thumbH = Math.max(20, ch * ch / Math.max(S.palContentPx, ch));
+  const thumbTop = trackTop + (S.palScroll / max) * (trackH - thumbH);
+  return { trackX, trackW, trackTop, trackH, thumbH, thumbTop, max };
+}
+
 function renderPaletteCanvas() {
   const ctx = S.palCtx, c = S.palCanvas;
   if (!ctx || !c) return;
@@ -1162,6 +1272,17 @@ function renderPaletteCanvas() {
     rrPath(ctx, r.x - 2, r.y - 2, r.w + 4, r.h + 4, 6);
     ctx.stroke();
   }
+  // 右侧滚动条
+  const sb = palScrollbarGeom();
+  if (sb) {
+    ctx.setTransform(S.dpr, 0, 0, S.dpr, 0, 0);
+    ctx.fillStyle = 'rgba(255,255,255,0.10)';
+    rrPath(ctx, sb.trackX, sb.trackTop, sb.trackW, sb.trackH, 3);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.38)';
+    rrPath(ctx, sb.trackX, sb.thumbTop, sb.trackW, sb.thumbH, 3);
+    ctx.fill();
+  }
 }
 
 function renderWorkCanvas() {
@@ -1173,6 +1294,7 @@ function renderWorkCanvas() {
   clearCanvas(ctx, c, th.bg);
   if (!H || !H.getBctx()) return;
   const bctx = H.getBctx();
+  S.errors = H.getErrors ? H.getErrors() : [];
   const v = bctx.layout.view;
   const scale = v.scale;
 
@@ -1189,8 +1311,9 @@ function renderWorkCanvas() {
     }
   }
 
-  // 编辑态复用上一次布局，避免重排导致 S.edit.region 失配（输入变化通过 S.edit.buffer 直接显示）
-  if (!S.edit) layoutWorkspace();
+  // 编辑态也重新布局：布局会读取 S.edit.buffer 实时扩展编辑框，之后重新定位编辑区域。
+  layoutWorkspace();
+  relocateEditRegion();
   ctx.setTransform(S.dpr * scale, 0, 0, S.dpr * scale, S.dpr * v.x, S.dpr * v.y);
   for (const r of S.wsRegions) if (r.kind === 'head') drawRegion(ctx, r, null);
   for (const r of S.wsRegions) if (r.kind !== 'drop' && r.kind !== 'head') drawRegion(ctx, r, null);
@@ -1218,7 +1341,21 @@ function renderWorkCanvas() {
     ctx.restore();
   }
 
+  // 报错积木标红
+  for (const err of S.errors || []) {
+    for (const r of S.wsRegions) {
+      if (r.kind === 'stmt' && r.stmt === err.stmt) drawErrorMark(ctx, r, scale);
+    }
+  }
+
   renderVars(ctx, cw, ch, th);
+
+  // 悬停报错积木时显示错误气泡（屏幕坐标，盖在最上层）
+  ctx.setTransform(S.dpr, 0, 0, S.dpr, 0, 0);
+  if (S.hover && S.hover.kind === 'stmt') {
+    const err = errorForStmt(S.hover.stmt);
+    if (err) drawErrorTooltip(ctx, err.message);
+  }
 }
 
 function renderVars(ctx, cw, ch, th) {
@@ -1233,8 +1370,9 @@ function renderVars(ctx, cw, ch, th) {
   ctx.lineTo(cw, varTop + 0.5);
   ctx.stroke();
 
-  // 编辑态复用上一次变量区布局，保证 S.edit.region 仍能命中重绘
-  if (!S.edit) layoutVars(cw);
+  // 编辑态也重新布局，实时扩展编辑框并重新定位编辑区域。
+  layoutVars(cw);
+  relocateEditRegion();
   const scroll = Math.max(0, Math.min(S.varsScroll, Math.max(0, S.varsContentH - VARS_H)));
   S.varsScroll = scroll;
   ctx.save();
@@ -1469,6 +1607,13 @@ function beginInlineEdit(region, editOverride) {
     buffer: String(edit.value == null ? '' : edit.value),
     selStart: 0,
     selEnd: 0,
+    anchor: null,
+    space: region.space || 'work',
+    regionKey: region.editKey || '',
+    stmt: region.stmt || null,
+    expr: region.expr || null,
+    node: region.node || null,
+    ident: !!(edit.ident),
   };
   S.edit.selStart = S.edit.buffer.length;
   S.edit.selEnd = S.edit.buffer.length;
@@ -1476,6 +1621,29 @@ function beginInlineEdit(region, editOverride) {
     editBlinkTimer = setInterval(() => { if (S.edit) puzzleCanvasRender(); }, 500);
   }
   puzzleCanvasRender();
+}
+
+function relocateEditRegion() {
+  if (!S.edit) return;
+  let found = null;
+  if (S.edit.space === 'var') {
+    if (S.edit.regionKey) found = S.varRegions.find(r => r.kind === 'edit' && r.editKey === S.edit.regionKey);
+  } else if (S.edit.node) {
+    found = S.wsRegions.find(r => r.kind === 'expr' && r.node === S.edit.node);
+  } else if (S.edit.stmt && S.edit.regionKey) {
+    found = S.wsRegions.find(r => r.kind === 'edit' && r.editKey === S.edit.regionKey && r.stmt === S.edit.stmt);
+    if (!found) found = S.wsRegions.find(r => r.kind === 'stmt' && r.stmt === S.edit.stmt && r.edit && !S.edit.regionKey);
+  } else if (S.edit.stmt) {
+    found = S.wsRegions.find(r => r.kind === 'stmt' && r.stmt === S.edit.stmt && r.edit);
+  }
+  if (found) {
+    S.edit.region = found;
+    if (S.editMouse) S.editMouse.region = found;
+  } else {
+    S.edit = null;
+    S.editMouse = null;
+    stopEditTimer();
+  }
 }
 function stopEditTimer() {
   if (editBlinkTimer != null) {
@@ -1525,22 +1693,35 @@ function editDeleteFwd() {
 }
 function editMoveCursor(step, extend) {
   const len = S.edit.buffer.length;
-  const [s, e] = editSelectedRange();
-  if (step < 0) {
-    if (!extend) setEditSel((s !== e) ? s : Math.max(0, e - 1), (s !== e) ? s : Math.max(0, e - 1));
-    else setEditSel(s, Math.max(0, e - 1));
+  if (!extend) {
+    const [s, e] = editSelectedRange();
+    const base = (s !== e) ? (step < 0 ? s : e) : e;
+    const pos = Math.max(0, Math.min(len, base + step));
+    setEditSel(pos, pos);
+    S.edit.anchor = null;
   } else {
-    if (!extend) setEditSel((s !== e) ? e : Math.min(len, e + 1), (s !== e) ? e : Math.min(len, e + 1));
-    else setEditSel(s, Math.min(len, e + 1));
+    if (S.edit.anchor == null) S.edit.anchor = S.edit.selStart;
+    const pos = Math.max(0, Math.min(len, S.edit.selEnd + step));
+    setEditSel(S.edit.anchor, pos);
   }
 }
 function editMoveHome(extend) {
-  if (extend) setEditSel(0, S.edit.selEnd);
-  else setEditSel(0, 0);
+  if (extend) {
+    if (S.edit.anchor == null) S.edit.anchor = S.edit.selStart;
+    setEditSel(S.edit.anchor, 0);
+  } else {
+    setEditSel(0, 0);
+    S.edit.anchor = null;
+  }
 }
 function editMoveEnd(extend) {
-  if (extend) setEditSel(S.edit.selStart, S.edit.buffer.length);
-  else setEditSel(S.edit.buffer.length, S.edit.buffer.length);
+  if (extend) {
+    if (S.edit.anchor == null) S.edit.anchor = S.edit.selStart;
+    setEditSel(S.edit.anchor, S.edit.buffer.length);
+  } else {
+    setEditSel(S.edit.buffer.length, S.edit.buffer.length);
+    S.edit.anchor = null;
+  }
 }
 function editIndexAtX(region, space, mx) {
   const text = S.edit.buffer;
@@ -1572,33 +1753,185 @@ async function pasteText() {
     if (typeof navigator === 'undefined' || !navigator.clipboard || !navigator.clipboard.readText) return;
     const text = await navigator.clipboard.readText();
     if (!S.edit) return;
-    const filtered = S.edit.kind === 'num' ? text.split('').filter(c => /[0-9.\-]/.test(c)).join('') : text;
+    let filtered = text;
+    if (S.edit.kind === 'num') filtered = text.split('').filter(c => /[0-9.\-]/.test(c)).join('');
+    else if (S.edit.ident) filtered = text.replace(/\s+/g, '');
     if (filtered) editReplace(filtered);
     puzzleCanvasRender();
   } catch (e) { /* 剪贴板不可用时忽略 */ }
 }
 
+/* —— 取色器（canvas） —— */
+const CP_W = 210, CP_H = 190;
+const CP_SV_X = 8, CP_SV_Y = 8, CP_SV_W = 130, CP_SV_H = 130;
+const CP_HUE_X = 146, CP_HUE_Y = 8, CP_HUE_W = 14, CP_HUE_H = 130;
+const CP_SWATCH_X = 8, CP_SWATCH_Y = 148, CP_SWATCH_W = 36, CP_SWATCH_H = 26;
+const CP_HEX_X = 50, CP_HEX_Y = 152;
+const CP_OK_X = 162, CP_OK_Y = 148, CP_OK_W = 40, CP_OK_H = 26;
+
+function rgbToHsvLocal(rgb) {
+  const r = rgb[0], g = rgb[1], b = rgb[2]; // 0..1
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const d = max - min;
+  let h = 0;
+  if (d !== 0) {
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60; if (h < 0) h += 360;
+  }
+  return [h, max === 0 ? 0 : d / max, max];
+}
+function hsvToRgbLocal(h, s, v) {
+  const c = v * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = v - c;
+  let r = 0, g = 0, b = 0;
+  if (h < 60) { r = c; g = x; } else if (h < 120) { r = x; g = c; } else if (h < 180) { g = c; b = x; }
+  else if (h < 240) { g = x; b = c; } else if (h < 300) { r = x; b = c; } else { r = c; b = x; }
+  return [r + m, g + m, b + m];
+}
+function cpHex() {
+  return rgbToHex(...hsvToRgbLocal(S.colorPicker.h, S.colorPicker.s, S.colorPicker.v));
+}
+function drawColorPicker() {
+  const ctx = S.colorCtx, c = S.colorCanvas;
+  if (!ctx || !c || !S.colorPicker) return;
+  const dpr = S.dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, CP_W, CP_H);
+  ctx.fillStyle = theme().panel2;
+  ctx.fillRect(0, 0, CP_W, CP_H);
+
+  // SV
+  const hueCss = 'hsl(' + S.colorPicker.h + ',100%,50%)';
+  const g1 = ctx.createLinearGradient(CP_SV_X, CP_SV_Y, CP_SV_X + CP_SV_W, CP_SV_Y);
+  g1.addColorStop(0, '#ffffff'); g1.addColorStop(1, hueCss);
+  ctx.fillStyle = g1;
+  ctx.fillRect(CP_SV_X, CP_SV_Y, CP_SV_W, CP_SV_H);
+  const g2 = ctx.createLinearGradient(CP_SV_X, CP_SV_Y, CP_SV_X, CP_SV_Y + CP_SV_H);
+  g2.addColorStop(0, 'rgba(0,0,0,0)'); g2.addColorStop(1, '#000000');
+  ctx.fillStyle = g2;
+  ctx.fillRect(CP_SV_X, CP_SV_Y, CP_SV_W, CP_SV_H);
+  const sx = CP_SV_X + S.colorPicker.s * CP_SV_W;
+  const sy = CP_SV_Y + (1 - S.colorPicker.v) * CP_SV_H;
+  ctx.beginPath(); ctx.arc(sx, sy, 5, 0, Math.PI * 2);
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.beginPath(); ctx.arc(sx, sy, 2.5, 0, Math.PI * 2);
+  ctx.strokeStyle = '#111'; ctx.lineWidth = 1; ctx.stroke();
+
+  // Hue
+  const hg = ctx.createLinearGradient(CP_HUE_X, CP_HUE_Y, CP_HUE_X, CP_HUE_Y + CP_HUE_H);
+  hg.addColorStop(0, '#f00'); hg.addColorStop(0.17, '#ff0'); hg.addColorStop(0.34, '#0f0');
+  hg.addColorStop(0.5, '#0ff'); hg.addColorStop(0.67, '#00f'); hg.addColorStop(0.84, '#f0f'); hg.addColorStop(1, '#f00');
+  ctx.fillStyle = hg;
+  ctx.fillRect(CP_HUE_X, CP_HUE_Y, CP_HUE_W, CP_HUE_H);
+  const hy = CP_HUE_Y + (S.colorPicker.h / 360) * CP_HUE_H;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(CP_HUE_X - 2, hy - 1, CP_HUE_W + 4, 3);
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(CP_HUE_X - 2, hy - 1, CP_HUE_W + 4, 3);
+
+  // 色块 / hex / OK
+  ctx.fillStyle = cpHex();
+  ctx.fillRect(CP_SWATCH_X, CP_SWATCH_Y, CP_SWATCH_W, CP_SWATCH_H);
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.strokeRect(CP_SWATCH_X, CP_SWATCH_Y, CP_SWATCH_W, CP_SWATCH_H);
+  ctx.fillStyle = theme().text;
+  ctx.font = FONT_MONO;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText(cpHex(), CP_HEX_X, CP_HEX_Y);
+  ctx.fillStyle = 'rgba(255,255,255,0.1)';
+  rrPath(ctx, CP_OK_X, CP_OK_Y, CP_OK_W, CP_OK_H, 5);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+  ctx.stroke();
+  ctx.fillStyle = theme().text;
+  ctx.font = FONT;
+  ctx.textAlign = 'center';
+  ctx.fillText(t('common.ok'), CP_OK_X + CP_OK_W / 2, CP_OK_Y + CP_OK_H / 2);
+}
 function openColorEdit(region) {
-  if (!region || !region.color) return;
+  if (!region || !region.color || !S.colorCanvas) return;
   const rect = worldToScreenRect(region);
-  const input = document.createElement('input');
-  input.type = 'color';
-  input.className = 'pc-color-input';
-  input.value = region.color.hex ? region.color.hex() : '#808080';
-  input.style.left = rect.left + 'px';
-  input.style.top = rect.top + 'px';
-  input.style.width = rect.width + 'px';
-  input.style.height = rect.height + 'px';
-  document.body.appendChild(input);
-  const cleanup = () => { if (input.parentNode) input.parentNode.removeChild(input); };
-  input.addEventListener('input', () => {
-    if (region.color.commit) {
-      const ok = region.color.commit(input.value) !== false;
-      if (ok) { H.refreshPreview(); puzzleCanvasRender(); }
-    }
-  });
-  input.addEventListener('change', cleanup);
-  input.addEventListener('blur', cleanup);
+  const hex = region.color.hex ? region.color.hex() : '#808080';
+  const rgb = hexToRgb(hex);
+  const hsv = rgbToHsvLocal(rgb);
+  S.colorPicker = { region, h: hsv[0], s: hsv[1], v: hsv[2] };
+  S.colorDrag = null;
+  const dpr = S.dpr;
+  S.colorCanvas.style.width = CP_W + 'px';
+  S.colorCanvas.style.height = CP_H + 'px';
+  S.colorCanvas.width = Math.max(1, Math.round(CP_W * dpr));
+  S.colorCanvas.height = Math.max(1, Math.round(CP_H * dpr));
+  const left = Math.max(8, Math.min(rect.left, (window.innerWidth || 1200) - CP_W - 8));
+  const top = Math.max(8, Math.min(rect.top, (window.innerHeight || 800) - CP_H - 8));
+  S.colorCanvas.style.left = left + 'px';
+  S.colorCanvas.style.top = top + 'px';
+  S.colorCanvas.style.display = 'block';
+  drawColorPicker();
+}
+function commitColorEdit(close) {
+  if (!S.colorPicker) return;
+  const region = S.colorPicker.region;
+  const hex = cpHex();
+  if (region.color.commit) {
+    const ok = region.color.commit(hex) !== false;
+    if (ok) { H.refreshPreview(); puzzleCanvasRender(); }
+  }
+  if (close) closeColorEdit();
+  else drawColorPicker();
+}
+function closeColorEdit() {
+  S.colorPicker = null;
+  S.colorDrag = null;
+  if (S.colorCanvas) S.colorCanvas.style.display = 'none';
+}
+function colorLocalPoint(e) {
+  const rect = S.colorCanvas.getBoundingClientRect();
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+function onColorDown(e) {
+  if (!S.colorPicker) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const p = colorLocalPoint(e);
+  if (p.x >= CP_OK_X && p.x <= CP_OK_X + CP_OK_W && p.y >= CP_OK_Y && p.y <= CP_OK_Y + CP_OK_H) {
+    commitColorEdit(true);
+    return;
+  }
+  if (p.x >= CP_SV_X && p.x <= CP_SV_X + CP_SV_W && p.y >= CP_SV_Y && p.y <= CP_SV_Y + CP_SV_H) {
+    S.colorDrag = 'sv';
+    updateColorDrag(e);
+    return;
+  }
+  if (p.x >= CP_HUE_X - 3 && p.x <= CP_HUE_X + CP_HUE_W + 3 && p.y >= CP_HUE_Y && p.y <= CP_HUE_Y + CP_HUE_H) {
+    S.colorDrag = 'hue';
+    updateColorDrag(e);
+    return;
+  }
+  commitColorEdit(true);
+}
+function onColorMove(e) {
+  if (!S.colorPicker) return;
+  if (S.colorDrag) { e.preventDefault(); updateColorDrag(e); }
+}
+function onColorUp(e) { if (S.colorDrag) endColorDrag(e); }
+function endColorDrag(e) { S.colorDrag = null; if (S.colorPicker) drawColorPicker(); }
+function updateColorDrag(e) {
+  if (!S.colorPicker || !S.colorDrag) return;
+  const p = colorLocalPoint(e);
+  if (S.colorDrag === 'sv') {
+    S.colorPicker.s = Math.max(0, Math.min(1, (p.x - CP_SV_X) / CP_SV_W));
+    S.colorPicker.v = 1 - Math.max(0, Math.min(1, (p.y - CP_SV_Y) / CP_SV_H));
+  } else if (S.colorDrag === 'hue') {
+    S.colorPicker.h = Math.max(0, Math.min(360, (p.y - CP_HUE_Y) / CP_HUE_H * 360));
+  }
+  commitColorEdit(false);
+}
+function onColorOutside(e) {
+  if (!S.colorPicker) return;
+  if (S.colorCanvas && (e.target === S.colorCanvas || S.colorCanvas.contains(e.target))) return;
+  closeColorEdit();
 }
 
 /* ============================ 拖拽 ============================ */
@@ -1720,7 +2053,7 @@ function computeDropTarget(e) {
     }
   }
   if (hit.kind === 'blank') {
-    if (src.stmt || src.type === 'stmt-group') {
+    if (src.type === 'palette' || src.type === 'stmt-group' || src.type === 'expr') {
       const view = H.getBctx().layout.view;
       const gx = (e.clientX - rect.left - d.grabDx - view.x) / view.scale;
       const gy = (e.clientY - rect.top - d.grabDy - view.y) / view.scale;
@@ -1873,6 +2206,17 @@ function endDrag(e) {
       const stmt = H.newStmtNode(source.stmtKind);
       H.getBctx().frags.push({ stmts: [stmt], x: target.x, y: target.y });
       H.refreshPreview();
+    } else if (source.type === 'palette') {
+      H.pushUndo();
+      const node = H.newExprNodeFromTemplate(source.template);
+      H.getBctx().frags.push({ stmts: [{ kind: 'expr', expr: node }], x: target.x, y: target.y });
+      H.refreshPreview();
+    } else if (source.type === 'expr') {
+      if (!source.detach) { puzzleCanvasRender(); return; }
+      H.pushUndo();
+      const node = source.detach();
+      H.getBctx().frags.push({ stmts: [{ kind: 'expr', expr: node }], x: target.x, y: target.y });
+      H.refreshPreview();
     } else if (source.type === 'stmt-group') {
       H.getBctx().frags.push({ stmts: source.group, x: target.x, y: target.y });
       H.refreshPreview();
@@ -1920,7 +2264,19 @@ function onPalDown(e) {
   if (e.button !== 0) return;
   if (S.edit) commitEdit();
   const rect = S.palCanvas.getBoundingClientRect();
-  const hit = hitPalette(e.clientX - rect.left, e.clientY - rect.top);
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const sb = palScrollbarGeom();
+  if (sb && mx >= sb.trackX - 4 && mx <= sb.trackX + sb.trackW + 4 && my >= sb.trackTop && my <= sb.trackTop + sb.trackH) {
+    e.preventDefault();
+    e.stopPropagation();
+    const ratio = (my - sb.thumbH / 2 - sb.trackTop) / Math.max(1, sb.trackH - sb.thumbH);
+    S.palScroll = clampPalScroll(ratio * sb.max);
+    S.palScrollDrag = { startY: e.clientY, startScroll: S.palScroll, max: sb.max };
+    if (S.palCanvas.setPointerCapture) S.palCanvas.setPointerCapture(e.pointerId);
+    puzzleCanvasRender();
+    return;
+  }
+  const hit = hitPalette(mx, my);
   if (hit && hit.kind === 'pal-item') {
     e.preventDefault();
     startPaletteDrag(hit, e);
@@ -1991,7 +2347,7 @@ function onWorkDown(e) {
     puzzleCanvasRender();
     return;
   }
-  if (hit.kind === 'stmt' && hit.stmt && hit.stmt.kind === 'raw') { e.preventDefault(); beginInlineEdit(hit); return; }
+  if (hit.kind === 'stmt' && hit.stmt && (hit.stmt.kind === 'raw' || hit.stmt.kind === 'comment')) { e.preventDefault(); beginInlineEdit(hit); return; }
   if (hit.kind === 'stmt') { e.preventDefault(); startStmtGroupPending(hit, e); return; }
   if (hit.kind === 'blank') { e.preventDefault(); startPan(e); return; }
 }
@@ -2030,6 +2386,17 @@ function onWorkWheel(e) {
 }
 
 function onWindowMove(e) {
+  if (S.palScrollDrag) {
+    const d = S.palScrollDrag;
+    const geom = palScrollbarGeom();
+    if (geom) {
+      const trackH = Math.max(1, geom.trackH - geom.thumbH);
+      S.palScroll = clampPalScroll(d.startScroll + (e.clientY - d.startY) * geom.max / trackH);
+    }
+    puzzleCanvasRender();
+    return;
+  }
+  if (S.colorDrag) { updateColorDrag(e); return; }
   if (S.edit) {
     if (S.editMouse && S.workCanvas) {
       const rect = S.workCanvas.getBoundingClientRect();
@@ -2045,6 +2412,8 @@ function onWindowMove(e) {
   updateHover(e);
 }
 function onWindowUp(e) {
+  if (S.palScrollDrag) { S.palScrollDrag = null; return; }
+  if (S.colorDrag) { endColorDrag(e); return; }
   if (S.edit) {
     S.editMouse = null;
     return;
@@ -2095,6 +2464,7 @@ function updateHover(e) {
       const kind = hover && hover.kind;
       S.workCanvas.style.cursor = (kind === 'edit' || kind === 'attr' || kind === 'toggle' || kind === 'color') ? 'pointer' : (kind === 'expr' || kind === 'stmt' || kind === 'head' || kind === 'op' || kind === 'attr-var' || kind === 'pal-item') ? 'grab' : 'default';
     }
+    puzzleCanvasRender();
   }
 }
 
@@ -2132,23 +2502,25 @@ export function puzzleCanvasRender() {
 }
 
 export function puzzleCanvasIsEditing() { return !!S.edit; }
-export function puzzleCanvasCancelEdit() { cancelEdit(); }
+export function puzzleCanvasCancelEdit() { cancelEdit(); closeColorEdit(); }
 
 export function initPuzzleCanvas() {
   S.palCanvas = document.getElementById('puzzle-palette-canvas');
   S.workCanvas = document.getElementById('puzzle-workspace-canvas');
   S.echoCanvas = document.getElementById('puzzle-echo-canvas');
   S.ghostCanvas = document.getElementById('puzzle-ghost-canvas');
+  S.colorCanvas = document.getElementById('puzzle-color-canvas');
   S.palCtx = S.palCanvas && typeof S.palCanvas.getContext === 'function' ? S.palCanvas.getContext('2d') : null;
   S.workCtx = S.workCanvas && typeof S.workCanvas.getContext === 'function' ? S.workCanvas.getContext('2d') : null;
   S.echoCtx = S.echoCanvas && typeof S.echoCanvas.getContext === 'function' ? S.echoCanvas.getContext('2d') : null;
   S.ghostCtx = S.ghostCanvas && typeof S.ghostCanvas.getContext === 'function' ? S.ghostCanvas.getContext('2d') : null;
+  S.colorCtx = S.colorCanvas && typeof S.colorCanvas.getContext === 'function' ? S.colorCanvas.getContext('2d') : null;
 
   if (!S.palCtx || !S.workCtx) return;
 
   if (S.palCanvas) {
     S.palCanvas.addEventListener('pointerdown', onPalDown);
-    S.palCanvas.addEventListener('wheel', (e) => { e.preventDefault(); S.palScroll = Math.max(0, S.palScroll + (e.deltaY > 0 ? 40 : -40)); puzzleCanvasRender(); }, { passive: false });
+    S.palCanvas.addEventListener('wheel', (e) => { e.preventDefault(); S.palScroll = clampPalScroll(S.palScroll + (e.deltaY > 0 ? 40 : -40)); puzzleCanvasRender(); }, { passive: false });
   }
   if (S.workCanvas) {
     S.workCanvas.addEventListener('pointerdown', onWorkDown);
@@ -2157,6 +2529,10 @@ export function initPuzzleCanvas() {
   if (S.echoCanvas) {
     S.echoCanvas.addEventListener('wheel', onEchoWheel, { passive: false });
   }
+  if (S.colorCanvas) {
+    S.colorCanvas.addEventListener('pointerdown', onColorDown);
+  }
+  if (document.addEventListener) document.addEventListener('pointerdown', onColorOutside, true);
   window.addEventListener('pointermove', onWindowMove);
   window.addEventListener('pointerup', onWindowUp);
   window.addEventListener('resize', puzzleCanvasResize);
@@ -2196,6 +2572,7 @@ export function initPuzzleCanvas() {
       if (ev.key === 'End') { editMoveEnd(ev.shiftKey); puzzleCanvasRender(); return; }
       if (ev.key.length === 1 && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
         if (S.edit.kind === 'num' && !/[0-9.\-]/.test(ev.key)) return;
+        if (S.edit.ident && /\s/.test(ev.key)) return;
         editReplace(ev.key);
         puzzleCanvasRender();
         return;

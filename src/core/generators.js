@@ -158,6 +158,30 @@ export function evaluateParticleBase(fx, i, n) {
   return evaluateParticleAt(fx, i, n, 0);
 }
 
+/* 校验脚本但不改动任何粒子/轨道状态；成功返回 null，失败返回 Error（含行列号）。 */
+export function validateFunctionScript(fx, setupOverride, processOverride) {
+  const setup = (setupOverride != null ? setupOverride : (fx.setup || '')).trim();
+  const process = (processOverride != null ? processOverride : (fx.process || '')).trim();
+  const program = parseProgram('setup {\n' + setup + '\n}\nprocess {\n' + process + '\n}\n');
+  const n = Math.max(1, Math.round(fx.count) || 1);
+  const objState = createObjectState(fx.seed | 0);
+  runSetup(program, objState, { n, t: fx.st || 0, vars: varsAt(fx, fx.st || 0) });
+  const statics = createStatics();
+  const t = 0;
+  const uv = uvFor(fx, n, 0);
+  const ctx = {
+    i: 0, n, t, dt: 0,
+    life: lifeAt(fx, t),
+    uv_x: uv.uv_x, uv_y: uv.uv_y,
+    vars: varsAt(fx, t),
+    fastMath: !!fx.fastMath,
+    uniforms: null,
+    out: { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0 },
+  };
+  evalProcess(program, objState, statics, ctx);
+  return null;
+}
+
 export const eq3 = (a, b) => a.length === b.length && a.every((x, i) => Math.abs(x - b[i]) < 1e-9);
 
 /* -------------------------------------------------------------------------

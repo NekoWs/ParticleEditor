@@ -132,6 +132,7 @@ export const STMT_BLOCKS = {
   light: { label: 'blk.stmt.light.label', group: 'appearance', slotCount: 1, desc: 'blk.stmt.light.desc' },
   attr: { label: 'blk.stmt.attr.label', group: 'pos', named: true, desc: 'blk.stmt.attr.desc' },
   set: { label: 'blk.stmt.set.label', group: 'var', named: true, desc: 'blk.stmt.set.desc' },
+  comment: { label: 'blk.stmt.comment.label', group: 'logic', named: true, desc: 'blk.stmt.comment.desc' },
 };
 
 /* —— 调色板分组（顺序即显示顺序；label 为 i18n 键 blk.pal.<id>） —— */
@@ -184,6 +185,7 @@ export function opResultType(op, ta, tb) {
 
 /** 推断表达式节点类型。varTypeOf(name) 返回该变量的类型（标量/向量/矩阵/any）。 */
 export function exprType(node, varTypeOf) {
+  if (!node) return T_ANY;
   const vt = varTypeOf || (() => T_ANY);
   switch (node.kind) {
     case 'num': return T_SCALAR;
@@ -198,6 +200,7 @@ export function exprType(node, varTypeOf) {
     case 'ternary': return T_ANY;
     case 'neg': return exprType(node.a, vt);
     case 'chain': {
+      if (node.terms.some(t => !t)) return T_ANY;
       // 按运算符优先级求类型（* / % 优先于 + -），与 exprToCode 生成代码的求值语义一致
       const tt = node.terms.map(t => exprType(t, vt));
       const oo = node.ops.slice();
@@ -214,8 +217,44 @@ export function exprType(node, varTypeOf) {
       for (let j = 0; j < oo.length; j++) t = opResultType(oo[j], t, tt[j + 1]);
       return t;
     }
-    case 'op': return opResultType(node.op, exprType(node.a, vt), exprType(node.b, vt));
+    case 'op': return (node.a == null || node.b == null) ? T_ANY : opResultType(node.op, exprType(node.a, vt), exprType(node.b, vt));
     default: return T_ANY;
+  }
+}
+
+/** 表达式是否已填满（所有参数槽都有值）。空槽（null）表示未填写。 */
+export function exprComplete(node) {
+  if (!node) return false;
+  switch (node.kind) {
+    case 'num': case 'bool': case 'var': return true;
+    case 'func': return node.args.every(exprComplete);
+    case 'op': return exprComplete(node.a) && exprComplete(node.b);
+    case 'chain': return node.terms.every(exprComplete);
+    case 'comp': return exprComplete(node.target);
+    case 'neg': case 'not': return exprComplete(node.a);
+    case 'ternary': return exprComplete(node.cond) && exprComplete(node.a) && exprComplete(node.b);
+    case 'index': return exprComplete(node.target) && exprComplete(node.index);
+    case 'method': return exprComplete(node.obj) && node.args.every(exprComplete);
+    case 'array': return node.items.every(exprComplete);
+    default: return false;
+  }
+}
+
+/** 语句是否有生成代码所需的最少参数；缺参视为空块（无效果），生成时跳过。 */
+export function stmtComplete(s) {
+  if (!s) return false;
+  switch (s.kind) {
+    case 'pos': case 'vel': case 'col': return (s.slots || []).every(exprComplete);
+    case 'pos_vec': case 'vel_vec': case 'scl': case 'light': case 'attr': case 'set': case 'expr':
+      return exprComplete(s.expr);
+    case 'glow': case 'break': case 'continue': case 'raw': case 'comment': return true;
+    case 'return': return s.expr == null || exprComplete(s.expr);
+    case 'if': case 'while': case 'do': return exprComplete(s.cond);
+    case 'for': return String(s.cond || '').trim() !== '';
+    case 'func': return String(s.name || '').trim() !== '';
+    case 'global': case 'static':
+      return String(s.name || '').trim() !== '' && (s.expr == null || exprComplete(s.expr));
+    default: return true;
   }
 }
 
@@ -235,6 +274,7 @@ export function fmtNum(v) {
 
 /** 表达式节点 → 代码。parentPrec 为父级要求的优先级（低于则加括号）。 */
 export function exprToCode(node, parentPrec) {
+  if (!node) return '';
   let s, p;
   switch (node.kind) {
     case 'num':
@@ -292,55 +332,107 @@ export function exprToCode(node, parentPrec) {
   return (p < parentPrec) ? '(' + s + ')' : s;
 }
 
-export function stmtToCode(s) {
+function indentPad(level) { return '  '.repeat(Math.max(0, level || 0)); }
+function lineCount(str) { return (str === '') ? 0 : str.split('\n').length; }
+
+function stmtNeedsSemi(code) {
+  const t = (code || '').trimEnd();
+  if (!t) return false;
+  if (t.endsWith('}') || t.endsWith(';') || t.endsWith('*/')) return false;
+  if (t.startsWith('//')) return false;
+  return true;
+}
+
+function emitComment(s, pad) {
+  const text = String(s.text || '');
+  if (!text.includes('\n')) return pad + '// ' + text;
+  return pad + '/*\n' + text.split('\n').map(l => pad + ' ' + l).join('\n') + '\n' + pad + ' */';
+}
+
+function emitStmt(s, level, spans) {
+  if (!stmtComplete(s)) return '';
+  const pad = indentPad(level);
   switch (s.kind) {
-    case 'pos': return '[x,y,z] = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
-    case 'pos_vec': return '[x,y,z] = ' + exprToCode(s.expr, 0);
-    case 'vel': return '[vx,vy,vz] = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
-    case 'vel_vec': return '[vx,vy,vz] = ' + exprToCode(s.expr, 0);
-    case 'col': return '[r,g,b,a] = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
-    case 'scl': return 'sc = ' + exprToCode(s.expr, 0);
-    case 'glow': return 'glow = ' + (s.on ? '1' : '0');
-    case 'light': return 'light = ' + exprToCode(s.expr, 0);
-    case 'attr': return s.name + ' = ' + exprToCode(s.expr, 0);
-    case 'set': return s.name + ' = ' + exprToCode(s.expr, 0);
-    case 'expr': return exprToCode(s.expr, 0) + ';';
+    case 'pos': return pad + '[x,y,z] = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
+    case 'pos_vec': return pad + '[x,y,z] = ' + exprToCode(s.expr, 0);
+    case 'vel': return pad + '[vx,vy,vz] = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
+    case 'vel_vec': return pad + '[vx,vy,vz] = ' + exprToCode(s.expr, 0);
+    case 'col': return pad + '[r,g,b,a] = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
+    case 'scl': return pad + 'sc = ' + exprToCode(s.expr, 0);
+    case 'glow': return pad + 'glow = ' + (s.on ? '1' : '0');
+    case 'light': return pad + 'light = ' + exprToCode(s.expr, 0);
+    case 'attr': return pad + s.name + ' = ' + exprToCode(s.expr, 0);
+    case 'set': return pad + s.name + ' = ' + exprToCode(s.expr, 0);
+    case 'expr': return pad + exprToCode(s.expr, 0) + ';';
     case 'raw': return s.text || '';
-    case 'break': return 'break;';
-    case 'continue': return 'continue;';
-    case 'return': return s.expr ? 'return ' + exprToCode(s.expr, 0) + ';' : 'return;';
+    case 'comment': return emitComment(s, pad);
+    case 'break': return pad + 'break;';
+    case 'continue': return pad + 'continue;';
+    case 'return': return pad + (s.expr ? 'return ' + exprToCode(s.expr, 0) + ';' : 'return;');
     case 'if': {
-      const body = statementsToCode(s.body || []);
-      let out = 'if (' + exprToCode(s.cond, 0) + ') { ' + body + ' }';
+      const cond = exprToCode(s.cond, 0);
+      const body = emitList(s.body || [], level + 1, spans);
+      let out = pad + 'if (' + cond + ') {\n';
+      if (body) out += body + '\n';
+      out += pad + '}';
       if (s.elseBody && s.elseBody.length) {
-        if (s.elseBody.length === 1 && s.elseBody[0].kind === 'if') out += ' else ' + stmtToCode(s.elseBody[0]);
-        else out += ' else { ' + statementsToCode(s.elseBody) + ' }';
+        if (s.elseBody.length === 1 && s.elseBody[0].kind === 'if') {
+          out += ' else ' + emitStmt(s.elseBody[0], level, spans);
+        } else {
+          out += ' else {\n';
+          out += emitList(s.elseBody, level + 1, spans);
+          out += '\n' + pad + '}';
+        }
       }
       return out;
     }
-    case 'while': return 'while (' + exprToCode(s.cond, 0) + ') { ' + statementsToCode(s.body || []) + ' }';
-    case 'do': return 'do { ' + statementsToCode(s.body || []) + ' } while (' + exprToCode(s.cond, 0) + ');';
-    case 'for': return 'for (' + (s.init || '') + '; ' + (s.cond || '') + '; ' + (s.inc || '') + ') { ' + statementsToCode(s.body || []) + ' }';
-    case 'func': return 'func ' + s.name + '(' + (s.params || []).join(', ') + ') { ' + statementsToCode(s.body || []) + ' }';
-    case 'global': case 'static': return s.kind + ' ' + s.name + (s.expr ? ' = ' + exprToCode(s.expr, 0) : '') + ';';
+    case 'while': {
+      const body = emitList(s.body || [], level + 1, spans);
+      return pad + 'while (' + exprToCode(s.cond, 0) + ') {\n' + body + '\n' + pad + '}';
+    }
+    case 'do': {
+      const body = emitList(s.body || [], level + 1, spans);
+      return pad + 'do {\n' + body + '\n' + pad + '} while (' + exprToCode(s.cond, 0) + ');';
+    }
+    case 'for': {
+      const body = emitList(s.body || [], level + 1, spans);
+      return pad + 'for (' + (s.init || '') + '; ' + (s.cond || '') + '; ' + (s.inc || '') + ') {\n' + body + '\n' + pad + '}';
+    }
+    case 'func': {
+      const body = emitList(s.body || [], level + 1, spans);
+      return pad + 'func ' + s.name + '(' + (s.params || []).join(', ') + ') {\n' + body + '\n' + pad + '}';
+    }
+    case 'global': case 'static': return pad + s.kind + ' ' + s.name + (s.expr ? ' = ' + exprToCode(s.expr, 0) : '') + ';';
     default: throw new Error(_etf('err.unknownStmt', s.kind));
   }
 }
 
-export function statementsToCode(stmts) {
+function emitList(list, level, spans) {
   let out = '';
-  for (const s of stmts) {
-    const code = stmtToCode(s);
-    if (out) {
-      const last = out.trimEnd();
-      if (last.endsWith('}') || last.endsWith(';')) out += '\n';
-      else out += ';\n';
-    }
+  for (const s of list || []) {
+    let code = emitStmt(s, level, spans);
+    if (code == null || code === '') continue;
+    if (stmtNeedsSemi(code)) code += ';';
+    if (out) out += '\n';
+    if (spans) spans.push({ stmt: s, start: lineCount(out) + 1, end: lineCount(out) + lineCount(code) });
     out += code;
   }
-  const tail = out.trimEnd();
-  if (tail && !tail.endsWith(';') && !tail.endsWith('}')) out += ';';
   return out;
+}
+
+export function stmtToCode(s, level) {
+  return emitStmt(s, level || 0, null);
+}
+
+export function statementsToCode(stmts, level) {
+  return emitList(stmts || [], level || 0, null);
+}
+
+/** 与 statementsToCode 相同的代码，另返回每条语句（含嵌套语句）在生成代码中的行区间。 */
+export function statementsToCodeSpans(stmts, level) {
+  const spans = [];
+  const code = emitList(stmts || [], level || 0, spans);
+  return { code, spans };
 }
 
 /* =========================================================================
@@ -594,8 +686,23 @@ export const isNames = (names, expect) => names.length === expect.length && name
 
 function matchDelim(s, openIndex, open, close) {
   let depth = 0;
+  let inStr = false, esc = false;
   for (let i = openIndex; i < s.length; i++) {
     const c = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === '\\') esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; continue; }
+    if (c === '/' && s[i + 1] === '/') { while (i < s.length && s[i] !== '\n') i++; continue; }
+    if (c === '/' && s[i + 1] === '*') {
+      i += 2;
+      while (i < s.length && !(s[i] === '*' && s[i + 1] === '/')) i++;
+      i++;
+      continue;
+    }
     if (c === open) depth++;
     else if (c === close) { depth--; if (depth === 0) return i; }
   }
@@ -622,6 +729,12 @@ function splitTopSemicolons(s) {
 
 export function stmtToNode(stmt) {
   const s = (stmt || '').trim();
+  if (s.startsWith('//')) return { kind: 'comment', text: s.slice(2).trim() };
+  if (s.startsWith('/*')) {
+    let t = s.slice(2).trim();
+    if (t.endsWith('*/')) t = t.slice(0, -2).trim();
+    return { kind: 'comment', text: t };
+  }
   if (s === 'break;' || s === 'break') return { kind: 'break' };
   if (s === 'continue;' || s === 'continue') return { kind: 'continue' };
   if (s === 'return;') return { kind: 'return', expr: null };
@@ -736,7 +849,7 @@ export function stmtToNode(stmt) {
   return { kind: 'set', name: lhs, expr: parseExpr(rhs) };
 }
 
-/** 把代码文本拆成顶层语句（尊重字符串 / 括号 / 花括号，避免在 if/for/while 体内误拆）。 */
+/** 把代码文本拆成顶层语句（尊重字符串 / 括号 / 花括号 / 注释，避免在 if/for/while 体内误拆）。 */
 export function splitStatements(code) {
   const out = [];
   const src = code || '';
@@ -744,18 +857,69 @@ export function splitStatements(code) {
   let depth = 0;
   let inStr = false;
   let esc = false;
-  for (let i = 0; i < src.length; i++) {
+  const pushCur = () => {
+    const s = cur.trim();
+    if (s) out.push(s);
+    cur = '';
+  };
+  for (let i = 0; i < src.length;) {
     const c = src[i];
     if (inStr) {
       cur += c;
       if (esc) { esc = false; }
       else if (c === '\\') { esc = true; }
       else if (c === '"') { inStr = false; }
+      i++;
       continue;
     }
-    if (c === '"') { inStr = true; cur += c; continue; }
-    if (c === '(' || c === '[' || c === '{') { depth++; cur += c; continue; }
-    if (c === ')' || c === ']') { depth = Math.max(0, depth - 1); cur += c; continue; }
+    if (c === '"') { inStr = true; cur += c; i++; continue; }
+
+    // 行注释：顶层作为独立注释语句；花括号内保留原文，交给递归解析。
+    if (c === '/' && src[i + 1] === '/') {
+      if (depth > 0) {
+        let j = i;
+        while (j < src.length && src[j] !== '\n') j++;
+        cur += src.slice(i, j);
+        i = j;
+        continue;
+      }
+      pushCur();
+      let j = i;
+      while (j < src.length && src[j] !== '\n') j++;
+      const comment = src.slice(i, j).trim();
+      if (comment) out.push(comment);
+      i = j;
+      continue;
+    }
+    // 块注释：顶层作为独立注释语句；花括号内保留原文。
+    if (c === '/' && src[i + 1] === '*') {
+      const start = i;
+      let j = i + 2;
+      while (j < src.length && !(src[j] === '*' && src[j + 1] === '/')) j++;
+      if (j >= src.length) {
+        if (depth > 0) cur += src.slice(start);
+        else {
+          pushCur();
+          const comment = src.slice(start).trim();
+          if (comment) out.push(comment);
+        }
+        i = src.length;
+      } else {
+        j += 2;
+        if (depth > 0) {
+          cur += src.slice(start, j);
+        } else {
+          pushCur();
+          const comment = src.slice(start, j).trim();
+          if (comment) out.push(comment);
+        }
+        i = j;
+      }
+      continue;
+    }
+
+    if (c === '(' || c === '[' || c === '{') { depth++; cur += c; i++; continue; }
+    if (c === ')' || c === ']') { depth = Math.max(0, depth - 1); cur += c; i++; continue; }
     if (c === '}') {
       depth = Math.max(0, depth - 1);
       cur += c;
@@ -764,24 +928,20 @@ export function splitStatements(code) {
         let j = i + 1;
         while (j < src.length && /\s/.test(src[j])) j++;
         const look = src.slice(j, j + 5);
-        if (!look.startsWith('else') && !look.startsWith('while')) {
-          const s = cur.trim();
-          if (s) out.push(s);
-          cur = '';
-        }
+        if (!look.startsWith('else') && !look.startsWith('while')) pushCur();
       }
+      i++;
       continue;
     }
     if (c === ';' && depth === 0) {
-      const s = cur.trim();
-      if (s) out.push(s);
-      cur = '';
+      pushCur();
+      i++;
       continue;
     }
     cur += c;
+    i++;
   }
-  const tail = cur.trim();
-  if (tail) out.push(tail);
+  pushCur();
   return out;
 }
 

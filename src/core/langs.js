@@ -127,7 +127,7 @@ export var LANGS = {
     'blk.lensHint': '拖动到拼图上查看含义',
     'blk.openFailTitle': '无法用拼图打开', 'blk.parseFail': '代码解析失败\n{0}\n\n请先在文本视图修正代码。',
     'blk.varExprErrTitle': '变量表达式错误', 'blk.varExprErr': '变量 {0} 的表达式解析失败：{1}',
-    'blk.start': '起点', 'blk.fragment': '碎片', 'blk.block': '积木',
+    'blk.start': '逐粒子处理', 'blk.setup': '初始化', 'blk.fragment': '碎片', 'blk.block': '积木',
     'blk.sampleCount': '采样数', 'blk.varHasKf': '{0}（有关键帧，由时间轴驱动）',
     'blk.attrRefHint': '拖入表达式以引用属性 {0}',
     'blk.clickSwapComp': '点击切换分量', 'blk.addTerm': '+ 项', 'blk.addTermHint': '拖入数值或运算符以追加',
@@ -161,6 +161,7 @@ export var LANGS = {
     'blk.stmt.light.label': '光照等级', 'blk.stmt.light.desc': '设置粒子光照等级',
     'blk.stmt.attr.label': '设置属性', 'blk.stmt.attr.desc': '设置单个属性值（x/y/z/…）',
     'blk.stmt.set.label': '临时变量', 'blk.stmt.set.desc': '定义临时变量并赋值',
+    'blk.stmt.comment.label': '注释', 'blk.stmt.comment.desc': '添加注释（不执行）',
     // —— 拼图：函数说明 ——
     'blk.func.sin.desc': '正弦函数', 'blk.func.cos.desc': '余弦函数', 'blk.func.tan.desc': '正切函数',
     'blk.func.asin.desc': '反正弦函数', 'blk.func.acos.desc': '反余弦函数', 'blk.func.atan.desc': '反正切函数',
@@ -307,7 +308,7 @@ export var LANGS = {
     'blk.lensHint': 'Drag onto a block to see its meaning',
     'blk.openFailTitle': 'Cannot Open in Puzzle View', 'blk.parseFail': 'Failed to parse code\n{0}\n\nPlease fix the code in text view first.',
     'blk.varExprErrTitle': 'Variable Expression Error', 'blk.varExprErr': 'Failed to parse expression of variable {0}: {1}',
-    'blk.start': 'Start', 'blk.fragment': 'Fragment', 'blk.block': 'Block',
+    'blk.start': 'Per Particle', 'blk.setup': 'Init', 'blk.fragment': 'Fragment', 'blk.block': 'Block',
     'blk.sampleCount': 'Sample Count', 'blk.varHasKf': '{0} (has keyframes, driven by the timeline)',
     'blk.attrRefHint': 'Drop an expression to reference property {0}',
     'blk.clickSwapComp': 'Click to cycle component', 'blk.addTerm': '+ Term', 'blk.addTermHint': 'Drop a number or operator to append',
@@ -341,6 +342,7 @@ export var LANGS = {
     'blk.stmt.light.label': 'Light Level', 'blk.stmt.light.desc': 'Set particle light level',
     'blk.stmt.attr.label': 'Set Property', 'blk.stmt.attr.desc': 'Set a single property value (x/y/z/…)',
     'blk.stmt.set.label': 'Local Variable', 'blk.stmt.set.desc': 'Define a local variable and assign',
+    'blk.stmt.comment.label': 'Comment', 'blk.stmt.comment.desc': 'Add a comment (not executed)',
     // —— 拼图：函数说明 ——
     'blk.func.sin.desc': 'Sine function', 'blk.func.cos.desc': 'Cosine function', 'blk.func.tan.desc': 'Tangent function',
     'blk.func.asin.desc': 'Arcsine function', 'blk.func.acos.desc': 'Arccosine function', 'blk.func.atan.desc': 'Arctangent function',
