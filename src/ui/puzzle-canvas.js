@@ -2398,7 +2398,7 @@ function computeDropTarget(e) {
       const gx = (e.clientX - rect.left - d.grabDx - view.x) / view.scale;
       const gy = (e.clientY - rect.top - d.grabDy - view.y) / view.scale;
       d.target = { kind: 'blank', x: gx, y: gy };
-      d.valid = !H.hatExists(src.kind);
+      d.valid = src.kind === 'func' || !H.hatExists(src.kind);
       if (!d.valid) S.dropHover = { region: { kind: 'blank', x: gx, y: gy, w: 0, h: 0 }, valid: false };
       return;
     }
