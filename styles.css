@@ -1379,3 +1379,83 @@ body.puzzle-mode #viewport #box-overlay { display: none; }
 
 /* ---- 时间轴图层区高度由 JS 动态设置（默认 264px，可拖拽调整） ---- */
 #tl-layers-canvas:active { cursor: grabbing; }
+
+/* =========================================================================
+ * 拼图模式 Canvas 版（覆盖旧 DOM 积木样式）
+ * ======================================================================= */
+
+#puzzle-palette {
+  position: relative;
+  padding: 0;
+  overflow: hidden;
+}
+#puzzle-palette-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+}
+
+#puzzle-workspace {
+  position: relative;
+  overflow: hidden;
+}
+#puzzle-workspace-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+#puzzle-ghost-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 970;
+  display: none;
+}
+body.puzzle-mode #puzzle-ghost-canvas { display: block; }
+
+#puzzle-echo-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.pc-edit-input,
+.pc-edit-textarea {
+  position: fixed;
+  z-index: 1500;
+  box-sizing: border-box;
+  background: #12141a;
+  color: #fff;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 2px 5px;
+  font-size: 12px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  outline: none;
+}
+.pc-edit-textarea {
+  resize: both;
+  line-height: 1.4;
+}
+.pc-color-input {
+  position: fixed;
+  z-index: 1500;
+  width: 32px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid rgba(255,255,255,0.4);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
