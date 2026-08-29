@@ -1322,7 +1322,13 @@ body.puzzle-mode #viewport #box-overlay { display: none; }
 .blk-stmt { border-radius: 12px; box-shadow: inset 0 2px 0 rgba(255,255,255,0.18), 0 2px 4px rgba(0,0,0,0.28); }
 .blk-expr { border-radius: 999px; padding-left: 7px; padding-right: 7px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.16), 0 1px 2px rgba(0,0,0,0.22); }
 .blk-slot { border-radius: 10px; background: rgba(0,0,0,0.14); }
-.blk-ctl { border-radius: 12px; box-shadow: inset 0 2px 0 rgba(255,255,255,0.14), 0 2px 5px rgba(0,0,0,0.28); }
+.blk-ctl { border-radius: 12px; box-shadow: inset 0 2px 0 rgba(255,255,255,0.14), 0 2px 5px rgba(0,0,0,0.28); flex-wrap: wrap; }
+.blk-ctl .blk-body {
+  flex-basis: 100%; margin-left: 18px; padding-left: 10px;
+  border-left: 3px solid rgba(255,255,255,0.22);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.blk-ctl .blk-else-head { flex-basis: 100%; font-weight: 700; margin-top: 4px; padding-left: 2px; opacity: 0.9; }
 .pal-item { border-radius: 12px; transition: transform 0.12s ease; }
 .pal-item:hover { transform: translateY(-1px); }
 .chain-stack { gap: 2px; }

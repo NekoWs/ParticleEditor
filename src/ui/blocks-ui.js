@@ -8,7 +8,7 @@ import { t, tf, _etf } from '../core/i18n.js';
 import { state, getFunction } from '../core/constants.js';
 import { ATTR_NAMES } from '../core/easing.js';
 import { modalAlert, rgbToHex, hexToRgb } from './ui.js';
-import { T_SCALAR, T_VEC, T_MAT, T_ANY, FUNC_BLOCKS, STMT_BLOCKS, PALETTE_GROUPS, OP_SYMBOLS, OP_LABELS, collectTemps, codeToStatements, statementsToCode, exprType, typeAccepts, fmtNum } from '../core/blocks.js';
+import { T_SCALAR, T_VEC, T_MAT, T_ANY, FUNC_BLOCKS, STMT_BLOCKS, PALETTE_GROUPS, OP_SYMBOLS, OP_LABELS, collectTemps, walkStatements, codeToStatements, statementsToCode, exprType, typeAccepts, fmtNum } from '../core/blocks.js';
 import { makeFloatWindow } from './float-window.js';
 import { pushUndo, cloneVars } from '../state/undo.js';
 import { commitFunctionRebuild, refreshFunctionPanel, drawTimeline } from './panels.js';
@@ -68,7 +68,19 @@ export function cloneExprNode(n) {
   else if (n.kind === 'chain') { o.terms = n.terms.map(cloneExprNode); o.ops = n.ops.slice(); }
   return o;
 }
-export function cloneStmts(stmts) { return stmts.map(s => ({ ...s, slots: (s.slots || []).map(cloneExprNode), expr: cloneExprNode(s.expr) })); }
+export function cloneStmt(s) {
+  const o = { ...s };
+  if (s.slots) o.slots = s.slots.map(cloneExprNode);
+  if (s.expr) o.expr = cloneExprNode(s.expr);
+  if (s.cond) o.cond = cloneExprNode(s.cond);
+  if (s.init) o.init = cloneExprNode(s.init);
+  if (s.inc) o.inc = cloneExprNode(s.inc);
+  if (Array.isArray(s.body)) o.body = s.body.map(cloneStmt);
+  if (Array.isArray(s.elseBody)) o.elseBody = s.elseBody.map(cloneStmt);
+  if (Array.isArray(s.params)) o.params = s.params.slice();
+  return o;
+}
+export function cloneStmts(stmts) { return stmts.map(cloneStmt); }
 
 export function nodeToBlockType(n) {
   switch (n.kind) {
@@ -315,64 +327,76 @@ export function makeStatementBlock(s, isChain, chainIndex) {
       return inp;
     };
     const slot = (get, set) => makeSlot(slotRef(get, set, T_ANY), '');
+    const body = (list) => {
+      const box = document.createElement('div');
+      box.className = 'blk-body';
+      if (!Array.isArray(list)) list = [];
+      list.forEach((child, i) => {
+        box.appendChild(makeStatementBlock(child, true, i));
+        box.appendChild(makeStmtDropZone(i + 1, list));
+      });
+      if (list.length === 0) box.appendChild(makeStmtDropZone(0, list));
+      return box;
+    };
 
     if (s.kind === 'if') {
-      el.appendChild(document.createTextNode('if ('));
+      el.appendChild(document.createTextNode(t('blk.stmt.if') + ' '));
       el.appendChild(slot(() => s.cond, v => { s.cond = v; }));
-      el.appendChild(document.createTextNode(') { '));
-      el.appendChild(area(s.body, v => { s.body = v; }));
-      el.appendChild(document.createTextNode(' }'));
-      if (s.elseBody != null) { el.appendChild(document.createTextNode(' else ')); el.appendChild(area(s.elseBody, v => { s.elseBody = v; })); }
+      el.appendChild(document.createTextNode(' '));
+      el.appendChild(body(s.body || []));
+      if (s.elseBody && s.elseBody.length) {
+        const elseHead = document.createElement('div');
+        elseHead.className = 'blk-else-head';
+        elseHead.textContent = t('blk.stmt.else');
+        el.appendChild(elseHead);
+        el.appendChild(body(s.elseBody));
+      }
       return el;
     }
     if (s.kind === 'while') {
-      el.appendChild(document.createTextNode('while ('));
+      el.appendChild(document.createTextNode(t('blk.stmt.while') + ' '));
       el.appendChild(slot(() => s.cond, v => { s.cond = v; }));
-      el.appendChild(document.createTextNode(') { '));
-      el.appendChild(area(s.body, v => { s.body = v; }));
-      el.appendChild(document.createTextNode(' }'));
+      el.appendChild(document.createTextNode(' '));
+      el.appendChild(body(s.body || []));
       return el;
     }
     if (s.kind === 'do') {
-      el.appendChild(document.createTextNode('do { '));
-      el.appendChild(area(s.body, v => { s.body = v; }));
-      el.appendChild(document.createTextNode(' } while ('));
+      el.appendChild(document.createTextNode(t('blk.stmt.do') + ' '));
+      el.appendChild(body(s.body || []));
+      el.appendChild(document.createTextNode(' ' + t('blk.stmt.while') + ' '));
       el.appendChild(slot(() => s.cond, v => { s.cond = v; }));
-      el.appendChild(document.createTextNode(');'));
       return el;
     }
     if (s.kind === 'for') {
-      el.appendChild(document.createTextNode('for ('));
+      el.appendChild(document.createTextNode(t('blk.stmt.for') + ' '));
       el.appendChild(nameIn(s.init, v => { s.init = v; }));
-      el.appendChild(document.createTextNode('; '));
+      el.appendChild(document.createTextNode(' '));
       el.appendChild(nameIn(s.cond, v => { s.cond = v; }));
-      el.appendChild(document.createTextNode('; '));
+      el.appendChild(document.createTextNode(' '));
       el.appendChild(nameIn(s.inc, v => { s.inc = v; }));
-      el.appendChild(document.createTextNode(') { '));
-      el.appendChild(area(s.body, v => { s.body = v; }));
-      el.appendChild(document.createTextNode(' }'));
+      el.appendChild(document.createTextNode(' '));
+      el.appendChild(body(s.body || []));
       return el;
     }
     if (s.kind === 'func') {
-      el.appendChild(document.createTextNode('func '));
+      el.appendChild(document.createTextNode(t('blk.stmt.func') + ' '));
       el.appendChild(nameIn(s.name, v => { s.name = v; }));
       el.appendChild(document.createTextNode('('));
       el.appendChild(nameIn((s.params || []).join(', '), v => { s.params = v.split(',').map(x => x.trim()).filter(Boolean); }));
-      el.appendChild(document.createTextNode(') { '));
-      el.appendChild(area(s.body, v => { s.body = v; }));
-      el.appendChild(document.createTextNode(' }'));
+      el.appendChild(document.createTextNode(') '));
+      el.appendChild(body(s.body || []));
       return el;
     }
     if (s.kind === 'global' || s.kind === 'static') {
-      el.appendChild(document.createTextNode(s.kind + ' '));
+      el.appendChild(document.createTextNode(t('blk.stmt.' + s.kind) + ' '));
       el.appendChild(nameIn(s.name, v => { s.name = v; }));
       if (s.expr != null) { el.appendChild(document.createTextNode(' = ')); el.appendChild(slot(() => s.expr, v => { s.expr = v; })); }
       return el;
     }
-    if (s.kind === 'break') { el.appendChild(document.createTextNode('break')); return el; }
-    if (s.kind === 'continue') { el.appendChild(document.createTextNode('continue')); return el; }
+    if (s.kind === 'break') { el.appendChild(document.createTextNode(t('blk.stmt.break'))); return el; }
+    if (s.kind === 'continue') { el.appendChild(document.createTextNode(t('blk.stmt.continue'))); return el; }
     if (s.kind === 'return') {
-      el.appendChild(document.createTextNode('return '));
+      el.appendChild(document.createTextNode(t('blk.stmt.return') + ' '));
       if (s.expr != null) el.appendChild(slot(() => s.expr, v => { s.expr = v; }));
       return el;
     }
@@ -502,17 +526,22 @@ export function renameRefsInStmts(stmts, oldName, newName) {
   const walk = (n) => {
     if (!n) return;
     if (n.kind === 'var' && n.name === oldName) n.name = newName;
-    if (n.kind === 'func') n.args.forEach(walk);
+    if (n.kind === 'func' || n.kind === 'method') n.args.forEach(walk);
     if (n.kind === 'op') { walk(n.a); walk(n.b); }
-    if (n.kind === 'comp') walk(n.target);
-    if (n.kind === 'neg') walk(n.a);
+    if (n.kind === 'comp' || n.kind === 'index') { walk(n.target); if (n.index) walk(n.index); }
+    if (n.kind === 'neg' || n.kind === 'not') walk(n.a);
+    if (n.kind === 'ternary') { walk(n.cond); walk(n.a); walk(n.b); }
+    if (n.kind === 'array') n.items.forEach(walk);
     if (n.kind === 'chain') n.terms.forEach(walk);
   };
-  for (const s of stmts) {
+  walkStatements(stmts, s => {
     if (s.kind === 'set' && s.name === oldName) s.name = newName;
     if (s.slots) s.slots.forEach(walk);
     if (s.expr) walk(s.expr);
-  }
+    if (s.cond) walk(s.cond);
+    if (s.init) walk(s.init);
+    if (s.inc) walk(s.inc);
+  });
 }
 export function rgbToHexColor(rNode, gNode, bNode) {
   const v = n => (n && n.kind === 'num') ? Math.round(Math.min(1, Math.max(0, n.value)) * 255) : 255;
@@ -538,11 +567,11 @@ export function newStmtNode(kind) {
     case 'set': return { kind, name: freshTempName(), expr: N0() };
     case 'attr': return { kind, name: 'x', expr: N0() };
     case 'pos_vec': case 'vel_vec': return { kind, expr: NVEC() };
-    case 'if': return { kind: 'if', cond: N0(), body: '', elseBody: null };
-    case 'while': return { kind: 'while', cond: N0(), body: '' };
-    case 'for': return { kind: 'for', init: 'k = 0', cond: 'k < 10', inc: 'k = k + 1', body: '' };
-    case 'do': return { kind: 'do', body: '', cond: N0() };
-    case 'func': return { kind: 'func', name: 'f', params: [], body: '' };
+    case 'if': return { kind: 'if', cond: N0(), body: [], elseBody: null };
+    case 'while': return { kind: 'while', cond: N0(), body: [] };
+    case 'for': return { kind: 'for', init: 'k = 0', cond: 'k < 10', inc: 'k = k + 1', body: [] };
+    case 'do': return { kind: 'do', body: [], cond: N0() };
+    case 'func': return { kind: 'func', name: 'f', params: [], body: [] };
     case 'global': case 'static': return { kind, name: 'v0', expr: N0() };
     case 'break': return { kind: 'break' };
     case 'continue': return { kind: 'continue' };
@@ -584,7 +613,11 @@ export function stmtExprSlotType(s) {
   if (s.kind === 'pos_vec' || s.kind === 'vel_vec') return T_VEC;
   return T_SCALAR;
 }
-export function findAllStmts() { return bctx ? [...bctx.chain, ...bctx.setupChain, ...bctx.frags.flatMap(f => f.stmts)] : []; }
+export function findAllStmts() {
+  const out = [];
+  if (bctx) walkStatements([...bctx.chain, ...bctx.setupChain, ...bctx.frags.flatMap(f => f.stmts)], s => out.push(s));
+  return out;
+}
 export function findSlotRefByNode(stmts, node) {
   let result = null;
   const walkStmt = (s) => {
@@ -1094,35 +1127,41 @@ export function makeGroupGhost(group, clientX, clientY) {
   document.body.classList.add('blk-dragging');
 }
 
+function findStmtInList(list, target) {
+  for (let i = 0; i < list.length; i++) {
+    const s = list[i];
+    if (s === target) return { chain: list, index: i };
+    if (Array.isArray(s.body)) {
+      const r = findStmtInList(s.body, target);
+      if (r) return r;
+    }
+    if (Array.isArray(s.elseBody)) {
+      const r = findStmtInList(s.elseBody, target);
+      if (r) return r;
+    }
+  }
+  return null;
+}
+
 export function stmtGroupLocation(s) {
-  const ci = bctx.chain.indexOf(s);
-  if (ci >= 0) return { where: 'chain', chain: bctx.chain, index: ci };
-  const si = bctx.setupChain.indexOf(s);
-  if (si >= 0) return { where: 'chain', chain: bctx.setupChain, index: si };
+  for (const chain of [bctx.chain, bctx.setupChain]) {
+    const r = findStmtInList(chain, s);
+    if (r) return r;
+  }
   for (const f of bctx.frags) {
-    const fi = f.stmts.indexOf(s);
-    if (fi >= 0) return { where: 'frag', frag: f, index: fi };
+    const r = findStmtInList(f.stmts, s);
+    if (r) return r;
   }
   return null;
 }
 export function detachStmtGroupNow(s) {
   const loc = stmtGroupLocation(s);
-  if (loc.where === 'chain') return loc.chain.splice(loc.index);
-  const group = loc.frag.stmts.splice(loc.index);
-  if (loc.frag.stmts.length === 0) bctx.frags.splice(bctx.frags.indexOf(loc.frag), 1);
-  return group;
+  if (!loc) return null;
+  return loc.chain.splice(loc.index);
 }
 export function restoreStmtGroup(loc, group) {
-  if (loc.where === 'chain') {
-    loc.chain.splice(loc.index, 0, ...group);
-  } else {
-    let f = loc.frag;
-    if (!bctx.frags.includes(f)) {
-      f = { stmts: [], x: loc.frag.x, y: loc.frag.y };
-      bctx.frags.push(f);
-    }
-    f.stmts.splice(loc.index, 0, ...group);
-  }
+  if (!loc || !loc.chain) return;
+  loc.chain.splice(loc.index, 0, ...group);
 }
 
 export function moveGhost(clientX, clientY) {

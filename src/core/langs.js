@@ -139,7 +139,7 @@ export var LANGS = {
     'blk.piInfo': '圆周率 π ≈ 3.14159', 'blk.eInfo': '自然常数 e ≈ 2.71828',
     // —— 拼图：类型 / 内置变量 / 调色板 / 运算符 / 参数 ——
     'blk.type.scalar': '数字', 'blk.type.vec': '向量', 'blk.type.mat': '矩阵', 'blk.type.any': '任意',
-    'blk.stmt.if': '如果', 'blk.stmt.while': '当循环', 'blk.stmt.for': '计数循环', 'blk.stmt.do': '直到循环', 'blk.stmt.func': '函数', 'blk.stmt.global': '全局变量', 'blk.stmt.static': '静态变量', 'blk.stmt.break': '跳出循环', 'blk.stmt.continue': '继续循环', 'blk.stmt.return': '返回',
+    'blk.stmt.if': '如果', 'blk.stmt.while': '当循环', 'blk.stmt.for': '计数循环', 'blk.stmt.do': '直到循环', 'blk.stmt.func': '函数', 'blk.stmt.global': '全局变量', 'blk.stmt.static': '静态变量', 'blk.stmt.break': '跳出循环', 'blk.stmt.continue': '继续循环', 'blk.stmt.return': '返回', 'blk.stmt.else': '否则',
     'blk.var.i': '粒子序号（0 ~ n-1）', 'blk.var.n': '采样数（粒子总数）', 'blk.var.t': '当前时间（tick）',
     'blk.pal.pos': '位置 / 速度', 'blk.pal.color': '颜色', 'blk.pal.appearance': '外观', 'blk.pal.logic': '逻辑', 'blk.pal.math': '数学',
     'blk.pal.vec': '向量', 'blk.pal.mat': '矩阵', 'blk.pal.var': '变量', 'blk.pal.const': '常量',
@@ -318,7 +318,7 @@ export var LANGS = {
     'blk.piInfo': 'Pi π ≈ 3.14159', 'blk.eInfo': 'Euler\'s number e ≈ 2.71828',
     // —— 拼图：类型 / 内置变量 / 调色板 / 运算符 / 参数 ——
     'blk.type.scalar': 'Number', 'blk.type.vec': 'Vector', 'blk.type.mat': 'Matrix', 'blk.type.any': 'Any',
-    'blk.stmt.if': 'If', 'blk.stmt.while': 'While', 'blk.stmt.for': 'For', 'blk.stmt.do': 'Do-while', 'blk.stmt.func': 'Function', 'blk.stmt.global': 'Global', 'blk.stmt.static': 'Static', 'blk.stmt.break': 'Break', 'blk.stmt.continue': 'Continue', 'blk.stmt.return': 'Return',
+    'blk.stmt.if': 'If', 'blk.stmt.while': 'While', 'blk.stmt.for': 'For', 'blk.stmt.do': 'Do-while', 'blk.stmt.func': 'Function', 'blk.stmt.global': 'Global', 'blk.stmt.static': 'Static', 'blk.stmt.break': 'Break', 'blk.stmt.continue': 'Continue', 'blk.stmt.return': 'Return', 'blk.stmt.else': 'Else',
     'blk.var.i': 'Particle index (0 ~ n-1)', 'blk.var.n': 'Sample count (total particles)', 'blk.var.t': 'Current time (tick)',
     'blk.pal.pos': 'Position / Velocity', 'blk.pal.color': 'Color', 'blk.pal.appearance': 'Appearance', 'blk.pal.logic': 'Logic', 'blk.pal.math': 'Math',
     'blk.pal.vec': 'Vector', 'blk.pal.mat': 'Matrix', 'blk.pal.var': 'Variable', 'blk.pal.const': 'Constants',

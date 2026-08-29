@@ -266,11 +266,19 @@ export function stmtToCode(s) {
     case 'break': return 'break;';
     case 'continue': return 'continue;';
     case 'return': return s.expr ? 'return ' + exprToCode(s.expr, 0) + ';' : 'return;';
-    case 'if': return 'if (' + exprToCode(s.cond, 0) + ') { ' + s.body + ' }' + (s.elseBody ? ' else ' + s.elseBody : '');
-    case 'while': return 'while (' + exprToCode(s.cond, 0) + ') { ' + s.body + ' }';
-    case 'do': return 'do { ' + s.body + ' } while (' + exprToCode(s.cond, 0) + ');';
-    case 'for': return 'for (' + (s.init || '') + '; ' + (s.cond || '') + '; ' + (s.inc || '') + ') { ' + s.body + ' }';
-    case 'func': return 'func ' + s.name + '(' + (s.params || []).join(', ') + ') { ' + s.body + ' }';
+    case 'if': {
+      const body = statementsToCode(s.body || []);
+      let out = 'if (' + exprToCode(s.cond, 0) + ') { ' + body + ' }';
+      if (s.elseBody && s.elseBody.length) {
+        if (s.elseBody.length === 1 && s.elseBody[0].kind === 'if') out += ' else ' + stmtToCode(s.elseBody[0]);
+        else out += ' else { ' + statementsToCode(s.elseBody) + ' }';
+      }
+      return out;
+    }
+    case 'while': return 'while (' + exprToCode(s.cond, 0) + ') { ' + statementsToCode(s.body || []) + ' }';
+    case 'do': return 'do { ' + statementsToCode(s.body || []) + ' } while (' + exprToCode(s.cond, 0) + ');';
+    case 'for': return 'for (' + (s.init || '') + '; ' + (s.cond || '') + '; ' + (s.inc || '') + ') { ' + statementsToCode(s.body || []) + ' }';
+    case 'func': return 'func ' + s.name + '(' + (s.params || []).join(', ') + ') { ' + statementsToCode(s.body || []) + ' }';
     case 'global': case 'static': return s.kind + ' ' + s.name + (s.expr ? ' = ' + exprToCode(s.expr, 0) : '') + ';';
     default: throw new Error(_etf('err.unknownStmt', s.kind));
   }
@@ -552,6 +560,13 @@ function splitTopSemicolons(s) {
   return parts;
 }
 
+function parseBodyStmts(text) {
+  return splitStatements(text).map(s => {
+    try { return stmtToNode(s); }
+    catch (e) { return { kind: 'raw', text: s }; }
+  });
+}
+
 export function stmtToNode(stmt) {
   const s = (stmt || '').trim();
   if (s === 'break;' || s === 'break') return { kind: 'break' };
@@ -568,11 +583,13 @@ export function stmtToNode(stmt) {
     const bOpen = rest.indexOf('{');
     const bClose = matchDelim(rest, bOpen, '{', '}');
     if (bClose < 0) throw new Error(_et('err.stmtNeedBrace'));
-    const body = rest.slice(bOpen + 1, bClose).trim();
+    const body = parseBodyStmts(rest.slice(bOpen + 1, bClose));
     rest = rest.slice(bClose + 1).trim();
     let elseBody = null;
     if (rest.startsWith('else')) {
-      elseBody = rest.slice(4).trim();
+      const after = rest.slice(4).trim();
+      if (/^if\b/.test(after)) elseBody = [stmtToNode(after)];
+      else elseBody = parseBodyStmts(stripBraces(after));
     }
     return { kind: 'if', cond, body, elseBody };
   }
@@ -585,7 +602,7 @@ export function stmtToNode(stmt) {
     const bOpen = rest.indexOf('{');
     const bClose = matchDelim(rest, bOpen, '{', '}');
     if (bClose < 0) throw new Error(_et('err.stmtNeedBrace'));
-    return { kind: 'while', cond, body: rest.slice(bOpen + 1, bClose).trim() };
+    return { kind: 'while', cond, body: parseBodyStmts(rest.slice(bOpen + 1, bClose)) };
   }
   if (/^for\s*\(/.test(s)) {
     const open = s.indexOf('(');
@@ -596,7 +613,7 @@ export function stmtToNode(stmt) {
     const bOpen = rest.indexOf('{');
     const bClose = matchDelim(rest, bOpen, '{', '}');
     if (bClose < 0) throw new Error(_et('err.stmtNeedBrace'));
-    return { kind: 'for', init: parts[0] || '', cond: parts[1] || '', inc: parts[2] || '', body: rest.slice(bOpen + 1, bClose).trim() };
+    return { kind: 'for', init: parts[0] || '', cond: parts[1] || '', inc: parts[2] || '', body: parseBodyStmts(rest.slice(bOpen + 1, bClose)) };
   }
   if (/^do\s*\{/.test(s)) {
     const bOpen = s.indexOf('{');
@@ -609,7 +626,7 @@ export function stmtToNode(stmt) {
     const open = rest.indexOf('(');
     const close = matchDelim(rest, open, '(', ')');
     const cond = parseExpr(rest.slice(open + 1, close).trim());
-    return { kind: 'do', body, cond };
+    return { kind: 'do', body: parseBodyStmts(s.slice(bOpen + 1, bClose)), cond };
   }
   if (/^func\s+/.test(s)) {
     const after = s.slice(4).trim();
@@ -622,7 +639,7 @@ export function stmtToNode(stmt) {
     const bOpen = rest.indexOf('{');
     const bClose = matchDelim(rest, bOpen, '{', '}');
     if (bClose < 0) throw new Error(_et('err.stmtNeedBrace'));
-    return { kind: 'func', name, params, body: rest.slice(bOpen + 1, bClose).trim() };
+    return { kind: 'func', name, params, body: parseBodyStmts(rest.slice(bOpen + 1, bClose)) };
   }
   if (/^(global|static)\s+/.test(s)) {
     const kind = s.startsWith('global') ? 'global' : 'static';
@@ -723,8 +740,17 @@ export function codeToStatements(code) {
 export function collectTemps(stmts) {
   const out = [];
   const seen = new Set();
-  for (const s of stmts) {
+  walkStatements(stmts, s => {
     if (s.kind === 'set' && !seen.has(s.name)) { seen.add(s.name); out.push(s.name); }
-  }
+  });
   return out;
+}
+
+/** 深度优先遍历语句树（含 if/while/for/do/func 的 body 与 elseBody）。 */
+export function walkStatements(stmts, fn) {
+  for (const s of stmts || []) {
+    fn(s);
+    if (Array.isArray(s.body)) walkStatements(s.body, fn);
+    if (Array.isArray(s.elseBody)) walkStatements(s.elseBody, fn);
+  }
 }
