@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { state, PLANES, SNAP_STEP, getFunction } from '../core/constants.js';
 import { shiftHeld } from './input-state.js';
-import { camera, controls, renderer, raycaster, pointer, points, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, gizmoAxisHint, AXIS_RING_COLORS, RING_NORMALS, GIZMO_FACE_DEFS, setWorldAxisVisible, setWorldAxisGlow, resetWorldAxisState } from '../scene/scene.js';
+import { camera, renderer, raycaster, pointer, points, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, gizmoAxisHint, AXIS_RING_COLORS, RING_NORMALS, GIZMO_FACE_DEFS, setWorldAxisVisible, setWorldAxisGlow, resetWorldAxisState } from '../scene/scene.js';
 import { AXIS_COLORS, AXIS_VECTORS, modal, setGizmoHover, selectedGroupName, selectionHasDerived, derivedFxIdFromSelection, fxCurrentPos, hoverColor } from './interaction.js';
 import { currentVisual } from '../core/animation.js';
 import { groupCurrentCentroid } from '../ui/tree.js';
@@ -31,35 +31,6 @@ export function selectionCentroid() {
   const c = [0, 0, 0];
   for (const p of sel) { const v = currentVisual(p).pos; c[0] += v[0]; c[1] += v[1]; c[2] += v[2]; }
   return [c[0] / sel.length, c[1] / sel.length, c[2] / sel.length];
-}
-
-// 场景旋转中心（orbit pivot）：与 updateGizmo 的 gizmo 显示位置保持同一优先级。
-// 函数对象 > 组 > 派生粒子所属函数对象 > 普通粒子质心；无任何选择返回 null。
-export function orbitCenter() {
-  const fx = getFunction(state.selectedFunction);
-  if (fx) return fxCurrentPos(fx.id, state.time);
-  const gname = selectedGroupName();
-  if (gname) return groupCurrentCentroid(gname, 'pos');
-  if (selectionHasDerived()) {
-    const fxId = derivedFxIdFromSelection();
-    if (fxId) return fxCurrentPos(fxId, state.time);
-  }
-  return selectionCentroid();
-}
-
-// 让 OrbitControls.target（场景旋转中心）跟随当前选择：
-// - 有选择 → 以选中对象当前质心为旋转中心（播放/scrub 时实时跟随）；
-// - 无选择 → 仅在「选择刚被清空」时回到世界原点，其余情况保留用户平移后的 target。
-let orbitHadSelection = false;
-export function syncOrbitTarget() {
-  const c = orbitCenter();
-  if (c) {
-    controls.target.set(c[0], c[1], c[2]);
-    orbitHadSelection = true;
-  } else if (orbitHadSelection) {
-    controls.target.set(0, 0, 0);
-    orbitHadSelection = false;
-  }
 }
 
 /* =========================================================================

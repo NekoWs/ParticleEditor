@@ -7,7 +7,7 @@
 import {PARTICLE_SIZE_FACTOR, state, functionIndexCache, effMaxFrame, autoFramesFor} from '../core/constants.js';
 import { points, selectedPoints, previewPoints, texAtlasMap } from './scene.js';
 import { resolveUV, refreshUVPanel } from '../ui/texture-editor.js';
-import { updateGizmo, syncOrbitTarget } from '../interaction/gizmo.js';
+import { updateGizmo } from '../interaction/gizmo.js';
 import { drawTimeline, updatePropPanel } from '../ui/panels.js';
 
 import { buildParticleIndex, buildTrackIndex, buildGroupIndex, buildOpDeltaCache, buildGroupXforms, buildFxSclTrackCache, currentVisual, velOffsetAt, trackValueAt, trackIntegral, trVersion, groupMemberIndexCache, groupXformCache, invalidateMaxTickCache } from '../core/animation-eval.js';
@@ -323,7 +323,6 @@ function writePointBuffers(full) {
   }
   setPointsGeometry(selectedPoints, spos, rpSelCol, ssiz);
 
-  syncOrbitTarget();
   updateGizmo();
   drawTimeline();
   if (full !== false) {

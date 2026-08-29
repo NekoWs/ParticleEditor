@@ -10,7 +10,7 @@
 
 import * as THREE from 'three';
 import { state } from '../core/constants.js';
-import { camera, controls, renderer, grid, worldAxes, setWorldAxisVisible, camTransition, setCamTransition } from '../scene/scene.js';
+import { camera, renderer, grid, worldAxes, setWorldAxisVisible, camTransition, setCamTransition } from '../scene/scene.js';
 export const gizmoCanvas = document.getElementById('axis-gizmo');
 export const gizmoCtx = gizmoCanvas.getContext('2d');
 
@@ -30,6 +30,9 @@ export const AXIS_DIRS = {
   Y: new THREE.Vector3(0, 1, 0),
   Z: new THREE.Vector3(0, 0, 1),
 };
+
+// 场景旋转始终围绕世界中心（与平移 target 解耦）
+const ORBIT_ORIGIN = new THREE.Vector3(0, 0, 0);
 
 // 六轴球：正轴实心（红X/绿Y/蓝Z），负轴填充半透明 + 描边（同轴色）
 export const AXIS_DEFS = [
@@ -183,8 +186,9 @@ export function nearestBall(pt) {
 
 // 统一的自由旋转（turntable）：水平绕世界 Y，垂直绕相机右轴，
 // 刚体旋转 offset 与 up，可翻过极点，手感与中键一致。
+// 始终围绕世界中心旋转，与 OrbitControls 的平移 target 无关。
 export function turntableRotate(dx, dy) {
-  const target = controls.target;
+  const target = ORBIT_ORIGIN;
   const offset = camera.position.clone().sub(target);
   const up = camera.up.clone();
 
@@ -313,10 +317,10 @@ export function slerp(a, b, t) {
   return a.clone().applyQuaternion(_qInterp);
 }
 
-// 平滑切到 dir 方向的正交视图：保持当前距离、绕 target 旋转过去、更新绘制平面
+// 平滑切到 dir 方向的正交视图：保持当前距离、绕世界中心旋转过去、更新绘制平面
 export function orientToAxis(dir) {
-  const dist = camera.position.distanceTo(controls.target);
-  const target = controls.target.clone();
+  const dist = camera.position.distanceTo(ORBIT_ORIGIN);
+  const target = ORBIT_ORIGIN.clone();
   const startDir = camera.position.clone().sub(target).normalize();
   const endPos = target.clone().sub(dir.clone().normalize().multiplyScalar(dist));
   const endDir = endPos.clone().sub(target).normalize();
