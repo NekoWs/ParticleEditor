@@ -1247,7 +1247,8 @@ function renderVars(ctx, cw, ch, th) {
   ctx.lineTo(cw, varTop + 0.5);
   ctx.stroke();
 
-  layoutVars(cw);
+  // 编辑态复用上一次变量区布局，保证 S.edit.region 仍能命中重绘
+  if (!S.edit) layoutVars(cw);
   const scroll = Math.max(0, Math.min(S.varsScroll, Math.max(0, S.varsContentH - VARS_H)));
   S.varsScroll = scroll;
   ctx.save();
