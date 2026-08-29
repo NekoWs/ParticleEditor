@@ -891,8 +891,17 @@ function drawHighlight(ctx, region, color, scale) {
 }
 
 function drawExprRegion(ctx, r) {
-  const color = blockColor(r.cls);
   ctx.save();
+  if (S.edit && S.edit.region === r) {
+    // 数字等表达式进入编辑态时，使用与文本输入框一致的样式：灰底小圆角 + 下虚线 + 光标
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    rrPath(ctx, r.x, r.y, r.w, r.h, 4);
+    ctx.fill();
+    drawInlineEditContent(ctx, r, S.edit.buffer);
+    ctx.restore();
+    return;
+  }
+  const color = blockColor(r.cls);
   ctx.fillStyle = color;
   if (r.shape === 'bool') hexPath(ctx, r.x, r.y, r.w, r.h);
   else capsulePath(ctx, r.x, r.y, r.w, r.h);
@@ -900,8 +909,7 @@ function drawExprRegion(ctx, r) {
   ctx.strokeStyle = 'rgba(0,0,0,0.25)';
   ctx.lineWidth = 1;
   ctx.stroke();
-  if (S.edit && S.edit.region === r) drawInlineEditContent(ctx, r, S.edit.buffer);
-  else drawSegments(ctx, r.segments, '#fff');
+  drawSegments(ctx, r.segments, '#fff');
   ctx.restore();
 }
 
@@ -978,7 +986,7 @@ function drawInlineEditContent(ctx, r, text) {
   const tx = r.x + 4;
   const ty = r.y + r.h / 2;
   ctx.fillText(text, tx, ty);
-  if (S.edit && S.edit.region === r) {
+  if (S.edit && S.edit.region === r && (typeof Date === 'undefined' || Math.floor(Date.now() / 500) % 2 === 0)) {
     const tw = ctx.measureText(text).width;
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 1;
@@ -1195,7 +1203,8 @@ function renderWorkCanvas() {
     }
   }
 
-  layoutWorkspace();
+  // 编辑态复用上一次布局，避免重排导致 S.edit.region 失配（输入变化通过 S.edit.buffer 直接显示）
+  if (!S.edit) layoutWorkspace();
   ctx.setTransform(S.dpr * scale, 0, 0, S.dpr * scale, S.dpr * v.x, S.dpr * v.y);
   for (const r of S.wsRegions) if (r.kind === 'head') drawRegion(ctx, r, null);
   for (const r of S.wsRegions) if (r.kind !== 'drop' && r.kind !== 'head') drawRegion(ctx, r, null);
@@ -1473,6 +1482,7 @@ function varToScreenRect(r) {
 
 /* ============================ 编辑浮层 ============================ */
 
+let editBlinkTimer = null;
 function beginInlineEdit(region) {
   if (!region || !region.edit) return;
   if (S.edit) commitEdit();
@@ -1481,12 +1491,22 @@ function beginInlineEdit(region) {
     kind: region.edit.kind,
     buffer: String(region.edit.value == null ? '' : region.edit.value),
   };
+  if (editBlinkTimer == null && typeof setInterval === 'function') {
+    editBlinkTimer = setInterval(() => { if (S.edit) puzzleCanvasRender(); }, 500);
+  }
   puzzleCanvasRender();
+}
+function stopEditTimer() {
+  if (editBlinkTimer != null) {
+    if (typeof clearInterval === 'function') clearInterval(editBlinkTimer);
+    editBlinkTimer = null;
+  }
 }
 function commitEdit() {
   if (!S.edit) return;
   const edit = S.edit;
   S.edit = null;
+  stopEditTimer();
   const ok = edit.region.edit.commit(edit.buffer) !== false;
   if (ok && H) H.refreshPreview();
   puzzleCanvasRender();
@@ -1494,6 +1514,7 @@ function commitEdit() {
 function cancelEdit() {
   if (!S.edit) return;
   S.edit = null;
+  stopEditTimer();
   puzzleCanvasRender();
 }
 

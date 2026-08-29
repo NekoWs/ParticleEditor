@@ -20,7 +20,7 @@ import { refreshParticleTree } from './tree.js';
 import { rebuildPoints } from '../core/animation.js';
 import { gizmoGroup } from '../scene/scene.js';
 import { resize } from '../main.js';
-import { setPuzzleHost, initPuzzleCanvas, puzzleCanvasRender, puzzleCanvasResize, puzzleCanvasBeginLens } from './puzzle-canvas.js';
+import { setPuzzleHost, initPuzzleCanvas, puzzleCanvasRender, puzzleCanvasResize, puzzleCanvasBeginLens, puzzleCanvasCancelEdit } from './puzzle-canvas.js';
 
 export const TYPE_LABEL = { scalar: 'blk.type.scalar', vec: 'blk.type.vec', mat: 'blk.type.mat', any: 'blk.type.any' };
 /* —— 积木类别配色 —— */
@@ -623,6 +623,7 @@ export function openBlockDrawer(fx) {
 
 export function closeBlockDrawer(commit) {
   if (!bctx) return;
+  puzzleCanvasCancelEdit();
   const fx = getFunction(bctx.fxId);
   if (commit && fx) {
     const newCode = statementsToCode(bctx.chain);
