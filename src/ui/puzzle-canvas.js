@@ -1484,13 +1484,15 @@ function varToScreenRect(r) {
 /* ============================ 编辑浮层 ============================ */
 
 let editBlinkTimer = null;
-function beginInlineEdit(region) {
-  if (!region || !region.edit) return;
+function beginInlineEdit(region, editOverride) {
+  const edit = editOverride || (region && region.edit);
+  if (!region || !edit) return;
   if (S.edit) commitEdit();
   S.edit = {
     region,
-    kind: region.edit.kind,
-    buffer: String(region.edit.value == null ? '' : region.edit.value),
+    edit,
+    kind: edit.kind,
+    buffer: String(edit.value == null ? '' : edit.value),
   };
   if (editBlinkTimer == null && typeof setInterval === 'function') {
     editBlinkTimer = setInterval(() => { if (S.edit) puzzleCanvasRender(); }, 500);
@@ -1508,7 +1510,7 @@ function commitEdit() {
   const edit = S.edit;
   S.edit = null;
   stopEditTimer();
-  const ok = edit.region.edit.commit(edit.buffer) !== false;
+  const ok = edit.edit.commit(edit.buffer) !== false;
   if (ok && H) H.refreshPreview();
   puzzleCanvasRender();
 }
@@ -1986,18 +1988,15 @@ function onWindowUp(e) {
       S.drag = null;
       S.dropHover = null;
       renderGhost();
-      beginInlineEdit({
-        ...region,
-        edit: {
-          kind: 'num',
-          value: region.node.value,
-          commit: (v) => {
-            const n = parseFloat(v);
-            if (!Number.isFinite(n)) return false;
-            H.pushUndo();
-            region.node.value = n;
-            return true;
-          },
+      beginInlineEdit(region, {
+        kind: 'num',
+        value: region.node.value,
+        commit: (v) => {
+          const n = parseFloat(v);
+          if (!Number.isFinite(n)) return false;
+          H.pushUndo();
+          region.node.value = n;
+          return true;
         },
       });
       return;
