@@ -21,6 +21,7 @@ export const TYPE_LABEL = { scalar: 'blk.type.scalar', vec: 'blk.type.vec', mat:
 export const GROUP_COLOR = {
   pos: 'blk-pos', color: 'blk-color', appearance: 'blk-appearance',
   math: 'blk-math', vec: 'blk-vec', mat: 'blk-mat', var: 'blk-var', const: 'blk-const',
+  logic: 'blk-logic', array: 'blk-array',
 };
 
 /* —— 语句块槽规格（ASCII 名原样显示；中文语义槽用 i18n 键 blk.slot.*） —— */
@@ -537,6 +538,15 @@ export function newStmtNode(kind) {
     case 'set': return { kind, name: freshTempName(), expr: N0() };
     case 'attr': return { kind, name: 'x', expr: N0() };
     case 'pos_vec': case 'vel_vec': return { kind, expr: NVEC() };
+    case 'if': return { kind: 'if', cond: N0(), body: '', elseBody: null };
+    case 'while': return { kind: 'while', cond: N0(), body: '' };
+    case 'for': return { kind: 'for', init: 'k = 0', cond: 'k < 10', inc: 'k = k + 1', body: '' };
+    case 'do': return { kind: 'do', body: '', cond: N0() };
+    case 'func': return { kind: 'func', name: 'f', params: [], body: '' };
+    case 'global': case 'static': return { kind, name: 'v0', expr: N0() };
+    case 'break': return { kind: 'break' };
+    case 'continue': return { kind: 'continue' };
+    case 'return': return { kind: 'return', expr: N0() };
     default: throw new Error(_etf('err.unknownStmt', kind));
   }
 }
@@ -700,15 +710,21 @@ export function buildPaletteGroup(g) {
     items.push({ key: 'expr:num', type: 'expr', template: { kind: 'num', value: 1 }, label: t('blk.type.scalar'), info: t('blk.constNum') });
     items.push({ key: 'expr:pi', type: 'expr', template: { kind: 'var', name: 'pi' }, label: 'pi', info: t('blk.piInfo') });
     items.push({ key: 'expr:e', type: 'expr', template: { kind: 'var', name: 'e' }, label: 'e', info: t('blk.eInfo') });
+  } else if (g.id === 'logic') {
+    ['if', 'while', 'for', 'do', 'break', 'continue', 'return', 'func', 'global', 'static'].forEach(k => {
+      items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: t('blk.stmt.' + k), info: t('blk.stmt.' + k) });
+    });
+    items.push({ key: 'expr:ternary', type: 'expr', template: { kind: 'ternary' }, label: '?:', info: t('blk.ternaryDesc') });
+    items.push({ key: 'expr:not', type: 'expr', template: { kind: 'not' }, label: '!', info: t('blk.notDesc') });
+    items.push({ key: 'expr:bool:true', type: 'expr', template: { kind: 'bool', value: true }, label: 'true', info: t('blk.constNum') });
+    items.push({ key: 'expr:bool:false', type: 'expr', template: { kind: 'bool', value: false }, label: 'false', info: t('blk.constNum') });
+    for (const op of ['==', '!=', '<', '<=', '>', '>=', '&&', '||']) {
+      items.push({ key: 'expr:op:' + op, type: 'expr', template: { kind: 'op', op }, label: op, info: (OP_LABELS[op] && t(OP_LABELS[op])) || op });
+    }
   } else if (g.id === 'math') {
     // 动态算式 + 独立运算符拼图
     items.push({ key: 'expr:chain', type: 'expr', template: { kind: 'chain', terms: [{ kind: 'num', value: 0 }, { kind: 'num', value: 0 }], ops: ['+'] }, label: t('blk.chain'), info: t('blk.chainDesc') });
     for (const op of OP_SYMBOLS) items.push({ key: 'opval:' + op, type: 'opval', op, label: op, info: (OP_LABELS[op] && t(OP_LABELS[op])) || op });
-    items.push({ key: 'expr:ternary', type: 'expr', template: { kind: 'ternary' }, label: '?:', info: t('blk.ternaryDesc') });
-    items.push({ key: 'expr:not', type: 'expr', template: { kind: 'not' }, label: '!', info: t('blk.notDesc') });
-    for (const op of ['==', '!=', '<', '<=', '>', '>=', '&&', '||']) {
-      items.push({ key: 'expr:op:' + op, type: 'expr', template: { kind: 'op', op }, label: op, info: (OP_LABELS[op] && t(OP_LABELS[op])) || op });
-    }
     for (const name in FUNC_BLOCKS) {
       const r = FUNC_BLOCKS[name].ret;
       if (r === T_SCALAR && !['vec', 'dot', 'cross', 'len', 'norm'].includes(name)) items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name, info: funcInfo(name) });

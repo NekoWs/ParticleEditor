@@ -97,6 +97,7 @@ export const PALETTE_GROUPS = [
   { id: 'pos', label: 'blk.pal.pos' },
   { id: 'color', label: 'blk.pal.color' },
   { id: 'appearance', label: 'blk.pal.appearance' },
+  { id: 'logic', label: 'blk.pal.logic' },
   { id: 'math', label: 'blk.pal.math' },
   { id: 'vec', label: 'blk.pal.vec' },
   { id: 'mat', label: 'blk.pal.mat' },

@@ -927,6 +927,8 @@ body.blk-dragging .blk-expr, body.blk-dragging .blk-stmt, body.blk-dragging .bd-
 .blk-mat { background: #206078; color: #e2f4fa; }
 .blk-var { background: #8a5a20; color: #fdf0dd; }
 .blk-const { background: #3a4558; color: #e6eaf1; }
+.blk-logic { background: #b06a12; color: #fff3df; }
+.blk-array { background: #a34d68; color: #ffeef4; }
 
 /* =========================================================================
  * 悬浮窗框架（Windows 式窗口）
@@ -1231,6 +1233,8 @@ body.puzzle-mode #viewport #box-overlay { display: none; }
 .blk-mat { background: #0f8fae; color: #ecfbff; }
 .blk-var { background: #d97a1f; color: #fff4e6; }
 .blk-const { background: #4a5568; color: #eef2f8; }
+.blk-logic { background: #e0a01f; color: #fff6e6; }
+.blk-array { background: #d9537f; color: #fff0f5; }
 
 /* 动态算式（chain） */
 .blk-chain .blk-op-sym {
@@ -1314,8 +1318,14 @@ body.puzzle-mode #viewport #box-overlay { display: none; }
 }
 .kf-editor .ke-btns button:first-child { background: #2a3f5f; border-color: #3a6fa0; }
 
-/* ---- 时间轴图层区高度由 JS 动态设置（默认 264px，可拖拽调整） ---- */
-#tl-layers-canvas:active { cursor: grabbing; }
+/* ---- Scratch-like 积木外观 ---- */
+.blk-stmt { border-radius: 12px; box-shadow: inset 0 2px 0 rgba(255,255,255,0.18), 0 2px 4px rgba(0,0,0,0.28); }
+.blk-expr { border-radius: 10px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.16), 0 1px 2px rgba(0,0,0,0.22); }
+.blk-slot { border-radius: 10px; background: rgba(0,0,0,0.14); }
+.blk-ctl { border-radius: 12px; box-shadow: inset 0 2px 0 rgba(255,255,255,0.14), 0 2px 5px rgba(0,0,0,0.28); }
+.pal-item { border-radius: 12px; transition: transform 0.12s ease; }
+.pal-item:hover { transform: translateY(-1px); }
+.chain-stack { gap: 2px; }
 
 /* ---- 拼图 setup 文本区与 raw 语句块 ---- */
 .setup-editor { margin: 0 8px 6px; }
@@ -1325,3 +1335,6 @@ body.puzzle-mode #viewport #box-overlay { display: none; }
 .blk-raw-text { font-family: Consolas, monospace; font-size: 12px; color: #e8eaf0; white-space: pre-wrap; word-break: break-word; width: 100%; min-width: 360px; background: transparent; border: none; resize: both; }
 .blk-ctl { background: #202838; border: 1px solid #3a5f8f; border-radius: 6px; padding: 4px 8px; max-width: 720px; }
 .blk-body-text { font-family: Consolas, monospace; font-size: 12px; color: #e8eaf0; background: #12141a; border: 1px solid #323848; border-radius: 3px; min-width: 180px; width: 180px; resize: both; }
+
+/* ---- 时间轴图层区高度由 JS 动态设置（默认 264px，可拖拽调整） ---- */
+#tl-layers-canvas:active { cursor: grabbing; }
