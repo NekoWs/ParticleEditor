@@ -35,7 +35,7 @@ const SLOT_PAD_X = 7, SLOT_PAD_Y = 4;
 const EXPR_PAD_X = 8, EXPR_PAD_Y = 3;
 const EXPR_H = 20;
 const BUMP_H = 6, BUMP_SLANT = 6, BUMP_X = 14, BUMP_W = 26;
-const HAT_H = 24;
+const HAT_H = 34;
 const BODY_INDENT = 20;
 const CTL_PAD = 8;
 const CTL_MOUTH = 0;    // 左侧 C 形开口已按需求移除，子块仍缩进
@@ -51,7 +51,7 @@ const PAL_LEFT = 10, PAL_TOP = 8, PAL_GAP = 8;
 const VARS_H = 108;
 const VARS_PAD = 10, VARS_GAP = 8, VARS_ROW_H = 30;
 
-const CTL_KINDS = new Set(['if', 'while', 'for', 'do', 'func']);
+const CTL_KINDS = new Set(['if', 'repeat', 'repeat_n', 'repeat_until', 'while', 'for', 'do']);
 const SIMPLE_CTL = new Set(['global', 'static', 'break', 'continue', 'return']);
 
 const CLS_COLORS = {
@@ -231,9 +231,31 @@ function stmtPath(c, x, y, w, h, noBump) {
   c.arcTo(x, top, x + r, top, r);
   c.closePath();
 }
-/** hat 起点块：圆头，无顶部凹口（起始块上无上一块），底部平直接第一块。 */
+/** hat 起点块：Scratch 式圆顶（左侧向上拱起），底部凸起与下方第一块的顶部凹口咬合。 */
 function hatPath(c, x, y, w, h) {
-  rrPath(c, x, y, w, h, Math.min(12, w / 2, h / 2));
+  const T = BUMP_H, sx = BUMP_SLANT, bx = BUMP_X, bw = BUMP_W;
+  const bxl = x + bx, bxr = bxl + bw;
+  const r = Math.min(12, w / 2, h / 2);
+  const top = y, bot = y + h;
+  const capW = Math.min(64, w * 0.62);
+  const capH = Math.min(11, h * 0.4);
+  c.beginPath();
+  c.moveTo(x, top + capH);
+  // 向上拱起的圆顶，圆顶中心偏左（Scratch 起始块风格）。
+  c.bezierCurveTo(x + 2, top - capH, x + capW * 0.45, top - capH, x + capW, top);
+  c.lineTo(x + w - r, top);
+  c.arcTo(x + w, top, x + w, top + r, r);
+  c.lineTo(x + w, bot - r);
+  c.arcTo(x + w, bot, x + w - r, bot, r);
+  // 底部凸起（与下方语句块顶部凹口咬合）。
+  c.lineTo(bxr, bot);
+  c.lineTo(bxr - sx, bot + T);
+  c.lineTo(bxl + sx, bot + T);
+  c.lineTo(bxl, bot);
+  c.lineTo(x + r, bot);
+  c.arcTo(x, bot, x, bot - r, r);
+  c.lineTo(x, top + capH);
+  c.closePath();
 }
 
 /* ============================ 布局：表达式 ============================ */
@@ -279,6 +301,9 @@ function inlineFlow(parts, x, y, out, seg, ctx, owner) {
       cx += OP_W; partH = OP_H;
     } else if (p.append) {
       children.push({ kind: 'append', shape: 'append', chainAppend: p.append, x: cx, y, w: APPEND_W, h: OP_H, segments: [{ text: '+', x: cx + APPEND_W / 2, y: y + OP_H / 2, font: FONT, align: 'center' }] });
+      cx += APPEND_W; partH = OP_H;
+    } else if (p.arrayAppend) {
+      children.push({ kind: 'array-append', shape: 'array-append', arrayAppend: p.arrayAppend, x: cx, y, w: APPEND_W, h: OP_H, segments: [{ text: '+', x: cx + APPEND_W / 2, y: y + OP_H / 2, font: FONT, align: 'center' }] });
       cx += APPEND_W; partH = OP_H;
     } else if (p.comp) {
       const label = '.' + p.comp.node.axis;
@@ -395,6 +420,7 @@ function exprParts(node) {
         P.push({ slot: { ref: slotRef(() => node.items[i], v => { node.items[i] = v; }, T_ANY), type: T_ANY, label: '' } });
       });
       P.push({ text: ']' });
+      P.push({ arrayAppend: { node } });
       break;
     default: P.push({ text: '?' });
   }
@@ -572,6 +598,15 @@ function ctlHeaderParts(s) {
     P.push({ edit: { kind: 'text', key: 'inc', value: s.inc, commit: (v) => { s.inc = String(v); return true; } } });
   } else if (s.kind === 'do') {
     P.push({ text: t('blk.stmt.do') + ' ' });
+  } else if (s.kind === 'repeat') {
+    P.push({ text: t(STMT_BLOCKS.repeat.label) + ' ' });
+  } else if (s.kind === 'repeat_n') {
+    P.push({ text: t(STMT_BLOCKS.repeat_n.label) + ' ' });
+    P.push({ slot: { ref: slotRef(() => s.count, v => { s.count = v; }, T_SCALAR), type: T_SCALAR, label: '' } });
+    P.push({ text: ' ' + t('blk.repeatTimes') });
+  } else if (s.kind === 'repeat_until') {
+    P.push({ text: t(STMT_BLOCKS.repeat_until.label) + ' ' });
+    P.push({ slot: { ref: slotRef(() => s.cond, v => { s.cond = v; }, T_ANY), type: T_ANY, label: '' } });
   } else if (s.kind === 'func') {
     P.push({ text: t('blk.stmt.func') + ' ' });
     P.push({ edit: { kind: 'text', key: 'name', ident: true, value: s.name, commit: (v) => { s.name = String(v).trim(); return true; } } });
@@ -612,6 +647,53 @@ function layoutBody(list, bx, by, out, ctx, ref) {
   return { w: maxW, h: cy - by };
 }
 
+function layoutIfElse(ifStmt, hx, bodyY, out, ctx) {
+  let bodyW = 0;
+  let bodyH = 0;
+  let tailY = bodyY;
+  const b = layoutBody(ifStmt.body || [], hx + BODY_INDENT, tailY, out, ctx, { chain: ifStmt.body });
+  bodyW = b.w; bodyH = b.h;
+  tailY += b.h;
+
+  let cur = ifStmt;
+  while (cur.elseBody && cur.elseBody.length === 1 && cur.elseBody[0].kind === 'if') {
+    const nextIf = cur.elseBody[0];
+    tailY += 4;
+    const label = t('blk.stmt.else_if') + ' ';
+    const labelW = textW(ctx, label, FONT);
+    out.push({ kind: 'text', shape: 'text', x: hx, y: tailY, w: 0, h: 0, segments: [{ text: label, x: hx, y: tailY + TEXT_H / 2, font: FONT }] });
+    const condChildren = [];
+    const slotRes = layoutSlot(slotRef(() => nextIf.cond, v => { nextIf.cond = v; }, T_ANY), T_ANY, '', hx + labelW, tailY, condChildren, ctx);
+    for (const c of condChildren) { c.stmt = nextIf; out.push(c); }
+    tailY += Math.max(EXPR_H, slotRes.h) + 4;
+    const eb = layoutBody(nextIf.body || [], hx + BODY_INDENT, tailY, out, ctx, { chain: nextIf.body });
+    bodyW = Math.max(bodyW, labelW + slotRes.w, eb.w);
+    bodyH = (tailY + eb.h) - bodyY;
+    tailY += eb.h;
+    cur = nextIf;
+  }
+
+  if (cur.elseBody && (cur.elseBody.length > 0 && (cur.elseBody.length > 1 || cur.elseBody[0].kind !== 'if'))) {
+    tailY += 4;
+    out.push({ kind: 'text', shape: 'text', x: hx, y: tailY, w: 0, h: 0, segments: [{ text: t('blk.stmt.else'), x: hx, y: tailY + TEXT_H / 2, font: FONT }] });
+    tailY += TEXT_H + 4;
+    const e = layoutBody(cur.elseBody, hx + BODY_INDENT, tailY, out, ctx, { chain: cur.elseBody });
+    bodyW = Math.max(bodyW, e.w);
+    bodyH = (tailY + e.h) - bodyY;
+    tailY += e.h;
+  } else if (cur.elseBody && cur.elseBody.length === 0) {
+    tailY += 4;
+    out.push({ kind: 'text', shape: 'text', x: hx, y: tailY, w: 0, h: 0, segments: [{ text: t('blk.stmt.else'), x: hx, y: tailY + TEXT_H / 2, font: FONT }] });
+    tailY += TEXT_H + 4;
+    const e = layoutBody(cur.elseBody, hx + BODY_INDENT, tailY, out, ctx, { chain: cur.elseBody });
+    bodyW = Math.max(bodyW, e.w);
+    bodyH = (tailY + e.h) - bodyY;
+    tailY += e.h;
+  }
+  bodyH = Math.max(bodyH, tailY - bodyY);
+  return { bodyW, bodyH };
+}
+
 function layoutSimpleCtl(s, x, y, out, ctx, opts) {
   const seg = [];
   const children = [];
@@ -635,17 +717,9 @@ function layoutCtlStmt(s, x, y, out, ctx, opts) {
   let tailY = bodyY;
 
   if (s.kind === 'if') {
-    const b = layoutBody(s.body || [], hx + BODY_INDENT, bodyY, children, ctx, { chain: s.body });
-    bodyW = b.w; bodyH = b.h;
+    const res = layoutIfElse(s, hx, bodyY, children, ctx);
+    bodyW = res.bodyW; bodyH = res.bodyH;
     tailY = bodyY + bodyH;
-    if (s.elseBody && s.elseBody.length) {
-      children.push({ kind: 'text', shape: 'text', x: hx, y: tailY, w: 0, h: 0, segments: [{ text: t('blk.stmt.else'), x: hx, y: tailY + TEXT_H / 2, font: FONT }] });
-      tailY += TEXT_H + 4;
-      const e = layoutBody(s.elseBody, hx + BODY_INDENT, tailY, children, ctx, { chain: s.elseBody });
-      bodyW = Math.max(bodyW, e.w);
-      bodyH += (TEXT_H + 4) + e.h;
-      tailY += e.h;
-    }
   } else if (s.kind === 'do') {
     const b = layoutBody(s.body || [], hx + BODY_INDENT, bodyY, children, ctx, { chain: s.body });
     bodyW = b.w; bodyH = b.h;
@@ -674,9 +748,46 @@ function layoutCtlStmt(s, x, y, out, ctx, opts) {
   return { w, h };
 }
 
+function layoutFuncHat(entry, x, y, out, ctx) {
+  const s = entry.stmt;
+  const seg = [];
+  const children = [];
+  const hx = x + STMT_PAD_X;
+  const hy = y + STMT_PAD_Y;
+  const flow = inlineFlow(ctlHeaderParts(s), hx, hy, children, seg, ctx, s);
+  let bodyY = hy + Math.max(EXPR_H, flow.h) + 8;
+  const headerW = flow.w + STMT_PAD_X * 2;
+
+  // 函数体按「链」排布：首块保留顶部凹口，与起始块底部凸起咬合。
+  const bodyArr = s.body || [];
+  let cy = bodyY;
+  let bodyW = 0;
+  const bx = hx + BODY_INDENT;
+  if (bodyArr.length === 0) {
+    out.push(dropRegion({ chain: s.body }, 0, bx, cy, 200, 22));
+    cy += 22;
+    bodyW = 200;
+  } else {
+    for (let i = 0; i < bodyArr.length; i++) {
+      out.push(dropRegion({ chain: s.body }, i, bx, cy - 5, Math.max(bodyW, 120), 10));
+      const d = layoutStmt(bodyArr[i], bx, cy, out, ctx, { noBump: false });
+      bodyW = Math.max(bodyW, d.w);
+      cy += d.h;
+    }
+    out.push(dropRegion({ chain: s.body }, bodyArr.length, bx, cy - 5, Math.max(bodyW, 120), 10));
+  }
+
+  const w = Math.max(headerW, bodyW + BODY_INDENT + STMT_PAD_X);
+  const h = bodyY - y;
+  out.push({ kind: 'stmt', shape: 'hat', cls: 'blk-start', stmt: s, hatEntry: entry, x, y, w, h, segments: seg, noBump: false });
+  for (const c of children) { c.stmt = s; out.push(c); }
+  return { w, h: cy - y + STMT_PAD_Y };
+}
+
 function layoutStmt(s, x, y, out, ctx, opts) {
   if (s.kind === 'raw') return layoutRawStmt(s, x, y, out, ctx);
   if (s.kind === 'comment') return layoutCommentStmt(s, x, y, out, ctx, opts);
+  if (s.kind === 'func') return layoutFuncHat({ stmt: s }, x, y, out, ctx);
   if (CTL_KINDS.has(s.kind)) return layoutCtlStmt(s, x, y, out, ctx, opts);
   if (SIMPLE_CTL.has(s.kind)) return layoutSimpleCtl(s, x, y, out, ctx, opts);
   if (s.kind === 'col' || s.kind === 'glow') return layoutSimpleStmt(s, x, y, out, ctx, opts);
@@ -688,15 +799,22 @@ function layoutStmt(s, x, y, out, ctx, opts) {
 
 function layoutChain(arr, x, y, out, ctx, opts) {
   const isFrag = !!opts.frag;
+  const hasHead = !isFrag && !!opts.head;
   const headH = isFrag ? 0 : HAT_H;
+  const ph = opts.placeholder || null;
   let cy = y + headH;
   let stackW = 0;
-  for (let i = 0; i < arr.length; i++) {
-    const d = layoutStmt(arr[i], x, cy, out, ctx, { noBump: i === 0 });
-    stackW = Math.max(stackW, d.w);
-    cy += d.h;
-  }
-  if (!isFrag) {
+
+  const placePh = () => {
+    if (!ph) return;
+    const pw = Math.max(120, ph.w || 0);
+    const phh = Math.max(20, ph.h || 0);
+    out.push({ kind: 'placeholder', shape: 'stmt', x, y: cy, w: pw, h: phh, segments: [] });
+    stackW = Math.max(stackW, pw);
+    cy += phh;
+  };
+
+  if (hasHead) {
     const titleW = textW(ctx, opts.title, FONT) + 28;
     const headW = Math.max(titleW, stackW, 60);
     out.push({
@@ -706,22 +824,37 @@ function layoutChain(arr, x, y, out, ctx, opts) {
       segments: [{ text: opts.title, x: x + 14, y: y + headH / 2, font: FONT }],
     });
   }
+
   const dropRef = { chain: opts.dropRef.chain || null, frag: opts.dropRef.frag || null };
   if (arr.length === 0) {
-    out.push(dropRegion(dropRef, 0, x, y + headH, Math.max(stackW, 200), 22));
-  } else {
-    let b = y + headH;
-    for (let i = 0; i < arr.length; i++) {
-      out.push(dropRegion(dropRef, i, x, b - 5, Math.max(stackW, 120), 10));
-      b += layoutStmtHeight(arr[i], ctx);
-    }
-    out.push(dropRegion(dropRef, arr.length, x, b - 5, Math.max(stackW, 120), 10));
+    if (ph && ph.index === 0) placePh();
+    out.push(dropRegion(dropRef, 0, x, cy, Math.max(stackW, 200), 22));
+    return { w: Math.max(stackW, 200), h: cy - y };
   }
+  for (let i = 0; i < arr.length; i++) {
+    out.push(dropRegion(dropRef, i, x, cy - 5, Math.max(stackW, 120), 10));
+    if (ph && ph.index === i) placePh();
+    const d = layoutStmt(arr[i], x, cy, out, ctx, { noBump: i === 0 && !hasHead });
+    stackW = Math.max(stackW, d.w);
+    cy += d.h;
+  }
+  out.push(dropRegion(dropRef, arr.length, x, cy - 5, Math.max(stackW, 120), 10));
+  if (ph && ph.index === arr.length) placePh();
+  return { w: Math.max(stackW, 120), h: cy - y };
 }
 
 function layoutStmtHeight(s, ctx) {
   const tmp = [];
   return layoutStmt(s, 0, 0, tmp, ctx).h;
+}
+
+function dragOrigin() {
+  return (S.drag && S.drag.source && S.drag.source.origin) || null;
+}
+
+function placeholderFor(arr) {
+  const origin = dragOrigin();
+  return (origin && origin.arr === arr) ? origin : null;
 }
 
 function layoutWorkspace() {
@@ -730,10 +863,23 @@ function layoutWorkspace() {
   const bctx = H.getBctx();
   const l = bctx.layout;
   const ctx = S.workCtx;
-  layoutChain(bctx.setupChain, l.setup.x, l.setup.y, out, ctx, { title: t('blk.setup'), head: { key: 'setup' }, dropRef: { chain: bctx.setupChain } });
-  layoutChain(bctx.chain, l.chain.x, l.chain.y, out, ctx, { title: t('blk.start'), head: { key: 'chain' }, dropRef: { chain: bctx.chain } });
+  if (l.setup) {
+    layoutChain(bctx.setupChain, l.setup.x, l.setup.y, out, ctx, {
+      title: t('blk.setup'), head: { key: 'setup' }, dropRef: { chain: bctx.setupChain },
+      placeholder: placeholderFor(bctx.setupChain),
+    });
+  }
+  if (l.chain) {
+    layoutChain(bctx.chain, l.chain.x, l.chain.y, out, ctx, {
+      title: t('blk.start'), head: { key: 'chain' }, dropRef: { chain: bctx.chain },
+      placeholder: placeholderFor(bctx.chain),
+    });
+  }
+  for (const f of bctx.funcs || []) {
+    layoutFuncHat(f, f.x, f.y, out, ctx);
+  }
   for (const f of bctx.frags) {
-    layoutChain(f.stmts, f.x, f.y, out, ctx, { title: t('blk.fragment'), head: { frag: f }, frag: f, dropRef: { frag: f } });
+    layoutChain(f.stmts, f.x, f.y, out, ctx, { frag: f, dropRef: { frag: f }, placeholder: placeholderFor(f.stmts) });
   }
   S.wsRegions = out;
 }
@@ -857,6 +1003,15 @@ function paletteItemSize(item, ctx) {
   if (item.type === 'opval') {
     return { w: textW(ctx, item.op, FONT) + 16, h: EXPR_H };
   }
+  if (item.type === 'hat') {
+    return { w: textW(ctx, item.label, FONT) + 30, h: HAT_H };
+  }
+  if (item.type === 'if-branch') {
+    return { w: textW(ctx, item.label, FONT) + 26, h: 26 };
+  }
+  if (item.type === 'method') {
+    return { w: textW(ctx, '.' + item.method + '()', FONT) + 26, h: 26 };
+  }
   if (item.type === 'stmt') {
     const d = layoutStmt(H.newStmtNode(item.kind), 0, 0, tmp, ctx);
     return { w: d.w, h: d.h };
@@ -901,12 +1056,25 @@ function drawSegments(ctx, segs, color) {
   }
 }
 
+function strokeRegionPath(ctx, r, pad) {
+  const p = pad || 0;
+  const x = r.x - p, y = r.y - p, w = r.w + p * 2, h = r.h + p * 2;
+  if (r.shape === 'hat') hatPath(ctx, x, y, w, h);
+  else if (r.shape === 'stmt') stmtPath(ctx, x, y, w, h, !!r.noBump);
+  else if (r.shape === 'bool') hexPath(ctx, x, y, w, h);
+  else if (r.shape === 'raw') rrPath(ctx, x, y, w, h, 6);
+  else if (r.shape === 'slot' || r.shape === 'edit' || r.shape === 'attr' || r.shape === 'append' || r.shape === 'array-append') rrPath(ctx, x, y, w, h, 6);
+  else if (r.shape === 'op' || r.shape === 'toggle' || r.shape === 'color') rrPath(ctx, x, y, w, h, 5);
+  else if (r.shape === 'row' || r.shape === 'tag' || r.shape === 'pal-item') rrPath(ctx, x, y, w, h, 6);
+  else if (r.shape === 'drop') rrPath(ctx, x, y, w, h, 3);
+  else capsulePath(ctx, x, y, w, h);
+}
+
 function drawHighlight(ctx, region, color, scale) {
   ctx.save();
   ctx.strokeStyle = color || 'rgba(255,255,255,0.5)';
   ctx.lineWidth = (scale || 1) * 2;
-  if (region.shape === 'bool') hexPath(ctx, region.x - 3, region.y - 3, region.w + 6, region.h + 6);
-  else rrPath(ctx, region.x - 3, region.y - 3, region.w + 6, region.h + 6, 8);
+  strokeRegionPath(ctx, region, 3);
   ctx.stroke();
   ctx.restore();
 }
@@ -999,6 +1167,7 @@ function drawStmtRegion(ctx, r) {
   ctx.save();
   ctx.fillStyle = color;
   if (r.shape === 'raw') rrPath(ctx, r.x, r.y, r.w, r.h, 6);
+  else if (r.shape === 'hat') hatPath(ctx, r.x, r.y, r.w, r.h);
   else stmtPath(ctx, r.x, r.y, r.w, r.h, !!r.noBump);
   ctx.fill();
   ctx.strokeStyle = 'rgba(0,0,0,0.25)';
@@ -1052,6 +1221,18 @@ function drawAppendRegion(ctx, r) {
   ctx.stroke();
   ctx.setLineDash([]);
   drawSegments(ctx, r.segments, 'rgba(255,255,255,0.6)');
+  ctx.restore();
+}
+
+function drawArrayAppendRegion(ctx, r) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  rrPath(ctx, r.x, r.y, r.w, r.h, 5);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  drawSegments(ctx, r.segments, '#fff');
   ctx.restore();
 }
 
@@ -1147,6 +1328,19 @@ function drawCompRegion(ctx, r) {
   ctx.restore();
 }
 
+function drawPlaceholderRegion(ctx, r) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(148,158,178,0.20)';
+  stmtPath(ctx, r.x, r.y, r.w, r.h, false);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(148,158,178,0.75)';
+  ctx.setLineDash([5, 4]);
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
 function drawDropRegion(ctx, r, th) {
   // 块与块之间的落点区域不再常驻绘制虚线提示框；仅在拖拽经过时显示高亮目标。
   const active = th && th.region === r;
@@ -1190,12 +1384,14 @@ function drawRegion(ctx, r, th) {
     case 'slot': drawSlotRegion(ctx, r); break;
     case 'op': drawOpRegion(ctx, r); break;
     case 'append': drawAppendRegion(ctx, r); break;
+    case 'array-append': drawArrayAppendRegion(ctx, r); break;
     case 'edit': drawEditRegion(ctx, r); break;
     case 'attr': drawAttrRegion(ctx, r); break;
     case 'toggle': drawToggleRegion(ctx, r); break;
     case 'color': drawColorRegion(ctx, r); break;
     case 'comp': drawCompRegion(ctx, r); break;
     case 'drop': drawDropRegion(ctx, r, th); break;
+    case 'placeholder': drawPlaceholderRegion(ctx, r); break;
     case 'var-row': drawVarRowRegion(ctx, r); break;
     case 'attr-var': drawAttrRegion(ctx, r); break;
     case 'pal-title': drawTitleRegion(ctx, r); break;
@@ -1216,6 +1412,42 @@ function drawPalItemRegion(ctx, r) {
     ctx.lineWidth = 1;
     ctx.stroke();
     drawSegments(ctx, [{ text: item.op, x: r.x + r.w / 2, y: r.y + r.h / 2, font: FONT, align: 'center' }], '#fff');
+    ctx.restore();
+    return;
+  }
+  if (item.type === 'hat') {
+    ctx.save();
+    ctx.fillStyle = blockColor('blk-start');
+    hatPath(ctx, r.x, r.y, r.w, r.h);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    drawSegments(ctx, [{ text: item.label, x: r.x + 14, y: r.y + r.h / 2, font: FONT }], '#fff');
+    ctx.restore();
+    return;
+  }
+  if (item.type === 'if-branch') {
+    ctx.save();
+    ctx.fillStyle = blockColor('blk-ctl');
+    stmtPath(ctx, r.x, r.y, r.w, r.h, false);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    drawSegments(ctx, [{ text: item.label, x: r.x + 12, y: r.y + r.h / 2, font: FONT }], '#fff');
+    ctx.restore();
+    return;
+  }
+  if (item.type === 'method') {
+    ctx.save();
+    ctx.fillStyle = blockColor('blk-array');
+    stmtPath(ctx, r.x, r.y, r.w, r.h, false);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    drawSegments(ctx, [{ text: '.' + item.method + '()', x: r.x + 12, y: r.y + r.h / 2, font: FONT }], '#fff');
     ctx.restore();
     return;
   }
@@ -1273,9 +1505,12 @@ function renderPaletteCanvas() {
   }
   if (S.hover && S.hover.kind === 'pal-item') {
     const r = S.hover;
+    const item = r.item;
     ctx.strokeStyle = 'rgba(255,255,255,0.35)';
     ctx.lineWidth = 1.5;
-    rrPath(ctx, r.x - 2, r.y - 2, r.w + 4, r.h + 4, 6);
+    if (item.type === 'hat') hatPath(ctx, r.x - 2, r.y - 2, r.w + 4, r.h + 4);
+    else if (item.type === 'if-branch' || item.type === 'method' || item.type === 'stmt') stmtPath(ctx, r.x - 2, r.y - 2, r.w + 4, r.h + 4, false);
+    else capsulePath(ctx, r.x - 2, r.y - 2, r.w + 4, r.h + 4);
     ctx.stroke();
   }
   // 右侧滚动条
@@ -1342,7 +1577,7 @@ function renderWorkCanvas() {
     ctx.fillStyle = 'rgba(91,157,255,0.16)';
     ctx.strokeStyle = 'rgba(91,157,255,0.85)';
     ctx.lineWidth = 1.5 / scale;
-    rrPath(ctx, r.x, py, Math.max(r.w, 120), ph, 8);
+    stmtPath(ctx, r.x, py, Math.max(r.w, 120), ph, false);
     ctx.fill();
     ctx.stroke();
     ctx.restore();
@@ -1493,6 +1728,28 @@ function renderGhost() {
     if (d.source.stmt) layoutStmt(node, 0, 0, tmp, ctx);
     else layoutExpr(node, 0, 0, tmp, ctx);
     for (const r of tmp) drawRegion(ctx, r, null);
+  } else if (d.source.type === 'hat') {
+    const label = d.source.kind === 'setup' ? t('blk.setup') : d.source.kind === 'process' ? t('blk.start') : t('blk.stmt.func');
+    const w = textW(ctx, label, FONT) + 30;
+    ctx.fillStyle = blockColor('blk-start');
+    hatPath(ctx, 0, 0, w, HAT_H);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    drawSegments(ctx, [{ text: label, x: 14, y: HAT_H / 2, font: FONT }], '#fff');
+  } else if (d.source.type === 'if-branch') {
+    const label = d.source.branch === 'else' ? t('blk.stmt.else') : t('blk.stmt.else_if');
+    const w = textW(ctx, label, FONT) + 26;
+    ctx.fillStyle = blockColor('blk-ctl');
+    stmtPath(ctx, 0, 0, w, 26, false);
+    ctx.fill();
+    drawSegments(ctx, [{ text: label, x: 12, y: 13, font: FONT }], '#fff');
+  } else if (d.source.type === 'method') {
+    const node = H.newExprNodeFromTemplate(d.source.template || { kind: 'method', method: d.source.method });
+    const tmp = [];
+    layoutStmt({ kind: 'expr', expr: node }, 0, 0, tmp, ctx);
+    for (const r of tmp) drawRegion(ctx, r, null);
   }
   ctx.restore();
 }
@@ -1566,6 +1823,12 @@ function dragPreviewH(source) {
   if (!S.workCtx) return 20;
   if (source.type === 'palette' && source.stmt) {
     try { return Math.max(20, layoutStmtHeight(H.newStmtNode(source.stmtKind), S.workCtx)); } catch (e) { return 20; }
+  }
+  if (source.type === 'method') {
+    try {
+      const node = H.newExprNodeFromTemplate(source.template || { kind: 'method', method: source.method });
+      return Math.max(20, layoutStmtHeight({ kind: 'expr', expr: node }, S.workCtx));
+    } catch (e) { return 20; }
   }
   if (source.type === 'stmt-group' && Array.isArray(source.group)) {
     let h = 0;
@@ -2008,6 +2271,12 @@ function startPaletteDrag(item, e) {
   let source;
   if (p.type === 'opval') {
     source = { type: 'opval', op: p.op };
+  } else if (p.type === 'hat') {
+    source = { type: 'hat', kind: p.kind };
+  } else if (p.type === 'if-branch') {
+    source = { type: 'if-branch', branch: p.branch };
+  } else if (p.type === 'method') {
+    source = { type: 'method', method: p.method, template: p.template };
   } else {
     source = { type: 'palette', stmt: p.type === 'stmt', stmtKind: p.kind, template: p.template };
   }
@@ -2031,12 +2300,6 @@ function startStmtGroupPending(r, e) {
   const rect = worldToScreenRect(r);
   const loc = H.stmtGroupLocation(r.stmt);
   if (!loc) return;
-  // 碎片中的语句拖动时移动整个碎片（碎片已无头部把手）。
-  const frag = H.getBctx().frags.find(f => f.stmts === loc.chain);
-  if (frag) {
-    S.drag = { mode: 'frag-move', frag, startX: e.clientX, startY: e.clientY, lx: frag.x, ly: frag.y };
-    return;
-  }
   S.drag = {
     mode: 'stmt-group-pending',
     source: { type: 'stmt-group-pending', stmt: r.stmt, loc },
@@ -2052,9 +2315,17 @@ function startChainMove(r, e) {
   const pos = H.getBctx().layout[key] || H.getBctx().layout.chain;
   S.drag = { mode: 'chain-move', key, startX: e.clientX, startY: e.clientY, lx: pos.x, ly: pos.y };
 }
+function startFuncMove(r, e) {
+  const entry = r.hatEntry;
+  if (!entry) return;
+  S.drag = { mode: 'func-move', entry, startX: e.clientX, startY: e.clientY, lx: entry.x, ly: entry.y };
+}
 function startFragMove(r, e) {
   const f = r.head.frag;
   S.drag = { mode: 'frag-move', frag: f, startX: e.clientX, startY: e.clientY, lx: f.x, ly: f.y };
+}
+function startEditPending(r, e) {
+  S.drag = { mode: 'edit-pending', region: r, startX: e.clientX, startY: e.clientY, curX: e.clientX, curY: e.clientY };
 }
 
 function startPan(e) {
@@ -2093,7 +2364,13 @@ function computeDropTarget(e) {
   }
   if (hit.kind === 'append') {
     d.target = { kind: 'chain-append', ref: hit.chainAppend };
-    d.valid = (src.type === 'opval' || src.type === 'expr' || (src.type === 'palette' && !src.stmt));
+    d.valid = (src.type === 'opval' || src.type === 'expr' || src.type === 'method' || (src.type === 'palette' && !src.stmt));
+    S.dropHover = { region: hit, valid: d.valid };
+    return;
+  }
+  if (hit.kind === 'array-append') {
+    d.target = { kind: 'array-append', ref: hit.arrayAppend };
+    d.valid = (src.type === 'expr' || src.type === 'method' || (src.type === 'palette' && !src.stmt));
     S.dropHover = { region: hit, valid: d.valid };
     return;
   }
@@ -2103,7 +2380,33 @@ function computeDropTarget(e) {
     S.dropHover = { region: hit, valid: d.valid };
     return;
   }
-  if (src.type === 'palette' || src.type === 'stmt-group') {
+  if (src.type === 'hat') {
+    if (hit.kind === 'blank') {
+      const view = H.getBctx().layout.view;
+      const gx = (e.clientX - rect.left - d.grabDx - view.x) / view.scale;
+      const gy = (e.clientY - rect.top - d.grabDy - view.y) / view.scale;
+      d.target = { kind: 'blank', x: gx, y: gy };
+      d.valid = !H.hatExists(src.kind);
+      if (!d.valid) S.dropHover = { region: { kind: 'blank', x: gx, y: gy, w: 0, h: 0 }, valid: false };
+      return;
+    }
+    d.valid = false;
+    return;
+  }
+  if (src.type === 'if-branch') {
+    const nonDrop = hitWorkspace(mx, my, false);
+    let ifStmt = null;
+    if (nonDrop && nonDrop.stmt && nonDrop.stmt.kind === 'if') ifStmt = nonDrop.stmt;
+    if (ifStmt) {
+      d.target = { kind: 'if-branch', stmt: ifStmt, branch: src.branch };
+      d.valid = true;
+      S.dropHover = { region: nonDrop, valid: true };
+    } else {
+      d.valid = false;
+    }
+    return;
+  }
+  if (src.type === 'palette' || src.type === 'stmt-group' || src.type === 'method') {
     const view = H.getBctx().layout.view;
     const gx = (e.clientX - rect.left - d.grabDx - view.x) / view.scale;
     const gy = (e.clientY - rect.top - d.grabDy - view.y) / view.scale;
@@ -2116,7 +2419,7 @@ function computeDropTarget(e) {
     }
   }
   if (hit.kind === 'blank') {
-    if (src.type === 'palette' || src.type === 'stmt-group' || src.type === 'expr') {
+    if (src.type === 'palette' || src.type === 'stmt-group' || src.type === 'expr' || src.type === 'method') {
       const view = H.getBctx().layout.view;
       const gx = (e.clientX - rect.left - d.grabDx - view.x) / view.scale;
       const gy = (e.clientY - rect.top - d.grabDy - view.y) / view.scale;
@@ -2131,6 +2434,10 @@ function updateDrag(e) {
   const d = S.drag;
   if (!d) return;
   d.curX = e.clientX; d.curY = e.clientY;
+  if (d.mode === 'edit-pending') {
+    if (Math.hypot(e.clientX - d.startX, e.clientY - d.startY) > DRAG_THRESHOLD) S.drag = null;
+    return;
+  }
   if (d.mode === 'pan') {
     const v = H.getBctx().layout.view;
     v.x = d.lx + (e.clientX - d.startX);
@@ -2143,6 +2450,13 @@ function updateDrag(e) {
     const scale = H.getBctx().layout.view.scale || 1;
     pos.x = d.lx + (e.clientX - d.startX) / scale;
     pos.y = d.ly + (e.clientY - d.startY) / scale;
+    puzzleCanvasRender();
+    return;
+  }
+  if (d.mode === 'func-move') {
+    const scale = H.getBctx().layout.view.scale || 1;
+    d.entry.x = d.lx + (e.clientX - d.startX) / scale;
+    d.entry.y = d.ly + (e.clientY - d.startY) / scale;
     puzzleCanvasRender();
     return;
   }
@@ -2159,8 +2473,13 @@ function updateDrag(e) {
     const group = H.detachStmtGroupNow(d.source.stmt);
     d.source.type = 'stmt-group';
     d.source.group = group || [];
+    // 记录原位，供工作区在链上渲染灰色拼图形占位。
+    let gw = 0, gh = 0;
+    for (const s of d.source.group) {
+      try { const dd = layoutStmtHeight(s, S.workCtx); gh += dd; const tmp = []; const lw = layoutStmt(s, 0, 0, tmp, S.workCtx).w; gw = Math.max(gw, lw); } catch (e) {}
+    }
+    d.source.origin = { arr: d.source.loc.chain, index: d.source.loc.index, w: gw, h: Math.max(20, gh) };
     d.mode = 'ghost';
-    pruneEmptyFrags();
     puzzleCanvasRender();
     renderGhost();
     return;
@@ -2186,8 +2505,15 @@ function endDrag(e) {
   S.dropHover = null;
   renderGhost();
 
-  if (d.mode === 'pan' || d.mode === 'chain-move' || d.mode === 'frag-move') { puzzleCanvasRender(); return; }
+  if (d.mode === 'pan' || d.mode === 'chain-move' || d.mode === 'func-move' || d.mode === 'frag-move') { puzzleCanvasRender(); return; }
   if (d.mode === 'stmt-group-pending') { puzzleCanvasRender(); return; }
+  if (d.mode === 'edit-pending') {
+    if (d.region && Math.hypot(e.clientX - d.startX, e.clientY - d.startY) <= DRAG_THRESHOLD) {
+      beginInlineEdit(d.region);
+    }
+    puzzleCanvasRender();
+    return;
+  }
 
   const { source, target, valid } = d;
   if (!valid || !target) { puzzleCanvasRender(); return; }
@@ -2223,6 +2549,9 @@ function endDrag(e) {
         if (!source.detach) { puzzleCanvasRender(); return; }
         H.pushUndo();
         node = source.detach();
+      } else if (source.type === 'method') {
+        H.pushUndo();
+        node = H.newExprNodeFromTemplate(source.template || { kind: 'method', method: source.method });
       } else { puzzleCanvasRender(); return; }
       chain.ops.push('+');
       chain.terms.push(node);
@@ -2240,8 +2569,51 @@ function endDrag(e) {
       if (!source.detach) { puzzleCanvasRender(); return; }
       H.pushUndo();
       node = source.detach();
+    } else if (source.type === 'method') {
+      H.pushUndo();
+      node = H.newExprNodeFromTemplate(source.template || { kind: 'method', method: source.method });
     } else { puzzleCanvasRender(); return; }
     target.ref.set(node);
+    H.refreshPreview();
+    puzzleCanvasRender();
+    return;
+  }
+  if (target.kind === 'array-append') {
+    let node = null;
+    if (source.type === 'palette') {
+      if (source.stmt) { puzzleCanvasRender(); return; }
+      node = H.newExprNodeFromTemplate(source.template);
+      H.pushUndo();
+    } else if (source.type === 'expr') {
+      if (!source.detach) { puzzleCanvasRender(); return; }
+      H.pushUndo();
+      node = source.detach();
+    } else if (source.type === 'method') {
+      H.pushUndo();
+      node = H.newExprNodeFromTemplate(source.template || { kind: 'method', method: source.method });
+    } else { puzzleCanvasRender(); return; }
+    target.ref.node.items.push(node);
+    H.refreshPreview();
+    puzzleCanvasRender();
+    return;
+  }
+  if (target.kind === 'if-branch') {
+    const ifStmt = target.stmt;
+    H.pushUndo();
+    if (target.branch === 'else') {
+      // 已有 else-if 链时，把 else 挂到最内层 if 的 elseBody。
+      let cur = ifStmt;
+      while (cur.elseBody && cur.elseBody.length === 1 && cur.elseBody[0].kind === 'if') {
+        cur = cur.elseBody[0];
+      }
+      if (!cur.elseBody) cur.elseBody = [];
+    } else if (target.branch === 'else_if') {
+      const newIf = H.newStmtNode('if');
+      if (ifStmt.elseBody && ifStmt.elseBody.length) {
+        newIf.elseBody = ifStmt.elseBody;
+      }
+      ifStmt.elseBody = [newIf];
+    }
     H.refreshPreview();
     puzzleCanvasRender();
     return;
@@ -2251,6 +2623,13 @@ function endDrag(e) {
       if (!source.stmt) { puzzleCanvasRender(); return; }
       H.pushUndo();
       const stmt = H.newStmtNode(source.stmtKind);
+      if (target.drop.frag) target.drop.frag.stmts.splice(target.drop.index, 0, stmt);
+      else if (target.drop.chain) target.drop.chain.splice(target.drop.index, 0, stmt);
+      H.refreshPreview();
+    } else if (source.type === 'method') {
+      H.pushUndo();
+      const node = H.newExprNodeFromTemplate(source.template || { kind: 'method', method: source.method });
+      const stmt = { kind: 'expr', expr: node };
       if (target.drop.frag) target.drop.frag.stmts.splice(target.drop.index, 0, stmt);
       else if (target.drop.chain) target.drop.chain.splice(target.drop.index, 0, stmt);
       H.refreshPreview();
@@ -2264,7 +2643,12 @@ function endDrag(e) {
     return;
   }
   if (target.kind === 'blank') {
-    if (source.type === 'palette' && source.stmt) {
+    if (source.type === 'hat') {
+      if (H.createHat(source.kind, target.x, target.y)) {
+        H.pushUndo();
+        H.refreshPreview();
+      }
+    } else if (source.type === 'palette' && source.stmt) {
       H.pushUndo();
       const stmt = H.newStmtNode(source.stmtKind);
       H.getBctx().frags.push({ stmts: [stmt], x: target.x, y: target.y });
@@ -2272,6 +2656,11 @@ function endDrag(e) {
     } else if (source.type === 'palette') {
       H.pushUndo();
       const node = H.newExprNodeFromTemplate(source.template);
+      H.getBctx().frags.push({ stmts: [{ kind: 'expr', expr: node }], x: target.x, y: target.y });
+      H.refreshPreview();
+    } else if (source.type === 'method') {
+      H.pushUndo();
+      const node = H.newExprNodeFromTemplate(source.template || { kind: 'method', method: source.method });
       H.getBctx().frags.push({ stmts: [{ kind: 'expr', expr: node }], x: target.x, y: target.y });
       H.refreshPreview();
     } else if (source.type === 'expr') {
@@ -2364,7 +2753,7 @@ function onWorkDown(e) {
       return;
     }
     if (S.edit) commitEdit();
-    if (hit && hit.kind === 'edit') { e.preventDefault(); beginInlineEdit(hit); return; }
+    if (hit && hit.kind === 'edit') { e.preventDefault(); startEditPending(hit, e); return; }
     if (hit && hit.kind === 'attr-var') {
       e.preventDefault();
       const r = hit;
@@ -2389,7 +2778,15 @@ function onWorkDown(e) {
   if (hit.kind === 'head' && hit.head.frag) { e.preventDefault(); startFragMove(hit, e); return; }
   if (hit.kind === 'expr') { e.preventDefault(); startExprDrag(hit, e); return; }
   if (hit.kind === 'op') { e.preventDefault(); startOpRemove(hit, e); return; }
-  if (hit.kind === 'edit') { e.preventDefault(); beginInlineEdit(hit); return; }
+  if (hit.kind === 'edit') { e.preventDefault(); startEditPending(hit, e); return; }
+  if (hit.kind === 'array-append') {
+    e.preventDefault();
+    H.pushUndo();
+    hit.arrayAppend.node.items.push(null);
+    H.refreshPreview();
+    puzzleCanvasRender();
+    return;
+  }
   if (hit.kind === 'attr') {
     e.preventDefault();
     if (hit.attr && hit.attr.onClick && hit.attr.onClick()) { H.refreshPreview(); puzzleCanvasRender(); }
@@ -2412,7 +2809,15 @@ function onWorkDown(e) {
   }
   if (hit.kind === 'stmt') {
     e.preventDefault();
-    if (hit.stmt && (hit.stmt.kind === 'raw' || hit.stmt.kind === 'comment') && e.detail >= 2) {
+    if (hit.stmt && hit.stmt.kind === 'func' && hit.shape === 'hat') {
+      startFuncMove(hit, e);
+      return;
+    }
+    if (hit.stmt && hit.stmt.kind === 'comment') {
+      startEditPending(hit, e);
+      return;
+    }
+    if (hit.stmt && hit.stmt.kind === 'raw' && e.detail >= 2) {
       beginInlineEdit(hit);
       return;
     }
@@ -2532,7 +2937,7 @@ function updateHover(e) {
     S.hover = hover;
     if (S.workCanvas) {
       const kind = hover && hover.kind;
-      S.workCanvas.style.cursor = (kind === 'edit' || kind === 'attr' || kind === 'toggle' || kind === 'color') ? 'pointer' : (kind === 'expr' || kind === 'stmt' || kind === 'head' || kind === 'op' || kind === 'attr-var' || kind === 'pal-item') ? 'grab' : 'default';
+      S.workCanvas.style.cursor = (kind === 'edit') ? 'text' : (kind === 'attr' || kind === 'toggle' || kind === 'color' || kind === 'array-append') ? 'pointer' : (kind === 'expr' || kind === 'stmt' || kind === 'head' || kind === 'op' || kind === 'attr-var' || kind === 'pal-item') ? 'grab' : 'default';
     }
     puzzleCanvasRender();
   }

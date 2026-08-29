@@ -57,6 +57,7 @@ export function cloneStmt(s) {
   if (s.cond) o.cond = cloneExprNode(s.cond);
   if (s.init) o.init = cloneExprNode(s.init);
   if (s.inc) o.inc = cloneExprNode(s.inc);
+  if (s.count) o.count = cloneExprNode(s.count);
   if (Array.isArray(s.body)) o.body = s.body.map(cloneStmt);
   if (Array.isArray(s.elseBody)) o.elseBody = s.elseBody.map(cloneStmt);
   if (Array.isArray(s.params)) o.params = s.params.slice();
@@ -75,7 +76,7 @@ export function availableVars() {
   const out = ['i', 'n', 't'];
   if (bctx) {
     for (const name of bctx.varOrder) if (name in bctx.varExprs && !out.includes(name)) out.push(name);
-    const all = [...bctx.chain, ...bctx.setupChain, ...bctx.frags.flatMap(f => f.stmts)];
+    const all = [...bctx.chain, ...bctx.setupChain, ...bctx.frags.flatMap(f => f.stmts), ...bctx.funcs.map(f => f.stmt)];
     for (const t of collectTemps(all)) if (!out.includes(t)) out.push(t);
   }
   return out;
@@ -87,14 +88,14 @@ export function availableVars() {
 
 export function freshTempName() {
   let k = 0;
-  const all = bctx ? [...bctx.chain, ...bctx.setupChain, ...bctx.frags.flatMap(f => f.stmts)] : [];
+  const all = bctx ? [...bctx.chain, ...bctx.setupChain, ...bctx.frags.flatMap(f => f.stmts), ...bctx.funcs.map(f => f.stmt)] : [];
   const names = new Set(collectTemps(all));
   while (names.has('v' + k)) k++;
   return 'v' + k;
 }
 export function findAllStmts() {
   const out = [];
-  if (bctx) walkStatements([...bctx.chain, ...bctx.setupChain, ...bctx.frags.flatMap(f => f.stmts)], s => out.push(s));
+  if (bctx) walkStatements([...bctx.chain, ...bctx.setupChain, ...bctx.frags.flatMap(f => f.stmts), ...bctx.funcs.map(f => f.stmt)], s => out.push(s));
   return out;
 }
 export function findSlotRefByNode(stmts, node) {
@@ -144,6 +145,10 @@ export function findSlotRefByNode(stmts, node) {
       if (s.cond === node) { result = slotRef(() => s.cond, v => { s.cond = v; }, T_ANY); return; }
       walkExpr(s.cond, () => s.cond, v => { s.cond = v; });
     }
+    if (s.count) {
+      if (s.count === node) { result = slotRef(() => s.count, v => { s.count = v; }, T_SCALAR); return; }
+      walkExpr(s.count, () => s.count, v => { s.count = v; });
+    }
   };
   stmts.forEach(walkStmt);
   return result;
@@ -183,6 +188,9 @@ export function newStmtNode(kind) {
     case 'while': return { kind: 'while', cond: null, body: [] };
     case 'for': return { kind: 'for', init: '', cond: '', inc: '', body: [] };
     case 'do': return { kind: 'do', body: [], cond: null };
+    case 'repeat': return { kind: 'repeat', body: [] };
+    case 'repeat_n': return { kind: 'repeat_n', count: null, body: [] };
+    case 'repeat_until': return { kind: 'repeat_until', cond: null, body: [] };
     case 'func': return { kind: 'func', name: '', params: [], body: [] };
     case 'global': case 'static': return { kind, name: '', expr: null };
     case 'comment': return { kind: 'comment', text: '' };
@@ -207,7 +215,7 @@ export function newExprNodeFromTemplate(template) {
   if (template.kind === 'ternary') return { kind: 'ternary', cond: null, a: null, b: null };
   if (template.kind === 'index') return { kind: 'index', target: null, index: null };
   if (template.kind === 'method') return { kind: 'method', obj: null, method: template.method, args: Array.from({ length: METHOD_ARITY[template.method] ?? 0 }, () => null) };
-  if (template.kind === 'array') return { kind: 'array', items: [null, null] };
+  if (template.kind === 'array') return { kind: 'array', items: [null] };
   return null;
 }
 export function defaultExprFor(type) {
@@ -240,7 +248,11 @@ export function nodeInfo(n) {
 
 export function buildPaletteGroup(g) {
   const items = [];
-  if (g.id === 'pos') {
+  if (g.id === 'start') {
+    items.push({ key: 'hat:setup', type: 'hat', kind: 'setup', label: t('blk.setup'), info: t('blk.stmt.setup.desc') });
+    items.push({ key: 'hat:process', type: 'hat', kind: 'process', label: t('blk.start'), info: t('blk.stmt.process.desc') });
+    items.push({ key: 'hat:func', type: 'hat', kind: 'func', label: t('blk.stmt.func'), info: t('blk.stmt.func.desc') });
+  } else if (g.id === 'pos') {
     ['pos', 'pos_vec', 'vel', 'vel_vec'].forEach(k => items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: t(STMT_BLOCKS[k].label), info: t(STMT_BLOCKS[k].desc) }));
     items.push({ key: 'stmt:attr', type: 'stmt', kind: 'attr', label: t(STMT_BLOCKS.attr.label), info: t(STMT_BLOCKS.attr.desc) });
   } else if (g.id === 'color') {
@@ -255,9 +267,11 @@ export function buildPaletteGroup(g) {
     items.push({ key: 'expr:pi', type: 'expr', template: { kind: 'var', name: 'pi' }, label: 'pi', info: t('blk.piInfo') });
     items.push({ key: 'expr:e', type: 'expr', template: { kind: 'var', name: 'e' }, label: 'e', info: t('blk.eInfo') });
   } else if (g.id === 'logic') {
-    ['if', 'while', 'for', 'do', 'break', 'continue', 'return', 'func', 'global', 'static'].forEach(k => {
-      items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: t('blk.stmt.' + k), info: t('blk.stmt.' + k) });
+    ['if', 'repeat_n', 'repeat', 'repeat_until', 'while', 'do', 'break', 'continue', 'return', 'global', 'static'].forEach(k => {
+      items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: t(STMT_BLOCKS[k] ? STMT_BLOCKS[k].label : 'blk.stmt.' + k), info: t(STMT_BLOCKS[k] ? STMT_BLOCKS[k].desc : 'blk.stmt.' + k) });
     });
+    items.push({ key: 'if-branch:else', type: 'if-branch', branch: 'else', label: t('blk.stmt.else'), info: t('blk.stmt.else.desc') });
+    items.push({ key: 'if-branch:else_if', type: 'if-branch', branch: 'else_if', label: t('blk.stmt.else_if'), info: t('blk.stmt.else_if.desc') });
     items.push({ key: 'stmt:comment', type: 'stmt', kind: 'comment', label: t('blk.stmt.comment.label'), info: t('blk.stmt.comment.desc') });
     items.push({ key: 'expr:ternary', type: 'expr', template: { kind: 'ternary' }, label: '?:', info: t('blk.ternaryDesc') });
     items.push({ key: 'expr:not', type: 'expr', template: { kind: 'not' }, label: '!', info: t('blk.notDesc') });
@@ -281,7 +295,7 @@ export function buildPaletteGroup(g) {
     items.push({ key: 'expr:array', type: 'expr', template: { kind: 'array' }, label: '[]', info: t('blk.arrayDesc') });
     items.push({ key: 'expr:index', type: 'expr', template: { kind: 'index' }, label: '[ ]', info: t('blk.indexDesc') });
     for (const method of Object.keys(METHOD_ARITY)) {
-      items.push({ key: 'expr:method:' + method, type: 'expr', template: { kind: 'method', method }, label: '.' + method + '()', info: t('blk.methodDesc') });
+      items.push({ key: 'method:' + method, type: 'method', method, template: { kind: 'method', method }, label: '.' + method + '()', info: t('blk.methodDesc') });
     }
   } else if (g.id === 'mat') {
     ['rotX', 'rotY', 'rotZ', 'rotAxis'].forEach(name => items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name, info: funcInfo(name) }));
@@ -294,7 +308,7 @@ export function buildPaletteGroup(g) {
  * ======================================================================= */
 
 export function renameRefsInAll(oldName, newName) {
-  renameRefsInStmts([...bctx.chain, ...bctx.setupChain, ...bctx.frags.flatMap(f => f.stmts)], oldName, newName);
+  renameRefsInStmts([...bctx.chain, ...bctx.setupChain, ...bctx.frags.flatMap(f => f.stmts), ...bctx.funcs.map(f => f.stmt)], oldName, newName);
 }
 export function renameRefsInStmts(stmts, oldName, newName) {
   const walk = (n) => {
@@ -315,6 +329,7 @@ export function renameRefsInStmts(stmts, oldName, newName) {
     if (s.cond) walk(s.cond);
     if (s.init) walk(s.init);
     if (s.inc) walk(s.inc);
+    if (s.count) walk(s.count);
   });
 }
 
@@ -357,6 +372,10 @@ export function stmtGroupLocation(s) {
     const r = findStmtInList(f.stmts, s);
     if (r) return r;
   }
+  for (const f of bctx.funcs) {
+    const r = findStmtInList([f.stmt], s);
+    if (r) return r;
+  }
   return null;
 }
 export function detachStmtGroupNow(s) {
@@ -369,6 +388,32 @@ export function restoreStmtGroup(loc, group) {
   loc.chain.splice(loc.index, 0, ...group);
 }
 
+export function hatExists(kind) {
+  if (!bctx) return false;
+  if (kind === 'setup') return !!bctx.layout.setup;
+  if (kind === 'process') return !!bctx.layout.chain;
+  if (kind === 'func') return true; // 函数起始块允许存在多个
+  return false;
+}
+export function createHat(kind, x, y) {
+  if (!bctx) return false;
+  if (kind === 'setup') {
+    if (bctx.layout.setup) return false;
+    bctx.layout.setup = { x, y };
+    return true;
+  }
+  if (kind === 'process') {
+    if (bctx.layout.chain) return false;
+    bctx.layout.chain = { x, y };
+    return true;
+  }
+  if (kind === 'func') {
+    bctx.funcs.push({ x, y, stmt: newStmtNode('func') });
+    return true;
+  }
+  return false;
+}
+
 export function canPlaceIntoTarget(slotType, source) {
   if (!source || source.stmt) return false;
   if (source.type === 'palette') {
@@ -376,6 +421,10 @@ export function canPlaceIntoTarget(slotType, source) {
     return typeAccepts(slotType, exprType(newExprNodeFromTemplate(source.template), blockVarTypeOf));
   }
   if (source.type === 'expr') return typeAccepts(slotType, exprType(source.node, blockVarTypeOf));
+  if (source.type === 'method') {
+    const node = newExprNodeFromTemplate(source.template || { kind: 'method', method: source.method });
+    return typeAccepts(slotType, exprType(node, blockVarTypeOf));
+  }
   return false;
 }
 
@@ -412,6 +461,8 @@ function makePuzzleHost() {
     detachStmtGroupNow: (s) => detachStmtGroupNow(s),
     restoreStmtGroup: (loc, group) => restoreStmtGroup(loc, group),
     canPlaceIntoTarget: (slotType, source) => canPlaceIntoTarget(slotType, source),
+    hatExists: (kind) => hatExists(kind),
+    createHat: (kind, x, y) => createHat(kind, x, y),
     renameVarGlobal: (oldName, newName) => renameVarGlobal(oldName, newName),
     renameRefsInAll: (oldName, newName) => renameRefsInAll(oldName, newName),
     getErrors: () => (bctx ? (bctx.errors || []) : []),
@@ -517,10 +568,30 @@ export function ensurePuzzleDom() {
   initPuzzleCanvas();
 }
 
+function extractTopLevelFuncs(stmts) {
+  const funcs = [];
+  const rest = [];
+  for (const s of stmts) {
+    if (s && s.kind === 'func') funcs.push(s);
+    else rest.push(s);
+  }
+  return { funcs, rest };
+}
+
 export function openBlockDrawer(fx) {
   ensurePuzzleDom();
-  let chain;
-  try { chain = codeToStatements(fx.process || ''); }
+  let chain, setupChain, funcStmts;
+  try {
+    chain = codeToStatements(fx.process || '');
+    setupChain = codeToStatements(fx.setup || '');
+    funcStmts = codeToStatements(fx.funcs || '');
+    // 旧工程可能把 func 误存在 setup/process 内；按规范迁移为顶层函数。
+    const cExtract = extractTopLevelFuncs(chain);
+    const sExtract = extractTopLevelFuncs(setupChain);
+    chain = cExtract.rest;
+    setupChain = sExtract.rest;
+    funcStmts = funcStmts.concat(cExtract.funcs, sExtract.funcs);
+  }
   catch (e) { modalAlert(t('blk.openFailTitle'), tf('blk.parseFail', e.message)); return; }
   const varExprs = {};
   const varOrder = [];
@@ -531,18 +602,33 @@ export function openBlockDrawer(fx) {
     varOrder.push(name);
   }
   const saved = fx.ui || {};
+  const savedHats = saved.hats || null;
+  // 起始块存在性：新格式显式记录；旧格式按「是否有代码 / 是否保存过位置」回退。
+  const hasSetup = savedHats ? !!savedHats.setup : (setupChain.length > 0 || !!saved.setup);
+  const hasProcess = savedHats ? !!savedHats.process : (chain.length > 0 || !!saved.chain);
+  const setupPos = (saved.setup && typeof saved.setup === 'object') ? saved.setup : { x: 40, y: 120 };
+  const chainPos = (saved.chain && typeof saved.chain === 'object') ? saved.chain : { x: 40, y: 40 };
+  const funcs = funcStmts.map((stmt, i) => {
+    const sp = saved.funcs && saved.funcs[i];
+    return {
+      x: (sp && sp.x != null) ? sp.x : 360,
+      y: (sp && sp.y != null) ? sp.y : 40 + i * 40,
+      stmt,
+    };
+  });
   bctx = {
     fxId: fx.id,
     chain,
-    setupChain: codeToStatements(fx.setup || ''),
+    setupChain,
+    funcs,
     frags: (saved.frags || []).map(f => ({ stmts: codeToStatements(f.code || ''), x: f.x, y: f.y })).filter(f => f.stmts.length > 0),
     varExprs, varOrder,
     errors: [],
-    snapshot: { setup: fx.setup || '', process: fx.process, vars: cloneVars(fx.vars), preset: fx.preset, params: fx.params },
+    snapshot: { setup: fx.setup || '', process: fx.process || '', funcs: fx.funcs || '', vars: cloneVars(fx.vars), preset: fx.preset, params: fx.params },
     undoStack: [], redoStack: [],
     layout: {
-      chain: saved.chain || { x: 40, y: 40 },
-      setup: saved.setup || { x: 40, y: 120 },
+      chain: hasProcess ? chainPos : null,
+      setup: hasSetup ? setupPos : null,
       view: saved.view || { x: 0, y: 0, scale: 1 },
     },
   };
@@ -575,19 +661,23 @@ export function closeBlockDrawer(commit) {
   puzzleCanvasCancelEdit();
   const fx = getFunction(bctx.fxId);
   if (commit && fx) {
-    const newCode = statementsToCode(bctx.chain);
-    const setupText = statementsToCode(bctx.setupChain);
+    const newCode = bctx.layout.chain ? statementsToCode(bctx.chain) : '';
+    const setupText = bctx.layout.setup ? statementsToCode(bctx.setupChain) : '';
+    const funcsText = statementsToCode(bctx.funcs.map(f => f.stmt));
     fx.process = newCode;
     fx.setup = setupText;
+    fx.funcs = funcsText;
     for (const name of bctx.varOrder) {
       if (name in bctx.varExprs) {
         const v = fx.vars[name];
         if (v && (v.kf || []).length === 0) v.base = Number.isFinite(bctx.varExprs[name]) ? bctx.varExprs[name] : 0;
       }
     }
-    if (newCode !== bctx.snapshot.process || setupText !== bctx.snapshot.setup) { fx.preset = null; fx.params = null; }
+    if (newCode !== bctx.snapshot.process || setupText !== bctx.snapshot.setup || funcsText !== bctx.snapshot.funcs) { fx.preset = null; fx.params = null; }
     pushUndo();
-    const err = validateFunctionScript(fx, setupText, newCode);
+    let err = null;
+    try { err = validateFunctionScript(fx, setupText, newCode, funcsText); }
+    catch (e) { err = e; }
     if (err) {
       // 保留已保存的代码与错误标记；不重建粒子，避免把半成品渲染写入场景。
       fx._error = err.message;
@@ -598,6 +688,7 @@ export function closeBlockDrawer(commit) {
   } else if (fx) {
     fx.process = bctx.snapshot.process;
     fx.setup = bctx.snapshot.setup;
+    fx.funcs = bctx.snapshot.funcs;
     fx.vars = cloneVars(bctx.snapshot.vars);
     fx.preset = bctx.snapshot.preset;
     fx.params = bctx.snapshot.params;
@@ -606,10 +697,12 @@ export function closeBlockDrawer(commit) {
   }
   if (fx) {
     fx.ui = {
-      chain: bctx.layout.chain,
-      setup: bctx.layout.setup,
+      hats: { setup: !!bctx.layout.setup, process: !!bctx.layout.chain },
+      chain: bctx.layout.chain || undefined,
+      setup: bctx.layout.setup || undefined,
       view: bctx.layout.view,
       frags: bctx.frags.filter(f => f.stmts.length > 0).map(f => ({ code: statementsToCode(f.stmts), x: f.x, y: f.y })),
+      funcs: bctx.funcs.map(f => ({ x: f.x, y: f.y })),
     };
   }
   // 窗口位置状态保存到 localStorage 工作区
@@ -656,52 +749,68 @@ function findSpanIn(spans, line) {
   return null;
 }
 
-function mapErrorToStmt(setupSpans, processSpans, setupCode, processCode, message) {
+function mapErrorToStmt(funcsSpans, setupSpans, processSpans, funcsCode, setupCode, processCode, message) {
   const loc = parseErrorLine(message);
   if (!loc) return null;
+  const funcsPrefix = funcsCode ? funcsCode + '\n' : '';
+  const setupPrefixLines = lineCountOf(funcsPrefix + 'setup {\n') - 1;
   const setupLineCount = lineCountOf(setupCode);
-  if (loc.line <= 1 + setupLineCount) return findSpanIn(setupSpans, loc.line - 1);
-  const processPrefixLines = lineCountOf('setup {\n' + setupCode + '\n}\nprocess {\n') - 1;
+  if (loc.line > setupPrefixLines && loc.line <= setupPrefixLines + setupLineCount) {
+    return findSpanIn(setupSpans, loc.line - setupPrefixLines);
+  }
+  const processPrefixLines = lineCountOf(funcsPrefix + 'setup {\n' + setupCode + '\n}\nprocess {\n') - 1;
   if (loc.line > processPrefixLines) return findSpanIn(processSpans, loc.line - processPrefixLines);
+  if (funcsCode && loc.line <= lineCountOf(funcsCode)) return findSpanIn(funcsSpans, loc.line);
   return null;
 }
 
-function errorsFromValidation(fx, setupCode, processCode, err) {
+function errorsFromValidation(fx, setupCode, processCode, funcsCode, err) {
+  const funcsSpans = statementsToCodeSpans(bctx.funcs.map(f => f.stmt)).spans;
   const setupSpans = statementsToCodeSpans(bctx.setupChain).spans;
   const processSpans = statementsToCodeSpans(bctx.chain).spans;
-  const stmt = mapErrorToStmt(setupSpans, processSpans, setupCode, processCode, err && err.message);
-  return stmt ? [{ stmt, message: err.message }] : [];
+  const stmt = mapErrorToStmt(funcsSpans, setupSpans, processSpans, funcsCode, setupCode, processCode, err && err.message);
+  if (stmt) return [{ stmt, message: err.message }];
+  // 没有可定位行号时，仍保留错误并挂到首个可用语句，避免静默吞掉。
+  const any = bctx.chain[0] || bctx.setupChain[0] || (bctx.funcs[0] && bctx.funcs[0].stmt);
+  return any ? [{ stmt: any, message: err.message }] : [{ message: err.message }];
 }
 
 function computeBctxErrors() {
   if (!bctx) return [];
   const fx = getFunction(bctx.fxId);
   if (!fx) return [];
-  const setupCode = statementsToCode(bctx.setupChain);
-  const processCode = statementsToCode(bctx.chain);
-  const err = validateFunctionScript(fx, setupCode, processCode);
+  const setupCode = bctx.layout.setup ? statementsToCode(bctx.setupChain) : '';
+  const processCode = bctx.layout.chain ? statementsToCode(bctx.chain) : '';
+  const funcsCode = statementsToCode(bctx.funcs.map(f => f.stmt));
+  let err = null;
+  try { err = validateFunctionScript(fx, setupCode, processCode, funcsCode); }
+  catch (e) { err = e; }
   if (!err) return [];
-  return errorsFromValidation(fx, setupCode, processCode, err);
+  return errorsFromValidation(fx, setupCode, processCode, funcsCode, err);
 }
 
 export function blockPreview() {
   if (!bctx) return;
   const fx = getFunction(bctx.fxId);
   if (!fx) return;
-  const code = statementsToCode(bctx.chain);
-  const setupText = statementsToCode(bctx.setupChain);
+  const code = bctx.layout.chain ? statementsToCode(bctx.chain) : '';
+  const setupText = bctx.layout.setup ? statementsToCode(bctx.setupChain) : '';
+  const funcsText = statementsToCode(bctx.funcs.map(f => f.stmt));
   fx.process = code;
   fx.setup = setupText;
+  fx.funcs = funcsText;
   for (const name of bctx.varOrder) {
     if (name in bctx.varExprs) {
       const v = fx.vars[name];
       if (v && (v.kf || []).length === 0) v.base = Number.isFinite(bctx.varExprs[name]) ? bctx.varExprs[name] : 0;
     }
   }
-  const err = validateFunctionScript(fx, setupText, code);
+  let err = null;
+  try { err = validateFunctionScript(fx, setupText, code, funcsText); }
+  catch (e) { err = e; }
   if (err) {
     fx._error = err.message;
-    bctx.errors = errorsFromValidation(fx, setupText, code, err);
+    bctx.errors = errorsFromValidation(fx, setupText, code, funcsText, err);
   } else {
     fx._error = null;
     bctx.errors = [];
@@ -723,19 +832,21 @@ export function snapBctx() {
   return {
     chain: cloneStmts(bctx.chain),
     setupChain: cloneStmts(bctx.setupChain),
+    funcs: bctx.funcs.map(f => ({ stmt: cloneStmt(f.stmt), x: f.x, y: f.y })),
     frags: bctx.frags.map(f => ({ stmts: cloneStmts(f.stmts), x: f.x, y: f.y })),
     varExprs: deepCloneVarExprs(bctx.varExprs),
-    chainPos: { x: bctx.layout.chain.x, y: bctx.layout.chain.y },
-    setupPos: { x: bctx.layout.setup.x, y: bctx.layout.setup.y },
+    chainPos: bctx.layout.chain ? { x: bctx.layout.chain.x, y: bctx.layout.chain.y } : null,
+    setupPos: bctx.layout.setup ? { x: bctx.layout.setup.x, y: bctx.layout.setup.y } : null,
   };
 }
 export function restoreBctx(s) {
   bctx.chain = cloneStmts(s.chain);
   bctx.setupChain = cloneStmts(s.setupChain);
+  bctx.funcs = s.funcs.map(f => ({ stmt: cloneStmt(f.stmt), x: f.x, y: f.y }));
   bctx.frags = s.frags.map(f => ({ stmts: cloneStmts(f.stmts), x: f.x, y: f.y }));
   bctx.varExprs = deepCloneVarExprs(s.varExprs);
-  bctx.layout.chain = { x: s.chainPos.x, y: s.chainPos.y };
-  bctx.layout.setup = { x: s.setupPos.x, y: s.setupPos.y };
+  bctx.layout.chain = s.chainPos ? { x: s.chainPos.x, y: s.chainPos.y } : null;
+  bctx.layout.setup = s.setupPos ? { x: s.setupPos.x, y: s.setupPos.y } : null;
 }
 export function deepCloneVarExprs(o) { const r = {}; for (const k in o) r[k] = o[k]; return r; }
 export function bctxUndo() {
