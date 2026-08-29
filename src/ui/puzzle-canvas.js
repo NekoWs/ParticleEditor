@@ -95,6 +95,7 @@ const S = {
   palRegions: [],
   drag: null,
   edit: null,
+  editMouse: null,
   lens: null,
   dropHover: null,
   hover: null,
@@ -985,14 +986,26 @@ function drawInlineEditContent(ctx, r, text) {
   ctx.textBaseline = 'middle';
   const tx = r.x + 4;
   const ty = r.y + r.h / 2;
+  if (S.edit && S.edit.region === r) {
+    const s0 = Math.min(S.edit.selStart, S.edit.selEnd);
+    const s1 = Math.max(S.edit.selStart, S.edit.selEnd);
+    if (s0 !== s1) {
+      const w0 = ctx.measureText(text.slice(0, s0)).width;
+      const w1 = ctx.measureText(text.slice(0, s1)).width;
+      ctx.fillStyle = 'rgba(91,157,255,0.45)';
+      ctx.fillRect(tx + w0, r.y + 2, w1 - w0, r.h - 4);
+    }
+  }
+  ctx.fillStyle = '#fff';
   ctx.fillText(text, tx, ty);
   if (S.edit && S.edit.region === r && (typeof Date === 'undefined' || Math.floor(Date.now() / 500) % 2 === 0)) {
-    const tw = ctx.measureText(text).width;
+    const cursor = Math.min(text.length, S.edit.selEnd);
+    const cw = ctx.measureText(text.slice(0, cursor)).width;
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(tx + tw + 1, r.y + 3);
-    ctx.lineTo(tx + tw + 1, r.y + r.h - 3);
+    ctx.moveTo(tx + cw + 1, r.y + 3);
+    ctx.lineTo(tx + cw + 1, r.y + r.h - 3);
     ctx.stroke();
   }
   ctx.beginPath();
@@ -1493,7 +1506,11 @@ function beginInlineEdit(region, editOverride) {
     edit,
     kind: edit.kind,
     buffer: String(edit.value == null ? '' : edit.value),
+    selStart: 0,
+    selEnd: 0,
   };
+  S.edit.selStart = S.edit.buffer.length;
+  S.edit.selEnd = S.edit.buffer.length;
   if (editBlinkTimer == null && typeof setInterval === 'function') {
     editBlinkTimer = setInterval(() => { if (S.edit) puzzleCanvasRender(); }, 500);
   }
@@ -1517,8 +1534,87 @@ function commitEdit() {
 function cancelEdit() {
   if (!S.edit) return;
   S.edit = null;
+  S.editMouse = null;
   stopEditTimer();
   puzzleCanvasRender();
+}
+
+function editClamp(i) { return Math.max(0, Math.min(S.edit.buffer.length, i)); }
+function setEditSel(s, e) {
+  S.edit.selStart = editClamp(s);
+  S.edit.selEnd = (e == null) ? S.edit.selStart : editClamp(e);
+}
+function editSelectedRange() {
+  return [Math.min(S.edit.selStart, S.edit.selEnd), Math.max(S.edit.selStart, S.edit.selEnd)];
+}
+function editReplace(text) {
+  const [s, e] = editSelectedRange();
+  S.edit.buffer = S.edit.buffer.slice(0, s) + text + S.edit.buffer.slice(e);
+  setEditSel(s + text.length, s + text.length);
+}
+function editDeleteBack() {
+  const [s, e] = editSelectedRange();
+  if (s !== e) { S.edit.buffer = S.edit.buffer.slice(0, s) + S.edit.buffer.slice(e); setEditSel(s, s); }
+  else if (s > 0) { S.edit.buffer = S.edit.buffer.slice(0, s - 1) + S.edit.buffer.slice(s); setEditSel(s - 1, s - 1); }
+}
+function editDeleteFwd() {
+  const [s, e] = editSelectedRange();
+  if (s !== e) { S.edit.buffer = S.edit.buffer.slice(0, s) + S.edit.buffer.slice(e); setEditSel(s, s); }
+  else if (e < S.edit.buffer.length) { S.edit.buffer = S.edit.buffer.slice(0, e) + S.edit.buffer.slice(e + 1); setEditSel(e, e); }
+}
+function editMoveCursor(step, extend) {
+  const len = S.edit.buffer.length;
+  const [s, e] = editSelectedRange();
+  if (step < 0) {
+    if (!extend) setEditSel((s !== e) ? s : Math.max(0, e - 1), (s !== e) ? s : Math.max(0, e - 1));
+    else setEditSel(s, Math.max(0, e - 1));
+  } else {
+    if (!extend) setEditSel((s !== e) ? e : Math.min(len, e + 1), (s !== e) ? e : Math.min(len, e + 1));
+    else setEditSel(s, Math.min(len, e + 1));
+  }
+}
+function editMoveHome(extend) {
+  if (extend) setEditSel(0, S.edit.selEnd);
+  else setEditSel(0, 0);
+}
+function editMoveEnd(extend) {
+  if (extend) setEditSel(S.edit.selStart, S.edit.buffer.length);
+  else setEditSel(S.edit.buffer.length, S.edit.buffer.length);
+}
+function editIndexAtX(region, space, mx) {
+  const text = S.edit.buffer;
+  const font = (region.segments && region.segments[0] && region.segments[0].font) || FONT;
+  const ctx = S.workCtx;
+  if (!ctx || !ctx.measureText) return text.length;
+  ctx.font = font;
+  let px = mx;
+  if (space !== 'var') {
+    const v = H.getBctx().layout.view;
+    px = (mx - v.x) / v.scale;
+  }
+  const tx = region.x + 4;
+  let idx = text.length;
+  for (let i = 0; i <= text.length; i++) {
+    if (tx + ctx.measureText(text.slice(0, i)).width > px) { idx = i; break; }
+  }
+  return Math.max(0, Math.min(text.length, idx));
+}
+function copyText(text) {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {});
+    }
+  } catch (e) { /* 剪贴板不可用时忽略 */ }
+}
+async function pasteText() {
+  try {
+    if (typeof navigator === 'undefined' || !navigator.clipboard || !navigator.clipboard.readText) return;
+    const text = await navigator.clipboard.readText();
+    if (!S.edit) return;
+    const filtered = S.edit.kind === 'num' ? text.split('').filter(c => /[0-9.\-]/.test(c)).join('') : text;
+    if (filtered) editReplace(filtered);
+    puzzleCanvasRender();
+  } catch (e) { /* 剪贴板不可用时忽略 */ }
 }
 
 function openColorEdit(region) {
@@ -1882,13 +1978,21 @@ function onPalDown(e) {
 function onWorkDown(e) {
   if (!H || !H.getBctx()) return;
   if (e.button !== 0) return;
-  if (S.edit) commitEdit();
   const rect = S.workCanvas.getBoundingClientRect();
   const mx = e.clientX - rect.left, my = e.clientY - rect.top;
   const ch = S.workCanvas.clientHeight || S.workCanvas.height;
 
   if (my >= ch - VARS_H) {
     const hit = hitVars(mx, my);
+    if (S.edit && hit && S.edit.region === hit) {
+      e.preventDefault();
+      const idx = editIndexAtX(hit, 'var', mx);
+      setEditSel(idx, idx);
+      S.editMouse = { region: hit, space: 'var', baseIndex: idx };
+      puzzleCanvasRender();
+      return;
+    }
+    if (S.edit) commitEdit();
     if (hit && hit.kind === 'edit') { e.preventDefault(); beginInlineEdit(hit); return; }
     if (hit && hit.kind === 'attr-var') {
       e.preventDefault();
@@ -1908,6 +2012,15 @@ function onWorkDown(e) {
   }
 
   const hit = hitWorkspace(mx, my, false);
+  if (S.edit && hit && S.edit.region === hit) {
+    e.preventDefault();
+    const idx = editIndexAtX(hit, 'work', mx);
+    setEditSel(idx, idx);
+    S.editMouse = { region: hit, space: 'work', baseIndex: idx };
+    puzzleCanvasRender();
+    return;
+  }
+  if (S.edit) commitEdit();
   if (hit.kind === 'head' && hit.head.key) { e.preventDefault(); startChainMove(hit, e); return; }
   if (hit.kind === 'head' && hit.head.frag) { e.preventDefault(); startFragMove(hit, e); return; }
   if (hit.kind === 'expr') { e.preventDefault(); startExprDrag(hit, e); return; }
@@ -1972,13 +2085,25 @@ function onWorkWheel(e) {
 }
 
 function onWindowMove(e) {
-  if (S.edit) return;
+  if (S.edit) {
+    if (S.editMouse && S.workCanvas) {
+      const rect = S.workCanvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const idx = editIndexAtX(S.editMouse.region, S.editMouse.space, mx);
+      setEditSel(S.editMouse.baseIndex, idx);
+      puzzleCanvasRender();
+    }
+    return;
+  }
   if (S.lens) { updateLens(e); return; }
   if (S.drag) { updateDrag(e); return; }
   updateHover(e);
 }
 function onWindowUp(e) {
-  if (S.edit) return;
+  if (S.edit) {
+    S.editMouse = null;
+    return;
+  }
   if (S.lens) { endLens(); return; }
   if (S.drag) {
     // 数字块：未拖动的点击直接进入输入浮层编辑
@@ -2094,16 +2219,41 @@ export function initPuzzleCanvas() {
     if (!H || !H.getBctx()) return;
     if (S.edit) {
       ev.preventDefault();
-      if (ev.key === 'Enter') {
-        commitEdit();
-      } else if (ev.key === 'Escape') {
-        cancelEdit();
-      } else if (ev.key === 'Backspace' || ev.key === 'Delete') {
-        S.edit.buffer = S.edit.buffer.slice(0, -1);
+      ev.stopPropagation();
+      if (ev.key === 'Enter') { commitEdit(); return; }
+      if (ev.key === 'Escape') { cancelEdit(); return; }
+      if (ev.ctrlKey && (ev.key === 'a' || ev.key === 'A')) {
+        setEditSel(0, S.edit.buffer.length);
         puzzleCanvasRender();
-      } else if (ev.key.length === 1 && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
-        S.edit.buffer += ev.key;
+        return;
+      }
+      if (ev.ctrlKey && (ev.key === 'c' || ev.key === 'C')) {
+        const [s0, s1] = editSelectedRange();
+        copyText(S.edit.buffer.slice(s0, s1));
+        return;
+      }
+      if (ev.ctrlKey && (ev.key === 'x' || ev.key === 'X')) {
+        const [s0, s1] = editSelectedRange();
+        copyText(S.edit.buffer.slice(s0, s1));
+        editDeleteBack();
         puzzleCanvasRender();
+        return;
+      }
+      if (ev.ctrlKey && (ev.key === 'v' || ev.key === 'V')) {
+        pasteText();
+        return;
+      }
+      if (ev.key === 'Backspace') { editDeleteBack(); puzzleCanvasRender(); return; }
+      if (ev.key === 'Delete') { editDeleteFwd(); puzzleCanvasRender(); return; }
+      if (ev.key === 'ArrowLeft') { editMoveCursor(-1, ev.shiftKey); puzzleCanvasRender(); return; }
+      if (ev.key === 'ArrowRight') { editMoveCursor(1, ev.shiftKey); puzzleCanvasRender(); return; }
+      if (ev.key === 'Home') { editMoveHome(ev.shiftKey); puzzleCanvasRender(); return; }
+      if (ev.key === 'End') { editMoveEnd(ev.shiftKey); puzzleCanvasRender(); return; }
+      if (ev.key.length === 1 && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
+        if (S.edit.kind === 'num' && !/[0-9.\-]/.test(ev.key)) return;
+        editReplace(ev.key);
+        puzzleCanvasRender();
+        return;
       }
       return;
     }
