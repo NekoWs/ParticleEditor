@@ -95,6 +95,7 @@ const S = {
   hover: null,
   colorPicker: null,
   colorDrag: null,
+  colorHexInput: null,
 };
 
 /* ============================ 小工具 ============================ */
@@ -534,15 +535,16 @@ function layoutRawStmt(s, x, y, out, ctx) {
   return { w, h };
 }
 
-function layoutCommentStmt(s, x, y, out, ctx) {
+function layoutCommentStmt(s, x, y, out, ctx, opts) {
   const isEditing = S.edit && S.edit.stmt === s;
   const text = isEditing ? S.edit.buffer : (s.text || '');
   const shown = '// ' + text;
   const tw = Math.max(textW(ctx, shown, FONT_MONO), 60);
   const w = Math.max(120, tw + 16);
-  const h = 24;
+  const h = 26;
   out.push({
-    kind: 'stmt', shape: 'raw', cls: 'blk-comment', stmt: s, x, y, w, h,
+    kind: 'stmt', shape: 'stmt', cls: 'blk-comment', stmt: s, x, y, w, h,
+    noBump: !!(opts && opts.noBump),
     edit: { kind: 'text', value: text, commit: (v) => { s.text = String(v); return true; } },
     segments: [{ text: shown || '// …', x: x + 8, y: y + h / 2, font: FONT_MONO }],
   });
@@ -674,7 +676,7 @@ function layoutCtlStmt(s, x, y, out, ctx, opts) {
 
 function layoutStmt(s, x, y, out, ctx, opts) {
   if (s.kind === 'raw') return layoutRawStmt(s, x, y, out, ctx);
-  if (s.kind === 'comment') return layoutCommentStmt(s, x, y, out, ctx);
+  if (s.kind === 'comment') return layoutCommentStmt(s, x, y, out, ctx, opts);
   if (CTL_KINDS.has(s.kind)) return layoutCtlStmt(s, x, y, out, ctx, opts);
   if (SIMPLE_CTL.has(s.kind)) return layoutSimpleCtl(s, x, y, out, ctx, opts);
   if (s.kind === 'col' || s.kind === 'glow') return layoutSimpleStmt(s, x, y, out, ctx, opts);
@@ -686,7 +688,7 @@ function layoutStmt(s, x, y, out, ctx, opts) {
 
 function layoutChain(arr, x, y, out, ctx, opts) {
   const isFrag = !!opts.frag;
-  const headH = isFrag ? 10 : HAT_H;
+  const headH = isFrag ? 0 : HAT_H;
   let cy = y + headH;
   let stackW = 0;
   for (let i = 0; i < arr.length; i++) {
@@ -694,17 +696,19 @@ function layoutChain(arr, x, y, out, ctx, opts) {
     stackW = Math.max(stackW, d.w);
     cy += d.h;
   }
-  const titleW = textW(ctx, opts.title, FONT) + 28;
-  const headW = Math.max(titleW, stackW, 60);
-  out.push({
-    kind: 'head', shape: 'hat', head: opts.head, cls: opts.frag ? 'blk-frag' : 'blk-start',
-    x, y, w: headW, h: headH,
-    frag: opts.frag || null,
-    segments: isFrag ? [] : [{ text: opts.title, x: x + 14, y: y + headH / 2, font: FONT }],
-  });
+  if (!isFrag) {
+    const titleW = textW(ctx, opts.title, FONT) + 28;
+    const headW = Math.max(titleW, stackW, 60);
+    out.push({
+      kind: 'head', shape: 'hat', head: opts.head, cls: 'blk-start',
+      x, y, w: headW, h: headH,
+      frag: null,
+      segments: [{ text: opts.title, x: x + 14, y: y + headH / 2, font: FONT }],
+    });
+  }
   const dropRef = { chain: opts.dropRef.chain || null, frag: opts.dropRef.frag || null };
   if (arr.length === 0) {
-    out.push(dropRegion(dropRef, 0, x, y + headH, Math.max(headW, 200), 22));
+    out.push(dropRegion(dropRef, 0, x, y + headH, Math.max(stackW, 200), 22));
   } else {
     let b = y + headH;
     for (let i = 0; i < arr.length; i++) {
@@ -1000,7 +1004,7 @@ function drawStmtRegion(ctx, r) {
   ctx.strokeStyle = 'rgba(0,0,0,0.25)';
   ctx.lineWidth = 1;
   ctx.stroke();
-  if (S.edit && S.edit.region === r) drawInlineEditContent(ctx, r, S.edit.buffer);
+  if (S.edit && S.edit.region === r) drawInlineEditContent(ctx, r, S.edit.buffer, (r.cls === 'blk-comment') ? '// ' : '');
   else drawSegments(ctx, r.segments, '#fff');
   ctx.restore();
 }
@@ -1051,7 +1055,8 @@ function drawAppendRegion(ctx, r) {
   ctx.restore();
 }
 
-function drawInlineEditContent(ctx, r, text) {
+function drawInlineEditContent(ctx, r, text, prefix) {
+  const p = prefix || '';
   const font = (r.segments && r.segments[0] && r.segments[0].font) || FONT;
   ctx.font = font;
   ctx.fillStyle = '#fff';
@@ -1059,6 +1064,7 @@ function drawInlineEditContent(ctx, r, text) {
   ctx.textBaseline = 'middle';
   const tx = r.x + 4;
   const ty = r.y + r.h / 2;
+  const prefixW = ctx.measureText(p).width;
   if (S.edit && S.edit.region === r) {
     const s0 = Math.min(S.edit.selStart, S.edit.selEnd);
     const s1 = Math.max(S.edit.selStart, S.edit.selEnd);
@@ -1066,19 +1072,19 @@ function drawInlineEditContent(ctx, r, text) {
       const w0 = ctx.measureText(text.slice(0, s0)).width;
       const w1 = ctx.measureText(text.slice(0, s1)).width;
       ctx.fillStyle = 'rgba(91,157,255,0.45)';
-      ctx.fillRect(tx + w0, r.y + 2, w1 - w0, r.h - 4);
+      ctx.fillRect(tx + prefixW + w0, r.y + 2, w1 - w0, r.h - 4);
     }
   }
   ctx.fillStyle = '#fff';
-  ctx.fillText(text, tx, ty);
+  ctx.fillText(p + text, tx, ty);
   if (S.edit && S.edit.region === r && (typeof Date === 'undefined' || Math.floor(Date.now() / 500) % 2 === 0)) {
     const cursor = Math.min(text.length, S.edit.selEnd);
     const cw = ctx.measureText(text.slice(0, cursor)).width;
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(tx + cw + 1, r.y + 3);
-    ctx.lineTo(tx + cw + 1, r.y + r.h - 3);
+    ctx.moveTo(tx + prefixW + cw + 1, r.y + 3);
+    ctx.lineTo(tx + prefixW + cw + 1, r.y + r.h - 3);
     ctx.stroke();
   }
   ctx.beginPath();
@@ -1314,6 +1320,7 @@ function renderWorkCanvas() {
   // 编辑态也重新布局：布局会读取 S.edit.buffer 实时扩展编辑框，之后重新定位编辑区域。
   layoutWorkspace();
   relocateEditRegion();
+  if (S.colorPicker) positionColorPicker();
   ctx.setTransform(S.dpr * scale, 0, 0, S.dpr * scale, S.dpr * v.x, S.dpr * v.y);
   for (const r of S.wsRegions) if (r.kind === 'head') drawRegion(ctx, r, null);
   for (const r of S.wsRegions) if (r.kind !== 'drop' && r.kind !== 'head') drawRegion(ctx, r, null);
@@ -1762,12 +1769,11 @@ async function pasteText() {
 }
 
 /* —— 取色器（canvas） —— */
-const CP_W = 210, CP_H = 190;
-const CP_SV_X = 8, CP_SV_Y = 8, CP_SV_W = 130, CP_SV_H = 130;
-const CP_HUE_X = 146, CP_HUE_Y = 8, CP_HUE_W = 14, CP_HUE_H = 130;
-const CP_SWATCH_X = 8, CP_SWATCH_Y = 148, CP_SWATCH_W = 36, CP_SWATCH_H = 26;
-const CP_HEX_X = 50, CP_HEX_Y = 152;
-const CP_OK_X = 162, CP_OK_Y = 148, CP_OK_W = 40, CP_OK_H = 26;
+const CP_W = 180, CP_H = 174;
+const CP_SV_X = 8, CP_SV_Y = 8, CP_SV_W = 118, CP_SV_H = 118;
+const CP_HUE_X = 134, CP_HUE_Y = 8, CP_HUE_W = 12, CP_HUE_H = 118;
+const CP_SWATCH_X = 8, CP_SWATCH_Y = 136, CP_SWATCH_W = 34, CP_SWATCH_H = 26;
+const CP_HEX_X = 50, CP_HEX_Y = 136, CP_HEX_W = 122, CP_HEX_H = 26;
 
 function rgbToHsvLocal(rgb) {
   const r = rgb[0], g = rgb[1], b = rgb[2]; // 0..1
@@ -1831,43 +1837,95 @@ function drawColorPicker() {
   ctx.lineWidth = 1;
   ctx.strokeRect(CP_HUE_X - 2, hy - 1, CP_HUE_W + 4, 3);
 
-  // 色块 / hex / OK
+  // 色块 / hex 输入框背景
   ctx.fillStyle = cpHex();
   ctx.fillRect(CP_SWATCH_X, CP_SWATCH_Y, CP_SWATCH_W, CP_SWATCH_H);
   ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 1;
   ctx.strokeRect(CP_SWATCH_X, CP_SWATCH_Y, CP_SWATCH_W, CP_SWATCH_H);
-  ctx.fillStyle = theme().text;
-  ctx.font = FONT_MONO;
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText(cpHex(), CP_HEX_X, CP_HEX_Y);
-  ctx.fillStyle = 'rgba(255,255,255,0.1)';
-  rrPath(ctx, CP_OK_X, CP_OK_Y, CP_OK_W, CP_OK_H, 5);
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  rrPath(ctx, CP_HEX_X, CP_HEX_Y, CP_HEX_W, CP_HEX_H, 4);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+
+  // 外框（CSS 不设 border，避免 hit-test 偏移）
+  ctx.strokeStyle = theme().border;
+  ctx.lineWidth = 1;
+  rrPath(ctx, 0.5, 0.5, CP_W - 1, CP_H - 1, 8);
   ctx.stroke();
-  ctx.fillStyle = theme().text;
-  ctx.font = FONT;
-  ctx.textAlign = 'center';
-  ctx.fillText(t('common.ok'), CP_OK_X + CP_OK_W / 2, CP_OK_Y + CP_OK_H / 2);
+}
+function ensureColorHexInput() {
+  if (S.colorHexInput) return S.colorHexInput;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'pc-color-hex';
+  input.maxLength = 7;
+  input.spellcheck = false;
+  input.setAttribute('autocomplete', 'off');
+  input.addEventListener('input', () => {
+    if (!S.colorPicker) return;
+    let v = input.value.trim().replace(/^#/, '');
+    if (/^[0-9a-fA-F]{3}$/.test(v)) v = v.split('').map(c => c + c).join('');
+    if (!/^[0-9a-fA-F]{6}$/.test(v)) return;
+    const rgb = hexToRgb('#' + v.toLowerCase());
+    const hsv = rgbToHsvLocal(rgb);
+    S.colorPicker.h = hsv[0];
+    S.colorPicker.s = hsv[1];
+    S.colorPicker.v = hsv[2];
+    commitColorEdit(false);
+    input.value = cpHex();
+  });
+  input.addEventListener('blur', () => { if (S.colorPicker) input.value = cpHex(); });
+  input.addEventListener('keydown', (ev) => {
+    ev.stopPropagation();
+    if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); }
+    else if (ev.key === 'Escape') { ev.preventDefault(); closeColorEdit(); }
+  });
+  input.addEventListener('focus', () => { S.colorDrag = null; });
+  if (document.body && document.body.appendChild) document.body.appendChild(input);
+  S.colorHexInput = input;
+  return input;
+}
+function positionColorHexInput() {
+  if (!S.colorHexInput || !S.colorPicker) return;
+  S.colorHexInput.style.display = 'block';
+  S.colorHexInput.style.left = (S.colorPicker.left + CP_HEX_X) + 'px';
+  S.colorHexInput.style.top = (S.colorPicker.top + CP_HEX_Y) + 'px';
+  S.colorHexInput.style.width = CP_HEX_W + 'px';
+  S.colorHexInput.style.height = CP_HEX_H + 'px';
+}
+function positionColorPicker() {
+  if (!S.colorPicker || !S.colorCanvas || !H || !H.getBctx()) return;
+  let region = S.colorPicker.region;
+  if (S.colorPicker.stmt) {
+    const cur = S.wsRegions.find(r => r.kind === 'color' && r.stmt === S.colorPicker.stmt);
+    if (!cur) { closeColorEdit(); return; }
+    region = cur;
+  }
+  const rect = worldToScreenRect(region);
+  const left = Math.max(8, Math.min(rect.left, (window.innerWidth || 1200) - CP_W - 8));
+  const top = Math.max(8, Math.min(rect.top, (window.innerHeight || 800) - CP_H - 8));
+  S.colorPicker.left = left;
+  S.colorPicker.top = top;
+  S.colorCanvas.style.left = left + 'px';
+  S.colorCanvas.style.top = top + 'px';
+  positionColorHexInput();
 }
 function openColorEdit(region) {
   if (!region || !region.color || !S.colorCanvas) return;
-  const rect = worldToScreenRect(region);
+  if (typeof window !== 'undefined') S.dpr = window.devicePixelRatio || 1;
   const hex = region.color.hex ? region.color.hex() : '#808080';
   const rgb = hexToRgb(hex);
   const hsv = rgbToHsvLocal(rgb);
-  S.colorPicker = { region, h: hsv[0], s: hsv[1], v: hsv[2] };
+  S.colorPicker = { region, stmt: region.stmt || null, h: hsv[0], s: hsv[1], v: hsv[2], left: 0, top: 0 };
   S.colorDrag = null;
-  const dpr = S.dpr;
   S.colorCanvas.style.width = CP_W + 'px';
   S.colorCanvas.style.height = CP_H + 'px';
-  S.colorCanvas.width = Math.max(1, Math.round(CP_W * dpr));
-  S.colorCanvas.height = Math.max(1, Math.round(CP_H * dpr));
-  const left = Math.max(8, Math.min(rect.left, (window.innerWidth || 1200) - CP_W - 8));
-  const top = Math.max(8, Math.min(rect.top, (window.innerHeight || 800) - CP_H - 8));
-  S.colorCanvas.style.left = left + 'px';
-  S.colorCanvas.style.top = top + 'px';
+  S.colorCanvas.width = Math.max(1, Math.round(CP_W * S.dpr));
+  S.colorCanvas.height = Math.max(1, Math.round(CP_H * S.dpr));
   S.colorCanvas.style.display = 'block';
+  ensureColorHexInput();
+  positionColorPicker();
+  if (S.colorHexInput) S.colorHexInput.value = cpHex();
   drawColorPicker();
 }
 function commitColorEdit(close) {
@@ -1878,6 +1936,7 @@ function commitColorEdit(close) {
     const ok = region.color.commit(hex) !== false;
     if (ok) { H.refreshPreview(); puzzleCanvasRender(); }
   }
+  if (S.colorHexInput) S.colorHexInput.value = hex;
   if (close) closeColorEdit();
   else drawColorPicker();
 }
@@ -1885,6 +1944,7 @@ function closeColorEdit() {
   S.colorPicker = null;
   S.colorDrag = null;
   if (S.colorCanvas) S.colorCanvas.style.display = 'none';
+  if (S.colorHexInput) S.colorHexInput.style.display = 'none';
 }
 function colorLocalPoint(e) {
   const rect = S.colorCanvas.getBoundingClientRect();
@@ -1895,10 +1955,6 @@ function onColorDown(e) {
   e.preventDefault();
   e.stopPropagation();
   const p = colorLocalPoint(e);
-  if (p.x >= CP_OK_X && p.x <= CP_OK_X + CP_OK_W && p.y >= CP_OK_Y && p.y <= CP_OK_Y + CP_OK_H) {
-    commitColorEdit(true);
-    return;
-  }
   if (p.x >= CP_SV_X && p.x <= CP_SV_X + CP_SV_W && p.y >= CP_SV_Y && p.y <= CP_SV_Y + CP_SV_H) {
     S.colorDrag = 'sv';
     updateColorDrag(e);
@@ -1909,7 +1965,7 @@ function onColorDown(e) {
     updateColorDrag(e);
     return;
   }
-  commitColorEdit(true);
+  closeColorEdit();
 }
 function onColorMove(e) {
   if (!S.colorPicker) return;
@@ -1931,6 +1987,7 @@ function updateColorDrag(e) {
 function onColorOutside(e) {
   if (!S.colorPicker) return;
   if (S.colorCanvas && (e.target === S.colorCanvas || S.colorCanvas.contains(e.target))) return;
+  if (S.colorHexInput && (e.target === S.colorHexInput || S.colorHexInput.contains(e.target))) return;
   closeColorEdit();
 }
 
@@ -1974,6 +2031,12 @@ function startStmtGroupPending(r, e) {
   const rect = worldToScreenRect(r);
   const loc = H.stmtGroupLocation(r.stmt);
   if (!loc) return;
+  // 碎片中的语句拖动时移动整个碎片（碎片已无头部把手）。
+  const frag = H.getBctx().frags.find(f => f.stmts === loc.chain);
+  if (frag) {
+    S.drag = { mode: 'frag-move', frag, startX: e.clientX, startY: e.clientY, lx: frag.x, ly: frag.y };
+    return;
+  }
   S.drag = {
     mode: 'stmt-group-pending',
     source: { type: 'stmt-group-pending', stmt: r.stmt, loc },
@@ -2347,8 +2410,15 @@ function onWorkDown(e) {
     puzzleCanvasRender();
     return;
   }
-  if (hit.kind === 'stmt' && hit.stmt && (hit.stmt.kind === 'raw' || hit.stmt.kind === 'comment')) { e.preventDefault(); beginInlineEdit(hit); return; }
-  if (hit.kind === 'stmt') { e.preventDefault(); startStmtGroupPending(hit, e); return; }
+  if (hit.kind === 'stmt') {
+    e.preventDefault();
+    if (hit.stmt && (hit.stmt.kind === 'raw' || hit.stmt.kind === 'comment') && e.detail >= 2) {
+      beginInlineEdit(hit);
+      return;
+    }
+    startStmtGroupPending(hit, e);
+    return;
+  }
   if (hit.kind === 'blank') { e.preventDefault(); startPan(e); return; }
 }
 

@@ -1463,9 +1463,22 @@ body.puzzle-mode #puzzle-ghost-canvas { display: block; }
   position: fixed;
   z-index: 1600;
   display: none;
-  border: 1px solid var(--border);
+  border: none;
   border-radius: 8px;
   box-shadow: var(--shadow);
   background: var(--panel-2);
   touch-action: none;
 }
+.pc-color-hex {
+  position: fixed;
+  z-index: 1602;
+  box-sizing: border-box;
+  background: var(--panel-3);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: 12px Consolas, "SFMono-Regular", monospace;
+  padding: 0 6px;
+  outline: none;
+}
+.pc-color-hex:focus { border-color: var(--accent); }
