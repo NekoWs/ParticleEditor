@@ -1336,12 +1336,12 @@ body.puzzle-mode #viewport #box-overlay { display: none; }
 /* ---- Scratch 卡榫：链条语句块顶部凸起 + 底部缺口 ---- */
 #chain-canvas .blk-stmt { position: relative; }
 #chain-canvas .blk-stmt::before {
-  content: ''; position: absolute; top: -7px; left: 50%; transform: translateX(-50%);
+  content: ''; position: absolute; top: -7px; left: 10px;
   width: 22px; height: 10px; border-radius: 8px 8px 2px 2px;
   background: inherit; border: 1px solid rgba(0,0,0,0.18); border-bottom: none;
 }
 #chain-canvas .blk-stmt::after {
-  content: ''; position: absolute; bottom: -7px; left: 50%; transform: translateX(-50%);
+  content: ''; position: absolute; bottom: -7px; left: 10px;
   width: 22px; height: 10px; border-radius: 2px 2px 8px 8px;
   background: var(--bg);
 }
