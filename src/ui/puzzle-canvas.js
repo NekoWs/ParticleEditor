@@ -2665,10 +2665,8 @@ function endDrag(e) {
   }
   if (target.kind === 'blank') {
     if (source.type === 'hat') {
-      if (H.createHat(source.kind, target.x, target.y)) {
-        H.pushUndo();
-        H.refreshPreview();
-      }
+      H.pushUndo();
+      if (H.createHat(source.kind, target.x, target.y)) H.refreshPreview();
     } else if (source.type === 'palette' && source.stmt) {
       H.pushUndo();
       const stmt = H.newStmtNode(source.stmtKind);
