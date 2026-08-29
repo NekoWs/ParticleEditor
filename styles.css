@@ -1329,6 +1329,24 @@ body.puzzle-mode #viewport #box-overlay { display: none; }
   display: flex; flex-direction: column; gap: 2px;
 }
 .blk-ctl .blk-else-head { flex-basis: 100%; font-weight: 700; margin-top: 4px; padding-left: 2px; opacity: 0.9; }
+
+/* —— C 形开口：逻辑块左侧挖出“嘴”，嵌套子块从开口进入 —— */
+#chain-canvas .blk-ctl, .pal-item .blk-ctl {
+  clip-path: polygon(
+    0 0, 100% 0, 100% 100%, 0 100%,
+    0 calc(100% - 20px), 16px calc(100% - 20px), 16px 20px, 0 20px
+  );
+  padding-left: 24px;
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,0.28));
+}
+
+/* —— 六边形布尔块 —— */
+.blk-expr.blk-bool {
+  border-radius: 0;
+  clip-path: polygon(10px 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 10px 100%, 0 50%);
+  padding-left: 14px; padding-right: 14px;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.22));
+}
 .pal-item { border-radius: 12px; transition: transform 0.12s ease; }
 .pal-item:hover { transform: translateY(-1px); }
 .chain-stack { gap: 2px; }

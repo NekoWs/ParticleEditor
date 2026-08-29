@@ -82,17 +82,21 @@ export function cloneStmt(s) {
 }
 export function cloneStmts(stmts) { return stmts.map(cloneStmt); }
 
+export function isBoolOp(op) {
+  return op === '==' || op === '!=' || op === '<' || op === '<=' || op === '>' || op === '>=' || op === '&&' || op === '||';
+}
+
 export function nodeToBlockType(n) {
   switch (n.kind) {
     case 'num': return { cls: 'blk-const', label: fmtNum(n.value) };
-    case 'bool': return { cls: 'blk-const', label: n.value ? 'true' : 'false' };
+    case 'bool': return { cls: 'blk-const blk-bool', label: n.value ? 'true' : 'false' };
     case 'var': return { cls: n.name === 'pi' || n.name === 'e' ? 'blk-const' : 'blk-var', label: n.name };
     case 'func': return { cls: GROUP_COLOR[funcGroup(n.name)], label: n.name };
-    case 'op': return { cls: 'blk-math', label: n.op };
+    case 'op': return { cls: 'blk-math' + (isBoolOp(n.op) ? ' blk-bool' : ''), label: n.op };
     case 'chain': return { cls: 'blk-math', label: t('blk.chain') };
     case 'comp': return { cls: 'blk-vec', label: '.' + n.axis };
     case 'neg': return { cls: 'blk-math', label: '−' };
-    case 'not': return { cls: 'blk-math', label: '!' };
+    case 'not': return { cls: 'blk-math blk-bool', label: '!' };
     case 'ternary': return { cls: 'blk-math', label: '?:' };
     case 'index': return { cls: 'blk-array', label: '[]' };
     case 'method': return { cls: 'blk-array', label: '.' + n.method };
