@@ -1967,12 +1967,17 @@ function updateHover(e) {
 function fitCanvas(canvas, ctx) {
   if (!canvas || !ctx) return;
   const dpr = S.dpr;
-  const w = canvas.clientWidth || canvas.offsetWidth || 100;
-  const h = canvas.clientHeight || canvas.offsetHeight || 100;
+  // 用 CSS 布局尺寸（getBoundingClientRect）计算 backing store；
+  // 不写死 style.width/height，否则 display:none 期间会把 0 固化，之后无法恢复。
+  let w = 0, h = 0;
+  try {
+    const rect = canvas.getBoundingClientRect();
+    w = rect.width; h = rect.height;
+  } catch (e) { /* 测试桩无该方法时忽略 */ }
+  if (!w) w = canvas.clientWidth || canvas.offsetWidth || 100;
+  if (!h) h = canvas.clientHeight || canvas.offsetHeight || 100;
   canvas.width = Math.max(1, Math.round(w * dpr));
   canvas.height = Math.max(1, Math.round(h * dpr));
-  canvas.style.width = w + 'px';
-  canvas.style.height = h + 'px';
 }
 
 export function puzzleCanvasResize() {
