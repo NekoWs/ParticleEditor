@@ -32,7 +32,7 @@ export const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
 camera.position.set(12, 8, 14);
 
 export const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0, 1, 0);
+controls.target.set(0, 0, 0);
 controls.update();
 controls.mouseButtons = { LEFT: null, MIDDLE: null, RIGHT: THREE.MOUSE.PAN };
 
