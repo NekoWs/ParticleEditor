@@ -126,6 +126,33 @@ export function findSlotRefByNode(stmts, node) {
         if (n.terms[i] === node) { result = slotRef(() => n.terms[i], v => { n.terms[i] = v; }, T_ANY); return; }
         walkExpr(n.terms[i], () => n.terms[i], v => { n.terms[i] = v; });
       }
+    } else if (n.kind === 'index') {
+      if (n.target === node) { result = slotRef(() => n.target, v => { n.target = v; }, T_ANY); return; }
+      if (n.index === node) { result = slotRef(() => n.index, v => { n.index = v; }, T_ANY); return; }
+      walkExpr(n.target, () => n.target, v => { n.target = v; });
+      walkExpr(n.index, () => n.index, v => { n.index = v; });
+    } else if (n.kind === 'method') {
+      if (n.obj === node) { result = slotRef(() => n.obj, v => { n.obj = v; }, T_ANY); return; }
+      for (let i = 0; i < n.args.length; i++) {
+        if (n.args[i] === node) { result = slotRef(() => n.args[i], v => { n.args[i] = v; }, T_ANY); return; }
+        walkExpr(n.args[i], () => n.args[i], v => { n.args[i] = v; });
+      }
+      walkExpr(n.obj, () => n.obj, v => { n.obj = v; });
+    } else if (n.kind === 'array') {
+      for (let i = 0; i < n.items.length; i++) {
+        if (n.items[i] === node) { result = slotRef(() => n.items[i], v => { n.items[i] = v; }, T_ANY); return; }
+        walkExpr(n.items[i], () => n.items[i], v => { n.items[i] = v; });
+      }
+    } else if (n.kind === 'ternary') {
+      if (n.cond === node) { result = slotRef(() => n.cond, v => { n.cond = v; }, T_ANY); return; }
+      if (n.a === node) { result = slotRef(() => n.a, v => { n.a = v; }, T_ANY); return; }
+      if (n.b === node) { result = slotRef(() => n.b, v => { n.b = v; }, T_ANY); return; }
+      walkExpr(n.cond, () => n.cond, v => { n.cond = v; });
+      walkExpr(n.a, () => n.a, v => { n.a = v; });
+      walkExpr(n.b, () => n.b, v => { n.b = v; });
+    } else if (n.kind === 'not') {
+      if (n.a === node) { result = slotRef(() => n.a, v => { n.a = v; }, T_ANY); return; }
+      walkExpr(n.a, () => n.a, v => { n.a = v; });
     }
   };
   const walkStmt = (s) => {
