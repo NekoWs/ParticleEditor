@@ -1823,7 +1823,7 @@ function hitWorkspace(mx, my, dropMode) {
     // 正向遍历优先命中最内层槽（拖到嵌套表达式内部时进入内部槽，而不是替换整个外层块）
     for (let i = 0; i < S.wsRegions.length; i++) {
       const r = S.wsRegions[i];
-      if ((r.kind === 'slot' || r.kind === 'op' || r.kind === 'append') && contains(r, wx, wy)) return r;
+      if ((r.kind === 'slot' || r.kind === 'op' || r.kind === 'append' || r.kind === 'array-append') && contains(r, wx, wy)) return r;
     }
     for (let i = S.wsRegions.length - 1; i >= 0; i--) {
       const r = S.wsRegions[i];
