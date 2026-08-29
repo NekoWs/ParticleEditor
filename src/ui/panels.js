@@ -371,6 +371,21 @@ export function buildFunctionPanel(fx) {
   seedRow.appendChild(seedIn);
   wrap.appendChild(seedRow);
 
+  // 快速数学近似（按函数对象可选，默认关闭）
+  const fmRow = document.createElement('label');
+  fmRow.className = 'row';
+  const fmChk = document.createElement('input');
+  fmChk.type = 'checkbox';
+  fmChk.checked = !!fx.fastMath;
+  fmChk.onchange = () => {
+    pushUndo();
+    fx.fastMath = fmChk.checked;
+    commitFunctionRebuild(fx);
+  };
+  fmRow.appendChild(fmChk);
+  fmRow.appendChild(document.createTextNode(' ' + t('fx.fastMath')));
+  wrap.appendChild(fmRow);
+
   // 拼图入口
   const codeLabel = document.createElement('div');
   codeLabel.className = 'row';

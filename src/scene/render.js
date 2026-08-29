@@ -11,7 +11,7 @@ import { resolveUV, refreshUVPanel } from '../ui/texture-editor.js';
 import { updateGizmo } from '../interaction/gizmo.js';
 import { drawTimeline, updatePropPanel } from '../ui/panels.js';
 import { refreshTreeSelection, refreshCompTimelines } from '../ui/tree.js';
-import { buildParticleIndex, buildTrackIndex, buildGroupIndex, buildOpDeltaCache, buildGroupXforms, buildFxSclTrackCache, currentVisual, velOffsetAt, rotVectorAt, trackValueAt, trackIntegral, trVersion, groupMemberIndexCache, groupXformCache, opTracksCache, fxSclTrackCache, fxOpDeltaCache } from '../core/animation-eval.js';
+import { buildParticleIndex, buildTrackIndex, buildGroupIndex, buildOpDeltaCache, buildGroupXforms, buildFxSclTrackCache, currentVisual, velOffsetAt, rotVectorAt, trackValueAt, trackIntegral, trVersion, groupMemberIndexCache, groupXformCache, opTracksCache, fxSclTrackCache, fxOpDeltaCache, invalidateMaxTickCache } from '../core/animation-eval.js';
 import * as THREE from "three";
 /* =========================================================================
  * 渲染
@@ -150,6 +150,7 @@ export function setPointUVAttributes(geo, uvs) {
 }
 
 function rebuildIndexes() {
+  invalidateMaxTickCache();
   buildParticleIndex();
   buildTrackIndex();
   buildGroupIndex();

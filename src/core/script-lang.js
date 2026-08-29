@@ -41,6 +41,8 @@
  * 常量 / 关键字 / 保留字
  * ---------------------------------------------------------------------- */
 
+import { FAST_MATH } from './fastmath.js';
+
 const KEYWORDS = new Set([
   'setup', 'process', 'func', 'return', 'if', 'else', 'while', 'do', 'for',
   'break', 'continue', 'global', 'static', 'true', 'false',
@@ -708,9 +710,19 @@ class Parser {
 
   validateGlobalStaticName(tok) {
     const name = tok.value;
-    if (KEYWORDS.has(name) || ATTR_SET.has(name) || BUILTIN_NAMES.has(name) ||
-        CONSTANTS.has(name) || BUILTIN_FUNCTIONS.has(name)) {
+    if (KEYWORDS.has(name) || CONSTANTS.has(name)) {
       this.errorAt(tok, `reserved name cannot be declared: '${name}'`);
+      return;
+    }
+    if (this.phase === 'setup') {
+      // setup 只保留 n/t 只读内置量；粒子属性与其余内置名都允许作为变量。
+      if (name === 'n' || name === 't') {
+        this.errorAt(tok, `reserved name cannot be declared: '${name}'`);
+      }
+    } else if (this.phase === 'process') {
+      if (ATTR_SET.has(name) || BUILTIN_NAMES.has(name)) {
+        this.errorAt(tok, `reserved name cannot be declared: '${name}'`);
+      }
     }
   }
 
@@ -1022,8 +1034,6 @@ class Flow {
  * 运行时（解释器）
  * ======================================================================= */
 
-const RESERVED_ASSIGN = new Set([...ATTR_NAMES, ...BUILTIN_NAMES]);
-
 class Runtime {
   constructor(phase, program, objState, statics, env, ctx) {
     this.phase = phase;
@@ -1055,21 +1065,27 @@ class Runtime {
       const s = this.scopes[i];
       if (s.has(name)) return s.get(name);
     }
-    // 2) global（对象级）
+    // 2) process 的内置量 / 粒子属性：先于 global，避免 setup 中同名 global 遮蔽它们。
+    if (this.phase === 'process') {
+      const builtin = this.lookupBuiltin(name);
+      if (builtin.found) return builtin.value;
+      if (ATTR_SET.has(name)) return attrRead(name, this.ctx);
+    }
+    // 3) global（对象级）
     if (this.objState.globals.has(name)) return this.objState.globals.get(name);
-    // 3) static（每粒子）
+    // 4) static（每粒子）
     if (this.phase === 'process' && this.statics && this.statics.has(name)) return this.statics.get(name);
-    // 4) 内置只读量
-    const builtin = this.lookupBuiltin(name);
-    if (builtin.found) return builtin.value;
-    // 5) fx.vars 注入
+    // 5) setup 内置只读量（n/t）
+    if (this.phase === 'setup') {
+      const builtin = this.lookupBuiltin(name);
+      if (builtin.found) return builtin.value;
+    }
+    // 6) fx.vars 注入
     if (this.varsMap.has(name)) return this.varsMap.get(name);
-    // 6) 常量
+    // 7) 常量
     if (CONSTANTS.has(name)) return CONSTANTS.get(name);
-    // 7) 顶层函数（作为 func 值）
+    // 8) 顶层函数（作为 func 值；若被同名变量遮蔽，上面的作用域/global/static 会先命中）
     if (this.program.functions.has(name)) return { t: 'func', name };
-    // 8) 粒子属性读取（仅 process）
-    if (this.phase === 'process' && ATTR_SET.has(name)) return attrRead(name, this.ctx);
     throw runtimeError(`unknown variable '${name}'`, node);
   }
 
@@ -1096,13 +1112,17 @@ class Runtime {
   /* -- 赋值 -- */
 
   assignName(name, value, node) {
-    // 粒子属性：process 写入输出，setup 不可用。
-    if (ATTR_SET.has(name)) {
-      if (this.phase !== 'process') {
-        throw runtimeError(`particle property '${name}' is not available in setup`, node);
-      }
+    // 粒子属性：仅 process 写入输出；setup 中这些名字按普通变量处理。
+    if (this.phase === 'process' && ATTR_SET.has(name)) {
       attrWrite(name, value, this.ctx, node);
       return;
+    }
+    // 内置只读量：process 全部只读；setup 仅 n/t 只读。
+    if (this.phase === 'process' && BUILTIN_NAMES.has(name)) {
+      throw runtimeError(`cannot assign to read-only name '${name}'`, node);
+    }
+    if (this.phase === 'setup' && (name === 'n' || name === 't')) {
+      throw runtimeError(`cannot assign to read-only name '${name}'`, node);
     }
 
     // 局部作用域
@@ -1126,8 +1146,8 @@ class Runtime {
       return;
     }
 
-    if (RESERVED_ASSIGN.has(name) || this.varsMap.has(name) || CONSTANTS.has(name) ||
-        this.program.functions.has(name) || BUILTIN_FUNCTIONS.has(name)) {
+    // 剩余只读名：fx.vars 与常量；函数名允许被变量遮蔽。
+    if (this.varsMap.has(name) || CONSTANTS.has(name)) {
       throw runtimeError(`cannot assign to read-only name '${name}'`, node);
     }
 
@@ -2184,6 +2204,11 @@ function callBuiltin(name, args, rt, node) {
   const entry = BUILTIN_TABLE.get(name);
   if (!entry) throw runtimeError(`unknown builtin '${name}'`, node);
   checkArity(name, args, entry.min, entry.max, node);
+  // 快速标量数学：仅 process 且 fx.fastMath 开启时替换（类型校验与精确路径一致）。
+  if (rt.phase === 'process' && rt.ctx && rt.ctx.fastMath && FAST_MATH[name]) {
+    for (let i = 0; i < args.length; i++) expectNum(args[i], name, node);
+    return FAST_MATH[name](...args);
+  }
   return entry.impl(args, rt, node);
 }
 
@@ -2288,6 +2313,877 @@ function formatValue(v) {
 }
 
 /* =========================================================================
+ * 字节码编译器 + 栈式虚拟机（process 专用）
+ * -------------------------------------------------------------------------
+ * setup 继续走上面的 AST Runtime；process 编译为扁平指令流执行，减少 AST
+ * 递归分发开销。名称查找/赋值复用 Runtime 的语义（含保留字放宽与遮蔽规则）。
+ * ======================================================================= */
+
+const OP = {
+  CONST: 0, POP: 1, DUP: 2,
+  LOAD: 3, STORE: 4,
+  LOAD_BUILTIN: 5, LOAD_ATTR: 6, STORE_ATTR: 7,
+  LOAD_FUNC: 8,
+  LOAD_UNIFORM: 9, STORE_UNIFORM: 10,
+  UNARY: 11, BINARY: 12,
+  ARRAY: 13, INDEX: 14, INDEX_STORE: 15,
+  COMP: 16, COMP_STORE: 17, COMP_STORE_INDEX: 18,
+  UNPACK: 19, STATIC: 20,
+  JUMP: 21, JUMP_IF_FALSE: 22, JUMP_IF_TRUE: 23,
+  CALL_BUILTIN: 24, CALL_USER: 25, CALL_VALUE: 26, METHOD: 27,
+  ENTER_SCOPE: 28, EXIT_SCOPE: 29, RETURN: 30, LOOP_GUARD: 31,
+};
+
+const UNARY_OPS = ['-', '!'];
+const BIN_OPS = ['+', '-', '*', '/', '%', '^', '==', '!=', '<', '<=', '>', '>='];
+
+const ATTR_CODE = {};
+ATTR_NAMES.forEach((n, i) => { ATTR_CODE[n] = i; });
+const ATTR_BY_CODE = ATTR_NAMES;
+
+const BUILTIN_CODE = new Map();
+const BUILTIN_BY_CODE = [];
+for (const name of BUILTIN_TABLE.keys()) {
+  BUILTIN_CODE.set(name, BUILTIN_BY_CODE.length);
+  BUILTIN_BY_CODE.push(name);
+}
+
+const BUILTIN_NAME_CODE = {};
+const BUILTIN_NAME_BY_CODE = [...BUILTIN_NAMES];
+BUILTIN_NAME_BY_CODE.forEach((n, i) => { BUILTIN_NAME_CODE[n] = i; });
+
+const METHOD_NAMES = ['push', 'insert', 'remove', 'slice', 'size', 'find', 'includes', 'sort', 'unique', 'reverse'];
+const METHOD_CODE = {};
+METHOD_NAMES.forEach((n, i) => { METHOD_CODE[n] = i; });
+const METHOD_BY_CODE = METHOD_NAMES;
+
+const COMP_CODE = { x: 0, y: 1, z: 2 };
+
+// 可安全提升为 uniform 的纯内建（无 PRNG/随机、无数组变异）。
+const PURE_BUILTINS = new Set();
+for (const name of BUILTIN_TABLE.keys()) {
+  if (!['rand', 'random', 'print', 'assert', 'unique', 'reverse', 'sort'].includes(name)) {
+    PURE_BUILTINS.add(name);
+  }
+}
+
+function makeLoc(line, col) { return { line, col }; }
+
+class Compiler {
+  constructor(program, varNames) {
+    this.program = program;
+    this.code = [];
+    this.locs = [];
+    this.consts = [];
+    this.constMap = new Map();
+    this.names = [];
+    this.nameMap = new Map();
+    this.funcs = [];
+    this.funcByName = new Map();
+    this.funcIdxByName = new Map();
+    this.hoisted = new Map();   // name -> uniform slot
+    this.invariant = null;
+    this.loopStack = [];
+    this.loopCounters = 0;
+    this.phase = 'process';     // 'process'（顶层，可烘焙属性/内置读）| 'func'
+    this.varNames = varNames;
+
+    // 预注册用户函数（便于前向引用）
+    for (const [fname, fn] of program.functions) {
+      const idx = this.funcs.length;
+      this.funcs.push({ name: fname, params: fn.params.map(p => this.internName(p)), addr: -1 });
+      this.funcByName.set(fname, fn);
+      this.funcIdxByName.set(fname, idx);
+    }
+  }
+
+  internName(name) {
+    let idx = this.nameMap.get(name);
+    if (idx === undefined) {
+      idx = this.names.length;
+      this.nameMap.set(name, idx);
+      this.names.push(name);
+    }
+    return idx;
+  }
+
+  internConst(v) {
+    let idx = this.constMap.get(v);
+    if (idx === undefined) {
+      idx = this.consts.length;
+      this.constMap.set(v, idx);
+      this.consts.push(v);
+    }
+    return idx;
+  }
+
+  emit1(op, node) { const i = this.code.length; this.code.push(op); this.locs[i] = node ? [node.line, node.col] : null; return i; }
+  emit2(op, a, node) { const i = this.code.length; this.code.push(op, a); this.locs[i] = node ? [node.line, node.col] : null; return i; }
+  emit3(op, a, b, node) { const i = this.code.length; this.code.push(op, a, b); this.locs[i] = node ? [node.line, node.col] : null; return i; }
+
+  patchJump(instrIdx, target) { this.code[instrIdx + 1] = target; }
+  pc() { return this.code.length; }
+  allocLoopCounter() { return this.loopCounters++; }
+
+  /* ---------- 表达式 ---------- */
+
+  compileExpr(node) {
+    switch (node.type) {
+      case 'num': case 'str': case 'bool':
+        this.emit2(OP.CONST, this.internConst(node.value), node);
+        return;
+      case 'var': {
+        const name = node.name;
+        if (this.hoisted.has(name)) {
+          this.emit2(OP.LOAD_UNIFORM, this.hoisted.get(name), node);
+        } else if (this.phase === 'process' && BUILTIN_NAMES.has(name)) {
+          this.emit2(OP.LOAD_BUILTIN, BUILTIN_NAME_CODE[name], node);
+        } else if (this.phase === 'process' && ATTR_SET.has(name)) {
+          this.emit2(OP.LOAD_ATTR, ATTR_CODE[name], node);
+        } else if (CONSTANTS.has(name)) {
+          this.emit2(OP.CONST, this.internConst(CONSTANTS.get(name)), node);
+        } else {
+          this.emit2(OP.LOAD, this.internName(name), node);
+        }
+        return;
+      }
+      case 'array': {
+        for (const item of node.items) this.compileExpr(item);
+        this.emit2(OP.ARRAY, node.items.length, node);
+        return;
+      }
+      case 'unary': {
+        this.compileExpr(node.operand);
+        this.emit2(OP.UNARY, UNARY_OPS.indexOf(node.op), node);
+        return;
+      }
+      case 'binary': {
+        if (node.op === '&&') {
+          this.compileExpr(node.left);
+          this.emit1(OP.DUP, node);
+          const jf = this.emit2(OP.JUMP_IF_FALSE, 0, node);
+          this.emit1(OP.POP, node);
+          this.compileExpr(node.right);
+          const end = this.pc();
+          this.patchJump(jf, end);
+          return;
+        }
+        if (node.op === '||') {
+          this.compileExpr(node.left);
+          this.emit1(OP.DUP, node);
+          const jt = this.emit2(OP.JUMP_IF_TRUE, 0, node);
+          this.emit1(OP.POP, node);
+          this.compileExpr(node.right);
+          const end = this.pc();
+          this.patchJump(jt, end);
+          return;
+        }
+        this.compileExpr(node.left);
+        this.compileExpr(node.right);
+        this.emit2(OP.BINARY, BIN_OPS.indexOf(node.op), node);
+        return;
+      }
+      case 'ternary': {
+        this.compileExpr(node.cond);
+        const jf = this.emit2(OP.JUMP_IF_FALSE, 0, node);
+        this.compileExpr(node.thenExpr);
+        const jend = this.emit2(OP.JUMP, 0, node);
+        const elseStart = this.pc();
+        this.patchJump(jf, elseStart);
+        this.compileExpr(node.elseExpr);
+        const end = this.pc();
+        this.patchJump(jend, end);
+        return;
+      }
+      case 'index': {
+        this.compileExpr(node.target);
+        this.compileExpr(node.index);
+        this.emit1(OP.INDEX, node);
+        return;
+      }
+      case 'comp': {
+        this.compileExpr(node.target);
+        this.emit2(OP.COMP, COMP_CODE[COMP_ALIAS[node.comp]], node);
+        return;
+      }
+      case 'call':
+        this.compileCall(node);
+        return;
+      case 'method': {
+        this.compileExpr(node.object);
+        for (const a of node.args) this.compileExpr(a);
+        this.emit3(OP.METHOD, METHOD_CODE[node.method], node.args.length, node);
+        return;
+      }
+      default:
+        throw parseError(`cannot compile expression type '${node.type}'`, node.line, node.col);
+    }
+  }
+
+  compileCall(node) {
+    const callee = node.callee;
+    if (callee.type === 'var' && BUILTIN_FUNCTIONS.has(callee.name)) {
+      for (const a of node.args) this.compileExpr(a);
+      this.emit3(OP.CALL_BUILTIN, BUILTIN_CODE.get(callee.name), node.args.length, node);
+      return;
+    }
+    if (callee.type === 'var' && this.program.functions.has(callee.name)) {
+      for (const a of node.args) this.compileExpr(a);
+      this.emit3(OP.CALL_USER, this.funcIdxByName.get(callee.name), node.args.length, node);
+      return;
+    }
+    this.compileExpr(callee);
+    for (const a of node.args) this.compileExpr(a);
+    this.emit2(OP.CALL_VALUE, node.args.length, node);
+  }
+
+  /* ---------- 赋值目标（值已压栈） ---------- */
+
+  compileTarget(target) {
+    switch (target.type) {
+      case 'var':
+        this.emit2(OP.STORE, this.internName(target.name), target);
+        return;
+      case 'index':
+        this.compileExpr(target.target);
+        this.compileExpr(target.index);
+        this.emit1(OP.INDEX_STORE, target);
+        return;
+      case 'comp': {
+        const inner = target.target;
+        if (inner.type === 'var') {
+          this.emit2(OP.LOAD, this.internName(inner.name), inner);
+          this.emit2(OP.COMP_STORE, COMP_CODE[COMP_ALIAS[target.comp]], target);
+          this.emit2(OP.STORE, this.internName(inner.name), target);
+        } else if (inner.type === 'index') {
+          this.compileExpr(inner.target);
+          this.compileExpr(inner.index);
+          this.emit2(OP.COMP_STORE_INDEX, COMP_CODE[COMP_ALIAS[target.comp]], target);
+        } else {
+          // 嵌套 comp 等：与 AST 一致，求值后会在 COMP_STORE 处报「不是向量」。
+          this.compileExpr(inner);
+          this.emit2(OP.COMP_STORE, COMP_CODE[COMP_ALIAS[target.comp]], target);
+        }
+        return;
+      }
+      default:
+        throw parseError(`invalid assignment target '${target.type}'`, target.line, target.col);
+    }
+  }
+
+  compileAssign(node) {
+    this.compileExpr(node.value);
+    if (node.target.type === 'unpack') {
+      this.emit2(OP.UNPACK, node.target.names.length, node);
+      for (let i = node.target.names.length - 1; i >= 0; i--) {
+        this.emit2(OP.STORE, this.internName(node.target.names[i]), node);
+      }
+    } else {
+      this.compileTarget(node.target);
+    }
+  }
+
+  /* ---------- 语句 ---------- */
+
+  compileStmt(st) {
+    switch (st.type) {
+      case 'block':
+        this.emit1(OP.ENTER_SCOPE, st);
+        for (const s of st.body) this.compileStmt(s);
+        this.emit1(OP.EXIT_SCOPE, st);
+        return;
+      case 'if': {
+        this.compileExpr(st.cond);
+        const jf = this.emit2(OP.JUMP_IF_FALSE, 0, st);
+        this.compileStmt(st.then);
+        if (st.els) {
+          const jend = this.emit2(OP.JUMP, 0, st);
+          const elseStart = this.pc();
+          this.patchJump(jf, elseStart);
+          this.compileStmt(st.els);
+          this.patchJump(jend, this.pc());
+        } else {
+          this.patchJump(jf, this.pc());
+        }
+        return;
+      }
+      case 'while': {
+        const loop = { breaks: [], continues: [] };
+        this.loopStack.push(loop);
+        const start = this.pc();
+        this.compileExpr(st.cond);
+        const jf = this.emit2(OP.JUMP_IF_FALSE, 0, st);
+        this.emit2(OP.LOOP_GUARD, this.allocLoopCounter(), st);
+        this.compileStmt(st.body);
+        const contTarget = this.pc();
+        for (const p of loop.continues) this.patchJump(p, contTarget);
+        this.emit2(OP.JUMP, start, st);
+        const end = this.pc();
+        this.patchJump(jf, end);
+        for (const p of loop.breaks) this.patchJump(p, end);
+        this.loopStack.pop();
+        return;
+      }
+      case 'do': {
+        const loop = { breaks: [], continues: [] };
+        this.loopStack.push(loop);
+        const start = this.pc();
+        this.emit2(OP.LOOP_GUARD, this.allocLoopCounter(), st);
+        this.compileStmt(st.body);
+        const contTarget = this.pc();
+        for (const p of loop.continues) this.patchJump(p, contTarget);
+        this.compileExpr(st.cond);
+        this.emit2(OP.JUMP_IF_TRUE, start, st);
+        const end = this.pc();
+        for (const p of loop.breaks) this.patchJump(p, end);
+        this.loopStack.pop();
+        return;
+      }
+      case 'for': {
+        const loop = { breaks: [], continues: [] };
+        this.loopStack.push(loop);
+        this.emit1(OP.ENTER_SCOPE, st);
+        if (st.init) this.compileForPart(st.init);
+        const start = this.pc();
+        let jf = null;
+        if (st.cond) {
+          this.compileExpr(st.cond);
+          jf = this.emit2(OP.JUMP_IF_FALSE, 0, st);
+        }
+        this.emit2(OP.LOOP_GUARD, this.allocLoopCounter(), st);
+        this.compileStmt(st.body);
+        const contTarget = this.pc();
+        for (const p of loop.continues) this.patchJump(p, contTarget);
+        if (st.inc) this.compileForPart(st.inc);
+        this.emit2(OP.JUMP, start, st);
+        const end = this.pc();
+        if (jf != null) this.patchJump(jf, end);
+        for (const p of loop.breaks) this.patchJump(p, end);
+        this.emit1(OP.EXIT_SCOPE, st);
+        this.loopStack.pop();
+        return;
+      }
+      case 'break': {
+        const loop = this.loopStack[this.loopStack.length - 1];
+        if (!loop) throw parseError("'break' outside loop", st.line, st.col);
+        const i = this.emit2(OP.JUMP, 0, st);
+        loop.breaks.push(i);
+        return;
+      }
+      case 'continue': {
+        const loop = this.loopStack[this.loopStack.length - 1];
+        if (!loop) throw parseError("'continue' outside loop", st.line, st.col);
+        const i = this.emit2(OP.JUMP, 0, st);
+        loop.continues.push(i);
+        return;
+      }
+      case 'return': {
+        if (st.expr) this.compileExpr(st.expr);
+        else this.emit2(OP.CONST, this.internConst(0), st);
+        this.emit1(OP.RETURN, st);
+        return;
+      }
+      case 'static': {
+        if (st.init) this.compileExpr(st.init);
+        else this.emit2(OP.CONST, this.internConst(0), st);
+        this.emit2(OP.STATIC, this.internName(st.name), st);
+        return;
+      }
+      case 'expr':
+        this.compileExpr(st.expr);
+        this.emit1(OP.POP, st);
+        return;
+      case 'assign':
+        this.compileAssign(st);
+        this.emit1(OP.POP, st);
+        return;
+      default:
+        throw parseError(`cannot compile statement type '${st.type}'`, st.line, st.col);
+    }
+  }
+
+  compileForPart(part) {
+    if (part.type === 'assign') this.compileAssign(part);
+    else this.compileExpr(part);
+    this.emit1(OP.POP, part);
+  }
+}
+
+/* ---------- 不变式分析（仅 process 顶层无条件赋值） ---------- */
+
+function walkExpr(node, cb) {
+  if (!node) return;
+  cb(node);
+  switch (node.type) {
+    case 'var': case 'num': case 'str': case 'bool': return;
+    case 'array': node.items.forEach(e => walkExpr(e, cb)); return;
+    case 'unary': walkExpr(node.operand, cb); return;
+    case 'binary': walkExpr(node.left, cb); walkExpr(node.right, cb); return;
+    case 'ternary': walkExpr(node.cond, cb); walkExpr(node.thenExpr, cb); walkExpr(node.elseExpr, cb); return;
+    case 'index': walkExpr(node.target, cb); walkExpr(node.index, cb); return;
+    case 'comp': walkExpr(node.target, cb); return;
+    case 'call': walkExpr(node.callee, cb); node.args.forEach(a => walkExpr(a, cb)); return;
+    case 'method': walkExpr(node.object, cb); node.args.forEach(a => walkExpr(a, cb)); return;
+    default: return;
+  }
+}
+
+function walkStmtExprs(node, cb) {
+  if (!node) return;
+  switch (node.type) {
+    case 'block': node.body.forEach(s => walkStmtExprs(s, cb)); return;
+    case 'if': walkExpr(node.cond, cb); walkStmtExprs(node.then, cb); if (node.els) walkStmtExprs(node.els, cb); return;
+    case 'while': walkExpr(node.cond, cb); walkStmtExprs(node.body, cb); return;
+    case 'do': walkStmtExprs(node.body, cb); walkExpr(node.cond, cb); return;
+    case 'for': if (node.init) walkStmtExprs(node.init, cb); if (node.cond) walkExpr(node.cond, cb); if (node.inc) walkStmtExprs(node.inc, cb); walkStmtExprs(node.body, cb); return;
+    case 'expr': walkExpr(node.expr, cb); return;
+    case 'assign': if (node.target.type === 'unpack') {} else walkExpr(node.value, cb); return;
+    case 'static': if (node.init) walkExpr(node.init, cb); return;
+    case 'global': if (node.init) walkExpr(node.init, cb); return;
+    case 'return': if (node.expr) walkExpr(node.expr, cb); return;
+    default: return;
+  }
+}
+
+function isInvariantExpr(node, invariant, varNames) {
+  switch (node.type) {
+    case 'num': case 'str': case 'bool': return true;
+    case 'var': return invariant.has(node.name);
+    case 'unary': return isInvariantExpr(node.operand, invariant, varNames);
+    case 'binary': return isInvariantExpr(node.left, invariant, varNames) && isInvariantExpr(node.right, invariant, varNames);
+    case 'ternary': return isInvariantExpr(node.cond, invariant, varNames) && isInvariantExpr(node.thenExpr, invariant, varNames) && isInvariantExpr(node.elseExpr, invariant, varNames);
+    case 'comp': return isInvariantExpr(node.target, invariant, varNames);
+    case 'call': {
+      if (node.callee.type !== 'var') return false;
+      if (!PURE_BUILTINS.has(node.callee.name)) return false;
+      return node.args.every(a => isInvariantExpr(a, invariant, varNames));
+    }
+    case 'index': case 'array': case 'method': return false;
+    default: return false;
+  }
+}
+
+function hoistCandidateName(name, varNames, globalNames, staticNames, program) {
+  return !ATTR_SET.has(name) && !BUILTIN_NAMES.has(name) && !CONSTANTS.has(name) &&
+    !varNames.includes(name) && !globalNames.includes(name) && !staticNames.includes(name) &&
+    !program.functions.has(name) && !BUILTIN_FUNCTIONS.has(name);
+}
+
+// 收集 process 中声明的 static 名（不能被提升为 uniform）。
+function collectStaticNames(processStmts) {
+  const out = new Set();
+  function walk(node) {
+    if (!node) return;
+    if (node.type === 'static') out.add(node.name);
+    if (node.type === 'block') { node.body.forEach(walk); return; }
+    if (node.type === 'if') { walk(node.then); if (node.els) walk(node.els); return; }
+    if (node.type === 'while') { walk(node.body); return; }
+    if (node.type === 'do') { walk(node.body); return; }
+    if (node.type === 'for') { if (node.init) walk(node.init); if (node.inc) walk(node.inc); walk(node.body); return; }
+  }
+  processStmts.forEach(walk);
+  return [...out];
+}
+
+// 返回可提升的顶层无条件单次赋值列表（按源顺序）。
+function findHoistedAssignments(processStmts, varNames, globalNames, staticNames, program) {
+  const invariant = new Set(['n', 't', 'dt', 'life']);
+  for (const n of varNames) invariant.add(n);
+
+  // 不动点：把所有「无条件顶层赋值且 RHS 不变」的普通变量名标为不变量。
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const st of processStmts) {
+      if (st.type !== 'assign' || st.target.type !== 'var') continue;
+      const name = st.target.name;
+      if (invariant.has(name) || !hoistCandidateName(name, varNames, globalNames, staticNames, program)) continue;
+      if (isInvariantExpr(st.value, invariant, varNames)) {
+        invariant.add(name);
+        changed = true;
+      }
+    }
+  }
+
+  // 整个 process 中每个候选名的「写入」次数（含嵌套语句；分量写入/拆包也算写入）。
+  const writes = new Map();
+  function addWrite(name) { writes.set(name, (writes.get(name) || 0) + 1); }
+  function countWrites(node) {
+    if (!node) return;
+    if (node.type === 'assign') {
+      if (node.target.type === 'var') addWrite(node.target.name);
+      else if (node.target.type === 'comp' && node.target.target.type === 'var') addWrite(node.target.target.name);
+      else if (node.target.type === 'unpack') node.target.names.forEach(addWrite);
+    }
+    if (node.type === 'block') { node.body.forEach(countWrites); return; }
+    if (node.type === 'if') { countWrites(node.then); if (node.els) countWrites(node.els); return; }
+    if (node.type === 'while') { countWrites(node.body); return; }
+    if (node.type === 'do') { countWrites(node.body); return; }
+    if (node.type === 'for') { if (node.init) countWrites(node.init); if (node.inc) countWrites(node.inc); countWrites(node.body); return; }
+  }
+  for (const st of processStmts) countWrites(st);
+
+  // 首次提及必须是赋值（源顺序），避免把「先读后写」的非法脚本静默改值。
+  const firstMention = new Map();
+  for (const st of processStmts) {
+    if (st.type === 'assign' && st.target.type === 'var') {
+      const name = st.target.name;
+      if (!firstMention.has(name)) firstMention.set(name, 'assign');
+      walkExpr(st.value, (e) => {
+        if (e.type === 'var' && !firstMention.has(e.name)) firstMention.set(e.name, 'read');
+      });
+    } else {
+      walkStmtExprs(st, (e) => {
+        if (e.type === 'var' && !firstMention.has(e.name)) firstMention.set(e.name, 'read');
+      });
+    }
+  }
+
+  const out = [];
+  for (const st of processStmts) {
+    if (st.type !== 'assign' || st.target.type !== 'var') continue;
+    const name = st.target.name;
+    if (!invariant.has(name)) continue;
+    if (name === 'n' || name === 't' || name === 'dt' || name === 'life' || varNames.includes(name)) continue;
+    if (writes.get(name) !== 1) continue;
+    if (firstMention.get(name) !== 'assign') continue;
+    out.push({ name, expr: st.value, node: st });
+  }
+  return out;
+}
+
+function compileProgram(program, varNames, globalNames) {
+  const c = new Compiler(program, varNames);
+  const staticNames = collectStaticNames(program.process);
+
+  // 1) 分析并编译 uniform prelude（先于主代码，共享常量/名字表与 hoisted 槽位）
+  const hoisted = findHoistedAssignments(program.process, varNames, globalNames, staticNames, program);
+  const prelude = [];
+  const preludeLocs = [];
+  const savedCode = c.code;
+  const savedLocs = c.locs;
+  c.code = prelude;
+  c.locs = preludeLocs;
+  for (let i = 0; i < hoisted.length; i++) {
+    const h = hoisted[i];
+    c.hoisted.set(h.name, i);
+  }
+  for (const h of hoisted) {
+    c.compileExpr(h.expr);
+    c.emit2(OP.STORE_UNIFORM, c.hoisted.get(h.name), h.node);
+  }
+  c.code = savedCode;
+  c.locs = savedLocs;
+
+  // 2) 编译用户函数体（阶段通用：不做属性/内置烘焙）
+  c.phase = 'func';
+  const funcAddr = new Array(c.funcs.length);
+  for (let i = 0; i < c.funcs.length; i++) {
+    const fnNode = program.functions.get(c.funcs[i].name);
+    funcAddr[i] = c.pc();
+    c.compileStmt(fnNode.body);
+    c.emit2(OP.CONST, c.internConst(0), fnNode.body); // 隐式返回 0
+    c.emit1(OP.RETURN, fnNode.body);
+  }
+
+  // 3) 编译 process 主代码（跳过已提升赋值）
+  c.phase = 'process';
+  const mainStart = c.pc();
+  for (const st of program.process) {
+    if (st.type === 'assign' && st.target.type === 'var' && c.hoisted.has(st.target.name)) continue;
+    c.compileStmt(st);
+  }
+  const codeEnd = c.pc();
+
+  return {
+    code: c.code, locs: c.locs, consts: c.consts, names: c.names,
+    funcs: c.funcs, funcAddr, funcIdxByName: c.funcIdxByName,
+    prelude, preludeLocs, uniformCount: hoisted.length,
+    loopCounterCount: c.loopCounters,
+    mainStart, codeEnd, program,
+  };
+}
+
+function getCompiledProgram(program, varNames, globalNames) {
+  const key = varNames.join('\u0000') + '|' + globalNames.join('\u0000');
+  if (program._compiled && program._compiled.varNamesKey === key) return program._compiled;
+  const compiled = compileProgram(program, varNames, globalNames);
+  compiled.varNamesKey = key;
+  program._compiled = compiled;
+  return compiled;
+}
+
+/* ---------- 栈式虚拟机 ---------- */
+
+class Vm {
+  constructor(compiled, objState, statics, ctx, uniforms, codeArr, locsArr, startPc) {
+    this.compiled = compiled;
+    this.code = codeArr || compiled.code;
+    this.locs = locsArr || compiled.locs;
+    this.startPc = startPc != null ? startPc : 0;
+    this.consts = compiled.consts;
+    this.names = compiled.names;
+    this.funcs = compiled.funcs;
+    this.funcAddr = compiled.funcAddr;
+    this.funcIdxByName = compiled.funcIdxByName;
+    this.objState = objState;
+    this.statics = statics;
+    this.ctx = ctx;
+    this.uniforms = uniforms;
+    this.stack = [];
+    this.callStack = [];
+    this.inFunctionStack = [];
+    this.scopeDepthStack = [];
+    this.loopCounters = new Array(compiled.loopCounterCount || 0).fill(0);
+    this.rt = new Runtime('process', compiled.program, objState, statics, null, ctx);
+    this.rt.pushScope(new Map());
+  }
+
+  nodeAt(opPc) {
+    const loc = this.locs[opPc];
+    return loc ? makeLoc(loc[0], loc[1]) : null;
+  }
+
+  run() {
+    const code = this.code;
+    const stack = this.stack;
+    this.pc = this.startPc;
+    for (;;) {
+      const pc = this.pc;
+      if (pc >= code.length) break;
+      const opPc = pc;
+      const op = code[pc];
+      this.pc = pc + 1;
+      const node = this.nodeAt(opPc);
+      switch (op) {
+        case OP.CONST: stack.push(this.consts[code[this.pc++]]); break;
+        case OP.POP: stack.pop(); break;
+        case OP.DUP: stack.push(stack[stack.length - 1]); break;
+        case OP.LOAD: {
+          const name = this.names[code[this.pc++]];
+          stack.push(this.rt.lookupName(name, node));
+          break;
+        }
+        case OP.STORE: {
+          const name = this.names[code[this.pc++]];
+          this.rt.assignName(name, stack.pop(), node);
+          break;
+        }
+        case OP.LOAD_BUILTIN: {
+          const name = BUILTIN_NAME_BY_CODE[code[this.pc++]];
+          stack.push(this.rt.lookupBuiltin(name).value);
+          break;
+        }
+        case OP.LOAD_ATTR: {
+          const name = ATTR_BY_CODE[code[this.pc++]];
+          stack.push(attrRead(name, this.ctx));
+          break;
+        }
+        case OP.STORE_ATTR: {
+          const name = ATTR_BY_CODE[code[this.pc++]];
+          attrWrite(name, stack.pop(), this.ctx, node);
+          break;
+        }
+        case OP.LOAD_FUNC: {
+          const fn = this.funcs[code[this.pc++]];
+          stack.push({ t: 'func', name: fn.name });
+          break;
+        }
+        case OP.LOAD_UNIFORM: stack.push(this.uniforms[code[this.pc++]]); break;
+        case OP.STORE_UNIFORM: this.uniforms[code[this.pc++]] = stack.pop(); break;
+        case OP.UNARY: {
+          const uop = UNARY_OPS[code[this.pc++]];
+          const v = stack.pop();
+          if (uop === '!') {
+            if (!isNum(v) && !isBool(v)) throw runtimeError(`'!' requires a num/bool, got ${typeName(v)}`, node);
+            stack.push(!truthy(v, node));
+          } else {
+            if (isNum(v)) stack.push(-v);
+            else if (isVec(v)) { const cc = vecComps(v).map(x => -x); stack.push(mkVec(vecDim(v), cc)); }
+            else if (isMat(v)) { const m = v.m.map(row => row.map(x => -x)); stack.push(v.t === 'mat3' ? mat3(m) : mat4(m)); }
+            else throw runtimeError(`unary '-' not supported for ${typeName(v)}`, node);
+          }
+          break;
+        }
+        case OP.BINARY: {
+          const bop = BIN_OPS[code[this.pc++]];
+          const b = stack.pop();
+          const a = stack.pop();
+          stack.push(binaryOp(bop, a, b, node));
+          break;
+        }
+        case OP.ARRAY: {
+          const count = code[this.pc++];
+          const items = new Array(count);
+          for (let i = count - 1; i >= 0; i--) items[i] = stack.pop();
+          stack.push(items);
+          break;
+        }
+        case OP.INDEX: {
+          const idx = stack.pop();
+          const arr = stack.pop();
+          if (!Array.isArray(arr)) throw runtimeError(`index access requires an array, got ${typeName(arr)}`, node);
+          const n = expectInt(idx, 'array index', node);
+          if (n < 0 || n >= arr.length) throw runtimeError(`array index ${n} out of bounds (size ${arr.length})`, node);
+          stack.push(arr[n]);
+          break;
+        }
+        case OP.INDEX_STORE: {
+          const idx = stack.pop();
+          const arr = stack.pop();
+          const value = stack.pop();
+          if (!Array.isArray(arr)) throw runtimeError('indexed assignment target is not an array', node);
+          const n = expectInt(idx, 'array index', node);
+          if (n < 0 || n >= arr.length) throw runtimeError(`array index ${n} out of bounds (size ${arr.length})`, node);
+          arr[n] = value;
+          stack.push(value);
+          break;
+        }
+        case OP.COMP: {
+          const comp = ['x', 'y', 'z'][code[this.pc++]];
+          const v = stack.pop();
+          if (!isVec(v)) throw runtimeError(`component access requires a vector, got ${typeName(v)}`, node);
+          if (v.t === 'vec2' && comp === 'z') throw runtimeError(`vec2 has no component '${comp}'`, node);
+          stack.push(v[comp]);
+          break;
+        }
+        case OP.COMP_STORE: {
+          const comp = ['x', 'y', 'z'][code[this.pc++]];
+          const old = stack.pop();
+          const nv = stack.pop();
+          if (!isVec(old)) throw runtimeError('component assignment target is not a vector', node);
+          if (old.t === 'vec2' && comp === 'z') throw runtimeError(`vec2 has no component '${comp}'`, node);
+          stack.push(setVecComp(old, comp, expectNum(nv, 'component value', node)));
+          break;
+        }
+        case OP.COMP_STORE_INDEX: {
+          const comp = ['x', 'y', 'z'][code[this.pc++]];
+          const idx = stack.pop();
+          const arr = stack.pop();
+          const nv = stack.pop();
+          if (!Array.isArray(arr)) throw runtimeError('indexed assignment target is not an array', node);
+          const n = expectInt(idx, 'array index', node);
+          if (n < 0 || n >= arr.length) throw runtimeError(`array index ${n} out of bounds (size ${arr.length})`, node);
+          const old = arr[n];
+          if (!isVec(old)) throw runtimeError('component assignment target is not a vector', node);
+          if (old.t === 'vec2' && comp === 'z') throw runtimeError(`vec2 has no component '${comp}'`, node);
+          const updated = setVecComp(old, comp, expectNum(nv, 'component value', node));
+          arr[n] = updated;
+          stack.push(updated);
+          break;
+        }
+        case OP.UNPACK: {
+          const count = code[this.pc++];
+          const v = stack.pop();
+          const vals = unpackValues(v, count, node);
+          for (let i = 0; i < vals.length; i++) stack.push(vals[i]);
+          break;
+        }
+        case OP.STATIC: {
+          const name = this.names[code[this.pc++]];
+          const value = stack.pop();
+          if (!this.statics.has(name)) this.statics.set(name, value);
+          break;
+        }
+        case OP.JUMP: this.pc = code[this.pc]; break;
+        case OP.JUMP_IF_FALSE: {
+          const target = code[this.pc++];
+          if (!truthy(stack.pop(), node)) this.pc = target;
+          break;
+        }
+        case OP.JUMP_IF_TRUE: {
+          const target = code[this.pc++];
+          if (truthy(stack.pop(), node)) this.pc = target;
+          break;
+        }
+        case OP.CALL_BUILTIN: {
+          const bidx = code[this.pc++];
+          const argCount = code[this.pc++];
+          const args = [];
+          for (let i = 0; i < argCount; i++) args.push(stack.pop());
+          args.reverse();
+          stack.push(callBuiltin(BUILTIN_BY_CODE[bidx], args, this.rt, node));
+          break;
+        }
+        case OP.CALL_USER: {
+          const fidx = code[this.pc++];
+          const argCount = code[this.pc++];
+          const args = [];
+          for (let i = 0; i < argCount; i++) args.push(stack.pop());
+          args.reverse();
+          this.enterFunction(fidx, args, node);
+          break;
+        }
+        case OP.CALL_VALUE: {
+          const argCount = code[this.pc++];
+          const args = [];
+          for (let i = 0; i < argCount; i++) args.push(stack.pop());
+          args.reverse();
+          const callee = stack.pop();
+          if (!isFunc(callee)) throw runtimeError(`value of type ${typeName(callee)} is not callable`, node);
+          const fidx = this.funcIdxByName.get(callee.name);
+          if (fidx == null) throw runtimeError(`function '${callee.name}' not found`, node);
+          this.enterFunction(fidx, args, node);
+          break;
+        }
+        case OP.METHOD: {
+          const midx = code[this.pc++];
+          const argCount = code[this.pc++];
+          const args = [];
+          for (let i = 0; i < argCount; i++) args.push(stack.pop());
+          args.reverse();
+          const obj = stack.pop();
+          if (!Array.isArray(obj)) throw runtimeError(`method '.${METHOD_BY_CODE[midx]}()' requires an array, got ${typeName(obj)}`, node);
+          stack.push(applyArrayMethod(obj, METHOD_BY_CODE[midx], args, this.rt, node));
+          break;
+        }
+        case OP.ENTER_SCOPE: this.rt.pushScope(new Map()); break;
+        case OP.EXIT_SCOPE: this.rt.popScope(); break;
+        case OP.LOOP_GUARD: {
+          const slot = code[this.pc++];
+          const v = (this.loopCounters[slot] = (this.loopCounters[slot] || 0) + 1);
+          if (v > MAX_LOOP_ITERATIONS) {
+            throw runtimeError(`loop iteration limit (${MAX_LOOP_ITERATIONS}) exceeded`, node);
+          }
+          break;
+        }
+        case OP.RETURN: {
+          const value = stack.pop();
+          const targetDepth = this.scopeDepthStack.pop();
+          while (this.rt.scopes.length > targetDepth) this.rt.popScope();
+          this.rt.inFunction = this.inFunctionStack.pop();
+          this.rt.funcDepth--;
+          this.pc = this.callStack.pop();
+          stack.push(value);
+          break;
+        }
+        default:
+          throw new Error(`unknown bytecode op ${op}`);
+      }
+    }
+    this.rt.popScope();
+    return stack;
+  }
+
+  enterFunction(fidx, args, node) {
+    if (this.rt.funcDepth >= MAX_RECURSION_DEPTH) {
+      throw runtimeError(`maximum recursion depth (${MAX_RECURSION_DEPTH}) exceeded`, node);
+    }
+    const fn = this.funcs[fidx];
+    this.rt.funcDepth++;
+    this.inFunctionStack.push(this.rt.inFunction);
+    this.rt.inFunction = true;
+    this.scopeDepthStack.push(this.rt.scopes.length);
+    this.callStack.push(this.pc);
+    this.rt.pushScope(new Map());
+    for (let i = 0; i < fn.params.length; i++) {
+      this.rt.currentScope().set(this.names[fn.params[i]], i < args.length ? args[i] : 0);
+    }
+    this.pc = this.funcAddr[fidx];
+  }
+}
+
+/* =========================================================================
  * 导出 API
  * ======================================================================= */
 
@@ -2314,15 +3210,27 @@ export function createStatics() {
   return new Map();
 }
 
+// 计算 uniform 值（process 中与粒子无关的不变表达式，每个 (fx,t) 广播一次）。
+export function runUniformPrelude(program, objState, statics, ctx) {
+  const varNames = ctx && ctx.vars ? Object.keys(ctx.vars) : [];
+  const globalNames = objState && objState.globals ? [...objState.globals.keys()].sort() : [];
+  const compiled = getCompiledProgram(program, varNames, globalNames);
+  const uniforms = new Array(compiled.uniformCount);
+  if (compiled.prelude.length) {
+    const vm = new Vm(compiled, objState, statics, ctx, uniforms, compiled.prelude, compiled.preludeLocs, 0);
+    vm.run();
+  }
+  return uniforms;
+}
+
 // 执行 process（每粒子、每个时间点）。写入 ctx.out 并返回 ctx.out。
 export function evalProcess(program, objState, statics, ctx) {
   ensureOut(ctx);
-  const rt = new Runtime('process', program, objState, statics, null, ctx);
-  rt.pushScope(new Map());
-  try {
-    for (const st of program.process) rt.execStmt(st);
-  } finally {
-    rt.popScope();
-  }
+  const varNames = ctx && ctx.vars ? Object.keys(ctx.vars) : [];
+  const globalNames = objState && objState.globals ? [...objState.globals.keys()].sort() : [];
+  const compiled = getCompiledProgram(program, varNames, globalNames);
+  const uniforms = (ctx && ctx.uniforms) || runUniformPrelude(program, objState, statics, ctx);
+  const vm = new Vm(compiled, objState, statics, ctx, uniforms, null, null, compiled.mainStart);
+  vm.run();
   return ctx.out;
 }

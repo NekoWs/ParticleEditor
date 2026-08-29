@@ -15,7 +15,7 @@ import { pushUndo } from '../state/undo.js';
 import { rebuildPoints } from './animation.js';
 import { refreshParticleTree } from '../ui/tree.js';
 import { refreshFunctionPanel } from '../ui/panels.js';
-import { parseProgram, createObjectState, runSetup, createStatics, evalProcess } from './script-lang.js';
+import { parseProgram, createObjectState, runSetup, createStatics, evalProcess, runUniformPrelude } from './script-lang.js';
 
 // 主循环中 1 秒 = 20 tick（见 main.js 的 `state.time += dt * 20`）。
 const TICKS_PER_SEC = 20;
@@ -25,17 +25,14 @@ const DT_PER_TICK = 1 / TICKS_PER_SEC;
  * 脚本编译缓存
  * ---------------------------------------------------------------------- */
 
-function scriptSource(fx) {
-  const s = (fx.setup || '').trim();
-  const p = (fx.process || '').trim();
-  return 'setup {\n' + s + '\n}\nprocess {\n' + p + '\n}\n';
-}
-
 export function getProgram(fx) {
-  const src = scriptSource(fx);
-  if (fx._program === undefined || fx._programSrc !== src) {
-    fx._program = parseProgram(src);
-    fx._programSrc = src;
+  // 只比较两端源码，避免每次调用拼接整段字符串（getProgram 处于每粒子热路径）。
+  const setup = (fx.setup || '').trim();
+  const process = (fx.process || '').trim();
+  if (fx._program === undefined || fx._programSrcSetup !== setup || fx._programSrcProcess !== process) {
+    fx._program = parseProgram('setup {\n' + setup + '\n}\nprocess {\n' + process + '\n}\n');
+    fx._programSrcSetup = setup;
+    fx._programSrcProcess = process;
   }
   return fx._program;
 }
@@ -137,14 +134,36 @@ function getObjectState(fx) {
   return objState;
 }
 
+// 每 (fx, n, t, dt) 求值上下文：vars 对象与 uniform 值只算一次，同帧所有粒子广播。
+function getEvalContext(fx, objState, n, t, dt) {
+  const key = (t || 0) + '|' + n + '|' + (dt || 0);
+  if (fx._evalCtx && fx._evalCtx.key === key) return fx._evalCtx;
+  const varsObj = varsAt(fx, t || 0);
+  const life = lifeAt(fx, t || 0);
+  const program = getProgram(fx);
+  const preCtx = {
+    i: 0, n, t: t || 0, dt: dt || 0,
+    life, uv_x: 0, uv_y: 0,
+    vars: varsObj, fastMath: !!fx.fastMath,
+    out: { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0 },
+  };
+  const uniforms = runUniformPrelude(program, objState, null, preCtx);
+  const ctx = { key, varsObj, life, uniforms };
+  fx._evalCtx = ctx;
+  return ctx;
+}
+
 function evalParticleFor(fx, objState, statics, i, n, t, dt) {
   const program = getProgram(fx);
+  const evalCtx = getEvalContext(fx, objState, n, t || 0, dt || 0);
   const uv = uvFor(fx, n, i);
   const ctx = {
     i, n, t: t || 0, dt: dt || 0,
-    life: lifeAt(fx, t || 0),
+    life: evalCtx.life,
     uv_x: uv.uv_x, uv_y: uv.uv_y,
-    vars: varsAt(fx, t || 0),
+    vars: evalCtx.varsObj,
+    fastMath: !!fx.fastMath,
+    uniforms: evalCtx.uniforms,
     out: { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0 },
   };
   evalProcess(program, objState, statics, ctx);
@@ -236,11 +255,14 @@ export function rebuildFunctionObject(fx) {
   // 失效脚本与对象级缓存
   fx._program = undefined;
   fx._programSrc = undefined;
+  fx._programSrcSetup = undefined;
+  fx._programSrcProcess = undefined;
   fx._objState = undefined;
   fx._compiledFn = undefined;
   fx._compiledCode = undefined;
   fx._varNames = undefined;
   fx._constVarVals = undefined;
+  fx._evalCtx = undefined;
 
   const n = Math.max(1, Math.round(fx.count) || 1);
   const prefix = fx.id + ':p';
@@ -359,6 +381,7 @@ export function createFunctionObject(presetId) {
     process: '[x,y,z] = [0, 0, 0];\n[r,g,b,a] = [1,1,1,1];\nglow = 0;\nlight = 0',
     seed: 0,
     vars: {}, duration: 100, step: 5, preset: null, params: null,
+    fastMath: false,
   };
   state.functions.push(fx);
   if (presetId) applyPreset(fx, presetId);

@@ -462,7 +462,16 @@ export function currentVisualDerived(p, T) {
   return { pos, color: r.color, scale: scaleVec };
 }
 
+// 结构变化（轨道/粒子/函数对象）时由 rebuildIndexes 失效；播放/拖动期间不失效。
+let _maxTickCache = 0;
+let _maxTickValid = false;
+
+export function invalidateMaxTickCache() {
+  _maxTickValid = false;
+}
+
 export function maxTick() {
+  if (_maxTickValid) return _maxTickCache;
   let m = 0;
   for (const tr of state.tracks) for (const k of tr.kf) m = Math.max(m, k[0]);
   // 粒子起始时间与有限寿命计入时长；函数对象跨度 = st + extent（变量关键帧 或 依赖 t 时的 duration）
@@ -480,7 +489,9 @@ export function maxTick() {
     const end = (fx.st || 0) + extent;
     if (end > m) m = end;
   }
-  return Math.ceil(m);
+  _maxTickCache = Math.ceil(m);
+  _maxTickValid = true;
+  return _maxTickCache;
 }
 
 // 速度位移积分：按时间计算（任何时刻都生效，含非播放/拖动时间轴），渲染期叠加不改数据。

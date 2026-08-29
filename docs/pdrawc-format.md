@@ -121,7 +121,7 @@ count × {
   seed                      varint：随机种子（有符号截断后按 int 解释）
   duration                  varint：tick
   st                        varint：入场 tick
-  flags                     1 byte：bit0=hasEnt, bit1=hasUV
+  flags                     1 byte：bit0=hasEnt, bit1=hasUV, bit2=fastMath
   [ent]                     仅 flags.hasEnt 时存在：见 §3.2
   [uv]                      仅 flags.hasUV 时存在：见 §3.1
   varCount                  varint

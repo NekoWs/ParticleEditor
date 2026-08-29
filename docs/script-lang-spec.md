@@ -123,6 +123,21 @@ assert(cond, "msg");            // 仅 setup；cond 为 false 时抛错
 - `fx.vars`：只读注入，脚本不能对其赋值。
 - 函数可读外层 `global` 与调用点可见的内置量；函数不捕获普通局部变量（按值传参）。
 
+### 6.1 名称遮蔽与保留字
+
+- **函数名可作为普通变量名**（含内建函数名与用户函数名）：`sin = 3; x = sin;` 合法，
+  值位置按普通变量查找（局部 → global → static → vars → 常量 → 函数值）。
+  只有 `name(...)` 调用位置才把该名字解析为函数调用（内建函数优先于用户函数），
+  即调用位置不受同名变量遮蔽。
+- **粒子属性名（`x y z r g b a vx vy vz sc glow light`）仅在 `process` 中保留**：
+  - `setup` 中它们可作为普通变量 / `global` 名；`global x = 3` 合法。
+  - `setup` 中声明的同名 `global` **不会**在 `process` 中遮蔽粒子属性：
+    `process` 里这些名字始终读写当前粒子属性。
+- **内置只读量**：`n`/`t` 在两个阶段都只读；`i`/`idx`/`dt`/`uv_x`/`uv_y`/`life`
+  在 `process` 只读，在 `setup` 中不作为内置量存在、可作为普通变量/`global` 名
+  （`setup` 中声明的同名 `global` 同样不会在 `process` 中遮蔽对应内置量）。
+- 关键字与常量名（`TAU`、`HALF_PI` 等）仍不可作为变量名。
+
 ## 7. 类型与运算
 
 ### 算术
@@ -157,7 +172,8 @@ process 中对其赋值即写当前粒子输出：
 - `glow`：`>0.5` 视为 true。
 - `light`：整数，钳制到 `[0,15]`。
 
-这些属性名不能用于普通变量/函数参数/数组下标名。
+这些属性名在 `process` 中不能用于普通变量/函数参数/数组下标名；
+`setup` 中可作为普通变量/`global` 名（见 §6.1，且不会反向遮蔽 `process` 粒子属性）。
 
 ## 9. 内置只读量
 
@@ -171,6 +187,9 @@ process 中对其赋值即写当前粒子输出：
   - `R = ceil(n / C)`；`col = i % C`；`row = floor(i / C)`。
   - `uv_x = (C == 1) ? 0 : col / (C - 1)`。
   - `uv_y = (R == 1) ? 0 : row / (R - 1)`。
+
+> `i`/`idx`/`dt`/`uv_x`/`uv_y`/`life` 仅在 `process` 中作为内置只读量；
+> `setup` 中它们不存在内置含义，可作为普通变量/`global` 名（见 §6.1）。
 
 ## 10. 数组
 
@@ -248,6 +267,15 @@ process 中对其赋值即写当前粒子输出：
 ### 调试（仅 setup）
 - `print(expr1, ...)`。
 - `assert(cond, "msg")`。
+
+### 快速标量数学近似（`fx.fastMath`，可选）
+- 函数对象 `fx.fastMath = true` 时，**仅 `process`** 中的下列内建标量函数改用快速近似实现：
+  `sin cos tan asin acos atan atan2 exp log ln pow`。
+- 精度目标：`sin/cos/tan` 最大绝对误差 ≤ 1e-4；`asin/acos/atan/atan2/exp/log/ln/pow` 相对误差 ≤ 1e-4。
+- `setup` 与 `fx.fastMath = false` 时仍用精确实现；`sqrt` 保持原生；
+  内部矩阵/缓动函数（`rotX/rotZ/ease_*` 等）实现里的三角运算不切换。
+- 两端（编辑器 JS 与播放器 Kotlin）使用同一套公式与运算顺序，保证逐位一致。
+- 默认关闭（`.pdraw` 函数对象缺省 `fm` / `.pdrawc` 函数 flags bit2 为 0）。
 
 ## 13. 常量
 

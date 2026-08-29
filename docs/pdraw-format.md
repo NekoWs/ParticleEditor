@@ -152,14 +152,15 @@
   "preset": "sin",              // 可选，预设 id
   "params": { "amp": 2 },       // 可选，预设参数
   "ui": { ... },                // 可选，拼图编辑器布局（对播放无意义）
-  "uv": { ... }                 // 可选，函数对象级 UV
+  "uv": { ... },                // 可选，函数对象级 UV
+  "fm": 1                       // 可选，fastMath：process 标量数学近似；缺省/0 = 关闭
 }
 ```
 
 - `vars`：`{ 变量名: { b: 数值基值, kf: [[tick,value,easing],...] } }`。
   当前编辑器使用**数值基值 + 关键帧**模型（不再使用表达式字符串）。
 - 函数对象脚本语法见 [`script-lang-spec.md`](./script-lang-spec.md)。
-- 解析回退：`name→'函数对象'`、`center→[0,0,0]`、`count→30`、`duration→0`、`step→5`、`st→0`、`setup/process→''`、`seed→0`。
+- 解析回退：`name→'函数对象'`、`center→[0,0,0]`、`count→30`、`duration→0`、`step→5`、`st→0`、`setup/process→''`、`seed→0`、`fm→false`。
 
 ---
 

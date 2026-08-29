@@ -168,6 +168,7 @@ export function serializeFunction(fx) {
   if (fx.params) o.params = { ...fx.params };
   if (fx.ui) o.ui = JSON.parse(JSON.stringify(fx.ui));
   if (fx.uv && fx.uv.texture) o.uv = serializeUV(fx.uv);
+  if (fx.fastMath) o.fm = 1;
   return o;
 }
 export function parseFunction(o) {
@@ -183,6 +184,7 @@ export function parseFunction(o) {
     preset: o.preset || null, params: o.params ? { ...o.params } : null,
     ui: o.ui || null,
     uv: parseUV(o.uv),
+    fastMath: !!o.fm,
   };
 }
 

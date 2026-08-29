@@ -248,7 +248,8 @@ function encodeBody(state, texPngOf) {
     w.varint(fx.st || 0);
     const hasEnt = !!(fx.ent && fx.ent.p);
     const hasUV = !!(fx.uv && fx.uv.texture && texIndex.has(fx.uv.texture));
-    w.u8((hasEnt ? 1 : 0) | (hasUV ? 2 : 0));
+    const fastMath = !!fx.fastMath;
+    w.u8((hasEnt ? 1 : 0) | (hasUV ? 2 : 0) | (fastMath ? 4 : 0));
     if (hasEnt) writeEnt(w, fx.ent);
     if (hasUV) writeUV(w, fx.uv, texIndex.get(fx.uv.texture));
     const vars = Object.entries(fx.vars || {});
@@ -442,6 +443,7 @@ export async function decodePdrawc(bytes) {
     const flags = br.u8();
     const ent = (flags & 1) ? readEnt(br) : null;
     const uv = (flags & 2) ? readUV(br) : null;
+    const fastMath = !!(flags & 4);
     const varCount = br.varint();
     const vars = [];
     for (let j = 0; j < varCount; j++) {
@@ -450,7 +452,7 @@ export async function decodePdrawc(bytes) {
       const kf = readKf(br);
       vars.push({ name, base, kf });
     }
-    functions.push({ center, count, setup, process, seed, duration, st, ent, uv, vars });
+    functions.push({ center, count, setup, process, seed, duration, st, ent, uv, vars, fastMath });
   }
 
   const trackCount = br.varint();
