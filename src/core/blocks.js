@@ -276,7 +276,17 @@ export function stmtToCode(s) {
 }
 
 export function statementsToCode(stmts) {
-  return stmts.map(stmtToCode).join(';\n');
+  let out = '';
+  for (const s of stmts) {
+    const code = stmtToCode(s);
+    if (out) {
+      const last = out.trimEnd();
+      if (last.endsWith('}') || last.endsWith(';')) out += '\n';
+      else out += ';\n';
+    }
+    out += code;
+  }
+  return out;
 }
 
 /* =========================================================================
@@ -652,12 +662,13 @@ export function stmtToNode(stmt) {
 /** 把代码文本拆成顶层语句（尊重字符串 / 括号 / 花括号，避免在 if/for/while 体内误拆）。 */
 export function splitStatements(code) {
   const out = [];
+  const src = code || '';
   let cur = '';
   let depth = 0;
   let inStr = false;
   let esc = false;
-  for (let i = 0; i < (code || '').length; i++) {
-    const c = code[i];
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
     if (inStr) {
       cur += c;
       if (esc) { esc = false; }
@@ -667,7 +678,23 @@ export function splitStatements(code) {
     }
     if (c === '"') { inStr = true; cur += c; continue; }
     if (c === '(' || c === '[' || c === '{') { depth++; cur += c; continue; }
-    if (c === ')' || c === ']' || c === '}') { depth = Math.max(0, depth - 1); cur += c; continue; }
+    if (c === ')' || c === ']') { depth = Math.max(0, depth - 1); cur += c; continue; }
+    if (c === '}') {
+      depth = Math.max(0, depth - 1);
+      cur += c;
+      if (depth === 0) {
+        // 块结束后若后面不是 else / while（do-while），视为语句边界
+        let j = i + 1;
+        while (j < src.length && /\s/.test(src[j])) j++;
+        const look = src.slice(j, j + 5);
+        if (!look.startsWith('else') && !look.startsWith('while')) {
+          const s = cur.trim();
+          if (s) out.push(s);
+          cur = '';
+        }
+      }
+      continue;
+    }
     if (c === ';' && depth === 0) {
       const s = cur.trim();
       if (s) out.push(s);
