@@ -191,38 +191,40 @@ function hexPath(c, x, y, w, h) {
   c.lineTo(x, y + h / 2);
   c.closePath();
 }
-/** 普通语句块：顶部凸起 + 底部凹槽；noBump 时去掉顶部凸起（起点块下方第一块）。 */
+/** 普通语句块：顶部凹口（凹入）+ 底部凸起（凸出）；noBump 时顶部平直（起始块下方第一块）。 */
 function stmtPath(c, x, y, w, h, noBump) {
   const T = BUMP_H, bx = BUMP_X, bw = BUMP_W;
   const bxl = x + bx, bxr = bxl + bw;
   const r = Math.min(10, w / 2, h / 2);
+  const n = Math.min(T / 2, bw / 2);
   const top = y, bot = y + h;
   c.beginPath();
+  c.moveTo(x + r, top);
   if (noBump) {
-    c.moveTo(x + r, top);
+    // 顶部平直：无凹口
   } else {
-    c.moveTo(bxl + T / 2, top - T);
-    c.arcTo(bxr, top - T, bxr, top, T / 2);
-    c.lineTo(bxr, top);
+    // 顶部凹口：向内凹入
+    c.lineTo(bxl, top);
+    c.quadraticCurveTo(bxl, top + T, bxl + n, top + T);
+    c.lineTo(bxr - n, top + T);
+    c.quadraticCurveTo(bxr, top + T, bxr, top);
   }
   c.lineTo(x + w - r, top);
   c.arcTo(x + w, top, x + w, top + r, r);
   c.lineTo(x + w, bot - r);
   c.arcTo(x + w, bot, x + w - r, bot, r);
+  // 底部凸起：向外凸出
   c.lineTo(bxr, bot);
-  c.quadraticCurveTo(bxr, bot - T, bxl + bw / 2, bot - T);
-  c.quadraticCurveTo(bxl, bot - T, bxl, bot);
+  c.quadraticCurveTo(bxr, bot + T, bxr - n, bot + T);
+  c.lineTo(bxl + n, bot + T);
+  c.quadraticCurveTo(bxl, bot + T, bxl, bot);
   c.lineTo(x + r, bot);
   c.arcTo(x, bot, x, bot - r, r);
   c.lineTo(x, top + r);
   c.arcTo(x, top, x + r, top, r);
-  if (!noBump) {
-    c.lineTo(bxl, top);
-    c.quadraticCurveTo(bxl, top - T, bxl + T / 2, top - T);
-  }
   c.closePath();
 }
-/** hat 起点块：圆头，无底部凹槽（避免下方内容溢出）。 */
+/** hat 起点块：圆头，无顶部凹口（起始块上无上一块），底部平直接第一块。 */
 function hatPath(c, x, y, w, h) {
   rrPath(c, x, y, w, h, Math.min(12, w / 2, h / 2));
 }
@@ -1742,14 +1744,16 @@ function updateDrag(e) {
   }
   if (d.mode === 'chain-move') {
     const pos = H.getBctx().layout[d.key] || H.getBctx().layout.chain;
-    pos.x = d.lx + (e.clientX - d.startX);
-    pos.y = d.ly + (e.clientY - d.startY);
+    const scale = H.getBctx().layout.view.scale || 1;
+    pos.x = d.lx + (e.clientX - d.startX) / scale;
+    pos.y = d.ly + (e.clientY - d.startY) / scale;
     puzzleCanvasRender();
     return;
   }
   if (d.mode === 'frag-move') {
-    d.frag.x = d.lx + (e.clientX - d.startX);
-    d.frag.y = d.ly + (e.clientY - d.startY);
+    const scale = H.getBctx().layout.view.scale || 1;
+    d.frag.x = d.lx + (e.clientX - d.startX) / scale;
+    d.frag.y = d.ly + (e.clientY - d.startY) / scale;
     puzzleCanvasRender();
     return;
   }
