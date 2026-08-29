@@ -832,7 +832,7 @@ export function snapBctx() {
   return {
     chain: cloneStmts(bctx.chain),
     setupChain: cloneStmts(bctx.setupChain),
-    funcs: bctx.funcs.map(f => ({ stmt: cloneStmt(f.stmt), x: f.x, y: f.y })),
+    funcs: (bctx.funcs || []).map(f => ({ stmt: cloneStmt(f.stmt), x: f.x, y: f.y })),
     frags: bctx.frags.map(f => ({ stmts: cloneStmts(f.stmts), x: f.x, y: f.y })),
     varExprs: deepCloneVarExprs(bctx.varExprs),
     chainPos: bctx.layout.chain ? { x: bctx.layout.chain.x, y: bctx.layout.chain.y } : null,
@@ -842,7 +842,7 @@ export function snapBctx() {
 export function restoreBctx(s) {
   bctx.chain = cloneStmts(s.chain);
   bctx.setupChain = cloneStmts(s.setupChain);
-  bctx.funcs = s.funcs.map(f => ({ stmt: cloneStmt(f.stmt), x: f.x, y: f.y }));
+  bctx.funcs = (s.funcs || []).map(f => ({ stmt: cloneStmt(f.stmt), x: f.x, y: f.y }));
   bctx.frags = s.frags.map(f => ({ stmts: cloneStmts(f.stmts), x: f.x, y: f.y }));
   bctx.varExprs = deepCloneVarExprs(s.varExprs);
   bctx.layout.chain = s.chainPos ? { x: s.chainPos.x, y: s.chainPos.y } : null;
