@@ -140,9 +140,9 @@ export var LANGS = {
     'blk.piInfo': '圆周率 π ≈ 3.14159', 'blk.eInfo': '自然常数 e ≈ 2.71828',
     // —— 拼图：类型 / 内置变量 / 调色板 / 运算符 / 参数 ——
     'blk.type.scalar': '数字', 'blk.type.vec': '向量', 'blk.type.mat': '矩阵', 'blk.type.any': '任意',
-    'blk.stmt.if': '如果', 'blk.stmt.while': '当循环', 'blk.stmt.for': '计数循环', 'blk.stmt.do': '直到循环', 'blk.stmt.func': '函数', 'blk.stmt.global': '全局变量', 'blk.stmt.static': '静态变量', 'blk.stmt.break': '跳出循环', 'blk.stmt.continue': '继续循环', 'blk.stmt.return': '返回', 'blk.stmt.else': '否则',
+    'blk.stmt.if': '如果', 'blk.stmt.while': '当循环', 'blk.stmt.for': '计数循环', 'blk.stmt.do': '直到循环', 'blk.stmt.func': '函数', 'blk.stmt.global': '全局变量', 'blk.stmt.static': '静态变量', 'blk.stmt.break': '跳出循环', 'blk.stmt.continue': '继续循环', 'blk.stmt.return': '返回', 'blk.stmt.else': '否则', 'blk.stmt.else_if': '否则如果', 'blk.stmt.else.desc': '为如果块添加否则分支', 'blk.stmt.else_if.desc': '为如果块添加否则如果分支', 'blk.stmt.setup.desc': '对象初始化时执行一次', 'blk.stmt.process.desc': '每个粒子每帧执行', 'blk.stmt.func.desc': '定义顶层函数（可递归，供 setup/process 调用）', 'blk.repeatTimes': '次',
     'blk.var.i': '粒子序号（0 ~ n-1）', 'blk.var.n': '采样数（粒子总数）', 'blk.var.t': '当前时间（tick）',
-    'blk.pal.pos': '位置 / 速度', 'blk.pal.color': '颜色', 'blk.pal.appearance': '外观', 'blk.pal.logic': '逻辑', 'blk.pal.math': '数学',
+    'blk.pal.start': '起始块', 'blk.pal.pos': '位置 / 速度', 'blk.pal.color': '颜色', 'blk.pal.appearance': '外观', 'blk.pal.logic': '逻辑', 'blk.pal.math': '数学',
     'blk.pal.vec': '向量', 'blk.pal.mat': '矩阵', 'blk.pal.var': '变量', 'blk.pal.const': '常量',
     'blk.op.add': '加', 'blk.op.sub': '减', 'blk.op.mul': '乘', 'blk.op.div': '除', 'blk.op.mod': '取余', 'blk.op.pow': '幂',
     'blk.op.eq': '等于', 'blk.op.ne': '不等于', 'blk.op.lt': '小于', 'blk.op.le': '小于等于', 'blk.op.gt': '大于', 'blk.op.ge': '大于等于', 'blk.op.and': '且', 'blk.op.or': '或',
@@ -152,7 +152,7 @@ export var LANGS = {
     'blk.slot.scale': '缩放', 'blk.slot.light': '光照',
     // —— 拼图：语句块 ——
     'blk.stmt.pos.label': '位置', 'blk.stmt.pos.desc': '设置粒子位置 [x, y, z]',
-    'blk.stmt.pos_vec.label': '位置 ← 向量', 'blk.stmt.pos_vec.desc': '用向量设置粒子位置',
+    'blk.stmt.pos_vec.label': '位置 （提示：向量）', 'blk.stmt.pos_vec.desc': '用向量设置粒子位置',
     'blk.stmt.vel.label': '速度', 'blk.stmt.vel.desc': '设置粒子速度 [vx, vy, vz]',
     'blk.stmt.vel_vec.label': '速度', 'blk.stmt.vel_vec.desc': '用向量设置粒子速度',
     'blk.stmt.col.label': '颜色', 'blk.stmt.col.desc': '设置粒子颜色 [r, g, b, a]',
@@ -162,6 +162,9 @@ export var LANGS = {
     'blk.stmt.attr.label': '设置属性', 'blk.stmt.attr.desc': '设置单个属性值（x/y/z/…）',
     'blk.stmt.set.label': '临时变量', 'blk.stmt.set.desc': '定义临时变量并赋值',
     'blk.stmt.comment.label': '注释', 'blk.stmt.comment.desc': '添加注释（不执行）',
+    'blk.stmt.repeat.label': '重复执行', 'blk.stmt.repeat.desc': '无限重复执行内部积木',
+    'blk.stmt.repeat_n.label': '重复执行', 'blk.stmt.repeat_n.desc': '重复执行内部积木指定次数',
+    'blk.stmt.repeat_until.label': '重复执行直到', 'blk.stmt.repeat_until.desc': '重复执行直到条件为真',
     // —— 拼图：函数说明 ——
     'blk.func.sin.desc': '正弦函数', 'blk.func.cos.desc': '余弦函数', 'blk.func.tan.desc': '正切函数',
     'blk.func.asin.desc': '反正弦函数', 'blk.func.acos.desc': '反余弦函数', 'blk.func.atan.desc': '反正切函数',
@@ -321,9 +324,9 @@ export var LANGS = {
     'blk.piInfo': 'Pi π ≈ 3.14159', 'blk.eInfo': 'Euler\'s number e ≈ 2.71828',
     // —— 拼图：类型 / 内置变量 / 调色板 / 运算符 / 参数 ——
     'blk.type.scalar': 'Number', 'blk.type.vec': 'Vector', 'blk.type.mat': 'Matrix', 'blk.type.any': 'Any',
-    'blk.stmt.if': 'If', 'blk.stmt.while': 'While', 'blk.stmt.for': 'For', 'blk.stmt.do': 'Do-while', 'blk.stmt.func': 'Function', 'blk.stmt.global': 'Global', 'blk.stmt.static': 'Static', 'blk.stmt.break': 'Break', 'blk.stmt.continue': 'Continue', 'blk.stmt.return': 'Return', 'blk.stmt.else': 'Else',
+    'blk.stmt.if': 'If', 'blk.stmt.while': 'While', 'blk.stmt.for': 'For', 'blk.stmt.do': 'Do-while', 'blk.stmt.func': 'Function', 'blk.stmt.global': 'Global', 'blk.stmt.static': 'Static', 'blk.stmt.break': 'Break', 'blk.stmt.continue': 'Continue', 'blk.stmt.return': 'Return', 'blk.stmt.else': 'Else', 'blk.stmt.else_if': 'Else If', 'blk.stmt.else.desc': 'Add an else branch to an if block', 'blk.stmt.else_if.desc': 'Add an else-if branch to an if block', 'blk.stmt.setup.desc': 'Runs once during object init', 'blk.stmt.process.desc': 'Runs for every particle every frame', 'blk.stmt.func.desc': 'Defines a top-level function (recursive, callable from setup/process)', 'blk.repeatTimes': 'times',
     'blk.var.i': 'Particle index (0 ~ n-1)', 'blk.var.n': 'Sample count (total particles)', 'blk.var.t': 'Current time (tick)',
-    'blk.pal.pos': 'Position / Velocity', 'blk.pal.color': 'Color', 'blk.pal.appearance': 'Appearance', 'blk.pal.logic': 'Logic', 'blk.pal.math': 'Math',
+    'blk.pal.start': 'Hat Blocks', 'blk.pal.pos': 'Position / Velocity', 'blk.pal.color': 'Color', 'blk.pal.appearance': 'Appearance', 'blk.pal.logic': 'Logic', 'blk.pal.math': 'Math',
     'blk.pal.vec': 'Vector', 'blk.pal.mat': 'Matrix', 'blk.pal.var': 'Variable', 'blk.pal.const': 'Constants',
     'blk.op.add': 'Add', 'blk.op.sub': 'Subtract', 'blk.op.mul': 'Multiply', 'blk.op.div': 'Divide', 'blk.op.mod': 'Modulo', 'blk.op.pow': 'Power',
     'blk.op.eq': 'Equal', 'blk.op.ne': 'Not equal', 'blk.op.lt': 'Less than', 'blk.op.le': 'Less or equal', 'blk.op.gt': 'Greater than', 'blk.op.ge': 'Greater or equal', 'blk.op.and': 'And', 'blk.op.or': 'Or',
@@ -333,7 +336,7 @@ export var LANGS = {
     'blk.slot.scale': 'Scale', 'blk.slot.light': 'Light',
     // —— 拼图：语句块 ——
     'blk.stmt.pos.label': 'Position', 'blk.stmt.pos.desc': 'Set particle position [x, y, z]',
-    'blk.stmt.pos_vec.label': 'Position ← Vector', 'blk.stmt.pos_vec.desc': 'Set position from a vector',
+    'blk.stmt.pos_vec.label': 'Position (hint: Vector)', 'blk.stmt.pos_vec.desc': 'Set position from a vector',
     'blk.stmt.vel.label': 'Velocity', 'blk.stmt.vel.desc': 'Set particle velocity [vx, vy, vz]',
     'blk.stmt.vel_vec.label': 'Velocity', 'blk.stmt.vel_vec.desc': 'Set velocity from a vector',
     'blk.stmt.col.label': 'Color', 'blk.stmt.col.desc': 'Set particle color [r, g, b, a]',
@@ -343,6 +346,9 @@ export var LANGS = {
     'blk.stmt.attr.label': 'Set Property', 'blk.stmt.attr.desc': 'Set a single property value (x/y/z/…)',
     'blk.stmt.set.label': 'Local Variable', 'blk.stmt.set.desc': 'Define a local variable and assign',
     'blk.stmt.comment.label': 'Comment', 'blk.stmt.comment.desc': 'Add a comment (not executed)',
+    'blk.stmt.repeat.label': 'Repeat', 'blk.stmt.repeat.desc': 'Repeat the blocks inside forever',
+    'blk.stmt.repeat_n.label': 'Repeat', 'blk.stmt.repeat_n.desc': 'Repeat the blocks inside a number of times',
+    'blk.stmt.repeat_until.label': 'Repeat Until', 'blk.stmt.repeat_until.desc': 'Repeat the blocks inside until the condition is true',
     // —— 拼图：函数说明 ——
     'blk.func.sin.desc': 'Sine function', 'blk.func.cos.desc': 'Cosine function', 'blk.func.tan.desc': 'Tangent function',
     'blk.func.asin.desc': 'Arcsine function', 'blk.func.acos.desc': 'Arccosine function', 'blk.func.atan.desc': 'Arctangent function',

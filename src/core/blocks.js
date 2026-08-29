@@ -133,10 +133,14 @@ export const STMT_BLOCKS = {
   attr: { label: 'blk.stmt.attr.label', group: 'pos', named: true, desc: 'blk.stmt.attr.desc' },
   set: { label: 'blk.stmt.set.label', group: 'var', named: true, desc: 'blk.stmt.set.desc' },
   comment: { label: 'blk.stmt.comment.label', group: 'logic', named: true, desc: 'blk.stmt.comment.desc' },
+  repeat: { label: 'blk.stmt.repeat.label', group: 'logic', desc: 'blk.stmt.repeat.desc' },
+  repeat_n: { label: 'blk.stmt.repeat_n.label', group: 'logic', desc: 'blk.stmt.repeat_n.desc' },
+  repeat_until: { label: 'blk.stmt.repeat_until.label', group: 'logic', desc: 'blk.stmt.repeat_until.desc' },
 };
 
 /* —— 调色板分组（顺序即显示顺序；label 为 i18n 键 blk.pal.<id>） —— */
 export const PALETTE_GROUPS = [
+  { id: 'start', label: 'blk.pal.start' },
   { id: 'pos', label: 'blk.pal.pos' },
   { id: 'color', label: 'blk.pal.color' },
   { id: 'appearance', label: 'blk.pal.appearance' },
@@ -251,6 +255,9 @@ export function stmtComplete(s) {
     case 'return': return s.expr == null || exprComplete(s.expr);
     case 'if': case 'while': case 'do': return exprComplete(s.cond);
     case 'for': return String(s.cond || '').trim() !== '';
+    case 'repeat': return true;
+    case 'repeat_n': return exprComplete(s.count);
+    case 'repeat_until': return exprComplete(s.cond);
     case 'func': return String(s.name || '').trim() !== '';
     case 'global': case 'static':
       return String(s.name || '').trim() !== '' && (s.expr == null || exprComplete(s.expr));
@@ -289,7 +296,7 @@ export function exprToCode(node, parentPrec) {
     case 'func':
       s = node.name + '(' + node.args.map(a => exprToCode(a, 0)).join(', ') + ')'; p = ATOM_PREC; break;
     case 'array':
-      s = '[' + node.items.map(a => exprToCode(a, 0)).join(', ') + ']'; p = ATOM_PREC; break;
+      s = '[' + node.items.filter(a => exprComplete(a)).map(a => exprToCode(a, 0)).join(', ') + ']'; p = ATOM_PREC; break;
     case 'index':
       s = exprToCode(node.target, ATOM_PREC) + '[' + exprToCode(node.index, 0) + ']'; p = ATOM_PREC; break;
     case 'method':
@@ -397,6 +404,21 @@ function emitStmt(s, level, spans) {
     case 'for': {
       const body = emitList(s.body || [], level + 1, spans);
       return pad + 'for (' + (s.init || '') + '; ' + (s.cond || '') + '; ' + (s.inc || '') + ') {\n' + body + '\n' + pad + '}';
+    }
+    case 'repeat': {
+      const body = emitList(s.body || [], level + 1, spans);
+      return pad + 'while (true) {\n' + body + '\n' + pad + '}';
+    }
+    case 'repeat_n': {
+      const body = emitList(s.body || [], level + 1, spans);
+      // 循环变量 _rep 与代码解析端约定一致，保证往返稳定。
+      return pad + 'for (_rep = 0; _rep < ' + exprToCode(s.count, 0) + '; _rep = _rep + 1) {\n' + body + '\n' + pad + '}';
+    }
+    case 'repeat_until': {
+      const body = emitList(s.body || [], level + 1, spans);
+      // 「重复执行直到 cond」= while (!(cond))。
+      const cond = exprToCode(s.cond, 0);
+      return pad + 'while (!(' + cond + ')) {\n' + body + '\n' + pad + '}';
     }
     case 'func': {
       const body = emitList(s.body || [], level + 1, spans);
@@ -768,7 +790,11 @@ export function stmtToNode(stmt) {
     const bOpen = rest.indexOf('{');
     const bClose = matchDelim(rest, bOpen, '{', '}');
     if (bClose < 0) throw new Error(_et('err.stmtNeedBrace'));
-    return { kind: 'while', cond, body: codeToStatements(rest.slice(bOpen + 1, bClose)) };
+    const body = codeToStatements(rest.slice(bOpen + 1, bClose));
+    // Scratch 式循环在文本层映射回对应积木，保证往返稳定。
+    if (cond.kind === 'bool' && cond.value === true) return { kind: 'repeat', body };
+    if (cond.kind === 'not') return { kind: 'repeat_until', cond: cond.a, body };
+    return { kind: 'while', cond, body };
   }
   if (/^for\s*\(/.test(s)) {
     const open = s.indexOf('(');
@@ -779,7 +805,14 @@ export function stmtToNode(stmt) {
     const bOpen = rest.indexOf('{');
     const bClose = matchDelim(rest, bOpen, '{', '}');
     if (bClose < 0) throw new Error(_et('err.stmtNeedBrace'));
-    return { kind: 'for', init: parts[0] || '', cond: parts[1] || '', inc: parts[2] || '', body: codeToStatements(rest.slice(bOpen + 1, bClose)) };
+    const body = codeToStatements(rest.slice(bOpen + 1, bClose));
+    const init = parts[0] || '', cond = parts[1] || '', inc = parts[2] || '';
+    // 识别「重复执行 N 次」生成的 for (_rep = 0; _rep < N; _rep = _rep + 1) 模式。
+    const repN = /^_rep\s*<\s*([\s\S]+)$/.exec(cond.trim());
+    if (init.trim() === '_rep = 0' && inc.trim() === '_rep = _rep + 1' && repN) {
+      return { kind: 'repeat_n', count: parseExpr(repN[1].trim()), body };
+    }
+    return { kind: 'for', init, cond, inc, body };
   }
   if (/^do\s*\{/.test(s)) {
     const bOpen = s.indexOf('{');
