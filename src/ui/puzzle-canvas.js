@@ -814,15 +814,25 @@ function layoutChain(arr, x, y, out, ctx, opts) {
   const hasHead = !isFrag && !!opts.head;
   const headH = isFrag ? 0 : HAT_H;
   const ph = opts.placeholder || null;
-  let cy = y + headH;
-  let stackW = 0;
 
+  // 预量宽度，保证起始块与链内最宽积木对齐。
+  let stackW = 0;
+  const measure = [];
+  for (let i = 0; i < arr.length; i++) {
+    if (ph && ph.index === i) stackW = Math.max(stackW, ph.w || 0);
+    const d = layoutStmt(arr[i], x, y, measure, ctx, { noBump: i === 0 && !hasHead });
+    stackW = Math.max(stackW, d.w);
+  }
+  if (ph && (ph.index === arr.length || (arr.length === 0 && ph.index === 0))) {
+    stackW = Math.max(stackW, ph.w || 0);
+  }
+
+  let cy = y + headH;
   const placePh = () => {
     if (!ph) return;
     const pw = Math.max(120, ph.w || 0);
     const phh = Math.max(20, ph.h || 0);
     out.push({ kind: 'placeholder', shape: 'stmt', x, y: cy, w: pw, h: phh, segments: [] });
-    stackW = Math.max(stackW, pw);
     cy += phh;
   };
 
@@ -847,7 +857,6 @@ function layoutChain(arr, x, y, out, ctx, opts) {
     out.push(dropRegion(dropRef, i, x, cy - 5, Math.max(stackW, 120), 10));
     if (ph && ph.index === i) placePh();
     const d = layoutStmt(arr[i], x, cy, out, ctx, { noBump: i === 0 && !hasHead });
-    stackW = Math.max(stackW, d.w);
     cy += d.h;
   }
   out.push(dropRegion(dropRef, arr.length, x, cy - 5, Math.max(stackW, 120), 10));
