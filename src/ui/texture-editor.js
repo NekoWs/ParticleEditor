@@ -832,6 +832,15 @@ export function makeTexture(name, w, h, data) {
   return t;
 }
 
+// 贴图数据变化后的统一刷新：画布 + base64 缓存 + 列表 + UV 面板。
+function refreshTexAfterChange() {
+  renderTexCanvas();
+  refreshTexBase64Cache();
+  markTextureChanged();
+  refreshTexList();
+  refreshUVPanel();
+}
+
 export async function uploadTextureFile(file) {
   if (file.size > 5 * 1024 * 1024) { await modalAlert(t('alert.uploadFailed'), t('alert.texTooBig')); return; }
   if (!file.name.toLowerCase().endsWith('.png')) { await modalAlert(t('alert.uploadFailed'), t('alert.pngOnly')); return; }
@@ -848,11 +857,7 @@ export async function uploadTextureFile(file) {
   let n = name.trim(), k = 1;
   while (getTexture(n)) n = name.trim() + '_' + (k++);
   makeTexture(n, w, h, data);
-  renderTexCanvas();
-  refreshTexBase64Cache();
-  markTextureChanged();
-  refreshUVPanel();
-  refreshTexList();
+  refreshTexAfterChange();
 }
 
 // 新建：直接在列表中创建一个默认 16×16 的贴图并打开（大小可随后用右键「修改大小」调整）
@@ -861,11 +866,7 @@ export function createNewTexture() {
   while (getTexture('tex_' + k)) k++;
   const name = 'tex_' + k;
   makeTexture(name, 16, 16);
-  renderTexCanvas();
-  refreshTexBase64Cache();
-  markTextureChanged();
-  refreshUVPanel();
-  refreshTexList();
+  refreshTexAfterChange();
 }
 
 // 导出：把当前贴图以 PNG 格式下载（贴图本身随工程 Ctrl+S 实时保存，无需单独保存）
@@ -898,11 +899,7 @@ export function resizeTexture(name, w, h) {
   }
   t.data = nd; t.width = nw; t.height = nh;
   if (state.currentTexture === name) texState.selection = null;
-  renderTexCanvas();
-  refreshTexBase64Cache();
-  markTextureChanged();
-  refreshTexList();
-  refreshUVPanel();
+  refreshTexAfterChange();
 }
 
 /* =========================================================================
@@ -942,11 +939,7 @@ export async function renameTextureItem(oldName) {
   delete state.textures[oldName];
   state.textures[name] = nt;
   replaceTextureRef(oldName, name);
-  renderTexCanvas();
-  refreshTexBase64Cache();
-  markTextureChanged();
-  refreshTexList();
-  refreshUVPanel();
+  refreshTexAfterChange();
 }
 
 export async function deleteTextureItem(name) {
@@ -956,11 +949,7 @@ export async function deleteTextureItem(name) {
   if (state.currentTexture === name) state.currentTexture = null;
   replaceTextureRef(name, null);
   texState.selection = null;
-  renderTexCanvas();
-  refreshTexBase64Cache();
-  markTextureChanged();
-  refreshTexList();
-  refreshUVPanel();
+  refreshTexAfterChange();
 }
 
 /* =========================================================================

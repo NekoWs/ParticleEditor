@@ -596,13 +596,6 @@ function splitTopSemicolons(s) {
   return parts;
 }
 
-function parseBodyStmts(text) {
-  return splitStatements(text).map(s => {
-    try { return stmtToNode(s); }
-    catch (e) { return { kind: 'raw', text: s }; }
-  });
-}
-
 export function stmtToNode(stmt) {
   const s = (stmt || '').trim();
   if (s === 'break;' || s === 'break') return { kind: 'break' };
@@ -619,13 +612,13 @@ export function stmtToNode(stmt) {
     const bOpen = rest.indexOf('{');
     const bClose = matchDelim(rest, bOpen, '{', '}');
     if (bClose < 0) throw new Error(_et('err.stmtNeedBrace'));
-    const body = parseBodyStmts(rest.slice(bOpen + 1, bClose));
+    const body = codeToStatements(rest.slice(bOpen + 1, bClose));
     rest = rest.slice(bClose + 1).trim();
     let elseBody = null;
     if (rest.startsWith('else')) {
       const after = rest.slice(4).trim();
       if (/^if\b/.test(after)) elseBody = [stmtToNode(after)];
-      else elseBody = parseBodyStmts(stripBraces(after));
+      else elseBody = codeToStatements(stripBraces(after));
     }
     return { kind: 'if', cond, body, elseBody };
   }
@@ -638,7 +631,7 @@ export function stmtToNode(stmt) {
     const bOpen = rest.indexOf('{');
     const bClose = matchDelim(rest, bOpen, '{', '}');
     if (bClose < 0) throw new Error(_et('err.stmtNeedBrace'));
-    return { kind: 'while', cond, body: parseBodyStmts(rest.slice(bOpen + 1, bClose)) };
+    return { kind: 'while', cond, body: codeToStatements(rest.slice(bOpen + 1, bClose)) };
   }
   if (/^for\s*\(/.test(s)) {
     const open = s.indexOf('(');
@@ -649,7 +642,7 @@ export function stmtToNode(stmt) {
     const bOpen = rest.indexOf('{');
     const bClose = matchDelim(rest, bOpen, '{', '}');
     if (bClose < 0) throw new Error(_et('err.stmtNeedBrace'));
-    return { kind: 'for', init: parts[0] || '', cond: parts[1] || '', inc: parts[2] || '', body: parseBodyStmts(rest.slice(bOpen + 1, bClose)) };
+    return { kind: 'for', init: parts[0] || '', cond: parts[1] || '', inc: parts[2] || '', body: codeToStatements(rest.slice(bOpen + 1, bClose)) };
   }
   if (/^do\s*\{/.test(s)) {
     const bOpen = s.indexOf('{');
@@ -662,7 +655,7 @@ export function stmtToNode(stmt) {
     const open = rest.indexOf('(');
     const close = matchDelim(rest, open, '(', ')');
     const cond = parseExpr(rest.slice(open + 1, close).trim());
-    return { kind: 'do', body: parseBodyStmts(s.slice(bOpen + 1, bClose)), cond };
+    return { kind: 'do', body: codeToStatements(s.slice(bOpen + 1, bClose)), cond };
   }
   if (/^func\s+/.test(s)) {
     const after = s.slice(4).trim();
@@ -675,7 +668,7 @@ export function stmtToNode(stmt) {
     const bOpen = rest.indexOf('{');
     const bClose = matchDelim(rest, bOpen, '{', '}');
     if (bClose < 0) throw new Error(_et('err.stmtNeedBrace'));
-    return { kind: 'func', name, params, body: parseBodyStmts(rest.slice(bOpen + 1, bClose)) };
+    return { kind: 'func', name, params, body: codeToStatements(rest.slice(bOpen + 1, bClose)) };
   }
   if (/^(global|static)\s+/.test(s)) {
     const kind = s.startsWith('global') ? 'global' : 'static';

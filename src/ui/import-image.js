@@ -135,6 +135,14 @@ async function askResolution(defCols, defRows) {
   });
 }
 
+// 由源像素尺寸与目标网格计算粒子间距/缩放/居中偏移（静态图与 GIF 共用）。
+function importGridMetrics(w, h, cols, rows) {
+  const scaleX = w / cols, scaleY = h / rows;
+  const cellW = PARTICLE_SIZE_FACTOR * scaleX;
+  const cellH = PARTICLE_SIZE_FACTOR * scaleY;
+  return { scaleX, scaleY, cellW, cellH, offX: (cols - 1) / 2 * cellW, offZ: (rows - 1) / 2 * cellH };
+}
+
 async function importStaticPrepared(prepared, cols, rows) {
   const bitmap = prepared.bitmap;
   const w = prepared.w, h = prepared.h;
@@ -148,23 +156,19 @@ async function importStaticPrepared(prepared, cols, rows) {
   const rgba = resampleRGBA(data, w, h, cols, rows);
   // 粒子间距 = 粒子实际显示大小；缩小时每个粒子代表多个源像素，按比例放大粒子与间距，
   // 使导入后的整体尺寸不随目标分辨率变化，且相邻粒子互相贴合。
-  const scaleX = w / cols, scaleY = h / rows;
-  const cellW = PARTICLE_SIZE_FACTOR * scaleX;
-  const cellH = PARTICLE_SIZE_FACTOR * scaleY;
+  const g = importGridMetrics(w, h, cols, rows);
 
   pushUndo();
   const ids = [];
-  const offX = (cols - 1) / 2 * cellW;
-  const offZ = (rows - 1) / 2 * cellH;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const o = (r * cols + c) * 4;
       if (rgba[o + 3] < ALPHA_THRESHOLD_N) continue;
       const p = addParticle({
         // 源图行 0 = 顶部；世界 Z 越小离相机越远，故 row 0 放最远处（屏幕上方），避免上下镜像
-        pos: [c * cellW - offX, 0, r * cellH - offZ],
+        pos: [c * g.cellW - g.offX, 0, r * g.cellH - g.offZ],
         color: [rgba[o], rgba[o + 1], rgba[o + 2], rgba[o + 3]],
-        scale: [scaleX, scaleY, 1],
+        scale: [g.scaleX, g.scaleY, 1],
         glow: false,
         lightLevel: 0,
         life: 20,
@@ -248,23 +252,19 @@ async function importGifPrepared(prepared, cols, rows) {
     arr.push([tickOf[fi], value, EASING_NONE]);
   }
 
-  const scaleX = w / cols, scaleY = h / rows;
-  const cellW = PARTICLE_SIZE_FACTOR * scaleX;
-  const cellH = PARTICLE_SIZE_FACTOR * scaleY;
+  const g = importGridMetrics(w, h, cols, rows);
 
   pushUndo();
   const ids = [];
-  const offX = (cols - 1) / 2 * cellW;
-  const offZ = (rows - 1) / 2 * cellH;
   for (let gi = 0; gi < gridCount; gi++) {
     if (lastVisible[gi] < 0) continue;   // 全程透明 → 不生成
     const r = Math.floor(gi / cols), c = gi % cols;
     const base = gi * 4;
     const p = addParticle({
       // 源图行 0 = 顶部；世界 Z 越小离相机越远，故 row 0 放最远处（屏幕上方），避免上下镜像
-      pos: [c * cellW - offX, 0, r * cellH - offZ],
+      pos: [c * g.cellW - g.offX, 0, r * g.cellH - g.offZ],
       color: [firstColor[base], firstColor[base + 1], firstColor[base + 2], firstColor[base + 3]],
-      scale: [scaleX, scaleY, 1],
+      scale: [g.scaleX, g.scaleY, 1],
       glow: false,
       lightLevel: 0,
       life: lastVisible[gi] === frameCount - 1 ? Math.max(1, totalTicks) : Math.max(1, tickOf[lastVisible[gi] + 1]),

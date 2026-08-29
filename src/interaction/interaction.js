@@ -72,6 +72,39 @@ function promoteDerivedToFunction() {
   return fxId;
 }
 
+// 变换入口共用：无选择或已提升为函数对象时返回 undefined（调用方中止）；
+// 否则推进撤销并返回当前组名（无组为 null）。
+function beginSelectionTransform(recurse) {
+  if (!hasSelection()) return undefined;
+  const gname = selectedGroupName();
+  if (promoteDerivedToFunction()) { recurse(); return undefined; }
+  if (gname && selectionHasDerived()) state.captureKeyframes = true;
+  pushUndo();
+  return gname;
+}
+
+// 变换入口共用：按 selectedMemberIds 快照每个粒子的指定值。
+function snapshotSelection(getValue) {
+  const origins = new Map();
+  for (const id of selectedMemberIds()) {
+    const p = getParticle(id);
+    if (p) origins.set(id, getValue(p));
+  }
+  return origins;
+}
+
+// 旋转共用：把 origins 中的位置绕 centroid/axis 旋转后写回粒子。
+function rotateOriginsAndCommit(m, axis, angle) {
+  const c = m.centroid;
+  const entries = [];
+  for (const [id, orig] of m.origins) {
+    const rel = [orig[0] - c[0], orig[1] - c[1], orig[2] - c[2]];
+    const r = rotateVector(rel, axis, angle);
+    entries.push([id, [c[0] + r[0], c[1] + r[1], c[2] + r[2]]]);
+  }
+  editParticles(entries, 'pos');
+}
+
 export function rotateVector(v, axis, angle) {
   const c = Math.cos(angle), s = Math.sin(angle);
   const dot = v[0] * axis[0] + v[1] * axis[1] + v[2] * axis[2];
@@ -94,20 +127,9 @@ export function enterGrab(clientX, clientY, axis, face) {
     controls.enabled = false;
     return;
   }
-  if (!hasSelection()) return;
-  const gname = selectedGroupName();
-  // 无组但选中了派生粒子 → 提升为函数对象位移
-  if (promoteDerivedToFunction()) {
-    enterGrab(clientX, clientY, axis, face);
-    return;
-  }
-  if (gname && selectionHasDerived()) state.captureKeyframes = true;
-  pushUndo();
-  const origins = new Map();
-  for (const id of selectedMemberIds()) {
-    const p = getParticle(id);
-    if (p) origins.set(id, currentVisual(p).pos.slice());
-  }
+  const gname = beginSelectionTransform(() => enterGrab(clientX, clientY, axis, face));
+  if (gname === undefined) return;
+  const origins = snapshotSelection(p => currentVisual(p).pos.slice());
   const c = gname ? groupCurrentCentroid(gname, 'pos') : selectionCentroid();
   const pt = planePointAt(clientX, clientY);
   modal = { type: 'grab', groupName: gname, startDelta: gname ? groupPosDeltaAt(gname, Math.round(state.time)) : null, origins, axis: axis || null, axisKey: axis, face: face || null, startWorld: pt ? { x: pt.x, z: pt.z } : null, startClient: { x: clientX, y: clientY }, centroid: c, y: c ? c[1] : 0, faceStart: null };
@@ -123,20 +145,9 @@ export function enterScale(clientX) {
     controls.enabled = false;
     return;
   }
-  if (!hasSelection()) return;
-  const gname = selectedGroupName();
-  // 无组但选中了派生粒子 → 提升为函数对象缩放
-  if (promoteDerivedToFunction()) {
-    enterScale(clientX);
-    return;
-  }
-  if (gname && selectionHasDerived()) state.captureKeyframes = true;
-  pushUndo();
-  const origins = new Map();
-  for (const id of selectedMemberIds()) {
-    const p = getParticle(id);
-    if (p) origins.set(id, currentVisual(p).scale);
-  }
+  const gname = beginSelectionTransform(() => enterScale(clientX));
+  if (gname === undefined) return;
+  const origins = snapshotSelection(p => currentVisual(p).scale);
   modal = { type: 'scale', groupName: gname, origins, startScale: groupScaleAt(gname, Math.round(state.time)), startClient: { x: clientX } };
   controls.enabled = false;
 }
@@ -216,24 +227,13 @@ export function enterRotate(clientX, clientY, axis) {
     controls.enabled = false;
     return;
   }
-  if (!hasSelection()) return;
-  const gname = selectedGroupName();
-  // 无组但选中了派生粒子 → 提升为函数对象旋转
-  if (promoteDerivedToFunction()) {
-    enterRotate(clientX, clientY, axis);
-    return;
-  }
-  if (gname && selectionHasDerived()) state.captureKeyframes = true;
-  pushUndo();
+  const gname = beginSelectionTransform(() => enterRotate(clientX, clientY, axis));
+  if (gname === undefined) return;
   const c = gname ? groupCurrentCentroid(gname, 'pos') : selectionCentroid();
   const { axArr, u, v } = rotationBasis(axis);
   const p0 = rayOnAxisPlane(clientX, clientY, axArr, c);
   const startAngle = p0 ? angleInBasis(p0, c, u, v) : 0;
-  const origins = new Map();
-  for (const id of selectedMemberIds()) {
-    const p = getParticle(id);
-    if (p) origins.set(id, currentVisual(p).pos.slice());
-  }
+  const origins = snapshotSelection(p => currentVisual(p).pos.slice());
   if (gname) {
     const startRot = groupRotationValueAt(gname, Math.round(state.time));
     modal = {
@@ -289,21 +289,10 @@ export function enterViewRotate(clientX, clientY) {
     controls.enabled = false;
     return;
   }
-  if (!hasSelection()) return;
-  const gname = selectedGroupName();
-  // 无组但选中了派生粒子 → 提升为函数对象视图旋转
-  if (promoteDerivedToFunction()) {
-    enterViewRotate(clientX, clientY);
-    return;
-  }
-  if (gname && selectionHasDerived()) state.captureKeyframes = true;
-  pushUndo();
+  const gname = beginSelectionTransform(() => enterViewRotate(clientX, clientY));
+  if (gname === undefined) return;
   const c = gname ? groupCurrentCentroid(gname, 'pos') : selectionCentroid();
-  const origins = new Map();
-  for (const id of selectedMemberIds()) {
-    const p = getParticle(id);
-    if (p) origins.set(id, currentVisual(p).pos.slice());
-  }
+  const origins = snapshotSelection(p => currentVisual(p).pos.slice());
   if (gname) {
     const startRot = groupRotationValueAt(gname, Math.round(state.time));
     modal = { type: 'group-view-rotate', gname, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot, origins, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
@@ -337,14 +326,7 @@ export function updateViewRotate(clientX, clientY) {
     return;
   }
   // 普通粒子：直接绕质心、绕视线轴旋转位置（精确）
-  const c = m.centroid;
-  const entries = [];
-  for (const [id, orig] of m.origins) {
-    const rel = [orig[0] - c[0], orig[1] - c[1], orig[2] - c[2]];
-    const r = rotateVector(rel, a, angle);
-    entries.push([id, [c[0] + r[0], c[1] + r[1], c[2] + r[2]]]);
-  }
-  editParticles(entries, 'pos');
+  rotateOriginsAndCommit(m, a, angle);
 }
 
 export function cancelModal() {
@@ -481,24 +463,11 @@ export function updateRotate(clientX, clientY) {
     if (state.captureKeyframes) {
       setGroupTrackValue(m.gname, 'rot', 'set', Math.round(state.time), newRot);
     } else {
-      const entries = [];
-      for (const [id, orig] of m.origins) {
-        const rel = [orig[0] - m.centroid[0], orig[1] - m.centroid[1], orig[2] - m.centroid[2]];
-        const r = rotateVector(rel, m.axis, angle);
-        entries.push([id, [m.centroid[0] + r[0], m.centroid[1] + r[1], m.centroid[2] + r[2]]]);
-      }
-      editParticles(entries, 'pos');
+      rotateOriginsAndCommit(m, m.axis, angle);
     }
     return;
   }
-  const c = m.centroid;
-  const entries = [];
-  for (const [id, orig] of m.origins) {
-    const rel = [orig[0] - c[0], orig[1] - c[1], orig[2] - c[2]];
-    const r = rotateVector(rel, m.axis, angle);
-    entries.push([id, [c[0] + r[0], c[1] + r[1], c[2] + r[2]]]);
-  }
-  editParticles(entries, 'pos');
+  rotateOriginsAndCommit(m, m.axis, angle);
 }
 
 export function deleteSelected() {

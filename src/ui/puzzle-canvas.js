@@ -867,6 +867,14 @@ function drawHighlight(ctx, region, color, scale) {
   ctx.restore();
 }
 
+function strokeRegionSegments(ctx, r, strokeStyle, segColor) {
+  ctx.strokeStyle = strokeStyle;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  drawSegments(ctx, r.segments, segColor);
+  ctx.restore();
+}
+
 function drawExprRegion(ctx, r) {
   ctx.save();
   if (S.edit && S.edit.region === r) {
@@ -883,11 +891,7 @@ function drawExprRegion(ctx, r) {
   if (r.shape === 'bool') hexPath(ctx, r.x, r.y, r.w, r.h);
   else capsulePath(ctx, r.x, r.y, r.w, r.h);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  drawSegments(ctx, r.segments, '#fff');
-  ctx.restore();
+  strokeRegionSegments(ctx, r, 'rgba(0,0,0,0.25)', '#fff');
 }
 
 function drawStmtRegion(ctx, r) {
@@ -911,11 +915,7 @@ function drawHeadRegion(ctx, r) {
   ctx.fillStyle = color;
   hatPath(ctx, r.x, r.y, r.w, r.h);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  drawSegments(ctx, r.segments, '#fff');
-  ctx.restore();
+  strokeRegionSegments(ctx, r, 'rgba(0,0,0,0.25)', '#fff');
 }
 
 function drawSlotRegion(ctx, r) {
@@ -1071,18 +1071,6 @@ function drawVarRowRegion(ctx, r) {
   ctx.restore();
 }
 
-function drawTagRegion(ctx, r) {
-  ctx.save();
-  ctx.fillStyle = 'rgba(255,255,255,0.1)';
-  rrPath(ctx, r.x, r.y, r.w, r.h, 5);
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  drawSegments(ctx, r.segments, '#fff');
-  ctx.restore();
-}
-
 function drawTitleRegion(ctx, r) {
   ctx.save();
   drawSegments(ctx, r.segments, 'rgba(139,147,167,1)');
@@ -1104,7 +1092,7 @@ function drawRegion(ctx, r, th) {
     case 'comp': drawCompRegion(ctx, r); break;
     case 'drop': drawDropRegion(ctx, r, th); break;
     case 'var-row': drawVarRowRegion(ctx, r); break;
-    case 'attr-var': drawTagRegion(ctx, r); break;
+    case 'attr-var': drawAttrRegion(ctx, r); break;
     case 'pal-title': drawTitleRegion(ctx, r); break;
     case 'pal-item': drawPalItemRegion(ctx, r); break;
     case 'text': drawSegments(ctx, r.segments, '#fff'); break;
@@ -1606,6 +1594,16 @@ function openColorEdit(region) {
 
 /* ============================ 拖拽 ============================ */
 
+function startGhostDrag(source, e, grabDx, grabDy, ghostScale) {
+  S.drag = {
+    mode: 'ghost',
+    source,
+    startX: e.clientX, startY: e.clientY, curX: e.clientX, curY: e.clientY,
+    grabDx, grabDy, ghostScale,
+    started: false, target: null, valid: false,
+  };
+}
+
 function startPaletteDrag(item, e) {
   const p = item.item;
   let source;
@@ -1614,40 +1612,19 @@ function startPaletteDrag(item, e) {
   } else {
     source = { type: 'palette', stmt: p.type === 'stmt', stmtKind: p.kind, template: p.template };
   }
-  S.drag = {
-    mode: 'ghost',
-    source,
-    startX: e.clientX, startY: e.clientY, curX: e.clientX, curY: e.clientY,
-    grabDx: e.clientX - item.sx, grabDy: e.clientY - item.sy,
-    ghostScale: PAL_SCALE,
-    started: false, target: null, valid: false,
-  };
+  startGhostDrag(source, e, e.clientX - item.sx, e.clientY - item.sy, PAL_SCALE);
   renderGhost();
 }
 
 function startExprDrag(r, e) {
   const rect = worldToScreenRect(r);
-  S.drag = {
-    mode: 'ghost',
-    source: { type: 'expr', node: r.node, region: r, detach: H.findExprDetach(r.node) },
-    startX: e.clientX, startY: e.clientY, curX: e.clientX, curY: e.clientY,
-    grabDx: e.clientX - rect.left, grabDy: e.clientY - rect.top,
-    ghostScale: H.getBctx().layout.view.scale,
-    started: false, target: null, valid: false,
-  };
+  startGhostDrag({ type: 'expr', node: r.node, region: r, detach: H.findExprDetach(r.node) }, e, e.clientX - rect.left, e.clientY - rect.top, H.getBctx().layout.view.scale);
   renderGhost();
 }
 
 function startOpRemove(r, e) {
   const rect = worldToScreenRect(r);
-  S.drag = {
-    mode: 'ghost',
-    source: { type: 'op-remove', chain: r.opSlot.chain, index: r.opSlot.index },
-    startX: e.clientX, startY: e.clientY, curX: e.clientX, curY: e.clientY,
-    grabDx: e.clientX - rect.left, grabDy: e.clientY - rect.top,
-    ghostScale: H.getBctx().layout.view.scale,
-    started: false, target: null, valid: false,
-  };
+  startGhostDrag({ type: 'op-remove', chain: r.opSlot.chain, index: r.opSlot.index }, e, e.clientX - rect.left, e.clientY - rect.top, H.getBctx().layout.view.scale);
   renderGhost();
 }
 
@@ -1961,14 +1938,7 @@ function onWorkDown(e) {
     if (hit && hit.kind === 'attr-var') {
       e.preventDefault();
       const r = hit;
-      S.drag = {
-        mode: 'ghost',
-        source: { type: 'palette', stmt: false, template: { kind: 'var', name: r.attrVar } },
-        startX: e.clientX, startY: e.clientY, curX: e.clientX, curY: e.clientY,
-        grabDx: e.clientX - (rect.left + r.x), grabDy: e.clientY - (rect.top + ch - VARS_H + r.y - S.varsScroll),
-        ghostScale: H.getBctx().layout.view.scale,
-        started: false, target: null, valid: false,
-      };
+      startGhostDrag({ type: 'palette', stmt: false, template: { kind: 'var', name: r.attrVar } }, e, e.clientX - (rect.left + r.x), e.clientY - (rect.top + ch - VARS_H + r.y - S.varsScroll), H.getBctx().layout.view.scale);
       renderGhost();
       return;
     }

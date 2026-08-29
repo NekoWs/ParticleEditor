@@ -281,13 +281,17 @@ export async function importProject(obj) {
   setDirty(keyGenerated);
 }
 
-export function download(json, filename) {
-  const blob = new Blob([json], { type: 'application/json' });
+function downloadBlob(data, mime, filename) {
+  const blob = new Blob([data], { type: mime });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = filename;
   a.click();
   URL.revokeObjectURL(a.href);
+}
+
+export function download(json, filename) {
+  downloadBlob(json, 'application/json', filename);
 }
 
 // 从 File 对象载入（文件选择与拖拽打开）
@@ -349,29 +353,39 @@ export async function writeProjectText(handle, json) {
   }
 }
 
-// 通过系统文件选择器保存/导出，或在不支持 File System Access API 时回退为下载。
+// 通过系统保存选择器写文件，或在不支持 File System Access API 时回退为下载。
 // keepHandle=true 会更新 state.fileHandle（另存为）；markSaved=true 会在成功后清除 dirty。
-async function writeProjectWithPicker(json, { keepHandle, markSaved }) {
+async function writeWithPicker(data, { suggestedName, description, mime, ext, keepHandle, markSaved }) {
   if (window.showSaveFilePicker) {
     try {
-      const h = await window.showSaveFilePicker({ suggestedName: state.name + '.pdraw', types: [{ description: t('filePicker.projectFile'), accept: { 'application/json': ['.pdraw'] } }] });
+      const h = await window.showSaveFilePicker({
+        suggestedName,
+        types: [{ description, accept: { [mime]: [ext] } }],
+      });
       if (keepHandle) state.fileHandle = h;
       const w = await h.createWritable();
-      await w.write(json); await w.close();
+      await w.write(data); await w.close();
       if (markSaved) setDirty(false);
     } catch (e) {
       // 用户取消选择器：不下载，也不改变当前状态
     }
     return;
   }
-  download(json, (state.name || 'my_animation') + '.pdraw');
+  downloadBlob(data, mime, suggestedName);
   if (markSaved) setDirty(false);
 }
 
 export async function saveFileAs() {
   await ensureProjectKey();
   await refreshTexBase64Cache();
-  await writeProjectWithPicker(JSON.stringify(exportProject()), { keepHandle: true, markSaved: true });
+  await writeWithPicker(JSON.stringify(exportProject()), {
+    suggestedName: (state.name || 'my_animation') + '.pdraw',
+    description: t('filePicker.projectFile'),
+    mime: 'application/json',
+    ext: '.pdraw',
+    keepHandle: true,
+    markSaved: true,
+  });
 }
 
 // 导出动画（.pdrawc 二进制，供模组 /pdraw play 播放），不改变当前工程 fileHandle
@@ -386,34 +400,14 @@ export async function exportAnimation() {
     const b64 = _texBase64Cache[name];
     return b64 ? base64ToBytes(b64) : null;
   });
-  await writeBinaryWithPicker(bytes, { keepHandle: false, markSaved: false });
-}
-
-// 通过系统保存选择器写二进制 .pdrawc，或在不支持 File System Access API 时回退为下载。
-async function writeBinaryWithPicker(bytes, { keepHandle, markSaved }) {
-  const suggestedName = (state.name || 'my_animation') + '.pdrawc';
-  if (window.showSaveFilePicker) {
-    try {
-      const h = await window.showSaveFilePicker({
-        suggestedName,
-        types: [{ description: t('filePicker.playback'), accept: { 'application/octet-stream': ['.pdrawc'] } }],
-      });
-      if (keepHandle) state.fileHandle = h;
-      const w = await h.createWritable();
-      await w.write(bytes); await w.close();
-      if (markSaved) setDirty(false);
-    } catch (e) {
-      // 用户取消选择器：不下载，也不改变当前状态
-    }
-    return;
-  }
-  const blob = new Blob([bytes], { type: 'application/octet-stream' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = suggestedName;
-  a.click();
-  URL.revokeObjectURL(a.href);
-  if (markSaved) setDirty(false);
+  await writeWithPicker(bytes, {
+    suggestedName: (state.name || 'my_animation') + '.pdrawc',
+    description: t('filePicker.playback'),
+    mime: 'application/octet-stream',
+    ext: '.pdrawc',
+    keepHandle: false,
+    markSaved: false,
+  });
 }
 
 // 新建空白动画

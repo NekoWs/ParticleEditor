@@ -154,6 +154,15 @@ function rebuildIndexes() {
   buildFxSclTrackCache();
 }
 
+// 完整求值回退：位置（含速度位移）+ 颜色 + 缩放，写进返回值数组。
+function readVisualFallback(p, T) {
+  const v = currentVisual(p);
+  const off = velOffsetAt(p, T);
+  return [v.pos[0] + off[0], v.pos[1] + off[1], v.pos[2] + off[2],
+          v.color[0], v.color[1], v.color[2], v.color[3],
+          v.scale[0], v.scale[1]];
+}
+
 function writePointBuffers(full) {
   buildOpDeltaCache(state.time);
   buildGroupXforms(state.time);
@@ -178,11 +187,7 @@ function writePointBuffers(full) {
     const p = state.particles[i];
     let px, py, pz, cr, cg, cb, ca, ssx, ssy;
     if (p.fx) {
-      const v = currentVisual(p);
-      const off = velOffsetAt(p, T);
-      px = v.pos[0] + off[0]; py = v.pos[1] + off[1]; pz = v.pos[2] + off[2];
-      cr = v.color[0]; cg = v.color[1]; cb = v.color[2]; ca = v.color[3];
-      ssx = v.scale[0]; ssy = v.scale[1];
+      [px, py, pz, cr, cg, cb, ca, ssx, ssy] = readVisualFallback(p, T);
     } else {
       const inGroup = hasGroups && memberIdx.has(p.id);
       const tr = (p._trVersion === trVersion) ? p._tr : null;
@@ -248,11 +253,7 @@ function writePointBuffers(full) {
             px += p.vel[0] * T; py += p.vel[1] * T; pz += p.vel[2] * T;
           }
         } else {
-          const v = currentVisual(p);
-          const off = velOffsetAt(p, T);
-          px = v.pos[0] + off[0]; py = v.pos[1] + off[1]; pz = v.pos[2] + off[2];
-          cr = v.color[0]; cg = v.color[1]; cb = v.color[2]; ca = v.color[3];
-          ssx = v.scale[0]; ssy = v.scale[1];
+          [px, py, pz, cr, cg, cb, ca, ssx, ssy] = readVisualFallback(p, T);
         }
       } else if (!tr && !inGroup) {
         const vel = p.vel;
@@ -261,11 +262,7 @@ function writePointBuffers(full) {
         ssx = p.scale[0]; ssy = p.scale[1];
       } else {
         // 自身轨道 + 组：走完整求值
-        const v = currentVisual(p);
-        const off = velOffsetAt(p, T);
-        px = v.pos[0] + off[0]; py = v.pos[1] + off[1]; pz = v.pos[2] + off[2];
-        cr = v.color[0]; cg = v.color[1]; cb = v.color[2]; ca = v.color[3];
-        ssx = v.scale[0]; ssy = v.scale[1];
+        [px, py, pz, cr, cg, cb, ca, ssx, ssy] = readVisualFallback(p, T);
       }
     }
     // 入场/寿命门控：t < st 隐藏；有限 life 到期后隐藏。fade 预设在出场窗口内做 alpha 渐显

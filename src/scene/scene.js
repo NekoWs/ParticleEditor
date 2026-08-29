@@ -108,31 +108,25 @@ export function resetWorldAxisState() {
   }
 }
 
-// 方形贴图（2D 广告牌，始终朝向摄像头）
-export function makeSquareTexture() {
+function makeCanvasTexture(size, draw) {
   const c = document.createElement('canvas');
-  c.width = c.height = 16;
+  c.width = c.height = size;
   const ctx = c.getContext('2d');
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, 16, 16);
+  draw(ctx, size);
   const tex = new THREE.CanvasTexture(c);
   tex.minFilter = THREE.NearestFilter;
   tex.magFilter = THREE.NearestFilter;
   return tex;
 }
 
+// 方形贴图（2D 广告牌，始终朝向摄像头）
+export function makeSquareTexture() {
+  return makeCanvasTexture(16, (ctx, s) => { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, s, s); });
+}
+
 // 选中描边用方框贴图（中心透明，露出粒子本色，形状与粒子一致）
 export function makeRingTexture() {
-  const c = document.createElement('canvas');
-  c.width = c.height = 32;
-  const ctx = c.getContext('2d');
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(1, 1, 30, 30);
-  const tex = new THREE.CanvasTexture(c);
-  tex.minFilter = THREE.NearestFilter;
-  tex.magFilter = THREE.NearestFilter;
-  return tex;
+  return makeCanvasTexture(32, (ctx, s) => { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.strokeRect(1, 1, s - 2, s - 2); });
 }
 
 export function focalLengthPx() {

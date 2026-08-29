@@ -688,24 +688,22 @@ class Parser {
 
   parseGlobal(tok) {
     if (this.phase !== 'setup') this.errorAt(tok, "'global' only allowed inside setup");
-    this.next();
-    const nameTok = this.expectIdent();
-    this.validateGlobalStaticName(nameTok);
-    let init = null;
-    if (this.match('=')) init = this.parseTernary();
-    this.expect(';');
-    return { type: 'global', name: nameTok.value, init, line: tok.line, col: tok.col };
+    return this.parseGlobalStaticBody(tok, 'global');
   }
 
   parseStatic(tok) {
     if (this.phase !== 'process') this.errorAt(tok, "'static' only allowed inside process");
+    return this.parseGlobalStaticBody(tok, 'static');
+  }
+
+  parseGlobalStaticBody(tok, type) {
     this.next();
     const nameTok = this.expectIdent();
     this.validateGlobalStaticName(nameTok);
     let init = null;
     if (this.match('=')) init = this.parseTernary();
     this.expect(';');
-    return { type: 'static', name: nameTok.value, init, line: tok.line, col: tok.col };
+    return { type, name: nameTok.value, init, line: tok.line, col: tok.col };
   }
 
   validateGlobalStaticName(tok) {
@@ -1997,12 +1995,7 @@ const BUILTIN_TABLE = new Map([
     return Math.sqrt(dotSelf(v));
   }),
   builtin('len2', 1, 1, (args, rt, node) => dotSelf(expectVec(args[0], 'len2', node))),
-  builtin('norm', 1, 1, (args, rt, node) => {
-    const v = expectVec(args[0], 'norm', node);
-    const l = Math.sqrt(dotSelf(v));
-    if (l === 0) return mkVec(vecDim(v), vecComps(v).map(() => 0)); // 零向量归一化为零向量
-    return mkVec(vecDim(v), vecComps(v).map((x) => x / l));
-  }),
+  builtin('norm', 1, 1, (args, rt, node) => normVecOrZero(expectVec(args[0], 'norm', node))),
   builtin('lerp', 3, 3, (args, rt, node) => lerpImpl(args[0], args[1], args[2], node)),
   builtin('mix', 3, 3, (args, rt, node) => lerpImpl(args[0], args[1], args[2], node)),
   builtin('distance', 2, 2, (args, rt, node) => {
