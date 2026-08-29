@@ -104,7 +104,7 @@ export function availableVars() {
   const out = ['i', 'n', 't'];
   if (bctx) {
     for (const name of bctx.varOrder) if (name in bctx.varExprs && !out.includes(name)) out.push(name);
-    const all = [...bctx.chain, ...bctx.frags.flatMap(f => f.stmts)];
+    const all = [...bctx.chain, ...bctx.setupChain, ...bctx.frags.flatMap(f => f.stmts)];
     for (const t of collectTemps(all)) if (!out.includes(t)) out.push(t);
   }
   return out;
@@ -495,7 +495,7 @@ export function makeStatementBlock(s, isChain, chainIndex) {
 }
 
 export function renameRefsInAll(oldName, newName) {
-  renameRefsInStmts([...bctx.chain, ...bctx.frags.flatMap(f => f.stmts)], oldName, newName);
+  renameRefsInStmts([...bctx.chain, ...bctx.setupChain, ...bctx.frags.flatMap(f => f.stmts)], oldName, newName);
 }
 export function renameRefsInStmts(stmts, oldName, newName) {
   const walk = (n) => {
@@ -542,7 +542,7 @@ export function newStmtNode(kind) {
 }
 export function freshTempName() {
   let k = 0;
-  const all = bctx ? [...bctx.chain, ...bctx.frags.flatMap(f => f.stmts)] : [];
+  const all = bctx ? [...bctx.chain, ...bctx.setupChain, ...bctx.frags.flatMap(f => f.stmts)] : [];
   const names = new Set(collectTemps(all));
   while (names.has('v' + k)) k++;
   return 'v' + k;
@@ -574,7 +574,7 @@ export function stmtExprSlotType(s) {
   if (s.kind === 'pos_vec' || s.kind === 'vel_vec') return T_VEC;
   return T_SCALAR;
 }
-export function findAllStmts() { return bctx ? [...bctx.chain, ...bctx.frags.flatMap(f => f.stmts)] : []; }
+export function findAllStmts() { return bctx ? [...bctx.chain, ...bctx.setupChain, ...bctx.frags.flatMap(f => f.stmts)] : []; }
 export function findSlotRefByNode(stmts, node) {
   let result = null;
   const walkStmt = (s) => {
@@ -786,22 +786,29 @@ export function renderChain() {
   plane.style.transform = 'translate(' + layout.view.x + 'px,' + layout.view.y + 'px) scale(' + layout.view.scale + ')';
   canvas.appendChild(plane);
 
-  const chainStack = document.createElement('div');
-  chainStack.className = 'chain-stack';
-  chainStack.style.left = layout.chain.x + 'px';
-  chainStack.style.top = layout.chain.y + 'px';
-  const start = document.createElement('div');
-  start.className = 'blk-start blk-drag';
-  start.textContent = t('blk.start');
-  start._chainHead = true;
-  start._dragLabel = t('blk.start');
-  chainStack.appendChild(start);
-  chainStack.appendChild(makeStmtDropZone(0));
-  bctx.chain.forEach((s, i) => {
-    chainStack.appendChild(makeStatementBlock(s, true, i));
-    chainStack.appendChild(makeStmtDropZone(i + 1));
-  });
-  plane.appendChild(chainStack);
+  const makeChainStack = (arr, layoutPos, key, title) => {
+    const stack = document.createElement('div');
+    stack.className = 'chain-stack';
+    stack.style.left = layoutPos.x + 'px';
+    stack.style.top = layoutPos.y + 'px';
+    stack._chain = arr;
+    stack._chainKey = key;
+    const start = document.createElement('div');
+    start.className = 'blk-start blk-drag';
+    start.textContent = title;
+    start._chainHead = true;
+    start._chainKey = key;
+    start._dragLabel = title;
+    stack.appendChild(start);
+    stack.appendChild(makeStmtDropZone(0, arr));
+    arr.forEach((s, i) => {
+      stack.appendChild(makeStatementBlock(s, true, i));
+      stack.appendChild(makeStmtDropZone(i + 1, arr));
+    });
+    plane.appendChild(stack);
+  };
+  makeChainStack(bctx.setupChain, layout.setup, 'setup', t('fx.setupBlock'));
+  makeChainStack(bctx.chain, layout.chain, 'chain', t('blk.start'));
 
   bctx.frags.forEach((f) => {
     const fragStack = document.createElement('div');
@@ -837,13 +844,16 @@ export function renderChain() {
       varBox.appendChild(makeAttrBlock(name));
     }
   }
+  const setupTextEl = document.getElementById('setup-text');
+  if (setupTextEl) setupTextEl.value = statementsToCode(bctx.setupChain);
   refreshCodeEcho();
 }
 
-export function makeStmtDropZone(index) {
+export function makeStmtDropZone(index, chain) {
   const el = document.createElement('div');
   el.className = 'blk-stmt-drop';
   el._dropIndex = index;
+  if (chain) el._chain = chain;
   return el;
 }
 
@@ -984,7 +994,9 @@ export function beginBlockDrag(el, clientX, clientY) {
     return;
   }
   if (el._chainHead) {
-    bdrag.source = { type: 'chain-move', stack: el.parentElement, startX: clientX, startY: clientY, lx: bctx.layout.chain.x, ly: bctx.layout.chain.y };
+    const key = el._chainKey || 'chain';
+    const pos = bctx.layout[key] || bctx.layout.chain;
+    bdrag.source = { type: 'chain-move', key, stack: el.parentElement, startX: clientX, startY: clientY, lx: pos.x, ly: pos.y };
     return; // 链移动无 ghost，直接移动
   }
   if (el._fragHead) {
@@ -1068,7 +1080,9 @@ export function makeGroupGhost(group, clientX, clientY) {
 
 export function stmtGroupLocation(s) {
   const ci = bctx.chain.indexOf(s);
-  if (ci >= 0) return { where: 'chain', index: ci };
+  if (ci >= 0) return { where: 'chain', chain: bctx.chain, index: ci };
+  const si = bctx.setupChain.indexOf(s);
+  if (si >= 0) return { where: 'chain', chain: bctx.setupChain, index: si };
   for (const f of bctx.frags) {
     const fi = f.stmts.indexOf(s);
     if (fi >= 0) return { where: 'frag', frag: f, index: fi };
@@ -1077,14 +1091,14 @@ export function stmtGroupLocation(s) {
 }
 export function detachStmtGroupNow(s) {
   const loc = stmtGroupLocation(s);
-  if (loc.where === 'chain') return bctx.chain.splice(loc.index);
+  if (loc.where === 'chain') return loc.chain.splice(loc.index);
   const group = loc.frag.stmts.splice(loc.index);
   if (loc.frag.stmts.length === 0) bctx.frags.splice(bctx.frags.indexOf(loc.frag), 1);
   return group;
 }
 export function restoreStmtGroup(loc, group) {
   if (loc.where === 'chain') {
-    bctx.chain.splice(loc.index, 0, ...group);
+    loc.chain.splice(loc.index, 0, ...group);
   } else {
     let f = loc.frag;
     if (!bctx.frags.includes(f)) {
@@ -1114,9 +1128,10 @@ export function moveGhost(clientX, clientY) {
   }
 
   if (src.type === 'chain-move') {
-    bctx.layout.chain.x = src.lx + (clientX - src.startX);
-    bctx.layout.chain.y = src.ly + (clientY - src.startY);
-    if (src.stack) { src.stack.style.left = bctx.layout.chain.x + 'px'; src.stack.style.top = bctx.layout.chain.y + 'px'; }
+    const pos = bctx.layout[src.key] || bctx.layout.chain;
+    pos.x = src.lx + (clientX - src.startX);
+    pos.y = src.ly + (clientY - src.startY);
+    if (src.stack) { src.stack.style.left = pos.x + 'px'; src.stack.style.top = pos.y + 'px'; }
     return;
   }
   if (src.type === 'frag-move') {
@@ -1170,7 +1185,7 @@ export function moveGhost(clientX, clientY) {
   if (src.stmt) {
     const drop = nearestStmtDrop(clientX, clientY);
     if (drop) {
-      bdrag.target = { kind: 'stmt-drop', index: drop.index, frag: drop.frag };
+      bdrag.target = { kind: 'stmt-drop', index: drop.index, frag: drop.frag, chain: drop.chain };
       bdrag.valid = true;
       drop.el.classList.add('hover');
       return;
@@ -1210,7 +1225,7 @@ export function nearestStmtDrop(clientX, clientY) {
   }
   if (!best) return null;
   const frag = best.closest('.chain-stack')._frag || null;
-  return { index: best._dropIndex, frag, el: best };
+  return { index: best._dropIndex, frag, chain: best._chain || null, el: best };
 }
 
 export function canPlaceIntoTarget(slotType) {
@@ -1240,7 +1255,7 @@ export function endBlockDrag() {
       // 拖回调色板：丢弃该组
     } else if (target.kind === 'stmt-drop') {
       if (target.frag) target.frag.stmts.splice(target.index, 0, ...source.group);
-      else bctx.chain.splice(target.index, 0, ...source.group);
+      else if (target.chain) target.chain.splice(target.index, 0, ...source.group);
     } else if (target.kind === 'blank') {
       // 放到空白处：成为新碎片
       bctx.frags.push({ stmts: source.group, x: target.x, y: target.y });
@@ -1308,7 +1323,7 @@ export function endBlockDrag() {
     bctxPushUndo();
     const stmt = source.make();
     if (target.frag) target.frag.stmts.splice(target.index, 0, stmt);
-    else bctx.chain.splice(target.index, 0, stmt);
+    else if (target.chain) target.chain.splice(target.index, 0, stmt);
     renderChain(); renderPalette();
     return;
   }
@@ -1487,12 +1502,14 @@ export function openBlockDrawer(fx) {
   bctx = {
     fxId: fx.id,
     chain,
+    setupChain: codeToStatements(fx.setup || ''),
     frags: (saved.frags || []).map(f => ({ stmts: codeToStatements(f.code || ''), x: f.x, y: f.y })),
     varExprs, varOrder,
     snapshot: { setup: fx.setup || '', process: fx.process, vars: cloneVars(fx.vars), preset: fx.preset, params: fx.params },
     undoStack: [], redoStack: [],
     layout: {
       chain: saved.chain || { x: 40, y: 40 },
+      setup: saved.setup || { x: 40, y: 120 },
       view: saved.view || { x: 0, y: 0, scale: 1 },
     },
   };
@@ -1523,7 +1540,7 @@ export function closeBlockDrawer(commit) {
   const fx = getFunction(bctx.fxId);
   if (commit && fx) {
     const newCode = statementsToCode(bctx.chain);
-    const setupText = document.getElementById('setup-text')?.value ?? '';
+    const setupText = statementsToCode(bctx.setupChain);
     fx.process = newCode;
     fx.setup = setupText;
     for (const name of bctx.varOrder) {
@@ -1546,6 +1563,7 @@ export function closeBlockDrawer(commit) {
   if (fx) {
     fx.ui = {
       chain: bctx.layout.chain,
+      setup: bctx.layout.setup,
       view: bctx.layout.view,
       frags: bctx.frags.map(f => ({ code: statementsToCode(f.stmts), x: f.x, y: f.y })),
     };
@@ -1588,8 +1606,7 @@ export function blockPreview() {
   const fx = getFunction(bctx.fxId);
   if (!fx) return;
   fx.process = statementsToCode(bctx.chain);
-  const setupText = document.getElementById('setup-text')?.value ?? '';
-  fx.setup = setupText;
+  fx.setup = statementsToCode(bctx.setupChain);
   for (const name of bctx.varOrder) {
     if (name in bctx.varExprs) {
       const v = fx.vars[name];
@@ -1612,16 +1629,20 @@ export function bctxPushUndo() {
 export function snapBctx() {
   return {
     chain: cloneStmts(bctx.chain),
+    setupChain: cloneStmts(bctx.setupChain),
     frags: bctx.frags.map(f => ({ stmts: cloneStmts(f.stmts), x: f.x, y: f.y })),
     varExprs: deepCloneVarExprs(bctx.varExprs),
     chainPos: { x: bctx.layout.chain.x, y: bctx.layout.chain.y },
+    setupPos: { x: bctx.layout.setup.x, y: bctx.layout.setup.y },
   };
 }
 export function restoreBctx(s) {
   bctx.chain = cloneStmts(s.chain);
+  bctx.setupChain = cloneStmts(s.setupChain);
   bctx.frags = s.frags.map(f => ({ stmts: cloneStmts(f.stmts), x: f.x, y: f.y }));
   bctx.varExprs = deepCloneVarExprs(s.varExprs);
   bctx.layout.chain = { x: s.chainPos.x, y: s.chainPos.y };
+  bctx.layout.setup = { x: s.setupPos.x, y: s.setupPos.y };
 }
 export function deepCloneVarExprs(o) { const r = {}; for (const k in o) r[k] = o[k]; return r; }
 export function bctxUndo() {

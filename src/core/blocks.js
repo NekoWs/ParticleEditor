@@ -286,6 +286,8 @@ export function statementsToCode(stmts) {
     }
     out += code;
   }
+  const tail = out.trimEnd();
+  if (tail && !tail.endsWith(';') && !tail.endsWith('}')) out += ';';
   return out;
 }
 
