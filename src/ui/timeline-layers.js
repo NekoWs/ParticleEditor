@@ -226,8 +226,6 @@ export function drawTimelineLayers() {
   ctx.stroke();
 }
 
-export function X_of(t) { return (t - timelineViewStart) * TL_PX_PER_TICK; }
-
 /** 顶层对象条的命中检测：返回 {hit, zone}；zone ∈ 'start'|'life'|'body'。 */
 export function tlLayerHitAt(clientX, clientY) {
   const canvas = document.getElementById('tl-layers-canvas');

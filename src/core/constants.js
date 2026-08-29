@@ -218,7 +218,7 @@ export let functionIndexCache = null; // 函数对象索引（buildParticleIndex
 export function setParticleIndex(map) { particleIndexCache = map; }
 export function setFunctionIndex(map) { functionIndexCache = map; }
 // 供 nextId / addParticle 在批量添加期间维护索引，避免 nextId 退化为 O(N²)。
-export function ensureParticleIndex() {
+function ensureParticleIndex() {
   if (!particleIndexCache) {
     const map = new Map();
     for (const p of state.particles) map.set(p.id, p);
@@ -228,13 +228,6 @@ export function ensureParticleIndex() {
 }
 export function indexParticle(p) { if (particleIndexCache) particleIndexCache.set(p.id, p); }
 export function getParticle(id) { return particleIndexCache ? particleIndexCache.get(id) : state.particles.find(p => p.id === id); }
-export function findTrack(prop, id) { return state.tracks.find(tr => tr.pr === prop && tr.ids.length === 1 && tr.ids[0] === id); }
-
-export function nextFreeTime(tr, startTime) {
-  let t = Math.max(0, Math.round(startTime));
-  while (tr.kf.some(k => k[0] === t)) t += 5;
-  return t;
-}
 
 /* =========================================================================
  * 函数对象：预设形状模板（参数面板 + 公式视图）

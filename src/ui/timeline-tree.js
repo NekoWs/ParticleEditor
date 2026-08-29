@@ -14,12 +14,11 @@ import {
 } from '../core/constants.js';
 import { editComponentValue } from '../core/edit.js';
 import { targetComponentValue, startRename } from './tree.js';
-import { rebuildFunctionObject } from '../core/generators.js';
 import { pushUndo } from '../state/undo.js';
 import { varKfValue, ATTR_NAMES, FUNCS } from '../core/easing.js';
 import { modalAlert } from './ui.js';
 import { rebuildPoints } from '../core/animation.js';
-import { refreshFunctionPanel } from './panels.js';
+import { refreshFunctionPanel, commitFunctionRebuild } from './panels.js';
 
 export const TL_TREE_ROW_H = 22;
 export const tlTreeState = { expanded: new Set() };
@@ -45,14 +44,6 @@ function el(tag, cls) {
 function fmtNum(v) {
   if (typeof v !== 'number' || !isFinite(v)) return '0';
   return String(Math.round(v * 100) / 100);
-}
-
-function rebuildFxSafe(fx) {
-  try {
-    rebuildFunctionObject(fx);
-  } catch (e) {
-    modalAlert(t('fx.exprError'), e.message);
-  }
 }
 
 function makeArrow(key, expanded) {
@@ -527,7 +518,7 @@ function onTreeChange(ev) {
     if (!isFinite(nv)) return;
     pushUndo();
     v.base = nv;
-    rebuildFxSafe(fx);
+    commitFunctionRebuild(fx);
     refreshTimelineTree();
   }
 }
@@ -553,7 +544,7 @@ function renameVariable(fx, oldName, raw) {
   pushUndo();
   fx.vars[nn] = fx.vars[oldName];
   delete fx.vars[oldName];
-  rebuildFxSafe(fx);
+  commitFunctionRebuild(fx);
   refreshTimelineTree(true);
 }
 
@@ -567,7 +558,7 @@ function addVariable(fxId) {
   fx.vars['v' + k] = { base: 0, kf: [] };
   // 展开变量行，让新建变量立即可见并可直接编辑
   tlTreeState.expanded.add('f:' + fx.id + '|@vars');
-  rebuildFxSafe(fx);
+  commitFunctionRebuild(fx);
   refreshTimelineTree();
 }
 
@@ -586,6 +577,6 @@ function addVariableKeyframe(fxId, name) {
     kf.push([tick, cur, state.defaultEasing]);
     kf.sort((a, b) => a[0] - b[0]);
   }
-  rebuildFxSafe(fx);
+  commitFunctionRebuild(fx);
   refreshTimelineTree();
 }

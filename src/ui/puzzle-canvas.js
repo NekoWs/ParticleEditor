@@ -15,6 +15,8 @@ import {
   T_SCALAR, T_VEC, T_MAT, T_ANY,
   FUNC_BLOCKS, STMT_BLOCKS, PALETTE_GROUPS,
   fmtNum, statementsToCode,
+  STMT_SLOTS, BIG_BLOCKS, BUILTIN_VAR_NAMES, GROUP_COLOR,
+  isBoolOp, opSlotType, slotRef, N0,
 } from '../core/blocks.js';
 
 /* ============================ host 注入 ============================ */
@@ -52,17 +54,6 @@ const VARS_PAD = 10, VARS_GAP = 8, VARS_ROW_H = 30;
 const CTL_KINDS = new Set(['if', 'while', 'for', 'do', 'func']);
 const SIMPLE_CTL = new Set(['global', 'static', 'break', 'continue', 'return']);
 
-const STMT_SLOTS = {
-  pos: [['X', T_SCALAR], ['Y', T_SCALAR], ['Z', T_SCALAR]],
-  vel: [['vx', T_SCALAR], ['vy', T_SCALAR], ['vz', T_SCALAR]],
-  col: [['R', T_SCALAR], ['G', T_SCALAR], ['B', T_SCALAR], ['A', T_SCALAR]],
-  scl: [['blk.slot.scale', T_SCALAR]],
-  light: [['blk.slot.light', T_SCALAR]],
-};
-const BIG_BLOCKS = { pos: true, vel: true };
-const BUILTIN_VAR_NAMES = ['i', 'n', 't'];
-const BUILTIN_VAR_INFO = { i: 'blk.var.i', n: 'blk.var.n', t: 'blk.var.t' };
-
 const CLS_COLORS = {
   'blk-pos': '#1f9d55',
   'blk-color': '#9d3fbf',
@@ -87,7 +78,6 @@ const S = {
   palCtx: null, workCtx: null, echoCtx: null, ghostCtx: null,
   dpr: 1,
   palScroll: 0,
-  palContentH: 0,
   varsScroll: 0,
   echoScroll: 0,
   wsRegions: [],
@@ -135,18 +125,6 @@ function typeLabel(type) {
   return t(m[type] || 'blk.type.any');
 }
 
-function opSlotType(op, side) {
-  if (op === '^' || op === '%') return T_SCALAR;
-  if (op === '/') return side === 'r' ? T_SCALAR : T_ANY;
-  return T_ANY;
-}
-function isBoolOp(op) {
-  return op === '==' || op === '!=' || op === '<' || op === '<=' || op === '>' || op === '>=' || op === '&&' || op === '||';
-}
-function N0() { return { kind: 'num', value: 0 }; }
-
-function slotRef(get, set, type) { return { get, set, type }; }
-
 function blockColor(cls) {
   for (const k in CLS_COLORS) if ((cls || '').includes(k)) return CLS_COLORS[k];
   return '#2a4d78';
@@ -155,8 +133,7 @@ function stmtCls(s) {
   if (CTL_KINDS.has(s.kind) || SIMPLE_CTL.has(s.kind)) return 'blk-ctl';
   if (s.kind === 'raw') return 'blk-raw';
   const g = STMT_BLOCKS[s.kind] && STMT_BLOCKS[s.kind].group;
-  const map = { pos: 'blk-pos', color: 'blk-color', appearance: 'blk-appearance', math: 'blk-math', vec: 'blk-vec', mat: 'blk-mat', var: 'blk-var', const: 'blk-const', logic: 'blk-logic', array: 'blk-array' };
-  return map[g] || 'blk-var';
+  return GROUP_COLOR[g] || 'blk-var';
 }
 function funcColor(name) {
   const r = FUNC_BLOCKS[name] && FUNC_BLOCKS[name].ret;
@@ -480,8 +457,8 @@ function stmtParts(s) {
   }
   const label = t(STMT_BLOCKS[s.kind].label) + ' ';
   const slotType = (s.kind === 'pos_vec' || s.kind === 'vel_vec') ? T_VEC : T_SCALAR;
-  const getExpr = () => (s.kind === 'pos_vec' || s.kind === 'vel_vec') ? s.expr : s.expr;
-  const setExpr = (v) => { if (s.kind === 'pos_vec' || s.kind === 'vel_vec') s.expr = v; else s.expr = v; };
+  const getExpr = () => s.expr;
+  const setExpr = (v) => { s.expr = v; };
   return [
     { text: label },
     { slot: { ref: slotRef(getExpr, setExpr, slotType), type: slotType, label: '' } },
@@ -847,7 +824,7 @@ function paletteItemSize(item, ctx) {
 
 function layoutPalette(contentW) {
   const out = [];
-  if (!H || !S.palCtx) { S.palRegions = out; S.palContentH = 0; return; }
+  if (!H || !S.palCtx) { S.palRegions = out; return; }
   const ctx = S.palCtx;
   let cy = PAL_TOP;
   const innerW = contentW - PAL_LEFT * 2;
@@ -866,7 +843,6 @@ function layoutPalette(contentW) {
     cy += rowH + 10;
   }
   S.palRegions = out;
-  S.palContentH = cy + 12;
 }
 
 /* ============================ 绘制 ============================ */
@@ -1479,18 +1455,6 @@ function worldToScreenRect(r) {
     top: rect.top + r.y * v.scale + v.y,
     width: r.w * v.scale,
     height: r.h * v.scale,
-  };
-}
-function varToScreenRect(r) {
-  const c = S.workCanvas;
-  const rect = c.getBoundingClientRect();
-  const ch = c.clientHeight || c.height;
-  const varTop = ch - VARS_H;
-  return {
-    left: rect.left + r.x,
-    top: rect.top + varTop + r.y - S.varsScroll,
-    width: r.w,
-    height: r.h,
   };
 }
 

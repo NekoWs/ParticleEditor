@@ -12,40 +12,16 @@ import { t, tf, _etf } from '../core/i18n.js';
 import { state, getFunction } from '../core/constants.js';
 import { ATTR_NAMES } from '../core/easing.js';
 import { modalAlert } from './ui.js';
-import { T_SCALAR, T_VEC, T_MAT, T_ANY, FUNC_BLOCKS, STMT_BLOCKS, PALETTE_GROUPS, OP_SYMBOLS, OP_LABELS, collectTemps, walkStatements, codeToStatements, statementsToCode, exprType, typeAccepts, fmtNum } from '../core/blocks.js';
+import { T_SCALAR, T_VEC, T_MAT, T_ANY, FUNC_BLOCKS, STMT_BLOCKS, PALETTE_GROUPS, OP_SYMBOLS, OP_LABELS, collectTemps, walkStatements, codeToStatements, statementsToCode, exprType, typeAccepts, fmtNum, STMT_SLOTS, BIG_BLOCKS, BUILTIN_VAR_INFO, BUILTIN_VAR_NAMES, GROUP_COLOR, isBoolOp, opSlotType, slotRef, N0 } from '../core/blocks.js';
 import { makeFloatWindow } from './float-window.js';
 import { pushUndo, cloneVars } from '../state/undo.js';
 import { commitFunctionRebuild, refreshFunctionPanel, drawTimeline } from './panels.js';
-import { refreshParticleTree } from './tree.js';
 import { rebuildPoints } from '../core/animation.js';
 import { gizmoGroup } from '../scene/scene.js';
 import { resize } from '../main.js';
 import { setPuzzleHost, initPuzzleCanvas, puzzleCanvasRender, puzzleCanvasResize, puzzleCanvasBeginLens, puzzleCanvasCancelEdit } from './puzzle-canvas.js';
 
 export const TYPE_LABEL = { scalar: 'blk.type.scalar', vec: 'blk.type.vec', mat: 'blk.type.mat', any: 'blk.type.any' };
-/* —— 积木类别配色 —— */
-export const GROUP_COLOR = {
-  pos: 'blk-pos', color: 'blk-color', appearance: 'blk-appearance',
-  math: 'blk-math', vec: 'blk-vec', mat: 'blk-mat', var: 'blk-var', const: 'blk-const',
-  logic: 'blk-logic', array: 'blk-array',
-};
-
-/* —— 语句块槽规格（ASCII 名原样显示；中文语义槽用 i18n 键 blk.slot.*） —— */
-export const STMT_SLOTS = {
-  pos: [['X', T_SCALAR], ['Y', T_SCALAR], ['Z', T_SCALAR]],
-  vel: [['vx', T_SCALAR], ['vy', T_SCALAR], ['vz', T_SCALAR]],
-  col: [['R', T_SCALAR], ['G', T_SCALAR], ['B', T_SCALAR], ['A', T_SCALAR]],
-  scl: [['blk.slot.scale', T_SCALAR]],
-  light: [['blk.slot.light', T_SCALAR]],
-};
-export const BIG_BLOCKS = { pos: true, vel: true };
-
-export const BUILTIN_VAR_INFO = {
-  i: 'blk.var.i',
-  n: 'blk.var.n',
-  t: 'blk.var.t',
-};
-export const BUILTIN_VAR_NAMES = ['i', 'n', 't'];
 
 export let bctx = null;
 export let puzzleWin = null;
@@ -87,34 +63,6 @@ export function cloneStmt(s) {
 }
 export function cloneStmts(stmts) { return stmts.map(cloneStmt); }
 
-export function isBoolOp(op) {
-  return op === '==' || op === '!=' || op === '<' || op === '<=' || op === '>' || op === '>=' || op === '&&' || op === '||';
-}
-
-export function nodeToBlockType(n) {
-  switch (n.kind) {
-    case 'num': return { cls: 'blk-const', label: fmtNum(n.value) };
-    case 'bool': return { cls: 'blk-const blk-bool', label: n.value ? 'true' : 'false' };
-    case 'var': return { cls: n.name === 'pi' || n.name === 'e' ? 'blk-const' : 'blk-var', label: n.name };
-    case 'func': return { cls: GROUP_COLOR[funcGroup(n.name)], label: n.name };
-    case 'op': return { cls: 'blk-math' + (isBoolOp(n.op) ? ' blk-bool' : ''), label: n.op };
-    case 'chain': return { cls: 'blk-math', label: t('blk.chain') };
-    case 'comp': return { cls: 'blk-vec', label: '.' + n.axis };
-    case 'neg': return { cls: 'blk-math', label: '−' };
-    case 'not': return { cls: 'blk-math blk-bool', label: '!' };
-    case 'ternary': return { cls: 'blk-math', label: '?:' };
-    case 'index': return { cls: 'blk-array', label: '[]' };
-    case 'method': return { cls: 'blk-array', label: '.' + n.method };
-    case 'array': return { cls: 'blk-array', label: '[]' };
-    default: return { cls: 'blk-var', label: '?' };
-  }
-}
-export function funcGroup(name) {
-  const r = FUNC_BLOCKS[name].ret;
-  if (r === T_VEC) return 'vec';
-  if (r === T_MAT) return 'mat';
-  return 'math';
-}
 export function blockVarTypeOf(name) {
   if (name === 'i' || name === 'n' || name === 't') return T_SCALAR;
   if (name === 'pi' || name === 'e') return T_SCALAR;
@@ -135,13 +83,6 @@ export function availableVars() {
 /* =========================================================================
  * 槽位引用与查找
  * ======================================================================= */
-
-export function slotRef(get, set, type) { return { get, set, type }; }
-export function opSlotType(op, side) {
-  if (op === '^' || op === '%') return T_SCALAR;
-  if (op === '/') return side === 'r' ? T_SCALAR : T_ANY;
-  return T_ANY;
-}
 
 export function freshTempName() {
   let k = 0;
@@ -224,7 +165,6 @@ export function removeChainOp(chain, index) {
  * 默认值
  * ======================================================================= */
 
-export const N0 = () => ({ kind: 'num', value: 0 });
 export const NVEC = () => ({ kind: 'func', name: 'vec', args: [N0(), N0(), N0()] });
 
 export function newStmtNode(kind) {
@@ -272,10 +212,6 @@ export function defaultExprFor(type) {
   if (type === T_VEC) return NVEC();
   if (type === T_MAT) return { kind: 'func', name: 'rotZ', args: [N0()] };
   return N0();
-}
-export function stmtExprSlotType(s) {
-  if (s.kind === 'pos_vec' || s.kind === 'vel_vec') return T_VEC;
-  return T_SCALAR;
 }
 
 /* =========================================================================
@@ -673,7 +609,6 @@ export function closeBlockDrawer(commit) {
     state.selected.clear();
     state.selectedGroup = null;
     if (typeof rebuildPoints === 'function') rebuildPoints();
-    if (typeof refreshParticleTree === 'function') refreshParticleTree();
   }
   bctx = null;
   refreshFunctionPanel();

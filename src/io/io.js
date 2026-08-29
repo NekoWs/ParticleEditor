@@ -7,7 +7,6 @@ import { t } from '../core/i18n.js';
 import { state, setDirty, DEFAULT_EASING, UV_MODES, PROP_LABELS, splitCompPr, nextId } from '../core/constants.js';
 import { pushUndo } from '../state/undo.js';
 import { rebuildPoints } from '../core/animation.js';
-import { refreshParticleTree } from '../ui/tree.js';
 import { updateLoopIndicator } from '../ui/panels.js';
 import { updateTimeUI } from '../main.js';
 import { rebuildFunctionObject } from '../core/generators.js';
@@ -251,22 +250,6 @@ export function parseParticlesTracks(obj) {
   state.loop = !!obj.loop;
 }
 
-export async function importJSON(obj) {
-  pushUndo();
-  parseParticlesTracks(obj);
-  const keyGenerated = await applyProjectKey(obj);
-  state.functions = [];
-  state.textures = {};
-  state.currentTexture = null;
-  state.selectedFunction = null;
-  document.getElementById('tl-loop').checked = state.loop;
-  updateLoopIndicator();
-  state.selected.clear(); state.selectedGroup = null; state.time = 0;
-  state.expandedParticles.clear(); state.expandedProps.clear();
-  updateTimeUI(); rebuildPoints(); refreshParticleTree();
-  setDirty(keyGenerated);
-}
-
 export async function importProject(obj) {
   pushUndo();
   parseParticlesTracks(obj);
@@ -294,7 +277,7 @@ export async function importProject(obj) {
       markTextureChanged(); refreshTexturePanel();
     });
   }
-  updateTimeUI(); rebuildPoints(); refreshParticleTree();
+  updateTimeUI(); rebuildPoints();
   setDirty(keyGenerated);
 }
 
@@ -454,7 +437,7 @@ export async function newFile() {
     state.key = { alg: KEY_ALG, private: pair.private, public: pair.public };
   } catch (_) { /* 浏览器不支持：导出时再提示 */ }
   document.getElementById('tl-loop').checked = true;
-  updateTimeUI(); rebuildPoints(); refreshParticleTree();
+  updateTimeUI(); rebuildPoints();
   if (typeof refreshTexturePanel === 'function') refreshTexturePanel();
   setDirty(false);
 }

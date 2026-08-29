@@ -10,7 +10,7 @@ import { shiftHeld } from './input-state.js';
 import { camera, renderer, controls, raycaster, pointer, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, AXIS_RING_COLORS, GIZMO_FACE_DEFS, resetWorldAxisState, focalLengthPx } from '../scene/scene.js';
 import { currentVisual, rebuildPoints, setPreview, clearPreview, rotVectorAt, trackValueAt, findTrackByPr, groupScaleAt } from '../core/animation.js';
 import { screenToNdc, planePointAt, worldToUV, computeShapePositions, snapGrid, snapValue, pickParticleAt, particleAt, projectToScreen, distToSegment, planeInfo, selectionCentroid, updateGizmoFrame } from './gizmo.js';
-import { groupCurrentCentroid, groupCentroidValue, deleteGroup, refreshParticleTree, createGroup } from '../ui/tree.js';
+import { groupCurrentCentroid, groupCentroidValue, deleteGroup, createGroup } from '../ui/tree.js';
 import { setFunctionTrackValue, setGroupTrackValue, editParticles, addParticle, autoGroup, removeGroupAndTracks } from '../core/edit.js';
 import { pushUndo, restore, undoStack, undo, redo } from '../state/undo.js';
 import { deleteFunctionObject } from '../core/generators.js';
@@ -279,32 +279,6 @@ export function applyWorldRotation(startRot, axis, angle) {
   return [eNew.x * RAD2DEG, eNew.y * RAD2DEG, eNew.z * RAD2DEG];
 }
 
-// 从四元数中提取 Euler，被拖拽的轴使用用户的累积角度（无 ±90° 限幅）。
-// 其余两轴从旋转矩阵的独立列用 atan2 提取（对 Y=90° 万向锁免疫）。
-// dragAxisIdx: 0=X, 1=Y, 2=Z; -1=不用替换（视图旋转）。
-export function eulerFromQuatDragAxis(q, dragAxisIdx, cumAngle) {
-  const me = new THREE.Matrix4().makeRotationFromQuaternion(q).elements;
-  // atan2 从矩阵独立列提取，不依赖 cos(Y) ≠ 0（无万向锁分支）
-  const x = Math.atan2(me[9], me[10]) * RAD2DEG;     // atan2(R21, R22)
-  const y = Math.asin(Math.max(-1, Math.min(1, -me[8]))) * RAD2DEG; // asin(-R20)
-  const z = Math.atan2(me[4], me[0]) * RAD2DEG;      // atan2(R10, R00)
-  const arr = [x, y, z];
-  if (dragAxisIdx >= 0) arr[dragAxisIdx] = cumAngle * RAD2DEG;
-  return arr;
-}
-
-// 增量四元数累乘 + 被拖拽轴用累积角度。
-// modal.curQuat: 四元数, modal.cumAngle: 累积角度(弧度), modal.dragAxisIdx: 轴索引。
-export function applyWorldRotationQ(modal, axis, dAngle) {
-  const qDelta = new THREE.Quaternion().setFromAxisAngle(
-    new THREE.Vector3(axis[0], axis[1], axis[2]), dAngle);
-  // 世界轴旋转：delta 在左侧乘 → curQuat = qDelta * curQuat
-  // premultiply(q) 是 this = q * this，即 qDelta 左乘到 curQuat 上
-  modal.curQuat.premultiply(qDelta).normalize();
-  modal.cumAngle = (modal.cumAngle || 0) + dAngle;
-  return eulerFromQuatDragAxis(modal.curQuat, modal.dragAxisIdx, modal.cumAngle);
-}
-
 export function enterViewRotate(clientX, clientY) {
   const fx = getFunction(state.selectedFunction);
   if (fx) {
@@ -554,7 +528,6 @@ export function deleteSelected() {
   state.selectedGroup = null;
   state.selectedFunction = null;
   rebuildPoints();
-  refreshParticleTree();
 }
 
 export function selectAll() {
@@ -623,7 +596,6 @@ export function pasteClipboard() {
   }
   state.selected = new Set(newIds);
   rebuildPoints();
-  refreshParticleTree();
 }
 
 export function raycastGizmoMeshes(clientX, clientY, meshes) {
@@ -671,12 +643,6 @@ export function ringHitInfo(clientX, clientY) {
   return bestAxis ? { axis: bestAxis, dist: bestDist } : null;
 }
 
-// 命中旋转控制器的轴圆环（仅返回轴）
-export function hitGizmoRotate(clientX, clientY) {
-  const info = ringHitInfo(clientX, clientY);
-  return info && info.dist < 15 ? info.axis : null;
-}
-
 // 命中面移动器（三轴之间的矩形）
 export function hitGizmoFace(clientX, clientY) {
   if (!gizmoGroup.visible) return null;
@@ -700,11 +666,6 @@ export function viewRingDistance(clientX, clientY) {
   const depth = Math.max(0.5, toCam.dot(viewDir));
   const r = 0.62 * scale * focalLengthPx() / depth;
   return Math.abs(Math.hypot(px - center.x, py - center.y) - r);
-}
-
-// 命中外部白色视图环
-export function hitGizmoViewRing(clientX, clientY) {
-  return viewRingDistance(clientX, clientY) < 15;
 }
 
 export const AXIS_COLORS = { X: 0xff5555, Y: 0x55ff55, Z: 0x5588ff };
@@ -796,7 +757,7 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
       const [u, v] = worldToUV(pt);
       const [x, y, z] = PLANES[state.drawPlane].toWorld(snapGrid(u), snapGrid(v), planeInfo().off);
       addParticle({ pos: [x, y, z] });
-      rebuildPoints(); refreshParticleTree();
+      rebuildPoints();
     }
     return;
   }
@@ -811,7 +772,7 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
       pushUndo();
       const [x, y, z] = PLANES[state.drawPlane].toWorld(su, sv, drag.off);
       addParticle({ pos: [x, y, z] });
-      rebuildPoints(); refreshParticleTree();
+      rebuildPoints();
     }
     return;
   }
@@ -872,7 +833,7 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
       const [x, y, z] = PLANES[state.drawPlane].toWorld(du, dv, drag.off);
       addParticle({ pos: [x, y, z] });
       drag.last = { u: du, v: dv };
-      rebuildPoints(); refreshParticleTree();
+      rebuildPoints();
     }
     return;
   }
@@ -914,7 +875,6 @@ renderer.domElement.addEventListener('pointerup', (ev) => {
   controls.enabled = true;
   clearPreview();
   rebuildPoints();
-  refreshParticleTree();
 });
 
 renderer.domElement.addEventListener('contextmenu', (ev) => { ev.preventDefault(); if (modal) cancelModal(); });

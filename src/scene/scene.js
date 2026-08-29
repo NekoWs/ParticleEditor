@@ -388,7 +388,6 @@ export const GIZMO_FACE_DEFS = {
   XZ: { pos: [0.38, 0, 0.38], normal: [0, 1, 0], color: 0x55ff55 },    // 正对 Y → 绿，位于 XZ 面（y=0）
   YZ: { pos: [0, 0.38, 0.38], normal: [1, 0, 0], color: 0xff5555 },    // 正对 X → 红，位于 YZ 面（x=0）
 };
-export const FACE_AXES = { XY: ['X', 'Y'], XZ: ['X', 'Z'], YZ: ['Y', 'Z'] };
 export const gizmoFaces = {};
 (function buildFacePlanes() {
   const zAxis = new THREE.Vector3(0, 0, 1);

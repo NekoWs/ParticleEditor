@@ -34,6 +34,42 @@ export const T_ANY = 'any'; // 临时变量（类型由赋值决定，放宽约�
 // PREC 复用 easing.js 的定义；ATOM_PREC 为原子表达式的虚拟优先级
 export const ATOM_PREC = 10;
 
+/* —— 语句块槽规格（ASCII 名原样显示；中文语义槽用 i18n 键 blk.slot.*） —— */
+export const STMT_SLOTS = {
+  pos: [['X', T_SCALAR], ['Y', T_SCALAR], ['Z', T_SCALAR]],
+  vel: [['vx', T_SCALAR], ['vy', T_SCALAR], ['vz', T_SCALAR]],
+  col: [['R', T_SCALAR], ['G', T_SCALAR], ['B', T_SCALAR], ['A', T_SCALAR]],
+  scl: [['blk.slot.scale', T_SCALAR]],
+  light: [['blk.slot.light', T_SCALAR]],
+};
+export const BIG_BLOCKS = { pos: true, vel: true };
+
+export const BUILTIN_VAR_INFO = {
+  i: 'blk.var.i',
+  n: 'blk.var.n',
+  t: 'blk.var.t',
+};
+export const BUILTIN_VAR_NAMES = ['i', 'n', 't'];
+
+/* —— 积木类别 → CSS 类名（渲染层与数据层共用） —— */
+export const GROUP_COLOR = {
+  pos: 'blk-pos', color: 'blk-color', appearance: 'blk-appearance',
+  math: 'blk-math', vec: 'blk-vec', mat: 'blk-mat', var: 'blk-var', const: 'blk-const',
+  logic: 'blk-logic', array: 'blk-array',
+};
+
+/* —— 槽位/类型小工具（blocks-ui 与 puzzle-canvas 共用，避免循环 import） —— */
+export function isBoolOp(op) {
+  return op === '==' || op === '!=' || op === '<' || op === '<=' || op === '>' || op === '>=' || op === '&&' || op === '||';
+}
+export function opSlotType(op, side) {
+  if (op === '^' || op === '%') return T_SCALAR;
+  if (op === '/') return side === 'r' ? T_SCALAR : T_ANY;
+  return T_ANY;
+}
+export function slotRef(get, set, type) { return { get, set, type }; }
+export function N0() { return { kind: 'num', value: 0 }; }
+
 /* —— 函数块定义：label 显示名，ret 返回类型，args 参数槽 [标签|i18n键, 类型]，desc|i18n键 —— */
 /* 标签约定：以 "blk." 开头的为 i18n 键，其余（a/b/x/y/z/θ/φ/R/r 等）原样显示。 */
 export const FUNC_BLOCKS = {

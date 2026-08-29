@@ -9,7 +9,7 @@
 
 
 import { LANGS } from './langs.js';
-export const I18N_LANGS = (typeof LANGS !== 'undefined') ? LANGS : { zh: {}, en: {} };
+const I18N_LANGS = (typeof LANGS !== 'undefined') ? LANGS : { zh: {}, en: {} };
 
 export let LANG = 'zh';
 try {
@@ -48,30 +48,11 @@ export function applyI18nDom() {
   document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder); });
 }
 
-// 语言切换：更新所有静态文本 + 重渲染各面板
+// 语言切换：更新所有静态文本（动态面板由各自交互/渲染路径就地刷新）
 export function setLanguage(lang) {
   if (lang !== 'zh' && lang !== 'en') return;
   LANG = lang;
   try { localStorage.setItem('pdraw-lang', lang); } catch (e) { }
   document.documentElement.lang = lang === 'en' ? 'en' : 'zh-CN';
   applyI18nDom();
-  // 动态 UI 就地重渲染
-  if (typeof refreshFxPresetOptions === 'function') refreshFxPresetOptions();
-  if (typeof refreshParticleTree === 'function') refreshParticleTree();
-  if (typeof refreshFunctionPanel === 'function') refreshFunctionPanel();
-  if (typeof refreshTexturePanel === 'function') refreshTexturePanel();
-  if (typeof updatePropPanel === 'function') updatePropPanel();
-  if (typeof updateTimeUI === 'function') updateTimeUI();
-  if (typeof updateTopbarTitle === 'function') updateTopbarTitle();
-  if (typeof syncPlayButton === 'function') syncPlayButton();
-  if (typeof drawTimeline === 'function') drawTimeline();
-  if (typeof drawTimelineLayers === 'function') drawTimelineLayers();
-  if (typeof refreshCompTimelines === 'function') refreshCompTimelines();
-  if (typeof closeContextMenu === 'function') closeContextMenu();
-  // 拼图模式打开时：重渲染调色板与代码链
-  if (document.body.classList.contains('puzzle-mode')) {
-    if (typeof renderPalette === 'function') renderPalette();
-    if (typeof renderChain === 'function') renderChain();
-    if (typeof refreshCodeEcho === 'function') refreshCodeEcho();
-  }
 }

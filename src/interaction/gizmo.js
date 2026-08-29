@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { state, PLANES, SNAP_STEP, getFunction } from '../core/constants.js';
 import { shiftHeld } from './input-state.js';
-import { camera, renderer, raycaster, pointer, points, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, gizmoAxisHint, AXIS_RING_COLORS, RING_NORMALS, GIZMO_FACE_DEFS, planePulse, setPlanePulse, setWorldAxisVisible, setWorldAxisGlow, resetWorldAxisState } from '../scene/scene.js';
+import { camera, renderer, raycaster, pointer, points, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, gizmoAxisHint, AXIS_RING_COLORS, RING_NORMALS, GIZMO_FACE_DEFS, setWorldAxisVisible, setWorldAxisGlow, resetWorldAxisState } from '../scene/scene.js';
 import { AXIS_COLORS, AXIS_VECTORS, modal, setGizmoHover, selectedGroupName, selectionHasDerived, derivedFxIdFromSelection, fxCurrentPos, hoverColor } from './interaction.js';
 import { currentVisual } from '../core/animation.js';
 import { groupCurrentCentroid } from '../ui/tree.js';
@@ -19,10 +19,6 @@ export function snapValue(v) {
 
 export function snapGrid(v) {
   return shiftHeld ? snapValue(v) : v;
-}
-
-export function snapPos(p) {
-  return p.map(snapValue);
 }
 
 /* =========================================================================
@@ -181,13 +177,6 @@ export function screenToNdc(clientX, clientY) {
 export function planeInfo() {
   const def = PLANES[state.drawPlane] || PLANES.XZ;
   return { def, plane: new THREE.Plane(def.normal, 0), off: 0 };
-}
-
-// 绘制平面切换时：让该平面内包含的两条轴线颜色发光一下
-export function triggerDrawPlanePulse() {
-  if (planePulse) restoreAxisColors();
-  const def = PLANES[state.drawPlane] || PLANES.XZ;
-  setPlanePulse({ axes: def.axes, t0: performance.now(), dur: 400 });
 }
 
 // 让指定轴发光（绘制平面脉冲用）：显示并变亮（透过网格线也能看到）

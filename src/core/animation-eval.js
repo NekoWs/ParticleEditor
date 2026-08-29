@@ -494,10 +494,6 @@ export function maxTick() {
   return _maxTickCache;
 }
 
-// 速度位移积分：按时间计算（任何时刻都生效，含非播放/拖动时间轴），渲染期叠加不改数据。
-// 兼容旧调用：速度积分已改为按 time 计算，无需重置状态。
-export function resetVelOffsets() {}
-
 // 轨道分段积分（线性近似，忽略缓动）：trackValueAt 的常数段 + 线性段面积
 export function trackIntegral(tr, time) {
   const kfs = tr.kf;

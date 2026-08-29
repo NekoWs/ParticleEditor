@@ -11,7 +11,7 @@ import { t, tf } from '../core/i18n.js';
 import { state, FUNCTION_PRESETS, getFunction, isDerivedParticle } from '../core/constants.js';
 import { currentVisual } from '../core/animation.js';
 import { currentSelected, selectedGroupName, fxPosDeltaAt, fxScaleValuesAt } from '../interaction/interaction.js';
-import { groupCurrentCentroid, refreshParticleTree } from './tree.js';
+import { groupCurrentCentroid } from './tree.js';
 import { modalAlert, rgbToHex, hexToRgb } from './ui.js';
 import { varKfValue } from '../core/easing.js';
 import { applyPresetBuild, rebuildFunctionObject } from '../core/generators.js';
@@ -194,13 +194,6 @@ export function tlFormatTick(v) {
   return String(Math.round(v * 100) / 100);
 }
 
-export function niceStep(range) {
-  const rough = Math.max(1, range / 10);
-  const pow = Math.pow(10, Math.floor(Math.log10(rough)));
-  const norm = rough / pow;
-  return (norm < 1.5 ? 1 : norm < 3.5 ? 2 : norm < 7.5 ? 5 : 10) * pow;
-}
-
 export function timelineXToTick(clientX) {
   const canvas = document.getElementById('timeline');
   const rect = canvas.getBoundingClientRect();
@@ -289,7 +282,7 @@ export function buildFunctionPanel(fx) {
   nameRow.textContent = t('fx.name');
   const nameIn = document.createElement('input');
   nameIn.type = 'text'; nameIn.value = fx.name;
-  nameIn.onchange = () => { pushUndo(); fx.name = nameIn.value.trim() || fx.name; refreshParticleTree(); };
+  nameIn.onchange = () => { pushUndo(); fx.name = nameIn.value.trim() || fx.name; };
   nameRow.appendChild(nameIn);
   wrap.appendChild(nameRow);
 

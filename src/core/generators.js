@@ -13,7 +13,6 @@ import { varKfValue, evaluate, ATTR_NAMES } from './easing.js';
 import { modalAlert } from '../ui/ui.js';
 import { pushUndo } from '../state/undo.js';
 import { rebuildPoints } from './animation.js';
-import { refreshParticleTree } from '../ui/tree.js';
 import { refreshFunctionPanel } from '../ui/panels.js';
 import { parseProgram, createObjectState, runSetup, createStatics, evalProcess, runUniformPrelude } from './script-lang.js';
 
@@ -41,11 +40,6 @@ export function getProgram(fx) {
  * 变量（fx.vars，时间轴动画变量，只读注入）
  * ---------------------------------------------------------------------- */
 
-export function getVarNames(fx) {
-  if (fx._varNames === undefined) fx._varNames = Object.keys(fx.vars || {});
-  return fx._varNames;
-}
-
 export function varValueAt(v, t) {
   const kf = v && v.kf ? v.kf : [];
   return (kf.length > 0) ? varKfValue(kf, t || 0) : (v && Number.isFinite(v.base) ? v.base : 0);
@@ -55,34 +49,6 @@ function varsAt(fx, t) {
   const env = {};
   for (const name in (fx.vars || {})) env[name] = varValueAt(fx.vars[name], t || 0);
   return env;
-}
-
-// 旧 API 兼容：渲染快路径预热时返回 null（新运行时无原生编译快路径）。
-export function getCompiledFn(fx) {
-  fx._compiledFn = null;
-  return null;
-}
-
-// 旧 API 兼容：预计算常量变量数组；新路径不再使用。
-export function getConstVarVals(fx) {
-  fx._constVarVals = null;
-  return null;
-}
-
-// 解析变量值数组（按 getVarNames 顺序；关键帧按 t 插值，否则用常数 base）。
-export function resolveVarVals(fx, i, n, t) {
-  const vars = fx.vars || {};
-  const names = getVarNames(fx);
-  const out = new Array(names.length);
-  const t0 = t || 0;
-  for (let k = 0; k < names.length; k++) {
-    const name = names[k];
-    if (ATTR_NAMES.includes(name)) throw new Error(_etf('err.varReserved', name));
-    const v = vars[name];
-    if (!v) throw new Error(_etf('err.unknownVar', name));
-    out[k] = varValueAt(v, t0);
-  }
-  return out;
 }
 
 // 旧 API 兼容：构造变量环境（仅测试/外部调用使用）。
@@ -254,14 +220,9 @@ export function buildDerivedTracks(fx) {
 export function rebuildFunctionObject(fx) {
   // 失效脚本与对象级缓存
   fx._program = undefined;
-  fx._programSrc = undefined;
   fx._programSrcSetup = undefined;
   fx._programSrcProcess = undefined;
   fx._objState = undefined;
-  fx._compiledFn = undefined;
-  fx._compiledCode = undefined;
-  fx._varNames = undefined;
-  fx._constVarVals = undefined;
   fx._evalCtx = undefined;
 
   const n = Math.max(1, Math.round(fx.count) || 1);
@@ -312,7 +273,6 @@ export function rebuildFunctionObject(fx) {
   }
   buildDerivedTracks(fx);
   rebuildPoints();
-  refreshParticleTree();
   setDirty(true);
 }
 
@@ -393,7 +353,6 @@ export function createFunctionObject(presetId) {
   } catch (e) {
     modalAlert(t('fx.exprError'), e.message);
   }
-  refreshParticleTree();
   refreshFunctionPanel();
   return fx;
 }
@@ -412,6 +371,5 @@ export function deleteFunctionObject(fxId) {
   if (state.selectedFunction === fxId) state.selectedFunction = null;
   state.expandedParticles.delete('f:' + fxId);
   rebuildPoints();
-  refreshParticleTree();
   refreshFunctionPanel();
 }

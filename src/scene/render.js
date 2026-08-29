@@ -5,13 +5,12 @@
  * ======================================================================= */
 
 import {PARTICLE_SIZE_FACTOR, state, functionIndexCache, effMaxFrame, autoFramesFor} from '../core/constants.js';
-import { getCompiledFn, getConstVarVals, resolveVarVals } from '../core/generators.js';
 import { points, selectedPoints, previewPoints, texAtlasMap } from './scene.js';
 import { resolveUV, refreshUVPanel } from '../ui/texture-editor.js';
 import { updateGizmo } from '../interaction/gizmo.js';
 import { drawTimeline, updatePropPanel } from '../ui/panels.js';
-import { refreshTreeSelection, refreshCompTimelines } from '../ui/tree.js';
-import { buildParticleIndex, buildTrackIndex, buildGroupIndex, buildOpDeltaCache, buildGroupXforms, buildFxSclTrackCache, currentVisual, velOffsetAt, rotVectorAt, trackValueAt, trackIntegral, trVersion, groupMemberIndexCache, groupXformCache, opTracksCache, fxSclTrackCache, fxOpDeltaCache, invalidateMaxTickCache } from '../core/animation-eval.js';
+
+import { buildParticleIndex, buildTrackIndex, buildGroupIndex, buildOpDeltaCache, buildGroupXforms, buildFxSclTrackCache, currentVisual, velOffsetAt, trackValueAt, trackIntegral, trVersion, groupMemberIndexCache, groupXformCache, invalidateMaxTickCache } from '../core/animation-eval.js';
 import * as THREE from "three";
 /* =========================================================================
  * 渲染
@@ -42,8 +41,6 @@ export function setPointsGeometry(pts, positions, colors, sizes) {
 
 export let rpPos = null, rpCol = null, rpSize = null, rpSelPos = null, rpSelCol = null, rpSelSize = null;
 export let rpUV = null, rpUVScale = null, rpUVAnim = null, rpUVTex = null, rpUVMode = null;
-// 派生粒子求值的复用输出对象（主循环顺序执行、立即读走，单线程安全，避免每粒子分配）
-export const FX_OUT = { pos: [0, 0, 0], color: [0, 0, 0, 0], vel: [0, 0, 0], scale: 1, glow: false, light: 0 };
 // 粒子 UV 求值的复用输出（fill 模式下强制全图采样）
 export const UVOUT = { mode: 0, au0: 0, av0: 0, au1: 0, av1: 0, sx: 0, sy: 0, sw: 16, sh: 16, stepx: 16, stepy: 0, fps: 1, maxFrame: 1, tw: 16, th: 16 };
 
@@ -155,8 +152,6 @@ function rebuildIndexes() {
   buildTrackIndex();
   buildGroupIndex();
   buildFxSclTrackCache();
-  // 预编译所有函数对象（code 变化时惰性重编译），主循环直接取 fx._compiledFn/_constVarVals
-  for (let fi = 0; fi < state.functions.length; fi++) { getCompiledFn(state.functions[fi]); getConstVarVals(state.functions[fi]); }
 }
 
 function writePointBuffers(full) {
@@ -179,44 +174,15 @@ function writePointBuffers(full) {
   const xforms = groupXformCache;
   const SZF = PARTICLE_SIZE_FACTOR;
   hasAnimatedTex = false; // 主循环顺带统计动画贴图粒子，避免额外整表扫描
-  // 函数对象"干净"标志：无组、无 op 轨道、无函数 scl 轨道、无函数 rot 轨道 → 派生粒子走最简快速路径
-  const hasFxRotTracks = state.tracks.some(tr => tr.pr.startsWith('rot.') && tr.ids.some(id => id.startsWith('f:')));
-  const fxClean = !hasGroups && opTracksCache.length === 0 && (fxSclTrackCache ? fxSclTrackCache.size === 0 : true) && !hasFxRotTracks;
   for (let i = 0; i < n; i++) {
     const p = state.particles[i];
     let px, py, pz, cr, cg, cb, ca, ssx, ssy;
     if (p.fx) {
-      const fx = functionIndexCache.get(p.fx);
-      const fn = fx._compiledFn;
-      if (fn && fxClean) {
-        // 最简快速路径：直接调用原生编译函数写进复用输出对象
-        const vals = fx._constVarVals || resolveVarVals(fx, p._fxIdx, fx.count, T);
-        const r = fn(p._fxIdx, fx.count, T, fx.center[0], fx.center[1], fx.center[2], ...vals, FX_OUT);
-        const vel = p.vel;
-        px = r.pos[0] + vel[0] * T; py = r.pos[1] + vel[1] * T; pz = r.pos[2] + vel[2] * T;
-        cr = r.color[0]; cg = r.color[1]; cb = r.color[2]; ca = r.color[3];
-        ssx = r.scale; ssy = r.scale;
-      } else {
-        const gs = hasGroups ? memberIdx.get(p.id) : undefined;
-        const hasFxOp = fxOpDeltaCache && fxOpDeltaCache.has(p.fx);
-        const hasFxRot = rotVectorAt('f:' + p.fx, T).some(v => v !== 0);
-        const sclTrs = (fxSclTrackCache && fxSclTrackCache.get(p.fx)) || null;
-        if (fn && !gs && !hasFxOp && !hasFxRot) {
-          const vals = fx._constVarVals || resolveVarVals(fx, p._fxIdx, fx.count, T);
-          const r = fn(p._fxIdx, fx.count, T, fx.center[0], fx.center[1], fx.center[2], ...vals, FX_OUT);
-          const vel = p.vel;
-          px = r.pos[0] + vel[0] * T; py = r.pos[1] + vel[1] * T; pz = r.pos[2] + vel[2] * T;
-          cr = r.color[0]; cg = r.color[1]; cb = r.color[2]; ca = r.color[3];
-          ssx = (sclTrs && sclTrs[0]) ? trackValueAt(sclTrs[0], T, r.scale) : r.scale;
-          ssy = (sclTrs && sclTrs[1]) ? trackValueAt(sclTrs[1], T, r.scale) : r.scale;
-        } else {
-          const v = currentVisual(p);
-          const off = velOffsetAt(p, T);
-          px = v.pos[0] + off[0]; py = v.pos[1] + off[1]; pz = v.pos[2] + off[2];
-          cr = v.color[0]; cg = v.color[1]; cb = v.color[2]; ca = v.color[3];
-          ssx = v.scale[0]; ssy = v.scale[1];
-        }
-      }
+      const v = currentVisual(p);
+      const off = velOffsetAt(p, T);
+      px = v.pos[0] + off[0]; py = v.pos[1] + off[1]; pz = v.pos[2] + off[2];
+      cr = v.color[0]; cg = v.color[1]; cb = v.color[2]; ca = v.color[3];
+      ssx = v.scale[0]; ssy = v.scale[1];
     } else {
       const inGroup = hasGroups && memberIdx.has(p.id);
       const tr = (p._trVersion === trVersion) ? p._tr : null;
@@ -364,8 +330,6 @@ function writePointBuffers(full) {
   drawTimeline();
   if (full !== false) {
     updatePropPanel();
-    refreshTreeSelection();
-    if (typeof refreshCompTimelines === 'function') refreshCompTimelines();
     if (typeof refreshUVPanel === 'function' && document.getElementById('pane-texture') && document.getElementById('pane-texture').classList.contains('active')) refreshUVPanel();
   }
 }

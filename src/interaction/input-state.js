@@ -7,6 +7,6 @@
 export let shiftHeld = false;
 export function setShiftHeld(value) { shiftHeld = value; }
 
-export let dragIds = null;
+let dragIds = null;
 export function getDragIds() { return dragIds; }
 export function setDragIds(value) { dragIds = value; }

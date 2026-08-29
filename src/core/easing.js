@@ -4,7 +4,6 @@
  *   1) 贝塞尔缓动求值（cubicBezier / easeVal / easeInOut）
  *   2) 标量/向量/矩阵表达式求值（tokenize / compileExpr / execRpn / evaluate）
  *   3) 公式代码块编译执行（compileFunctionCode / execFunctionCode）
- *   4) 纯标量代码块的 native Function 快速路径（tryCompileFunction）
  * ======================================================================= */
 
 
@@ -414,93 +413,4 @@ export function execFunctionCode(compiled, env) {
     }
   }
   return out;
-}
-/* =========================================================================
- * 代码块原生编译：纯标量代码块 → new Function 生成原生 JS（消除 RPN 解释开销）
- * 仅适用于不含向量/矩阵函数、无分量访问的代码块；否则回退 execFunctionCode。
- * ======================================================================= */
-
-// 标量函数 → JS 表达式生成器（参数已生成好的表达式字符串数组），全部内联为 Math/原生表达式，
-// 避免 new Function 生成代码依赖 eval 作用域里的外部符号。
-export const SCALAR_FUNC_GEN = {
-  sin: a => 'Math.sin(' + a[0] + ')', cos: a => 'Math.cos(' + a[0] + ')', tan: a => 'Math.tan(' + a[0] + ')',
-  asin: a => 'Math.asin(' + a[0] + ')', acos: a => 'Math.acos(' + a[0] + ')', atan: a => 'Math.atan(' + a[0] + ')',
-  atan2: a => 'Math.atan2(' + a[0] + ',' + a[1] + ')', sqrt: a => 'Math.sqrt(' + a[0] + ')', abs: a => 'Math.abs(' + a[0] + ')',
-  sign: a => 'Math.sign(' + a[0] + ')', exp: a => 'Math.exp(' + a[0] + ')', log: a => 'Math.log(' + a[0] + ')', ln: a => 'Math.log(' + a[0] + ')',
-  floor: a => 'Math.floor(' + a[0] + ')', ceil: a => 'Math.ceil(' + a[0] + ')', round: a => 'Math.round(' + a[0] + ')',
-  pow: a => 'Math.pow(' + a[0] + ',' + a[1] + ')', min: a => 'Math.min(' + a[0] + ',' + a[1] + ')', max: a => 'Math.max(' + a[0] + ',' + a[1] + ')',
-  fract: a => '(' + a[0] + '-Math.floor(' + a[0] + '))',
-  clamp: a => 'Math.min(Math.max(' + a[0] + ',' + a[1] + '),' + a[2] + ')',
-  lerp: a => '(' + a[0] + '+(' + a[1] + '-' + a[0] + ')*' + a[2] + ')',
-  step: a => '(' + a[1] + '>=' + a[0] + '?1:0)',
-  smoothstep: a => '(function(e0,e1,x){var t=Math.min(1,Math.max(0,(x-e0)/(e1-e0)));return t*t*(3-2*t);})(' + a[0] + ',' + a[1] + ',' + a[2] + ')',
-  mod: a => '(' + a[0] + '-' + a[1] + '*Math.floor(' + a[0] + '/' + a[1] + '))',
-  random: () => 'Math.random()',
-  rand: a => '(function(x){x=Math.sin(x*127.1+311.7)*43758.5453;return x-Math.floor(x);})(' + a[0] + ')',
-};
-
-export function isScalarRpn(output) {
-  for (const o of output) {
-    if (typeof o === 'string') {
-      if (o !== 'neg' && FUNCS[o] !== undefined && !SCALAR_FUNC_GEN[o]) return false; // vec/mat 函数
-    } else if (o && o.t === 'comp') return false;
-  }
-  return true;
-}
-
-// RPN → JS 表达式字符串（变量名直接作为参数/局部变量引用，见 tryCompileFunction 的函数签名）
-export function rpnToJs(output) {
-  const s = [];
-  for (const o of output) {
-    const to = typeof o;
-    if (to === 'number') { s.push(String(o)); continue; }
-    if (to === 'string') {
-      if (o === 'neg') { s.push('(-' + s.pop() + ')'); continue; }
-      const gen = SCALAR_FUNC_GEN[o];
-      if (gen) {
-        const argc = FUNCS[o];
-        const a = [];
-        for (let k = 0; k < argc; k++) a.unshift(s.pop());
-        s.push(gen(a));
-        continue;
-      }
-      const b = s.pop(), a = s.pop();
-      s.push('(' + a + o + b + ')');
-      continue;
-    }
-    s.push(o.t === 'var' ? o.name : (s.pop() + '.' + o.axis));
-  }
-  return s[0];
-}
-
-// 尝试把代码块编译为原生 JS 函数；失败（含向量/矩阵/拆包）返回 null
-// 函数签名：function(i, n, t, cx, cy, cz, ...varNames)
-export function tryCompileFunction(code, varNames) {
-  let compiled;
-  try { compiled = compileFunctionCode(code); }
-  catch (e) { return null; }
-  const tempSet = new Set();
-  for (const st of compiled) {
-    if (st.kind === 'assign') { if (!ATTR_NAMES.includes(st.name)) tempSet.add(st.name); }
-    else if (st.kind === 'pack') { for (const nm of st.names) if (!ATTR_NAMES.includes(nm)) tempSet.add(nm); }
-    else return null; // unpack（向量拆包）不支持
-  }
-  for (const st of compiled) {
-    const exprs = st.kind === 'pack' ? st.exprs : [st.expr];
-    for (const e of exprs) if (!isScalarRpn(e)) return null;
-  }
-  const lines = [];
-  lines.push('var x=0,y=0,z=0,r=1,g=1,b=1,a=1,vx=0,vy=0,vz=0,sc=1,glow=0,light=0;');
-  if (tempSet.size) lines.push('var ' + [...tempSet].join(',') + ';');
-  for (const st of compiled) {
-    if (st.kind === 'assign') lines.push(st.name + '=' + rpnToJs(st.expr) + ';');
-    else for (let i = 0; i < st.names.length; i++) lines.push(st.names[i] + '=' + rpnToJs(st.exprs[i]) + ';');
-  }
-  lines.push('out.pos[0]=x+cx;out.pos[1]=y+cy;out.pos[2]=z+cz;');
-  lines.push('out.color[0]=(Number.isFinite(r)?Math.min(1,Math.max(0,r)):0);out.color[1]=(Number.isFinite(g)?Math.min(1,Math.max(0,g)):0);out.color[2]=(Number.isFinite(b)?Math.min(1,Math.max(0,b)):0);out.color[3]=(Number.isFinite(a)?Math.min(1,Math.max(0,a)):0);');
-  lines.push('out.vel[0]=vx;out.vel[1]=vy;out.vel[2]=vz;out.scale=(Number.isFinite(sc)?sc:1);out.glow=glow>0.5;out.light=Math.max(0,Math.min(15,Math.round(light)));');
-  lines.push('return out;');
-  const params = ['i', 'n', 't', 'cx', 'cy', 'cz'].concat(varNames || []).concat(['out']).join(',');
-  try { return new Function(params, lines.join('')); }
-  catch (e) { return null; }
 }

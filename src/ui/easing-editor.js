@@ -6,7 +6,6 @@
 import { t } from '../core/i18n.js';
 import { EASINGS, EASING_NONE } from '../core/constants.js';
 import { easeVal, cubicBezierX, cubicBezierY } from '../core/easing.js';
-import { refreshParticleTree } from './tree.js';
 import { refreshFunctionPanel } from './panels.js';
 export function easingToBezier(easing) {
   if (easing === EASING_NONE) return null; // 无缓动不是贝塞尔，编辑器以阶跃曲线展示
@@ -81,7 +80,7 @@ export function openEasingEditor(easing, applyFn, anchor) {
         easingEditor.apply(easingEditor.bezier.slice());
         drawEasingEditor();
       });
-      inp.addEventListener('change', () => { refreshParticleTree(); refreshFunctionPanel(); });
+      inp.addEventListener('change', () => { refreshFunctionPanel(); });
       easingEditor.inputs[idx] = inp;
       row.appendChild(inp);
     };
@@ -127,7 +126,6 @@ export function openEasingEditor(easing, applyFn, anchor) {
       syncEasingInputs();
     }
     drawEasingEditor();
-    refreshParticleTree();
     refreshFunctionPanel();
   };
   pop.appendChild(presetSel);
@@ -141,7 +139,7 @@ export function openEasingEditor(easing, applyFn, anchor) {
   drawEasingEditor();
   canvas.addEventListener('pointerdown', onEasingPointerDown);
   canvas.addEventListener('pointermove', onEasingPointerMove);
-  canvas.addEventListener('pointerup', () => { if (easingEditor) { easingEditor.dragging = -1; refreshParticleTree(); refreshFunctionPanel(); } });
+  canvas.addEventListener('pointerup', () => { if (easingEditor) { easingEditor.dragging = -1; refreshFunctionPanel(); } });
   setTimeout(() => document.addEventListener('pointerdown', onEasingDocPointerDown), 0);
 }
 
@@ -154,7 +152,7 @@ export function syncEasingInputs() {
 }
 
 export function onEasingDocPointerDown(e) {
-  if (easingEditor && !e.target.closest('#easing-editor')) { closeEasingEditor(); refreshParticleTree(); refreshFunctionPanel(); }
+  if (easingEditor && !e.target.closest('#easing-editor')) { closeEasingEditor(); refreshFunctionPanel(); }
 }
 
 export function closeEasingEditor() {

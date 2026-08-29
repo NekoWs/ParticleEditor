@@ -18,7 +18,6 @@ import { rebuildPoints } from '../core/animation.js';
 import { buildModal, modalAlert } from './ui.js';
 import { refreshTimelineTree } from './timeline-tree.js';
 import { refreshAllPanelsLight } from './timeline-layers.js';
-import { refreshParticleTree } from './tree.js';
 
 const MAX_PARTICLES = 100000;
 const MAX_CHANGES = 300000;    // GIF 颜色关键帧变化总量上限
@@ -293,7 +292,6 @@ function finishImport(ids, cols, rows) {
   state.selectedGroup = groupName;
   state.selectedFunction = null;
   rebuildPoints();
-  refreshParticleTree();
   refreshTimelineTree();
   refreshAllPanelsLight();
   return { group: groupName, particles: ids.length, cols, rows };

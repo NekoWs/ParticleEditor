@@ -7,16 +7,16 @@
 
 import { t, applyI18nDom, setLanguage } from './core/i18n.js';
 import { state, FUNCTION_PRESETS, getParticle, isDerivedParticle, updateTopbarTitle } from './core/constants.js';
-import { setShiftHeld, getDragIds, setDragIds } from './interaction/input-state.js';
+import { setShiftHeld } from './interaction/input-state.js';
 import { showAboutModal } from './ui/ui.js';
 import { easeInOut } from './core/easing.js';
 import { openEasingEditor, easingCurveSVG } from './ui/easing-editor.js';
 import { viewport, renderer, camera, controls, scene, pointsMaterial, selectedMaterial, focalLengthPx, camTransition, setCamTransition, planePulse, setPlanePulse, updateRenderScale } from './scene/scene.js';
-import { rebuildPoints, rebuildPointsTime, maxTick, resetVelOffsets, updateAnimatedUV } from './core/animation.js';
-import { editSelectionUniform, addParticle, removeParticlesFromGroups } from './core/edit.js';
+import { rebuildPoints, rebuildPointsTime, maxTick, updateAnimatedUV } from './core/animation.js';
+import { editSelectionUniform } from './core/edit.js';
 import { pushUndo, undo, redo, beginContinuous, endContinuous } from './state/undo.js';
 import { currentSelected, selectedGroupName, deleteSelected, selectAll } from './interaction/interaction.js';
-import { refreshParticleTree, createGroup, showContextMenu, refreshCompTimelines } from './ui/tree.js';
+import { createGroup } from './ui/tree.js';
 import { createFunctionObject } from './core/generators.js';
 import { syncFunctionVarValues, drawTimeline, updateLoopIndicator, hexToRgb, TL_PX_PER_TICK, setTLPxPerTick, timelineViewStart, setTimelineViewStart, scrubAutoPan, timelineXToTick, refreshFunctionPanel } from './ui/panels.js';
 import { drawTimelineLayers, tlInitLayerEvents, refreshAllPanelsLight } from './ui/timeline-layers.js';
@@ -31,7 +31,6 @@ import { updateGizmo, updateGizmoFrame, restoreAxisColors, setAxisGlow } from '.
 // 时间轴数值变化后的统一刷新：粒子状态、时间 UI、函数变量插值显示。
 // 多处 scrub / 播放头拖动路径共用，避免漏刷某一项。
 export function applyTimeChange() {
-  resetVelOffsets();
   updateTimeUI();
   rebuildPoints();
   syncFunctionVarValues();
@@ -49,7 +48,6 @@ export function syncPlayButton() {
 export function togglePlay() {
   state.playing = !state.playing;
   syncPlayButton();
-  resetVelOffsets();
 }
 
 window.addEventListener('keydown', (e) => { if (e.key === 'Shift') setShiftHeld(true); });
@@ -142,12 +140,12 @@ export function initUI() {
     const v = parseInt(ev.target.value, 10);
     const life = (isNaN(v) || v < 0) ? -1 : v;
     pushUndo();
-    const gname = (typeof selectedGroupName === 'function') ? selectedGroupName() : null;
+    const gname = selectedGroupName();
     const targets = gname
       ? (state.groups[gname] || []).map(id => getParticle(id)).filter(Boolean)
       : currentSelected();
     targets.forEach(p => { if (!isDerivedParticle(p)) p.life = life; });
-    if (typeof refreshAllPanelsLight === 'function') refreshAllPanelsLight(); else rebuildPoints();
+    refreshAllPanelsLight();
   });
   document.getElementById('prop-light').addEventListener('input', (ev) => { beginContinuous(); document.getElementById('light-val').textContent = ev.target.value; currentSelected().forEach(p => { p.lightLevel = parseInt(ev.target.value); }); rebuildPoints(); });
   document.getElementById('prop-light').addEventListener('change', endContinuous);
@@ -161,11 +159,11 @@ export function initUI() {
   // 时间轴
   document.getElementById('btn-play').addEventListener('click', togglePlay);
   document.getElementById('tl-speed').addEventListener('change', (ev) => { state.playSpeed = Math.max(0.1, parseFloat(ev.target.value) || 1); });
-  document.getElementById('tl-time').addEventListener('input', (ev) => { state.time = parseFloat(ev.target.value) || 0; state.scrubbing = true; applyTimeChange(); if (typeof drawTimelineLayers === 'function') drawTimelineLayers(); });
+  document.getElementById('tl-time').addEventListener('input', (ev) => { state.time = parseFloat(ev.target.value) || 0; state.scrubbing = true; applyTimeChange(); drawTimelineLayers(); });
   document.getElementById('tl-time').addEventListener('change', () => { state.scrubbing = false; });
   document.getElementById('tl-loop').addEventListener('change', (ev) => { state.loop = ev.target.checked; updateLoopIndicator(); });
-  if (typeof tlInitLayerEvents === 'function') tlInitLayerEvents();
-  if (typeof initTimelineTree === 'function') initTimelineTree();
+  tlInitLayerEvents();
+  initTimelineTree();
 
   // 文件导入
   document.getElementById('file-import').addEventListener('change', (ev) => {
@@ -219,17 +217,16 @@ export function initUI() {
     setTLPxPerTick(TL_PX_PER_TICK * factor);
     setTimelineViewStart(Math.max(0, anchorTick - mx / TL_PX_PER_TICK));
     drawTimeline();
-    if (typeof drawTimelineLayers === 'function') drawTimelineLayers();
+    drawTimelineLayers();
   }, { passive: false });
 
   rebuildPoints();
-  refreshParticleTree();
-  if (typeof refreshTimelineTree === 'function') refreshTimelineTree();
+  refreshTimelineTree();
   // 恢复工作区状态（粒子列表宽）
-  if (typeof applyWorkspaceState === 'function') applyWorkspaceState();
+  applyWorkspaceState();
   // 栏宽恢复会改变视口尺寸：立即重设 renderer，避免首帧场景缺块
   resize();
-  if (typeof initTextureEditor === 'function') initTextureEditor();
+  initTextureEditor();
 }
 
 export function clearAll() {
@@ -240,7 +237,7 @@ export function clearAll() {
   state.expandedParticles.clear(); state.expandedProps.clear();
   if (tlTreeState && tlTreeState.expanded) tlTreeState.expanded.clear();
   state.time = 0;
-  updateTimeUI(); rebuildPoints(); refreshParticleTree(); refreshTimelineTree(); refreshFunctionPanel();
+  updateTimeUI(); rebuildPoints(); refreshTimelineTree(); refreshFunctionPanel();
 }
 
 // 读取三个数值输入框组成的向量；任一框为空/非法时返回 null。
@@ -309,7 +306,6 @@ export function resize() {
   selectedMaterial.uniforms.uPixelScale.value = focalLengthPx();
   if (!document.body.classList.contains('puzzle-mode')) {
     drawTimeline();
-    if (typeof refreshCompTimelines === 'function') refreshCompTimelines();
   }
 }
 window.addEventListener('resize', resize);
@@ -367,8 +363,8 @@ export function animate(now) {
     state.time += dt * 20 * state.playSpeed;
     const mx = maxTick();
     if (state.time >= mx && mx > 0) {
-      if (state.loop) { state.time = 0; resetVelOffsets(); }
-      else { state.time = mx; state.playing = false; syncPlayButton(); resetVelOffsets(); }
+      if (state.loop) { state.time = 0; }
+      else { state.time = mx; state.playing = false; syncPlayButton(); }
     }
     updateTimeUI();
     rebuildPointsTime(false);
@@ -376,20 +372,20 @@ export function animate(now) {
   }
   // 仅动画贴图粒子需要每帧随墙钟推进 UV 帧：轻量更新（只改 sx/sy），
   // 避免对数十万粒子每帧完整 rebuildPoints 造成卡顿。
-  if (typeof updateAnimatedUV === 'function') updateAnimatedUV();
+  updateAnimatedUV();
   // 标尺与图层区每帧重绘（播放头推进、粒子增删/拖拽都依赖；canvas 开销可忽略）
   drawTimeline();
-  if (typeof drawTimelineLayers === 'function') drawTimelineLayers();
+  drawTimelineLayers();
   controls.update();
   updateGizmoFrame();
   pointsMaterial.uniforms.uTime.value = performance.now() / 1000;
   renderer.render(scene, camera);
   drawAxisGizmo();
   // 选中粒子/函数对象/组变化时，贴图编辑器自动切换到其贴图（内部按目标签名去重）
-  if (typeof syncTextureSelection === 'function') syncTextureSelection();
+  syncTextureSelection();
   // UV 动画预览：贴图 tab 激活且当前为动画模式时，逐帧刷新 overlay 让 UV 预览框跟随动画帧移动
-  if (typeof texAnimOverlayActive === 'function' && texAnimOverlayActive()) {
-    if (typeof updateTexOverlay === 'function') updateTexOverlay();
+  if (texAnimOverlayActive()) {
+    updateTexOverlay();
   }
 }
 

@@ -1813,9 +1813,6 @@ function applyArrayMethod(arr, method, args, rt, node) {
  * 向量 / 矩阵内建函数
  * ======================================================================= */
 
-function identityMat3() { return mat3([[1, 0, 0], [0, 1, 0], [0, 0, 1]]); }
-function identityMat4() { return mat4([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]); }
-
 function normalizeVec3(v, node) {
   const l = Math.hypot(v.x, v.y, v.z);
   if (l === 0) throw runtimeError('cannot normalize a zero-length vector', node);
@@ -2322,8 +2319,7 @@ function formatValue(v) {
 const OP = {
   CONST: 0, POP: 1, DUP: 2,
   LOAD: 3, STORE: 4,
-  LOAD_BUILTIN: 5, LOAD_ATTR: 6, STORE_ATTR: 7,
-  LOAD_FUNC: 8,
+  LOAD_BUILTIN: 5, LOAD_ATTR: 6,
   LOAD_UNIFORM: 9, STORE_UNIFORM: 10,
   UNARY: 11, BINARY: 12,
   ARRAY: 13, INDEX: 14, INDEX_STORE: 15,
@@ -2977,16 +2973,6 @@ class Vm {
         case OP.LOAD_ATTR: {
           const name = ATTR_BY_CODE[code[this.pc++]];
           stack.push(attrRead(name, this.ctx));
-          break;
-        }
-        case OP.STORE_ATTR: {
-          const name = ATTR_BY_CODE[code[this.pc++]];
-          attrWrite(name, stack.pop(), this.ctx, node);
-          break;
-        }
-        case OP.LOAD_FUNC: {
-          const fn = this.funcs[code[this.pc++]];
-          stack.push({ t: 'func', name: fn.name });
           break;
         }
         case OP.LOAD_UNIFORM: stack.push(this.uniforms[code[this.pc++]]); break;

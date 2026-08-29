@@ -9,7 +9,7 @@
 
 import { TRACK_COMPS, PARTICLE_SCALE_COMPS, COMP_INDEX, compPr, state, getParticle, getFunction, isDerivedParticle, nextId, nextGroupName, indexParticle } from './constants.js';
 import { baseComponent, componentValueAt, findTrackByPr, PR_TO_IDX, trVersion, rebuildPoints } from './animation.js';
-import { refreshParticleTree, groupCentroidValue, targetComponentValue } from '../ui/tree.js';
+import { groupCentroidValue, targetComponentValue } from '../ui/tree.js';
 import { pushUndo } from '../state/undo.js';
 import { commitFunctionRebuild } from '../ui/panels.js';
 import { selectedGroupName } from '../interaction/interaction.js';
@@ -80,7 +80,7 @@ export function setValueAtTime(ids, prop, values) {
     if (t === 0 && !isDerivedParticle(p)) applyBaseValue(p, prop, values);
   }
   rebuildPoints();
-  refreshParticleTree();
+
 }
 
 // 直接修改基础值（不创建关键帧），并同步 t=0 关键帧（若存在）
@@ -139,7 +139,7 @@ export function setValuesAtTime(entries, prop) {
     if (t === 0 && !isDerivedParticle(p)) applyBaseValue(p, prop, values);
   }
   rebuildPoints();
-  refreshParticleTree();
+
 }
 
 // 逐粒子编辑：捕获时写当前帧关键帧，否则改基础值
@@ -164,7 +164,7 @@ export function editSelectionUniform(prop, values) {
     if (!fx || prop === 'col' || prop === 'vel') return; // 无整体颜色/速度轨道
     if (!state.captureKeyframes) {
       if (prop === 'pos') { fx.center = values.slice(0, 3); commitFunctionRebuild(fx); }
-      else if (prop === 'scl') { comps.forEach((comp, i) => setComponentKeyframe('f:' + fxId, 'scl', comp, 0, values[i], 'set')); rebuildPoints(); refreshParticleTree(); }
+      else if (prop === 'scl') { comps.forEach((comp, i) => setComponentKeyframe('f:' + fxId, 'scl', comp, 0, values[i], 'set')); rebuildPoints(); }
       return;
     }
     if (prop === 'pos') {
@@ -172,7 +172,7 @@ export function editSelectionUniform(prop, values) {
     } else if (prop === 'scl') {
       comps.forEach((comp, i) => setComponentKeyframe('f:' + fxId, 'scl', comp, t, values[i], 'set'));
     }
-    rebuildPoints(); refreshParticleTree();
+    rebuildPoints();
     return;
   }
 
@@ -189,7 +189,7 @@ export function editSelectionUniform(prop, values) {
       if (mode === 'op') v = values[i] - groupCentroidValue(gname, 'pos')[COMP_INDEX[comp]];
       setComponentKeyframe('g:' + gname, prop, comp, t, v, mode);
     });
-    rebuildPoints(); refreshParticleTree();
+    rebuildPoints();
     return;
   }
 
@@ -199,28 +199,6 @@ export function editSelectionUniform(prop, values) {
   if (ids.some(id => isDerivedParticle(getParticle(id)))) return; // 派生粒子基础属性只读
   if (!state.captureKeyframes) { editBaseValue(ids, prop, values); rebuildPoints(); return; }
   setValueAtTime(ids, prop, values);
-}
-
-// 单分量值编辑（树/时间轴用）
-export function setComponentValue(id, prop, comp, time, value) {
-  const p = getParticle(id);
-  if (!p) return;
-  pushUndo();
-  const pr = compPr(prop, comp);
-  let tr = findTrackByPr(pr, id);
-  if (!tr) {
-    tr = { pr, m: 'set', ids: [id], kf: [[0, baseValueFor(id, prop, comp), state.defaultEasing]] };
-    state.tracks.push(tr);
-  }
-  upsertKeyframe(tr.kf, time, value, state.defaultEasing);
-  if (time === 0 && !isDerivedParticle(p)) {
-    if (prop === 'pos') p.pos[COMP_INDEX[comp]] = value;
-    else if (prop === 'col') p.color[COMP_INDEX[comp]] = value;
-    else if (prop === 'vel') (p.vel || (p.vel = [0, 0, 0]))[COMP_INDEX[comp]] = value;
-    else p.scale[COMP_INDEX[comp]] = value;
-  }
-  rebuildPoints();
-  refreshParticleTree();
 }
 
 // 通用分量值编辑（时间轴 [值] 输入框用）：按 id 前缀分发到粒子/组/函数对象，
@@ -244,27 +222,7 @@ export function editComponentValue(id, prop, comp, time, value) {
     else p.scale[COMP_INDEX[comp]] = value;
   }
   rebuildPoints();
-  refreshParticleTree();
-}
 
-export function updateKeyframeTime(id, pr, oldT, newT) {
-  const tr = findTrackByPr(pr, id);
-  const kf = tr && tr.kf.find(k => k[0] === oldT);
-  if (!kf) return;
-  pushUndo();
-  kf[0] = Math.max(0, newT);
-  tr.kf.sort((a, b) => a[0] - b[0]);
-  rebuildPoints();
-  refreshParticleTree();
-}
-
-export function updateKeyframeEasing(id, pr, t, easing) {
-  const tr = findTrackByPr(pr, id);
-  const kf = tr && tr.kf.find(k => k[0] === t);
-  if (!kf) return;
-  pushUndo();
-  kf[2] = easing;
-  rebuildPoints();
 }
 
 export function removeKeyframe(id, pr, t) {
@@ -274,7 +232,7 @@ export function removeKeyframe(id, pr, t) {
   tr.kf = tr.kf.filter(k => k[0] !== t);
   if (tr.kf.length === 0) state.tracks = state.tracks.filter(x => x !== tr);
   rebuildPoints();
-  refreshParticleTree();
+
 }
 
 /* =========================================================================
@@ -285,31 +243,16 @@ function setTrackValues(prefix, prop, mode, time, values) {
   const comps = TRACK_COMPS[prop];
   comps.forEach((comp, i) => setComponentKeyframe(prefix, prop, comp, time, values[i], mode));
   rebuildPoints();
-  refreshParticleTree();
-}
 
-function setTrackMode(prefix, prop, mode) {
-  pushUndo();
-  const comps = TRACK_COMPS[prop];
-  for (const comp of comps) {
-    const tr = findTrackByPr(compPr(prop, comp), prefix);
-    if (tr) tr.m = mode;
-  }
-  rebuildPoints();
-  refreshParticleTree();
 }
 
 export function setGroupTrackValue(groupName, prop, mode, time, values) {
   setTrackValues('g:' + groupName, prop, mode, time, values);
 }
 
-export function setGroupTrackMode(groupName, prop, mode) { setTrackMode('g:' + groupName, prop, mode); }
-
 export function setFunctionTrackValue(fxId, prop, mode, time, values) {
   setTrackValues('f:' + fxId, prop, mode, time, values);
 }
-
-export function setFunctionTrackMode(fxId, prop, mode) { setTrackMode('f:' + fxId, prop, mode); }
 
 /* =========================================================================
  * 粒子 / 组 操作
@@ -365,7 +308,7 @@ export function renameParticle(oldId, newId) {
   if (state.selected.has(oldId)) { state.selected.delete(oldId); state.selected.add(newId); }
   if (state.expandedParticles.has(oldId)) { state.expandedParticles.delete(oldId); state.expandedParticles.add(newId); }
   rebuildPoints();
-  refreshParticleTree();
+
   return true;
 }
 
@@ -381,7 +324,7 @@ export function renameGroup(oldName, newName) {
   }
   if (state.selectedGroup === oldName) state.selectedGroup = newName;
   if (state.expandedParticles.has('g:' + oldName)) { state.expandedParticles.delete('g:' + oldName); state.expandedParticles.add('g:' + newName); }
-  refreshParticleTree();
+
   return true;
 }
 
@@ -398,7 +341,7 @@ export function moveParticlesToGroup(ids, groupName) {
   for (const id of ids) set.add(id);
   state.groups[groupName] = [...set];
   rebuildPoints();
-  refreshParticleTree();
+
 }
 
 export function removeParticlesFromGroups(ids) {
@@ -409,5 +352,5 @@ export function removeParticlesFromGroups(ids) {
     if (state.groups[g].length === 0) delete state.groups[g];
   }
   rebuildPoints();
-  refreshParticleTree();
+
 }
