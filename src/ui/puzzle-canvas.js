@@ -760,21 +760,33 @@ function layoutFuncHat(entry, x, y, out, ctx) {
 
   // 函数体按「链」排布：首块保留顶部凹口，与起始块底部凸起咬合。
   const bodyArr = s.body || [];
+  const bodyPh = placeholderFor(s.body);
   let cy = bodyY;
   let bodyW = 0;
   const bx = hx + BODY_INDENT;
+  const placePh = () => {
+    if (!bodyPh) return;
+    const pw = Math.max(120, bodyPh.w || 0);
+    const phh = Math.max(20, bodyPh.h || 0);
+    out.push({ kind: 'placeholder', shape: 'stmt', x: bx, y: cy, w: pw, h: phh, segments: [] });
+    bodyW = Math.max(bodyW, pw);
+    cy += phh;
+  };
   if (bodyArr.length === 0) {
+    if (bodyPh && bodyPh.index === 0) placePh();
     out.push(dropRegion({ chain: s.body }, 0, bx, cy, 200, 22));
     cy += 22;
-    bodyW = 200;
+    bodyW = Math.max(bodyW, 200);
   } else {
     for (let i = 0; i < bodyArr.length; i++) {
       out.push(dropRegion({ chain: s.body }, i, bx, cy - 5, Math.max(bodyW, 120), 10));
+      if (bodyPh && bodyPh.index === i) placePh();
       const d = layoutStmt(bodyArr[i], bx, cy, out, ctx, { noBump: false });
       bodyW = Math.max(bodyW, d.w);
       cy += d.h;
     }
     out.push(dropRegion({ chain: s.body }, bodyArr.length, bx, cy - 5, Math.max(bodyW, 120), 10));
+    if (bodyPh && bodyPh.index === bodyArr.length) placePh();
   }
 
   const w = Math.max(headerW, bodyW + BODY_INDENT + STMT_PAD_X);
