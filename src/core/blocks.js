@@ -19,6 +19,12 @@
 
 import { _et, _etf } from './i18n.js';
 import { PREC, NEG_PREC, FUNCS, ATTR_NAMES, parseNameList, parseExprList } from './easing.js';
+
+// 扩展比较/逻辑运算符优先级（1 最低，与 easing.js 的 + - * / ^ 衔接）。
+PREC['||'] = 1;
+PREC['&&'] = 2;
+PREC['=='] = 3; PREC['!='] = 3;
+PREC['<'] = 3; PREC['<='] = 3; PREC['>'] = 3; PREC['>='] = 3;
 /* —— 类型 —— */
 export const T_SCALAR = 'scalar';
 export const T_VEC = 'vec';
@@ -100,7 +106,7 @@ export const PALETTE_GROUPS = [
 
 /* —— 运算符块（组内 math；值为 i18n 键 blk.op.*） —— */
 export const OP_SYMBOLS = ['+', '-', '*', '/', '%', '^'];
-export const OP_LABELS = { '+': 'blk.op.add', '-': 'blk.op.sub', '*': 'blk.op.mul', '/': 'blk.op.div', '%': 'blk.op.mod', '^': 'blk.op.pow' };
+export const OP_LABELS = { '+': 'blk.op.add', '-': 'blk.op.sub', '*': 'blk.op.mul', '/': 'blk.op.div', '%': 'blk.op.mod', '^': 'blk.op.pow', '==': 'blk.op.eq', '!=': 'blk.op.ne', '<': 'blk.op.lt', '<=': 'blk.op.le', '>': 'blk.op.gt', '>=': 'blk.op.ge', '&&': 'blk.op.and', '||': 'blk.op.or' };
 
 /* =========================================================================
  * 类型
@@ -113,6 +119,7 @@ export function typeAccepts(slotType, blockType) {
 
 export function opResultType(op, ta, tb) {
   if (op === '^' || op === '%') return T_SCALAR;
+  if (op === '==' || op === '!=' || op === '<' || op === '<=' || op === '>' || op === '>=' || op === '&&' || op === '||') return T_SCALAR;
   if (op === '/') return (ta === T_VEC && (tb === T_SCALAR || tb === T_ANY)) ? T_VEC : T_SCALAR;
   if (op === '+' || op === '-') {
     if ((ta === T_VEC || ta === T_ANY) && (tb === T_VEC || tb === T_ANY)) return T_VEC;
@@ -137,9 +144,15 @@ export function exprType(node, varTypeOf) {
   const vt = varTypeOf || (() => T_ANY);
   switch (node.kind) {
     case 'num': return T_SCALAR;
+    case 'bool': return T_SCALAR;
     case 'var': return (node.name === 'pi' || node.name === 'e') ? T_SCALAR : vt(node.name);
-    case 'func': return FUNC_BLOCKS[node.name].ret;
+    case 'func': return FUNC_BLOCKS[node.name] ? FUNC_BLOCKS[node.name].ret : T_ANY;
+    case 'array': return T_ANY;
+    case 'index': return T_ANY;
+    case 'method': return T_ANY;
     case 'comp': return T_SCALAR;
+    case 'not': return T_SCALAR;
+    case 'ternary': return T_ANY;
     case 'neg': return exprType(node.a, vt);
     case 'chain': {
       // 按运算符优先级求类型（* / % 优先于 + -），与 exprToCode 生成代码的求值语义一致
@@ -186,14 +199,26 @@ export function exprToCode(node, parentPrec) {
       s = fmtNum(node.value);
       p = (node.value < 0) ? 0.5 : ATOM_PREC;
       break;
+    case 'bool':
+      s = node.value ? 'true' : 'false'; p = ATOM_PREC; break;
     case 'var':
       s = node.name; p = ATOM_PREC; break;
     case 'func':
       s = node.name + '(' + node.args.map(a => exprToCode(a, 0)).join(', ') + ')'; p = ATOM_PREC; break;
+    case 'array':
+      s = '[' + node.items.map(a => exprToCode(a, 0)).join(', ') + ']'; p = ATOM_PREC; break;
+    case 'index':
+      s = exprToCode(node.target, ATOM_PREC) + '[' + exprToCode(node.index, 0) + ']'; p = ATOM_PREC; break;
+    case 'method':
+      s = exprToCode(node.obj, ATOM_PREC) + '.' + node.method + '(' + node.args.map(a => exprToCode(a, 0)).join(', ') + ')'; p = ATOM_PREC; break;
     case 'comp':
       s = exprToCode(node.target, ATOM_PREC) + '.' + node.axis; p = ATOM_PREC; break;
+    case 'not':
+      s = '!' + exprToCode(node.a, NEG_PREC); p = NEG_PREC; break;
     case 'neg':
       s = '-' + exprToCode(node.a, NEG_PREC); p = NEG_PREC; break;
+    case 'ternary':
+      s = exprToCode(node.cond, 1) + ' ? ' + exprToCode(node.a, 0) + ' : ' + exprToCode(node.b, 0.75); p = 0.75; break;
     case 'op': {
       const prec = PREC[node.op];
       const rightAssoc = node.op === '^';
@@ -257,24 +282,42 @@ export function blockTokenize(expr) {
   const tokens = [];
   let i = 0;
   let expectOperand = true;
+  const isIdentStart = c => /[a-zA-Z_]/.test(c);
+  const isIdentPart = c => /[a-zA-Z0-9_]/.test(c);
   while (i < expr.length) {
     const c = expr[i];
     if (c === ' ' || c === '\t' || c === '\n') { i++; continue; }
+    // 多字符运算符
+    const two = expr.slice(i, i + 2);
+    if (two === '==' || two === '!=' || two === '<=' || two === '>=' || two === '&&' || two === '||') {
+      tokens.push({ t: 'op', op: two });
+      i += 2; expectOperand = true; continue;
+    }
     if (c === '.' && (expr[i + 1] === 'x' || expr[i + 1] === 'y' || expr[i + 1] === 'z')) {
       tokens.push({ t: 'comp', axis: expr[i + 1] }); i += 2; expectOperand = false; continue;
     }
-    if ((c >= '0' && c <= '9') || c === '.') {
+    if (c === '.' && isIdentStart(expr[i + 1] || '')) {
+      tokens.push({ t: 'dot' }); i++; expectOperand = false; continue;
+    }
+    if ((c >= '0' && c <= '9') || (c === '.' && (expr[i + 1] >= '0' && expr[i + 1] <= '9'))) {
       let j = i; while (j < expr.length && /[0-9.]/.test(expr[j])) j++;
       tokens.push({ t: 'num', v: parseFloat(expr.slice(i, j)) }); i = j; expectOperand = false; continue;
     }
-    if (/[a-zA-Z_]/.test(c)) {
-      let j = i; while (j < expr.length && /[a-zA-Z0-9_]/.test(expr[j])) j++;
+    if (isIdentStart(c)) {
+      let j = i; while (j < expr.length && isIdentPart(expr[j])) j++;
       const name = expr.slice(i, j);
-      if (name in FUNCS) tokens.push({ t: 'func', name });
+      if (name === 'true') { tokens.push({ t: 'bool', v: true }); }
+      else if (name === 'false') { tokens.push({ t: 'bool', v: false }); }
+      else if (name in FUNCS) tokens.push({ t: 'func', name });
       else tokens.push({ t: 'var', name }); // pi/e 归为 var，序列化时原样输出
       i = j; expectOperand = false; continue;
     }
     if (c === '-' && expectOperand) { tokens.push({ t: 'neg' }); i++; continue; } // 一元负号
+    if (c === '!') { tokens.push({ t: 'not' }); i++; expectOperand = true; continue; }
+    if (c === '?') { tokens.push({ t: '?' }); i++; expectOperand = true; continue; }
+    if (c === ':') { tokens.push({ t: ':' }); i++; expectOperand = true; continue; }
+    if (c === '[') { tokens.push({ t: '[' }); i++; expectOperand = true; continue; }
+    if (c === ']') { tokens.push({ t: ']' }); i++; expectOperand = false; continue; }
     if ('+-*/%^(),'.includes(c)) { tokens.push({ t: c }); i++; expectOperand = (c === '(' || c === ',' || '+-*/%^'.includes(c)); continue; }
     i++;
   }
@@ -288,43 +331,81 @@ export function parseExpr(str) {
   const peek = () => toks[pos];
   const next = () => toks[pos++];
   const expect = (t) => { const tk = next(); if (!tk || tk.t !== t) throw new Error(_etf('err.exprNeed', t, str)); return tk; };
+  const isOpTok = (t, ops) => !!t && t.t === 'op' && ops.includes(t.op);
 
   function parsePrimary() {
     const tk = next();
     if (!tk) throw new Error(_et('err.exprEnd'));
     let node;
     if (tk.t === 'num') node = { kind: 'num', value: tk.v };
+    else if (tk.t === 'bool') node = { kind: 'bool', value: tk.v };
     else if (tk.t === 'var') node = { kind: 'var', name: tk.name };
     else if (tk.t === 'neg') {
-      // 一元负号：-数字 合并为负 num；其余包成 neg 节点（优先级 NEG_PREC，低于 ^）
       const inner = parsePower();
       if (inner.kind === 'num') node = { kind: 'num', value: -inner.value };
       else node = { kind: 'neg', a: inner };
+    } else if (tk.t === 'not') {
+      node = { kind: 'not', a: parsePower() };
     } else if (tk.t === 'func') {
       if (!peek() || peek().t !== '(') throw new Error(_etf('err.funcNoParen', tk.name));
       next(); // '('
       const args = [];
       if (peek() && peek().t !== ')') {
-        args.push(parseAddSub());
-        while (peek() && peek().t === ',') { next(); args.push(parseAddSub()); }
+        args.push(parseTernary());
+        while (peek() && peek().t === ',') { next(); args.push(parseTernary()); }
       }
       expect(')');
       node = { kind: 'func', name: tk.name, args };
+    } else if (tk.t === '[') {
+      const items = [];
+      if (peek() && peek().t !== ']') {
+        items.push(parseTernary());
+        while (peek() && peek().t === ',') { next(); items.push(parseTernary()); }
+      }
+      expect(']');
+      node = { kind: 'array', items };
     } else if (tk.t === '(') {
-      node = parseAddSub();
+      node = parseTernary();
       expect(')');
     } else {
       throw new Error(_etf('err.unexpectedTok', tk.t || JSON.stringify(tk)));
     }
-    while (peek() && peek().t === 'comp') {
-      const c = next();
-      node = { kind: 'comp', axis: c.axis, target: node };
+    return node;
+  }
+
+  function parsePostfix() {
+    let node = parsePrimary();
+    while (peek()) {
+      if (peek().t === 'comp') {
+        const c = next();
+        node = { kind: 'comp', axis: c.axis, target: node };
+      } else if (peek().t === '[') {
+        next();
+        const idx = parseTernary();
+        expect(']');
+        node = { kind: 'index', target: node, index: idx };
+      } else if (peek().t === 'dot') {
+        next();
+        const m = next();
+        if (!m || m.t !== 'var') throw new Error(_etf('err.exprNeed', 'method', str));
+        if (!peek() || peek().t !== '(') { node = { kind: 'var', name: m.name }; continue; }
+        next(); // '('
+        const args = [];
+        if (peek() && peek().t !== ')') {
+          args.push(parseTernary());
+          while (peek() && peek().t === ',') { next(); args.push(parseTernary()); }
+        }
+        expect(')');
+        node = { kind: 'method', obj: node, method: m.name, args };
+      } else {
+        break;
+      }
     }
     return node;
   }
 
   function parsePower() {
-    let node = parsePrimary();
+    let node = parsePostfix();
     if (peek() && peek().t === '^') { next(); node = { kind: 'op', op: '^', a: node, b: parsePower() }; }
     return node;
   }
@@ -335,8 +416,6 @@ export function parseExpr(str) {
       ops.push(next().t);
       terms.push(parsePower());
     }
-    // 扁平化冗余括号：首项（无前置运算符的左操作数）若为同优先级二元运算（如 (i%m) 或 (a*b)），
-    // 左结合下括号冗余，展开进算式以得到扁平 chain（避免 { [i] % [m] } / ... 的嵌套）
     const first = terms[0];
     if (first.kind === 'op' && (first.op === '*' || first.op === '/' || first.op === '%')) {
       terms.splice(0, 1, first.a, first.b);
@@ -352,9 +431,6 @@ export function parseExpr(str) {
       terms.push(parseMulDiv());
     }
     if (terms.length === 1) return terms[0];
-    // 扁平化：吸收「首运算符优先级高于 + -」的子 chain（如 1 - 2*x/n → chain([1,2,x,n],['-','*','/'])），
-    // 嵌套最少且语义不变。此类子 chain 来自无括号的 * / % 折叠（或冗余括号），可安全拍平；
-    // 若子 chain 首运算符仍是 + -（括号必要，如 3-(1-2*x/n)），则不吸收、保留括号。
     const absorbable = (t) => t.kind === 'chain' && PREC[t.ops[0]] > 1;
     if (terms.some(absorbable)) {
       const ft = [];
@@ -373,8 +449,51 @@ export function parseExpr(str) {
     }
     return (terms.length === 2) ? { kind: 'op', op: ops[0], a: terms[0], b: terms[1] } : { kind: 'chain', terms, ops };
   }
+  function parseCompare() {
+    let node = parseAddSub();
+    while (isOpTok(peek(), ['<', '<=', '>', '>='])) {
+      const op = next().op;
+      node = { kind: 'op', op, a: node, b: parseAddSub() };
+    }
+    return node;
+  }
+  function parseEquality() {
+    let node = parseCompare();
+    while (isOpTok(peek(), ['==', '!='])) {
+      const op = next().op;
+      node = { kind: 'op', op, a: node, b: parseCompare() };
+    }
+    return node;
+  }
+  function parseAnd() {
+    let node = parseEquality();
+    while (isOpTok(peek(), ['&&'])) {
+      next();
+      node = { kind: 'op', op: '&&', a: node, b: parseEquality() };
+    }
+    return node;
+  }
+  function parseOr() {
+    let node = parseAnd();
+    while (isOpTok(peek(), ['||'])) {
+      next();
+      node = { kind: 'op', op: '||', a: node, b: parseAnd() };
+    }
+    return node;
+  }
+  function parseTernary() {
+    const cond = parseOr();
+    if (peek() && peek().t === '?') {
+      next();
+      const a = parseTernary();
+      expect(':');
+      const b = parseTernary();
+      return { kind: 'ternary', cond, a, b };
+    }
+    return cond;
+  }
 
-  const node = parseAddSub();
+  const node = parseTernary();
   if (pos < toks.length) throw new Error(_etf('err.exprExtra', str));
   return node;
 }

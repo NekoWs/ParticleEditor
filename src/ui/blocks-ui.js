@@ -53,11 +53,17 @@ export function cloneExprNode(n) {
   if (!n) return n;
   const o = { kind: n.kind };
   if (n.kind === 'num') o.value = n.value;
+  else if (n.kind === 'bool') o.value = n.value;
   else if (n.kind === 'var') o.name = n.name;
   else if (n.kind === 'func') { o.name = n.name; o.args = n.args.map(cloneExprNode); }
   else if (n.kind === 'op') { o.op = n.op; o.a = cloneExprNode(n.a); o.b = cloneExprNode(n.b); }
   else if (n.kind === 'comp') { o.axis = n.axis; o.target = cloneExprNode(n.target); }
   else if (n.kind === 'neg') { o.a = cloneExprNode(n.a); }
+  else if (n.kind === 'not') { o.a = cloneExprNode(n.a); }
+  else if (n.kind === 'ternary') { o.cond = cloneExprNode(n.cond); o.a = cloneExprNode(n.a); o.b = cloneExprNode(n.b); }
+  else if (n.kind === 'index') { o.target = cloneExprNode(n.target); o.index = cloneExprNode(n.index); }
+  else if (n.kind === 'method') { o.obj = cloneExprNode(n.obj); o.method = n.method; o.args = n.args.map(cloneExprNode); }
+  else if (n.kind === 'array') { o.items = n.items.map(cloneExprNode); }
   else if (n.kind === 'chain') { o.terms = n.terms.map(cloneExprNode); o.ops = n.ops.slice(); }
   return o;
 }
@@ -66,12 +72,18 @@ export function cloneStmts(stmts) { return stmts.map(s => ({ ...s, slots: (s.slo
 export function nodeToBlockType(n) {
   switch (n.kind) {
     case 'num': return { cls: 'blk-const', label: fmtNum(n.value) };
+    case 'bool': return { cls: 'blk-const', label: n.value ? 'true' : 'false' };
     case 'var': return { cls: n.name === 'pi' || n.name === 'e' ? 'blk-const' : 'blk-var', label: n.name };
     case 'func': return { cls: GROUP_COLOR[funcGroup(n.name)], label: n.name };
     case 'op': return { cls: 'blk-math', label: n.op };
     case 'chain': return { cls: 'blk-math', label: t('blk.chain') };
     case 'comp': return { cls: 'blk-vec', label: '.' + n.axis };
     case 'neg': return { cls: 'blk-math', label: '−' };
+    case 'not': return { cls: 'blk-math', label: '!' };
+    case 'ternary': return { cls: 'blk-math', label: '?:' };
+    case 'index': return { cls: 'blk-array', label: '[]' };
+    case 'method': return { cls: 'blk-array', label: '.' + n.method };
+    case 'array': return { cls: 'blk-array', label: '[]' };
     default: return { cls: 'blk-var', label: '?' };
   }
 }
@@ -185,6 +197,46 @@ export function makeExprBlock(n) {
     ax.title = t('blk.clickSwapComp');
     ax.addEventListener('click', () => { bctxPushUndo(); n.axis = n.axis === 'x' ? 'y' : n.axis === 'y' ? 'z' : 'x'; renderChain(); });
     el.appendChild(ax);
+    return el;
+  }
+  if (n.kind === 'bool') { el.appendChild(document.createTextNode(n.value ? 'true' : 'false')); return el; }
+  if (n.kind === 'not') {
+    el.appendChild(document.createTextNode('!'));
+    el.appendChild(makeSlot(slotRef(() => n.a, v => { n.a = v; }, T_ANY), ''));
+    return el;
+  }
+  if (n.kind === 'ternary') {
+    el.appendChild(makeSlot(slotRef(() => n.cond, v => { n.cond = v; }, T_ANY), ''));
+    el.appendChild(document.createTextNode(' ? '));
+    el.appendChild(makeSlot(slotRef(() => n.a, v => { n.a = v; }, T_ANY), ''));
+    el.appendChild(document.createTextNode(' : '));
+    el.appendChild(makeSlot(slotRef(() => n.b, v => { n.b = v; }, T_ANY), ''));
+    return el;
+  }
+  if (n.kind === 'index') {
+    el.appendChild(makeSlot(slotRef(() => n.target, v => { n.target = v; }, T_ANY), ''));
+    el.appendChild(document.createTextNode('['));
+    el.appendChild(makeSlot(slotRef(() => n.index, v => { n.index = v; }, T_ANY), ''));
+    el.appendChild(document.createTextNode(']'));
+    return el;
+  }
+  if (n.kind === 'method') {
+    el.appendChild(makeSlot(slotRef(() => n.obj, v => { n.obj = v; }, T_ANY), ''));
+    el.appendChild(document.createTextNode('.' + n.method + '('));
+    n.args.forEach((_, i) => {
+      if (i > 0) el.appendChild(document.createTextNode(', '));
+      el.appendChild(makeSlot(slotRef(() => n.args[i], v => { n.args[i] = v; }, T_ANY), ''));
+    });
+    el.appendChild(document.createTextNode(')'));
+    return el;
+  }
+  if (n.kind === 'array') {
+    el.appendChild(document.createTextNode('['));
+    n.items.forEach((_, i) => {
+      if (i > 0) el.appendChild(document.createTextNode(', '));
+      el.appendChild(makeSlot(slotRef(() => n.items[i], v => { n.items[i] = v; }, T_ANY), ''));
+    });
+    el.appendChild(document.createTextNode(']'));
     return el;
   }
   return el;
@@ -419,6 +471,12 @@ export function newExprNodeFromTemplate(template) {
   }
   if (template.kind === 'op') return { kind: 'op', op: template.op, a: N0(), b: N0() };
   if (template.kind === 'chain') return { kind: 'chain', terms: [N0(), N0()], ops: ['+'] };
+  if (template.kind === 'bool') return { kind: 'bool', value: template.value };
+  if (template.kind === 'not') return { kind: 'not', a: N0() };
+  if (template.kind === 'ternary') return { kind: 'ternary', cond: N0(), a: N0(), b: N0() };
+  if (template.kind === 'index') return { kind: 'index', target: N0(), index: N0() };
+  if (template.kind === 'method') return { kind: 'method', obj: N0(), method: template.method, args: [] };
+  if (template.kind === 'array') return { kind: 'array', items: [N0(), N0()] };
   return N0();
 }
 export function defaultExprFor(type) {
@@ -560,6 +618,11 @@ export function buildPaletteGroup(g) {
     // 动态算式 + 独立运算符拼图
     items.push({ key: 'expr:chain', type: 'expr', template: { kind: 'chain', terms: [{ kind: 'num', value: 0 }, { kind: 'num', value: 0 }], ops: ['+'] }, label: t('blk.chain'), info: t('blk.chainDesc') });
     for (const op of OP_SYMBOLS) items.push({ key: 'opval:' + op, type: 'opval', op, label: op, info: (OP_LABELS[op] && t(OP_LABELS[op])) || op });
+    items.push({ key: 'expr:ternary', type: 'expr', template: { kind: 'ternary' }, label: '?:', info: t('blk.ternaryDesc') });
+    items.push({ key: 'expr:not', type: 'expr', template: { kind: 'not' }, label: '!', info: t('blk.notDesc') });
+    for (const op of ['==', '!=', '<', '<=', '>', '>=', '&&', '||']) {
+      items.push({ key: 'expr:op:' + op, type: 'expr', template: { kind: 'op', op }, label: op, info: (OP_LABELS[op] && t(OP_LABELS[op])) || op });
+    }
     for (const name in FUNC_BLOCKS) {
       const r = FUNC_BLOCKS[name].ret;
       if (r === T_SCALAR && !['vec', 'dot', 'cross', 'len', 'norm'].includes(name)) items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name, info: funcInfo(name) });
@@ -569,6 +632,10 @@ export function buildPaletteGroup(g) {
       if (FUNC_BLOCKS[name]) items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name, info: funcInfo(name) });
     });
     items.push({ key: 'expr:comp', type: 'expr', template: { kind: 'comp', axis: 'x', target: null }, label: t('blk.comp'), info: t('blk.compDesc') });
+    items.push({ key: 'expr:array', type: 'expr', template: { kind: 'array' }, label: '[]', info: t('blk.arrayDesc') });
+    items.push({ key: 'expr:index', type: 'expr', template: { kind: 'index' }, label: '[ ]', info: t('blk.indexDesc') });
+    items.push({ key: 'expr:method:push', type: 'expr', template: { kind: 'method', method: 'push' }, label: '.push()', info: t('blk.methodDesc') });
+    items.push({ key: 'expr:method:size', type: 'expr', template: { kind: 'method', method: 'size' }, label: '.size()', info: t('blk.methodDesc') });
   } else if (g.id === 'mat') {
     ['rotX', 'rotY', 'rotZ', 'rotAxis'].forEach(name => items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name, info: funcInfo(name) }));
   }

@@ -133,6 +133,8 @@ export var LANGS = {
     'blk.chain': '算式', 'blk.chainDesc': '动态算式（可追加项）',
     'blk.constNum': '常量数值', 'blk.var': '变量', 'blk.op': '运算符',
     'blk.comp': '.分量', 'blk.compDesc': '取向量的 x/y/z 分量', 'blk.neg': '取负',
+    'blk.ternaryDesc': '三元运算（条件 ? 真值 : 假值）', 'blk.notDesc': '逻辑非',
+    'blk.arrayDesc': '数组字面量', 'blk.indexDesc': '数组下标访问', 'blk.methodDesc': '数组方法调用',
     'blk.piInfo': '圆周率 π ≈ 3.14159', 'blk.eInfo': '自然常数 e ≈ 2.71828',
     // —— 拼图：类型 / 内置变量 / 调色板 / 运算符 / 参数 ——
     'blk.type.scalar': '数字', 'blk.type.vec': '向量', 'blk.type.mat': '矩阵', 'blk.type.any': '任意',
@@ -140,6 +142,7 @@ export var LANGS = {
     'blk.pal.pos': '位置 / 速度', 'blk.pal.color': '颜色', 'blk.pal.appearance': '外观', 'blk.pal.math': '数学',
     'blk.pal.vec': '向量', 'blk.pal.mat': '矩阵', 'blk.pal.var': '变量', 'blk.pal.const': '常量',
     'blk.op.add': '加', 'blk.op.sub': '减', 'blk.op.mul': '乘', 'blk.op.div': '除', 'blk.op.mod': '取余', 'blk.op.pow': '幂',
+    'blk.op.eq': '等于', 'blk.op.ne': '不等于', 'blk.op.lt': '小于', 'blk.op.le': '小于等于', 'blk.op.gt': '大于', 'blk.op.ge': '大于等于', 'blk.op.and': '且', 'blk.op.or': '或',
     'blk.arg.angle': '角度', 'blk.arg.value': '值', 'blk.arg.base': '底数', 'blk.arg.exp': '指数',
     'blk.arg.lo': '下界', 'blk.arg.hi': '上界', 'blk.arg.edge': '边界', 'blk.arg.mod': '模',
     'blk.arg.seed': '种子', 'blk.arg.vec': '向量', 'blk.arg.axis': '轴', 'blk.arg.radius': '半径',
@@ -307,6 +310,8 @@ export var LANGS = {
     'blk.chain': 'Expression', 'blk.chainDesc': 'Dynamic expression (appendable)',
     'blk.constNum': 'Constant number', 'blk.var': 'Variable', 'blk.op': 'Operator',
     'blk.comp': '.Component', 'blk.compDesc': 'Take x/y/z component of a vector', 'blk.neg': 'Negate',
+    'blk.ternaryDesc': 'Ternary (cond ? then : else)', 'blk.notDesc': 'Logical NOT',
+    'blk.arrayDesc': 'Array literal', 'blk.indexDesc': 'Array indexing', 'blk.methodDesc': 'Array method call',
     'blk.piInfo': 'Pi π ≈ 3.14159', 'blk.eInfo': 'Euler\'s number e ≈ 2.71828',
     // —— 拼图：类型 / 内置变量 / 调色板 / 运算符 / 参数 ——
     'blk.type.scalar': 'Number', 'blk.type.vec': 'Vector', 'blk.type.mat': 'Matrix', 'blk.type.any': 'Any',
@@ -314,6 +319,7 @@ export var LANGS = {
     'blk.pal.pos': 'Position / Velocity', 'blk.pal.color': 'Color', 'blk.pal.appearance': 'Appearance', 'blk.pal.math': 'Math',
     'blk.pal.vec': 'Vector', 'blk.pal.mat': 'Matrix', 'blk.pal.var': 'Variable', 'blk.pal.const': 'Constants',
     'blk.op.add': 'Add', 'blk.op.sub': 'Subtract', 'blk.op.mul': 'Multiply', 'blk.op.div': 'Divide', 'blk.op.mod': 'Modulo', 'blk.op.pow': 'Power',
+    'blk.op.eq': 'Equal', 'blk.op.ne': 'Not equal', 'blk.op.lt': 'Less than', 'blk.op.le': 'Less or equal', 'blk.op.gt': 'Greater than', 'blk.op.ge': 'Greater or equal', 'blk.op.and': 'And', 'blk.op.or': 'Or',
     'blk.arg.angle': 'Angle', 'blk.arg.value': 'Value', 'blk.arg.base': 'Base', 'blk.arg.exp': 'Exponent',
     'blk.arg.lo': 'Lower bound', 'blk.arg.hi': 'Upper bound', 'blk.arg.edge': 'Edge', 'blk.arg.mod': 'Modulus',
     'blk.arg.seed': 'Seed', 'blk.arg.vec': 'Vector', 'blk.arg.axis': 'Axis', 'blk.arg.radius': 'Radius',
