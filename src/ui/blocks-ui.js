@@ -290,6 +290,92 @@ export function makeStatementBlock(s, isChain, chainIndex) {
     el.appendChild(txt);
     return el;
   }
+  if (['if', 'while', 'for', 'do', 'func', 'global', 'static', 'break', 'continue', 'return'].includes(s.kind)) {
+    el.className = 'blk-stmt blk-ctl blk-drag';
+    el._stmt = s;
+    el._dragLabel = t('blk.stmt.' + s.kind) || s.kind;
+    el._info = t('blk.stmt.' + s.kind) || s.kind;
+    const area = (val, set) => {
+      const ta = document.createElement('textarea');
+      ta.className = 'blk-body-text';
+      ta.rows = 1;
+      ta.value = val || '';
+      ta.spellcheck = false;
+      ta.addEventListener('pointerdown', e => e.stopPropagation());
+      ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ta.blur(); } });
+      ta.addEventListener('change', () => { set(ta.value); refreshCodeEcho(); blockPreview(); });
+      return ta;
+    };
+    const nameIn = (val, set) => {
+      const inp = document.createElement('input');
+      inp.className = 'blk-var-name'; inp.type = 'text'; inp.value = val || ''; inp.spellcheck = false;
+      inp.addEventListener('pointerdown', e => e.stopPropagation());
+      inp.addEventListener('change', () => { set(inp.value.trim()); refreshCodeEcho(); blockPreview(); });
+      return inp;
+    };
+    const slot = (get, set) => makeSlot(slotRef(get, set, T_ANY), '');
+
+    if (s.kind === 'if') {
+      el.appendChild(document.createTextNode('if ('));
+      el.appendChild(slot(() => s.cond, v => { s.cond = v; }));
+      el.appendChild(document.createTextNode(') { '));
+      el.appendChild(area(s.body, v => { s.body = v; }));
+      el.appendChild(document.createTextNode(' }'));
+      if (s.elseBody != null) { el.appendChild(document.createTextNode(' else ')); el.appendChild(area(s.elseBody, v => { s.elseBody = v; })); }
+      return el;
+    }
+    if (s.kind === 'while') {
+      el.appendChild(document.createTextNode('while ('));
+      el.appendChild(slot(() => s.cond, v => { s.cond = v; }));
+      el.appendChild(document.createTextNode(') { '));
+      el.appendChild(area(s.body, v => { s.body = v; }));
+      el.appendChild(document.createTextNode(' }'));
+      return el;
+    }
+    if (s.kind === 'do') {
+      el.appendChild(document.createTextNode('do { '));
+      el.appendChild(area(s.body, v => { s.body = v; }));
+      el.appendChild(document.createTextNode(' } while ('));
+      el.appendChild(slot(() => s.cond, v => { s.cond = v; }));
+      el.appendChild(document.createTextNode(');'));
+      return el;
+    }
+    if (s.kind === 'for') {
+      el.appendChild(document.createTextNode('for ('));
+      el.appendChild(nameIn(s.init, v => { s.init = v; }));
+      el.appendChild(document.createTextNode('; '));
+      el.appendChild(nameIn(s.cond, v => { s.cond = v; }));
+      el.appendChild(document.createTextNode('; '));
+      el.appendChild(nameIn(s.inc, v => { s.inc = v; }));
+      el.appendChild(document.createTextNode(') { '));
+      el.appendChild(area(s.body, v => { s.body = v; }));
+      el.appendChild(document.createTextNode(' }'));
+      return el;
+    }
+    if (s.kind === 'func') {
+      el.appendChild(document.createTextNode('func '));
+      el.appendChild(nameIn(s.name, v => { s.name = v; }));
+      el.appendChild(document.createTextNode('('));
+      el.appendChild(nameIn((s.params || []).join(', '), v => { s.params = v.split(',').map(x => x.trim()).filter(Boolean); }));
+      el.appendChild(document.createTextNode(') { '));
+      el.appendChild(area(s.body, v => { s.body = v; }));
+      el.appendChild(document.createTextNode(' }'));
+      return el;
+    }
+    if (s.kind === 'global' || s.kind === 'static') {
+      el.appendChild(document.createTextNode(s.kind + ' '));
+      el.appendChild(nameIn(s.name, v => { s.name = v; }));
+      if (s.expr != null) { el.appendChild(document.createTextNode(' = ')); el.appendChild(slot(() => s.expr, v => { s.expr = v; })); }
+      return el;
+    }
+    if (s.kind === 'break') { el.appendChild(document.createTextNode('break')); return el; }
+    if (s.kind === 'continue') { el.appendChild(document.createTextNode('continue')); return el; }
+    if (s.kind === 'return') {
+      el.appendChild(document.createTextNode('return '));
+      if (s.expr != null) el.appendChild(slot(() => s.expr, v => { s.expr = v; }));
+      return el;
+    }
+  }
   const cls = GROUP_COLOR[STMT_BLOCKS[s.kind].group] || 'blk-var';
   el.className = 'blk-stmt ' + cls + (BIG_BLOCKS[s.kind] ? ' big' : '') + ' blk-drag';
   el._stmt = s;

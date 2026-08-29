@@ -262,6 +262,15 @@ export function stmtToCode(s) {
     case 'attr': return s.name + ' = ' + exprToCode(s.expr, 0);
     case 'set': return s.name + ' = ' + exprToCode(s.expr, 0);
     case 'raw': return s.text || '';
+    case 'break': return 'break;';
+    case 'continue': return 'continue;';
+    case 'return': return s.expr ? 'return ' + exprToCode(s.expr, 0) + ';' : 'return;';
+    case 'if': return 'if (' + exprToCode(s.cond, 0) + ') { ' + s.body + ' }' + (s.elseBody ? ' else ' + s.elseBody : '');
+    case 'while': return 'while (' + exprToCode(s.cond, 0) + ') { ' + s.body + ' }';
+    case 'do': return 'do { ' + s.body + ' } while (' + exprToCode(s.cond, 0) + ');';
+    case 'for': return 'for (' + (s.init || '') + '; ' + (s.cond || '') + '; ' + (s.inc || '') + ') { ' + s.body + ' }';
+    case 'func': return 'func ' + s.name + '(' + (s.params || []).join(', ') + ') { ' + s.body + ' }';
+    case 'global': case 'static': return s.kind + ' ' + s.name + (s.expr ? ' = ' + exprToCode(s.expr, 0) : '') + ';';
     default: throw new Error(_etf('err.unknownStmt', s.kind));
   }
 }
@@ -318,7 +327,7 @@ export function blockTokenize(expr) {
     if (c === ':') { tokens.push({ t: ':' }); i++; expectOperand = true; continue; }
     if (c === '[') { tokens.push({ t: '[' }); i++; expectOperand = true; continue; }
     if (c === ']') { tokens.push({ t: ']' }); i++; expectOperand = false; continue; }
-    if ('+-*/%^(),'.includes(c)) { tokens.push({ t: c }); i++; expectOperand = (c === '(' || c === ',' || '+-*/%^'.includes(c)); continue; }
+    if ('<>+-*/%^(),'.includes(c)) { tokens.push({ t: c }); i++; expectOperand = (c === '(' || c === ',' || '<>+-*/%^'.includes(c)); continue; }
     i++;
   }
   return tokens;
@@ -331,7 +340,7 @@ export function parseExpr(str) {
   const peek = () => toks[pos];
   const next = () => toks[pos++];
   const expect = (t) => { const tk = next(); if (!tk || tk.t !== t) throw new Error(_etf('err.exprNeed', t, str)); return tk; };
-  const isOpTok = (t, ops) => !!t && t.t === 'op' && ops.includes(t.op);
+  const isOpTok = (t, ops) => !!t && ((t.t === 'op' && ops.includes(t.op)) || ops.includes(t.t));
 
   function parsePrimary() {
     const tk = next();
@@ -452,7 +461,8 @@ export function parseExpr(str) {
   function parseCompare() {
     let node = parseAddSub();
     while (isOpTok(peek(), ['<', '<=', '>', '>='])) {
-      const op = next().op;
+      const tk = next();
+      const op = tk.op || tk.t;
       node = { kind: 'op', op, a: node, b: parseAddSub() };
     }
     return node;
@@ -460,7 +470,8 @@ export function parseExpr(str) {
   function parseEquality() {
     let node = parseCompare();
     while (isOpTok(peek(), ['==', '!='])) {
-      const op = next().op;
+      const tk = next();
+      const op = tk.op || tk.t;
       node = { kind: 'op', op, a: node, b: parseCompare() };
     }
     return node;
@@ -500,11 +511,118 @@ export function parseExpr(str) {
 
 export const isNames = (names, expect) => names.length === expect.length && names.every((n, i) => n === expect[i]);
 
+function matchDelim(s, openIndex, open, close) {
+  let depth = 0;
+  for (let i = openIndex; i < s.length; i++) {
+    const c = s[i];
+    if (c === open) depth++;
+    else if (c === close) { depth--; if (depth === 0) return i; }
+  }
+  return -1;
+}
+function stripBraces(s) {
+  const t = (s || '').trim();
+  if (t.startsWith('{') && t.endsWith('}')) return t.slice(1, -1).trim();
+  return t;
+}
+function splitTopSemicolons(s) {
+  const parts = [];
+  let cur = '';
+  let depth = 0;
+  for (const c of s) {
+    if (c === '(' || c === '[' || c === '{') depth++;
+    else if (c === ')' || c === ']' || c === '}') depth--;
+    if (c === ';' && depth === 0) { parts.push(cur.trim()); cur = ''; }
+    else cur += c;
+  }
+  if (cur.trim()) parts.push(cur.trim());
+  return parts;
+}
+
 export function stmtToNode(stmt) {
-  const eq = stmt.indexOf('=');
+  const s = (stmt || '').trim();
+  if (s === 'break;' || s === 'break') return { kind: 'break' };
+  if (s === 'continue;' || s === 'continue') return { kind: 'continue' };
+  if (s === 'return;') return { kind: 'return', expr: null };
+  if (/^return\b/.test(s)) return { kind: 'return', expr: parseExpr(s.slice(6).replace(/;$/, '').trim()) };
+
+  if (/^if\s*\(/.test(s)) {
+    const open = s.indexOf('(');
+    const close = matchDelim(s, open, '(', ')');
+    if (close < 0) throw new Error(_et('err.stmtNeedParen'));
+    const cond = parseExpr(s.slice(open + 1, close).trim());
+    let rest = s.slice(close + 1).trim();
+    const bOpen = rest.indexOf('{');
+    const bClose = matchDelim(rest, bOpen, '{', '}');
+    if (bClose < 0) throw new Error(_et('err.stmtNeedBrace'));
+    const body = rest.slice(bOpen + 1, bClose).trim();
+    rest = rest.slice(bClose + 1).trim();
+    let elseBody = null;
+    if (rest.startsWith('else')) {
+      elseBody = rest.slice(4).trim();
+    }
+    return { kind: 'if', cond, body, elseBody };
+  }
+  if (/^while\s*\(/.test(s)) {
+    const open = s.indexOf('(');
+    const close = matchDelim(s, open, '(', ')');
+    if (close < 0) throw new Error(_et('err.stmtNeedParen'));
+    const cond = parseExpr(s.slice(open + 1, close).trim());
+    const rest = s.slice(close + 1).trim();
+    const bOpen = rest.indexOf('{');
+    const bClose = matchDelim(rest, bOpen, '{', '}');
+    if (bClose < 0) throw new Error(_et('err.stmtNeedBrace'));
+    return { kind: 'while', cond, body: rest.slice(bOpen + 1, bClose).trim() };
+  }
+  if (/^for\s*\(/.test(s)) {
+    const open = s.indexOf('(');
+    const close = matchDelim(s, open, '(', ')');
+    if (close < 0) throw new Error(_et('err.stmtNeedParen'));
+    const parts = splitTopSemicolons(s.slice(open + 1, close));
+    const rest = s.slice(close + 1).trim();
+    const bOpen = rest.indexOf('{');
+    const bClose = matchDelim(rest, bOpen, '{', '}');
+    if (bClose < 0) throw new Error(_et('err.stmtNeedBrace'));
+    return { kind: 'for', init: parts[0] || '', cond: parts[1] || '', inc: parts[2] || '', body: rest.slice(bOpen + 1, bClose).trim() };
+  }
+  if (/^do\s*\{/.test(s)) {
+    const bOpen = s.indexOf('{');
+    const bClose = matchDelim(s, bOpen, '{', '}');
+    if (bClose < 0) throw new Error(_et('err.stmtNeedBrace'));
+    const body = s.slice(bOpen + 1, bClose).trim();
+    const rest = s.slice(bClose + 1).trim();
+    const wm = /^while\s*\(/.exec(rest);
+    if (!wm) throw new Error(_et('err.stmtMissingEq', stmt));
+    const open = rest.indexOf('(');
+    const close = matchDelim(rest, open, '(', ')');
+    const cond = parseExpr(rest.slice(open + 1, close).trim());
+    return { kind: 'do', body, cond };
+  }
+  if (/^func\s+/.test(s)) {
+    const after = s.slice(4).trim();
+    const open = after.indexOf('(');
+    const close = matchDelim(after, open, '(', ')');
+    if (close < 0) throw new Error(_et('err.stmtNeedParen'));
+    const name = after.slice(0, open).trim();
+    const params = after.slice(open + 1, close).split(',').map(x => x.trim()).filter(Boolean);
+    const rest = after.slice(close + 1).trim();
+    const bOpen = rest.indexOf('{');
+    const bClose = matchDelim(rest, bOpen, '{', '}');
+    if (bClose < 0) throw new Error(_et('err.stmtNeedBrace'));
+    return { kind: 'func', name, params, body: rest.slice(bOpen + 1, bClose).trim() };
+  }
+  if (/^(global|static)\s+/.test(s)) {
+    const kind = s.startsWith('global') ? 'global' : 'static';
+    const after = s.slice(kind.length).trim();
+    const eq = after.indexOf('=');
+    if (eq < 0) return { kind, name: after.replace(/;$/, '').trim(), expr: null };
+    return { kind, name: after.slice(0, eq).trim(), expr: parseExpr(after.slice(eq + 1).replace(/;$/, '').trim()) };
+  }
+
+  const eq = s.indexOf('=');
   if (eq < 0) throw new Error(_etf('err.stmtMissingEq', stmt));
-  const lhs = stmt.slice(0, eq).trim();
-  const rhs = stmt.slice(eq + 1).trim();
+  const lhs = s.slice(0, eq).trim();
+  const rhs = s.slice(eq + 1).trim();
   if (lhs.startsWith('[')) {
     const names = parseNameList(lhs);
     if (rhs.startsWith('[')) {

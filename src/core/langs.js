@@ -117,6 +117,7 @@ export var LANGS = {
     'err.exprNeed': '表达式缺少 {0} : {1}', 'err.exprEnd': '表达式意外结束',
     'err.funcNoParen': '函数缺少括号: {0}', 'err.unexpectedTok': '意外符号: {0}',
     'err.exprExtra': '表达式有多余内容: {0}', 'err.stmtMissingEq': '语句缺少 = : {0}',
+    'err.stmtNeedParen': '语句缺少括号', 'err.stmtNeedBrace': '语句缺少花括号',
     'err.unknownPack': '无法识别的打包赋值: {0}', 'err.unknownUnpack': '无法识别的向量拆包: {0}',
     'err.glowBinary': '发光赋值只能是 0 或 1: {0}',
     'err.varCycle': '变量循环引用: {0}', 'err.varReserved': '变量名 {0} 是属性保留字，请换名',
@@ -138,6 +139,7 @@ export var LANGS = {
     'blk.piInfo': '圆周率 π ≈ 3.14159', 'blk.eInfo': '自然常数 e ≈ 2.71828',
     // —— 拼图：类型 / 内置变量 / 调色板 / 运算符 / 参数 ——
     'blk.type.scalar': '数字', 'blk.type.vec': '向量', 'blk.type.mat': '矩阵', 'blk.type.any': '任意',
+    'blk.stmt.if': '如果', 'blk.stmt.while': '当循环', 'blk.stmt.for': '计数循环', 'blk.stmt.do': '直到循环', 'blk.stmt.func': '函数', 'blk.stmt.global': '全局变量', 'blk.stmt.static': '静态变量', 'blk.stmt.break': '跳出循环', 'blk.stmt.continue': '继续循环', 'blk.stmt.return': '返回',
     'blk.var.i': '粒子序号（0 ~ n-1）', 'blk.var.n': '采样数（粒子总数）', 'blk.var.t': '当前时间（tick）',
     'blk.pal.pos': '位置 / 速度', 'blk.pal.color': '颜色', 'blk.pal.appearance': '外观', 'blk.pal.math': '数学',
     'blk.pal.vec': '向量', 'blk.pal.mat': '矩阵', 'blk.pal.var': '变量', 'blk.pal.const': '常量',
@@ -294,6 +296,7 @@ export var LANGS = {
     'err.exprNeed': 'expression missing {0} : {1}', 'err.exprEnd': 'unexpected end of expression',
     'err.funcNoParen': 'function missing parentheses: {0}', 'err.unexpectedTok': 'unexpected token: {0}',
     'err.exprExtra': 'extra content in expression: {0}', 'err.stmtMissingEq': 'statement missing = : {0}',
+    'err.stmtNeedParen': 'statement missing parenthesis', 'err.stmtNeedBrace': 'statement missing brace',
     'err.unknownPack': 'unrecognized packed assignment: {0}', 'err.unknownUnpack': 'unrecognized vector unpack: {0}',
     'err.glowBinary': 'glow assignment must be 0 or 1: {0}',
     'err.varCycle': 'variable circular reference: {0}', 'err.varReserved': 'Variable name {0} is a reserved attribute name, please rename',
@@ -315,6 +318,7 @@ export var LANGS = {
     'blk.piInfo': 'Pi π ≈ 3.14159', 'blk.eInfo': 'Euler\'s number e ≈ 2.71828',
     // —— 拼图：类型 / 内置变量 / 调色板 / 运算符 / 参数 ——
     'blk.type.scalar': 'Number', 'blk.type.vec': 'Vector', 'blk.type.mat': 'Matrix', 'blk.type.any': 'Any',
+    'blk.stmt.if': 'If', 'blk.stmt.while': 'While', 'blk.stmt.for': 'For', 'blk.stmt.do': 'Do-while', 'blk.stmt.func': 'Function', 'blk.stmt.global': 'Global', 'blk.stmt.static': 'Static', 'blk.stmt.break': 'Break', 'blk.stmt.continue': 'Continue', 'blk.stmt.return': 'Return',
     'blk.var.i': 'Particle index (0 ~ n-1)', 'blk.var.n': 'Sample count (total particles)', 'blk.var.t': 'Current time (tick)',
     'blk.pal.pos': 'Position / Velocity', 'blk.pal.color': 'Color', 'blk.pal.appearance': 'Appearance', 'blk.pal.math': 'Math',
     'blk.pal.vec': 'Vector', 'blk.pal.mat': 'Matrix', 'blk.pal.var': 'Variable', 'blk.pal.const': 'Constants',
