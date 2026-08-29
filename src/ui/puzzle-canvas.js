@@ -34,7 +34,7 @@ const STMT_PAD_X = 12, STMT_PAD_Y = 7;
 const SLOT_PAD_X = 7, SLOT_PAD_Y = 4;
 const EXPR_PAD_X = 8, EXPR_PAD_Y = 3;
 const EXPR_H = 20;
-const BUMP_H = 12, BUMP_X = 14, BUMP_W = 26;
+const BUMP_H = 6, BUMP_SLANT = 6, BUMP_X = 14, BUMP_W = 26;
 const HAT_H = 24;
 const BODY_INDENT = 20;
 const CTL_PAD = 8;
@@ -191,33 +191,33 @@ function hexPath(c, x, y, w, h) {
   c.lineTo(x, y + h / 2);
   c.closePath();
 }
-/** 普通语句块：顶部凹口（凹入）+ 底部凸起（凸出）；noBump 时顶部平直（起始块下方第一块）。 */
+/** 普通语句块：顶部凹口（凹入）+ 底部凸起（凸出）；noBump 时顶部平直（起始块下方第一块）。
+ *  凹口/凸起采用浅梯形（斜边均为钝角），避免垂直边的锐利感。 */
 function stmtPath(c, x, y, w, h, noBump) {
-  const T = BUMP_H, bx = BUMP_X, bw = BUMP_W;
+  const T = BUMP_H, sx = BUMP_SLANT, bx = BUMP_X, bw = BUMP_W;
   const bxl = x + bx, bxr = bxl + bw;
   const r = Math.min(10, w / 2, h / 2);
-  const n = Math.min(T / 2, bw / 2);
   const top = y, bot = y + h;
   c.beginPath();
   c.moveTo(x + r, top);
   if (noBump) {
     // 顶部平直：无凹口
   } else {
-    // 顶部凹口：向内凹入
+    // 顶部凹口：斜边向内凹入，形成钝角
     c.lineTo(bxl, top);
-    c.quadraticCurveTo(bxl, top + T, bxl + n, top + T);
-    c.lineTo(bxr - n, top + T);
-    c.quadraticCurveTo(bxr, top + T, bxr, top);
+    c.lineTo(bxl + sx, top + T);
+    c.lineTo(bxr - sx, top + T);
+    c.lineTo(bxr, top);
   }
   c.lineTo(x + w - r, top);
   c.arcTo(x + w, top, x + w, top + r, r);
   c.lineTo(x + w, bot - r);
   c.arcTo(x + w, bot, x + w - r, bot, r);
-  // 底部凸起：向外凸出
+  // 底部凸起：斜边向外凸出，形成钝角
   c.lineTo(bxr, bot);
-  c.quadraticCurveTo(bxr, bot + T, bxr - n, bot + T);
-  c.lineTo(bxl + n, bot + T);
-  c.quadraticCurveTo(bxl, bot + T, bxl, bot);
+  c.lineTo(bxr - sx, bot + T);
+  c.lineTo(bxl + sx, bot + T);
+  c.lineTo(bxl, bot);
   c.lineTo(x + r, bot);
   c.arcTo(x, bot, x, bot - r, r);
   c.lineTo(x, top + r);
