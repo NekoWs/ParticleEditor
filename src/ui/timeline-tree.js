@@ -63,6 +63,20 @@ function toggleKey(key) {
   refreshTimelineTree();
 }
 
+// 切换自转空间（world/local）。id 为 'g:组名' 或 'f:fxId'。
+function toggleSpinSpace(id) {
+  pushUndo();
+  if (id.startsWith('f:')) {
+    const fx = getFunction(id.slice(2));
+    if (fx) fx.spinSpace = fx.spinSpace === 'local' ? 'world' : 'local';
+  } else if (id.startsWith('g:')) {
+    const gname = id.slice(2);
+    state.groupSpinSpace[gname] = state.groupSpinSpace[gname] === 'local' ? 'world' : 'local';
+  }
+  rebuildPoints();
+  refreshTimelineTree(true);
+}
+
 // 字符串哈希（结构签名用，避免超大成员列表 join 成巨型字符串）
 function hashStr(s, h) {
   h = h | 0;
@@ -254,6 +268,19 @@ function renderFlatRow(row) {
       label.textContent = t('prop.' + row.prop);
       div.appendChild(label);
 
+      // 自转行：组/函数对象显示 世界/局部 切换按钮
+      if (row.prop === 'spin' && (row.id.startsWith('g:') || row.id.startsWith('f:'))) {
+        const spaceBtn = el('button', 'tt-spin-space');
+        spaceBtn.type = 'button';
+        const cur = row.id.startsWith('f:')
+          ? ((getFunction(row.id.slice(2)) || {}).spinSpace === 'local')
+          : (state.groupSpinSpace && state.groupSpinSpace[row.id.slice(2)] === 'local');
+        spaceBtn.textContent = t(cur ? 'spinSpace.local' : 'spinSpace.world');
+        spaceBtn.title = t('spinSpace.hint');
+        spaceBtn.dataset.id = row.id;
+        div.appendChild(spaceBtn);
+      }
+
       // XYZ 行：合并为组合输入框（不显示 XYZ 字样，靠分隔线区分三个属性）
       const vec = el('div', 'vec3');
       propComps(row.id, row.prop).forEach((comp) => {
@@ -421,6 +448,12 @@ function onTreeClick(ev) {
   const addVarKf = ev.target.closest('.tt-add-var-kf');
   if (addVarKf) {
     addVariableKeyframe(addVarKf.dataset.fxid, addVarKf.dataset.name);
+    return;
+  }
+  const spinSpaceBtn = ev.target.closest('.tt-spin-space');
+  if (spinSpaceBtn) {
+    ev.stopPropagation();
+    toggleSpinSpace(spinSpaceBtn.dataset.id);
     return;
   }
 

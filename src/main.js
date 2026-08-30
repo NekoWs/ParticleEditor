@@ -6,7 +6,7 @@
  * ======================================================================= */
 
 import { t, applyI18nDom, setLanguage } from './core/i18n.js';
-import { state, FUNCTION_PRESETS, getParticle, isDerivedParticle, updateTopbarTitle } from './core/constants.js';
+import { state, FUNCTION_PRESETS, getParticle, getFunction, isDerivedParticle, updateTopbarTitle } from './core/constants.js';
 import { setShiftHeld } from './interaction/input-state.js';
 import { showAboutModal } from './ui/ui.js';
 import { easeInOut } from './core/easing.js';
