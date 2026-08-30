@@ -4,8 +4,8 @@
  * 本模块只做求值与索引缓存，不接触 DOM / THREE 渲染对象；渲染缓冲见 render.js。
  * ======================================================================= */
 
-import { COMP_INDEX, compPr, DEG2RAD, state, getParticle, getFunction, particleIndexCache, setParticleIndex, setFunctionIndex } from './constants.js';
-import { easeVal, FUNC_IMPL, matMat } from './easing.js';
+import { COMP_INDEX, compPr, DEG2RAD, RAD2DEG, state, getParticle, getFunction, particleIndexCache, setParticleIndex, setFunctionIndex } from './constants.js';
+import { easeVal, FUNC_IMPL, matMat, vec3 } from './easing.js';
 import { evaluateParticleAt } from './generators.js';
 import { groupCentroidValue } from '../ui/tree.js';
 import { rotateVector } from '../interaction/interaction.js';/* =========================================================================
@@ -249,9 +249,10 @@ export function buildGroupXforms(T) {
     const spin0 = (() => { const tr = findTrackByPr('spin.x', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
     const spin1 = (() => { const tr = findTrackByPr('spin.y', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
     const spin2 = (() => { const tr = findTrackByPr('spin.z', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
+    const spinSpace = (state.groupSpinSpace && state.groupSpinSpace[gname] === 'local') ? 'local' : 'world';
     let spinMat = null;
     if (spin0 !== 0 || spin1 !== 0 || spin2 !== 0) {
-      const M = matMat(matMat(FUNC_IMPL.rotZ(spin2 * DEG2RAD), FUNC_IMPL.rotY(spin1 * DEG2RAD)), FUNC_IMPL.rotX(spin0 * DEG2RAD));
+      const M = spinMatrix([spin0, spin1, spin2], spinSpace);
       spinMat = [M.m[0][0], M.m[0][1], M.m[0][2], M.m[1][0], M.m[1][1], M.m[1][2], M.m[2][0], M.m[2][1], M.m[2][2]];
     }
     const orbitCenter = [
@@ -408,6 +409,62 @@ export function rotatePointAround(value, pivot, rotDeg) {
   return [pivot[0] + r[0], pivot[1] + r[1], pivot[2] + r[2]];
 }
 
+// 把 3x3 矩阵（{m:[[...]]}）应用到数组向量 [x,y,z]。
+export function mat3VecArray(M, v) {
+  const m = M.m;
+  return [
+    m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
+    m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
+    m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2],
+  ];
+}
+
+// 自转旋转矩阵。world = extrinsic XYZ（Rz·Ry·Rx）；local = intrinsic XYZ（Rx·Ry·Rz）。
+export function spinMatrix(rotDeg, space) {
+  const rx = FUNC_IMPL.rotX(rotDeg[0] * DEG2RAD);
+  const ry = FUNC_IMPL.rotY(rotDeg[1] * DEG2RAD);
+  const rz = FUNC_IMPL.rotZ(rotDeg[2] * DEG2RAD);
+  return space === 'local' ? matMat(matMat(rx, ry), rz) : matMat(matMat(rz, ry), rx);
+}
+
+// 用矩阵绕 pivot 旋转一个点。
+export function rotatePointByMatrix(value, pivot, M) {
+  const r = [value[0] - pivot[0], value[1] - pivot[1], value[2] - pivot[2]];
+  const q = mat3VecArray(M, r);
+  return [pivot[0] + q[0], pivot[1] + q[1], pivot[2] + q[2]];
+}
+
+// intrinsic XYZ 旋转矩阵 → 欧拉角（度）。
+export function eulerFromSpinMatrix(M) {
+  const m = M.m;
+  const b = Math.asin(Math.max(-1, Math.min(1, m[0][2])));
+  const cb = Math.cos(b);
+  let a, c;
+  if (Math.abs(cb) > 1e-6) {
+    a = Math.atan2(-m[1][2], m[2][2]);
+    c = Math.atan2(-m[0][1], m[0][0]);
+  } else {
+    // gimbal lock：b = ±90°，令 a = 0，从矩阵反解 c
+    a = 0;
+    c = Math.atan2(m[1][0], m[1][1]);
+  }
+  return [a * RAD2DEG, b * RAD2DEG, c * RAD2DEG];
+}
+
+// 在现有局部自转基础上绕局部轴 axis（'X'|'Y'|'Z'）旋转 angle（弧度），返回新欧拉（度）。
+export function applyLocalSpinRotation(baseDeg, axis, angle) {
+  const M = spinMatrix(baseDeg, 'local');
+  const R = axis === 'X' ? FUNC_IMPL.rotX(angle) : axis === 'Y' ? FUNC_IMPL.rotY(angle) : FUNC_IMPL.rotZ(angle);
+  return eulerFromSpinMatrix(matMat(M, R));
+}
+
+// 绕任意局部轴（数组单位向量）旋转 angle（弧度）的局部自转合成。
+export function applyLocalSpinRotationVec(baseDeg, axisVec, angle) {
+  const M = spinMatrix(baseDeg, 'local');
+  const R = FUNC_IMPL.rotAxis(vec3(axisVec[0], axisVec[1], axisVec[2]), angle);
+  return eulerFromSpinMatrix(matMat(M, R));
+}
+
 // 组变换 pivot（优先索引缓存，回退到质心重算）
 export function groupPivot(gname) {
   return (groupCentroidPosCache && groupCentroidPosCache.get(gname)) || groupCentroidValue(gname, 'pos');
@@ -422,20 +479,23 @@ export function applyParticleOrbit(p, value, T) {
 }
 
 // 自转：组绕自身质心、函数对象绕自身 center 旋转（spin 轨道）。
+// 空间：'world'（世界轴，缺省）或 'local'（局部轴，intrinsic XYZ）。
 export function applySelfRotation(p, value, T) {
   const gs = groupMemberIndexCache && groupMemberIndexCache.get(p.id);
   if (gs) {
     for (const gname of gs) {
       const spin = spinVectorAt('g:' + gname, T);
       if (spin[0] === 0 && spin[1] === 0 && spin[2] === 0) continue;
-      return rotatePointAround(value, groupPivot(gname), spin);
+      const space = (state.groupSpinSpace && state.groupSpinSpace[gname] === 'local') ? 'local' : 'world';
+      return rotatePointByMatrix(value, groupPivot(gname), spinMatrix(spin, space));
     }
   }
   if (p.fx) {
     const spin = spinVectorAt('f:' + p.fx, T);
     if (spin[0] === 0 && spin[1] === 0 && spin[2] === 0) return value;
     const fx = getFunction(p.fx);
-    return rotatePointAround(value, fx ? fx.center.slice() : [0, 0, 0], spin);
+    const space = (fx && fx.spinSpace === 'local') ? 'local' : 'world';
+    return rotatePointByMatrix(value, fx ? fx.center.slice() : [0, 0, 0], spinMatrix(spin, space));
   }
   return value;
 }

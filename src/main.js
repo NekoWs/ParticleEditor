@@ -163,6 +163,19 @@ export function initUI() {
   bindVec3Inputs(['prop-spin-x', 'prop-spin-y', 'prop-spin-z'], applySpinFromInputs);
   bindVec3Inputs(['prop-rot-x', 'prop-rot-y', 'prop-rot-z'], applyOrbitFromInputs);
   bindVec3Inputs(['prop-center-x', 'prop-center-y', 'prop-center-z'], applyCenterFromInputs);
+  document.getElementById('prop-spin-space').addEventListener('click', () => {
+    const fxId = state.selectedFunction;
+    const gname = selectedGroupName();
+    if (!fxId && !gname) return;
+    pushUndo();
+    if (fxId) {
+      const fx = getFunction(fxId);
+      if (fx) fx.spinSpace = fx.spinSpace === 'local' ? 'world' : 'local';
+    } else {
+      state.groupSpinSpace[gname] = state.groupSpinSpace[gname] === 'local' ? 'world' : 'local';
+    }
+    rebuildPoints();
+  });
 
   // 时间轴
   document.getElementById('btn-play').addEventListener('click', togglePlay);
@@ -240,7 +253,7 @@ export function initUI() {
 export function clearAll() {
   pushUndo();
   state.particles = []; state.tracks = []; state.groups = {}; state.functions = [];
-  state.textures = {}; state.currentTexture = null; state.groupUV = {};
+  state.textures = {}; state.currentTexture = null; state.groupUV = {}; state.groupSpinSpace = {};
   state.selected.clear(); state.selectedGroup = null; state.selectedFunction = null;
   state.expandedParticles.clear(); state.expandedProps.clear();
   if (tlTreeState && tlTreeState.expanded) tlTreeState.expanded.clear();

@@ -771,6 +771,13 @@ body.ctrl-held .kf-t { cursor: pointer; }
 }
 /* 统一组合 XYZ 输入框：三个输入框分别对应 X/Y/Z；需要显示 XYZ 时标签居左，
    每个属性之间以浅色竖线分隔。 */
+.spin-space-btn {
+  margin: 0 6px 0 2px; padding: 0 8px; height: 24px;
+  background: var(--panel-3); border: 1px solid var(--border); border-radius: 5px;
+  color: var(--text); font-size: 11px; cursor: pointer;
+}
+.spin-space-btn:hover { border-color: var(--accent); color: var(--accent); }
+.spin-space-btn:disabled { opacity: 0.5; cursor: default; }
 .vec3 {
   display: inline-flex; align-items: center; height: 26px; box-sizing: border-box;
   background: #12141a; border: 1px solid var(--border); border-radius: 5px;

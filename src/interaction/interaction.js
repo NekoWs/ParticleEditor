@@ -8,7 +8,7 @@ import { t } from '../core/i18n.js';
 import { state, getParticle, getFunction, isDerivedParticle, RAD2DEG, ROT_SNAP, PLANES, DEG2RAD, nextGroupName } from '../core/constants.js';
 import { shiftHeld } from './input-state.js';
 import { camera, renderer, controls, raycaster, pointer, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, AXIS_RING_COLORS, GIZMO_FACE_DEFS, resetWorldAxisState, focalLengthPx } from '../scene/scene.js';
-import { currentVisual, rebuildPoints, setPreview, clearPreview, rotVectorAt, orbitCenterAt, trackValueAt, findTrackByPr, groupScaleAt } from '../core/animation.js';
+import { currentVisual, rebuildPoints, setPreview, clearPreview, rotVectorAt, spinVectorAt, orbitCenterAt, trackValueAt, findTrackByPr, groupScaleAt, spinMatrix, mat3VecArray, applyLocalSpinRotation, applyLocalSpinRotationVec } from '../core/animation.js';
 import { screenToNdc, planePointAt, worldToUV, computeShapePositions, snapGrid, snapValue, pickParticleAt, particleAt, projectToScreen, distToSegment, planeInfo, selectionCentroid, updateGizmo, updateGizmoFrame } from './gizmo.js';
 import { groupCurrentCentroid, groupCentroidValue, deleteGroup, createGroup } from '../ui/tree.js';
 import { refreshFunctionPanel } from '../ui/panels.js';
@@ -28,6 +28,23 @@ export function currentSelected() { return state.particles.filter(p => state.sel
 
 export function selectedGroupName() {
   return state.selectedGroup && state.groups[state.selectedGroup] ? state.selectedGroup : null;
+}
+
+// 当前旋转目标的自转空间（仅组/函数对象有自转）。
+export function currentSpinTarget() {
+  const fxId = state.selectedFunction;
+  if (fxId) {
+    const fx = getFunction(fxId);
+    if (fx) return { prefix: 'f:' + fxId, space: fx.spinSpace === 'local' ? 'local' : 'world' };
+  }
+  const gname = selectedGroupName();
+  if (gname) return { prefix: 'g:' + gname, space: (state.groupSpinSpace && state.groupSpinSpace[gname] === 'local') ? 'local' : 'world' };
+  return null;
+}
+
+export function currentSpinSpace() {
+  const t = currentSpinTarget();
+  return t ? t.space : 'world';
 }
 
 // 当前是否有任何选中（粒子 / 组 / 函数对象）
@@ -211,9 +228,10 @@ export function fxCurrentPos(fxId, T) {
   return [fx.center[0] + d[0], fx.center[1] + d[1], fx.center[2] + d[2]];
 }
 
-// 旋转轴 → 正对相机平面的一组正交基（用于平面求交 + 角度测量）
-export function rotationBasis(axis) {
-  const axArr = AXIS_VECTORS[axis] || AXIS_VECTORS.Y;
+// 旋转轴 → 正对相机平面的一组正交基（用于平面求交 + 角度测量）。
+// axisVecOverride 可传入世界坐标下的轴向量（局部自转时局部轴已变换到世界）。
+export function rotationBasis(axis, axisVecOverride) {
+  const axArr = axisVecOverride || AXIS_VECTORS[axis] || AXIS_VECTORS.Y;
   const a = new THREE.Vector3(axArr[0], axArr[1], axArr[2]);
   let u = new THREE.Vector3(1, 0, 0);
   if (Math.abs(a.dot(u)) > 0.9) u.set(0, 1, 0);
@@ -226,16 +244,20 @@ export function enterRotate(clientX, clientY, axis) {
   const fx = getFunction(state.selectedFunction);
   if (fx) {
     pushUndo();
-    const c = state.rotMode === 'orbit'
-      ? orbitCenterAt('f:' + fx.id, state.time)
-      : fxCurrentPos(fx.id, Math.round(state.time));
-    const { axArr, u, v } = rotationBasis(axis);
-    const p0 = rayOnAxisPlane(clientX, clientY, axArr, c);
-    const startAngle = p0 ? angleInBasis(p0, c, u, v) : 0;
     const T = Math.round(state.time);
     const startRot = fxRotationValueAt(fx.id, T);
     const startSpin = spinRotationValueAt('f:' + fx.id, T);
-    modal = { type: 'fx-rotate', fxId: fx.id, centroid: c, axis: axArr, axisKey: axis, axisIndex: AXIS_INDEX[axis] ?? 1, startRot, startSpin, rotMode: state.rotMode, u, v, startAngle };
+    const spinSpace = state.rotMode === 'spin' ? (fx.spinSpace === 'local' ? 'local' : 'world') : 'world';
+    const c = state.rotMode === 'orbit'
+      ? orbitCenterAt('f:' + fx.id, state.time)
+      : fxCurrentPos(fx.id, T);
+    const axisWorld = (state.rotMode === 'spin' && spinSpace === 'local')
+      ? mat3VecArray(spinMatrix(startSpin, 'local'), AXIS_VECTORS[axis])
+      : AXIS_VECTORS[axis];
+    const { axArr, u, v } = rotationBasis(axis, axisWorld);
+    const p0 = rayOnAxisPlane(clientX, clientY, axArr, c);
+    const startAngle = p0 ? angleInBasis(p0, c, u, v) : 0;
+    modal = { type: 'fx-rotate', fxId: fx.id, centroid: c, axis: axArr, axisKey: axis, axisIndex: AXIS_INDEX[axis] ?? 1, startRot, startSpin, rotMode: state.rotMode, spinSpace, u, v, startAngle };
     setDragAxisHighlight(modal);
     controls.enabled = false;
     return;
@@ -243,20 +265,26 @@ export function enterRotate(clientX, clientY, axis) {
   const gname = beginSelectionTransform(() => enterRotate(clientX, clientY, axis));
   if (gname === undefined) return;
   const selParticles = state.particles.filter(p => state.selected.has(p.id));
+  const T = Math.round(state.time);
+  const startSpin = gname ? spinRotationValueAt('g:' + gname, T) : [0, 0, 0];
+  const spinSpace = (gname && state.rotMode === 'spin')
+    ? ((state.groupSpinSpace && state.groupSpinSpace[gname] === 'local') ? 'local' : 'world')
+    : 'world';
   const c = gname
     ? (state.rotMode === 'orbit' ? orbitCenterAt('g:' + gname, state.time) : groupCurrentCentroid(gname, 'pos'))
     : (state.rotMode === 'orbit' && selParticles.length === 1 ? orbitCenterAt(selParticles[0].id, state.time) : selectionCentroid());
-  const { axArr, u, v } = rotationBasis(axis);
+  const axisWorld = (gname && state.rotMode === 'spin' && spinSpace === 'local')
+    ? mat3VecArray(spinMatrix(startSpin, 'local'), AXIS_VECTORS[axis])
+    : AXIS_VECTORS[axis];
+  const { axArr, u, v } = rotationBasis(axis, axisWorld);
   const p0 = rayOnAxisPlane(clientX, clientY, axArr, c);
   const startAngle = p0 ? angleInBasis(p0, c, u, v) : 0;
   const origins = snapshotSelection(p => currentVisual(p).pos.slice());
   if (gname) {
-    const T = Math.round(state.time);
     const startRot = groupRotationValueAt(gname, T);
-    const startSpin = spinRotationValueAt('g:' + gname, T);
     modal = {
       type: 'group-rotate', gname, centroid: c, axis: axArr, axisKey: axis,
-      axisIndex: AXIS_INDEX[axis] ?? 1, startRot, startSpin, rotMode: state.rotMode,
+      axisIndex: AXIS_INDEX[axis] ?? 1, startRot, startSpin, rotMode: state.rotMode, spinSpace,
       origins, u, v, startAngle,
     };
   } else {
@@ -300,6 +328,18 @@ export function applyWorldRotation(startRot, axis, angle) {
   return [eNew.x * RAD2DEG, eNew.y * RAD2DEG, eNew.z * RAD2DEG];
 }
 
+// 自转欧拉角（度）→ THREE.Quaternion（space: 'world' | 'local'）。
+export function spinQuaternion(deg, space) {
+  const M = spinMatrix(deg, space);
+  const m4 = new THREE.Matrix4().set(
+    M.m[0][0], M.m[0][1], M.m[0][2], 0,
+    M.m[1][0], M.m[1][1], M.m[1][2], 0,
+    M.m[2][0], M.m[2][1], M.m[2][2], 0,
+    0, 0, 0, 1,
+  );
+  return new THREE.Quaternion().setFromRotationMatrix(m4);
+}
+
 export function enterViewRotate(clientX, clientY) {
   const fx = getFunction(state.selectedFunction);
   if (fx) {
@@ -310,7 +350,8 @@ export function enterViewRotate(clientX, clientY) {
     const T = Math.round(state.time);
     const startRot = fxRotationValueAt(fx.id, T);
     const startSpin = spinRotationValueAt('f:' + fx.id, T);
-    modal = { type: 'fx-view-rotate', fxId: fx.id, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot, startSpin, rotMode: state.rotMode, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
+    const spinSpace = state.rotMode === 'spin' ? (fx.spinSpace === 'local' ? 'local' : 'world') : 'world';
+    modal = { type: 'fx-view-rotate', fxId: fx.id, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot, startSpin, rotMode: state.rotMode, spinSpace, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
     controls.enabled = false;
     return;
   }
@@ -325,7 +366,8 @@ export function enterViewRotate(clientX, clientY) {
     const T = Math.round(state.time);
     const startRot = groupRotationValueAt(gname, T);
     const startSpin = spinRotationValueAt('g:' + gname, T);
-    modal = { type: 'group-view-rotate', gname, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot, startSpin, rotMode: state.rotMode, origins, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
+    const spinSpace = state.rotMode === 'spin' ? ((state.groupSpinSpace && state.groupSpinSpace[gname] === 'local') ? 'local' : 'world') : 'world';
+    modal = { type: 'group-view-rotate', gname, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot, startSpin, rotMode: state.rotMode, spinSpace, origins, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
   } else {
     const startRots = new Map();
     for (const id of selectedMemberIds()) startRots.set(id, rotVectorAt(id, Math.round(state.time)));
@@ -350,15 +392,25 @@ export function updateViewRotate(clientX, clientY) {
   const prop = (m.rotMode === 'spin' && m.type !== 'view-rotate') ? 'spin' : 'rot';
   if (m.type === 'fx-view-rotate') {
     const base = prop === 'spin' ? m.startSpin : m.startRot;
-    const newRot = applyWorldRotation(base, a, angle);
     const t = state.captureKeyframes ? Math.round(state.time) : 0;
-    setFunctionTrackValue(m.fxId, prop, 'set', t, newRot);
+    if (prop === 'spin' && m.spinSpace === 'local') {
+      const q = spinQuaternion(base, 'local');
+      const localAxis = new THREE.Vector3(a[0], a[1], a[2]).applyQuaternion(q.clone().conjugate());
+      setFunctionTrackValue(m.fxId, 'spin', 'set', t, applyLocalSpinRotationVec(base, [localAxis.x, localAxis.y, localAxis.z], angle));
+    } else {
+      setFunctionTrackValue(m.fxId, prop, 'set', t, applyWorldRotation(base, a, angle));
+    }
     return;
   }
   if (m.type === 'group-view-rotate') {
     const base = prop === 'spin' ? m.startSpin : m.startRot;
-    const newRot = applyWorldRotation(base, a, angle);
-    setGroupTrackValue(m.gname, prop, 'set', Math.round(state.time), newRot);
+    if (prop === 'spin' && m.spinSpace === 'local') {
+      const q = spinQuaternion(base, 'local');
+      const localAxis = new THREE.Vector3(a[0], a[1], a[2]).applyQuaternion(q.clone().conjugate());
+      setGroupTrackValue(m.gname, 'spin', 'set', Math.round(state.time), applyLocalSpinRotationVec(base, [localAxis.x, localAxis.y, localAxis.z], angle));
+    } else {
+      setGroupTrackValue(m.gname, prop, 'set', Math.round(state.time), applyWorldRotation(base, a, angle));
+    }
     return;
   }
   // 普通粒子：写各自的公转轨道（绕各自 center、绕视线轴旋转）。
@@ -494,17 +546,25 @@ export function updateRotate(clientX, clientY) {
   const prop = (m.rotMode === 'spin' && m.type !== 'rotate') ? 'spin' : 'rot'; // 普通粒子只有公转
   if (m.type === 'fx-rotate') {
     const base = prop === 'spin' ? m.startSpin : m.startRot;
-    const newRot = base.slice();
-    newRot[m.axisIndex] += angle * RAD2DEG;
     const t = state.captureKeyframes ? Math.round(state.time) : 0;
-    setFunctionTrackValue(m.fxId, prop, 'set', t, newRot);
+    if (prop === 'spin' && m.spinSpace === 'local') {
+      setFunctionTrackValue(m.fxId, 'spin', 'set', t, applyLocalSpinRotation(base, m.axisKey, angle));
+    } else {
+      const newRot = base.slice();
+      newRot[m.axisIndex] += angle * RAD2DEG;
+      setFunctionTrackValue(m.fxId, prop, 'set', t, newRot);
+    }
     return;
   }
   if (m.type === 'group-rotate') {
     const base = prop === 'spin' ? m.startSpin : m.startRot;
-    const newRot = base.slice();
-    newRot[m.axisIndex] += angle * RAD2DEG;
-    setGroupTrackValue(m.gname, prop, 'set', Math.round(state.time), newRot);
+    if (prop === 'spin' && m.spinSpace === 'local') {
+      setGroupTrackValue(m.gname, 'spin', 'set', Math.round(state.time), applyLocalSpinRotation(base, m.axisKey, angle));
+    } else {
+      const newRot = base.slice();
+      newRot[m.axisIndex] += angle * RAD2DEG;
+      setGroupTrackValue(m.gname, prop, 'set', Math.round(state.time), newRot);
+    }
     return;
   }
   // 普通粒子：写各自的公转轨道（绕各自 center 旋转），不再直接改位置。

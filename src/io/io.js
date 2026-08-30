@@ -169,6 +169,7 @@ export function serializeFunction(fx) {
   if (fx.ui) o.ui = JSON.parse(JSON.stringify(fx.ui));
   if (fx.uv && fx.uv.texture) o.uv = serializeUV(fx.uv);
   if (fx.fastMath) o.fm = 1;
+  if (fx.spinSpace === 'local') o.ss = 1;
   return o;
 }
 export function parseFunction(o) {
@@ -186,6 +187,7 @@ export function parseFunction(o) {
     ui: o.ui || null,
     uv: parseUV(o.uv),
     fastMath: !!o.fm,
+    spinSpace: o.ss === 1 ? 'local' : 'world',
   };
 }
 
@@ -214,7 +216,10 @@ export function exportProject() {
   }
   const guv = {};
   for (const [name, uv] of Object.entries(state.groupUV || {})) if (uv && uv.texture) guv[name] = serializeUV(uv);
-  const result = { v: 6, loop: state.loop, g, p, t, f, tex, guv };
+  const gss = {};
+  for (const [name, space] of Object.entries(state.groupSpinSpace || {})) if (space === 'local') gss[name] = 1;
+  const result = { v: 7, loop: state.loop, g, p, t, f, tex, guv };
+  if (Object.keys(gss).length > 0) result.gss = gss;
   if (state.key) result.key = { alg: KEY_ALG, private: state.key.private, public: state.key.public };
   if (Object.keys(texData).length > 0) result.texData = texData;
   return result;
@@ -240,6 +245,8 @@ export function parseParticlesTracks(obj) {
   for (const [name, members] of Object.entries(obj.g || {})) state.groups[name] = members.slice();
   state.groupUV = {};
   for (const [name, uv] of Object.entries(obj.guv || {})) state.groupUV[name] = parseUV(uv);
+  state.groupSpinSpace = {};
+  for (const [name, v] of Object.entries(obj.gss || {})) state.groupSpinSpace[name] = v === 1 ? 'local' : 'world';
   state.tracks = (obj.t || []).map(tr => {
     const [prop] = splitCompPr(tr.pr);
     return {
@@ -301,7 +308,7 @@ export async function loadFile(file) {
   const text = await file.text();
   const obj = JSON.parse(text);
   if (file.name.toLowerCase().endsWith('.pdraw') || obj.f || obj.v >= 2) {
-    if (obj.v !== 6) {
+    if (obj.v !== 7) {
       modalAlert(t('filePicker.oldVersionTitle'), t('filePicker.oldVersionMsg'));
       return;
     }
@@ -420,7 +427,7 @@ export async function newFile() {
   if (!name || !name.trim()) return;
   pushUndo();
   state.particles = []; state.tracks = []; state.groups = {}; state.functions = [];
-  state.textures = {}; state.currentTexture = null; state.groupUV = {};
+  state.textures = {}; state.currentTexture = null; state.groupUV = {}; state.groupSpinSpace = {};
   state.selected.clear(); state.selectedGroup = null; state.selectedFunction = null;
   state.expandedParticles.clear(); state.expandedProps.clear();
   state.time = 0;

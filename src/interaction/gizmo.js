@@ -10,8 +10,8 @@ import * as THREE from 'three';
 import { state, PLANES, SNAP_STEP, getFunction } from '../core/constants.js';
 import { shiftHeld } from './input-state.js';
 import { camera, renderer, raycaster, pointer, points, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, gizmoAxisHint, AXIS_RING_COLORS, RING_NORMALS, GIZMO_FACE_DEFS, setWorldAxisVisible, setWorldAxisGlow, resetWorldAxisState } from '../scene/scene.js';
-import { AXIS_COLORS, AXIS_VECTORS, modal, setGizmoHover, selectedGroupName, selectionHasDerived, derivedFxIdFromSelection, fxCurrentPos, hoverColor } from './interaction.js';
-import { currentVisual, orbitCenterAt } from '../core/animation.js';
+import { AXIS_COLORS, AXIS_VECTORS, modal, setGizmoHover, selectedGroupName, selectionHasDerived, derivedFxIdFromSelection, fxCurrentPos, hoverColor, currentSpinTarget, spinQuaternion } from './interaction.js';
+import { currentVisual, orbitCenterAt, spinVectorAt } from '../core/animation.js';
 import { groupCurrentCentroid } from '../ui/tree.js';
 export function snapValue(v) {
   return Math.round(v / SNAP_STEP) * SNAP_STEP;
@@ -69,6 +69,16 @@ export const _gizmoTmp = new THREE.Vector3();
 export function gizmoHl(c) { return hoverColor(c); }
 
 
+// 局部自转模式下，旋转 gizmo 的轴向应跟随对象当前自转姿态。
+export function spinGizmoQuaternion() {
+  if (state.tool !== 'rotate' || state.rotMode !== 'spin') return null;
+  const t = currentSpinTarget();
+  if (!t || t.space !== 'local') return null;
+  const spin = spinVectorAt(t.prefix, state.time);
+  if (spin[0] === 0 && spin[1] === 0 && spin[2] === 0) return null;
+  return spinQuaternion(spin, 'local');
+}
+
 export function updateGizmo() {
   // 拼图模式 / 非移动、旋转工具：隐藏控制器
   if (document.body.classList.contains('puzzle-mode') || !TRANSFORM_TOOLS.includes(state.tool)) {
@@ -96,7 +106,9 @@ export function updateGizmo() {
   if (orbitT) gizmoGroup.position.set(orbitT.orbitCenter[0], orbitT.orbitCenter[1], orbitT.orbitCenter[2]);
   else gizmoGroup.position.set(c[0], c[1], c[2]);
   gizmoGroup.rotation.set(0, 0, 0); // 移动控制器：世界朝向
-  gizmoRotateGroup.rotation.set(0, 0, 0); // 旋转控制器：世界坐标系（不随对象旋转）
+  const spinQ = spinGizmoQuaternion();
+  if (spinQ) gizmoRotateGroup.quaternion.copy(spinQ); // 局部自转：环跟随对象姿态
+  else gizmoRotateGroup.quaternion.identity(); // 世界自转/公转：环保持世界朝向
   updateGizmoFrame();
   setGizmoHover(null, null, null, false);
 }

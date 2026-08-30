@@ -65,6 +65,8 @@ export function updatePropPanel() {
   // 自转仅组/函数对象有；普通粒子隐藏自转行。旋转类输入在派生粒子只读。
   const spinRow = document.getElementById('prop-spin-row');
   if (spinRow) spinRow.style.display = (isFx || gname) ? '' : 'none';
+  const spinSpaceBtn = document.getElementById('prop-spin-space');
+  if (spinSpaceBtn) spinSpaceBtn.disabled = readOnly;
   ['prop-spin-x', 'prop-spin-y', 'prop-spin-z', 'prop-rot-x', 'prop-rot-y', 'prop-rot-z', 'prop-center-x', 'prop-center-y', 'prop-center-z'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = readOnly;
@@ -79,6 +81,7 @@ export function updatePropPanel() {
     document.getElementById('prop-posz').value = (fx.center[2] + d[2]).toFixed(2);
     setScaleInputs(fxScaleValuesAt(fxId, state.time));
     const fpre = 'f:' + fxId;
+    if (spinSpaceBtn) spinSpaceBtn.textContent = t(fx.spinSpace === 'local' ? 'spinSpace.local' : 'spinSpace.world');
     setRotTriple(['prop-spin-x', 'prop-spin-y', 'prop-spin-z'], spinVectorAt(fpre, state.time));
     setRotTriple(['prop-rot-x', 'prop-rot-y', 'prop-rot-z'], rotVectorAt(fpre, state.time));
     setRotTriple(['prop-center-x', 'prop-center-y', 'prop-center-z'], orbitCenterAt(fpre, state.time));
@@ -92,6 +95,7 @@ export function updatePropPanel() {
     document.getElementById('prop-posz').value = c[2].toFixed(2);
     setScaleInputs(null);
     const gpre = 'g:' + gname;
+    if (spinSpaceBtn) spinSpaceBtn.textContent = t((state.groupSpinSpace && state.groupSpinSpace[gname] === 'local') ? 'spinSpace.local' : 'spinSpace.world');
     setRotTriple(['prop-spin-x', 'prop-spin-y', 'prop-spin-z'], spinVectorAt(gpre, state.time));
     setRotTriple(['prop-rot-x', 'prop-rot-y', 'prop-rot-z'], rotVectorAt(gpre, state.time));
     setRotTriple(['prop-center-x', 'prop-center-y', 'prop-center-z'], orbitCenterAt(gpre, state.time));

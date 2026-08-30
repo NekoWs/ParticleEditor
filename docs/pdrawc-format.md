@@ -18,7 +18,7 @@
 ```
 +--------------------+
 | magic     4 bytes  |  ASCII "PDC1" = 0x50 0x44 0x43 0x31
-| version   varint   |  4（当前）；1/2/3 = 旧版，已拒绝
+| version   varint   |  5（当前）；1/2/3/4 = 旧版，已拒绝
 | pubkey    32 bytes |  Ed25519 公钥（原始字节）
 +--------------------+
 | body（见 §2）      |  ← 签名覆盖范围：从 magic 到压缩 body 末尾
@@ -29,7 +29,8 @@
 ```
 
 **版本**：
-- `v4`（当前）：`body` 为 **raw DEFLATE**（RFC 1951，无 zlib/gzip 头尾）压缩后的字节；函数对象使用 `setup/process/seed`；新增 `spin`/`center` 轨道。
+- `v5`（当前）：`body` 为 **raw DEFLATE**（RFC 1951，无 zlib/gzip 头尾）压缩后的字节；新增组级/函数对象级**自转空间**（world/local）。
+- `v4`（旧版）：新增 `spin`/`center` 轨道；读取端**拒绝**。
 - `v3`（旧版）：`body` 为 raw DEFLATE，函数对象使用 `setup/process/seed`；读取端**拒绝**。
 - `v1`/`v2`（旧版）：读取端**拒绝**。
 
@@ -91,6 +92,7 @@ count × {
 ```
 count                       varint
 count × {
+  spinLocal                 1 byte：0 = world，1 = local（自转空间）
   memberCount               varint
   memberCount × particleIdx varint：粒子索引（0-based，指向 particles）
 }
@@ -122,7 +124,7 @@ count × {
   seed                      varint：随机种子（有符号截断后按 int 解释）
   duration                  varint：tick
   st                        varint：入场 tick
-  flags                     1 byte：bit0=hasEnt, bit1=hasUV, bit2=fastMath, bit3=hasFuncs
+  flags                     1 byte：bit0=hasEnt, bit1=hasUV, bit2=fastMath, bit3=hasFuncs, bit4=spinLocal
   [ent]                     仅 flags.hasEnt 时存在：见 §3.2
   [uv]                      仅 flags.hasUV 时存在：见 §3.1
   [funcs]                   仅 flags.hasFuncs 时存在：funcsLen varint + funcs 字节 UTF-8（顶层函数定义）

@@ -180,6 +180,7 @@ export const state = {
   textures: {},          // { name: { width, height, data(Uint8Array RGBA), fileHandle? } }
   currentTexture: null,  // 当前贴图编辑器正在编辑的贴图名
   groupUV: {},           // 组级 UV/贴图设置（继承 f > g > p）
+  groupSpinSpace: {},    // 组级自转空间（'world' | 'local'；缺省 world）
 };
 
 export function setDirty(v) {

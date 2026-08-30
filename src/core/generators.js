@@ -377,6 +377,7 @@ export function createFunctionObject(presetId) {
     seed: 0,
     vars: {}, duration: 100, step: 5, preset: null, params: null,
     fastMath: false,
+    spinSpace: 'world',
   };
   state.functions.push(fx);
   if (presetId) applyPreset(fx, presetId);
