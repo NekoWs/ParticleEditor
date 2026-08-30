@@ -182,15 +182,16 @@ export function findSetTrackFor(id, prop, comp) {
   const own = findTrackByPr(pr, id);
   if (own && own.m !== 'op') return own;
   const gs = groupMemberIndexCache && groupMemberIndexCache.get(id);
-  if (gs && prop !== 'scl') {
-    // 组 scl 只做成员位置的整体缩放，不覆盖粒子大小（粒子 scl 仍可取函数对象/自身轨道）
+  if (gs && prop !== 'scl' && prop !== 'rot' && prop !== 'spin' && prop !== 'center') {
+    // 组 scl 只做成员位置的整体缩放，不覆盖粒子大小（粒子 scl 仍可取函数对象/自身轨道）；
+    // 旋转类（rot/spin/center）不继承组/函数对象轨道，粒子行只显示自身值。
     for (const gname of gs) {
       const tr = findTrackByPr(pr, 'g:' + gname);
       if (tr && tr.m !== 'op') return tr;
     }
   }
   const p = getParticle(id);
-  if (p && p.fx) {
+  if (p && p.fx && prop !== 'rot' && prop !== 'spin' && prop !== 'center') {
     const tr = findTrackByPr(pr, 'f:' + p.fx);
     if (tr && tr.m !== 'op') return tr;
   }
