@@ -255,9 +255,12 @@ export const FUNCTION_PRESETS = {
     build: p => ({
       count: 200,
       vars: { amp: { base: Number(p.amp), kf: [] }, freq: { base: Number(p.freq), kf: [] }, wid: { base: Number(p.wid), kf: [] } },
-      setup: '',
-      process: 'xx = (i / n - 0.5) * wid;\n' +
-          '[x,y,z] = [xx, amp * sin(freq * pi * xx / wid), 0];',
+      setup: `global _gx = [];
+for (_k = 0; _k < n; _k = _k + 1) {
+  _gx.push(_k / n - 0.5);
+}`,
+      process: `xx = _gx[i] * wid;
+[x,y,z] = [xx, amp * sin(freq * pi * _gx[i]), 0];`,
     }),
   },
   sphere: {
@@ -268,11 +271,14 @@ export const FUNCTION_PRESETS = {
     build: p => ({
       count: 200,
       vars: { rad: { base: Number(p.rad), kf: [] } },
-      setup: '',
-      process: 'th = acos(1-2*(i+0.5)/n);\n' +
-          'ph = i*pi*(3-sqrt(5));\n' +
-          '[x,y,z] = [rad*sin(th)*cos(ph), rad*cos(th), rad*sin(th)*sin(ph)];\n' +
-          '[r,g,b,a] = [1,1,1,1];',
+      setup: `global _th = [];
+global _ph = [];
+for (_k = 0; _k < n; _k = _k + 1) {
+  _th.push(acos(1 - 2 * (_k + 0.5) / n));
+  _ph.push(_k * pi * (3 - sqrt(5)));
+}`,
+      process: `[x,y,z] = [rad * sin(_th[i]) * cos(_ph[i]), rad * cos(_th[i]), rad * sin(_th[i]) * sin(_ph[i])];
+[r,g,b,a] = [1,1,1,1];`,
     }),
   },
   cube: {
@@ -284,9 +290,16 @@ export const FUNCTION_PRESETS = {
     build: p => ({
       count: 512,
       vars: { edge: { base: Number(p.edge), kf: [] }, sx: { base: 8, kf: [] }, sy: { base: 8, kf: [] }, sz: { base: 8, kf: [] } },
-      setup: '',
-      process: '[x,y,z] = [((floor(i/(sy*sz)))/(sx-1)-0.5)*edge, ((floor((i%(sy*sz))/sz))/(sy-1)-0.5)*edge, ((i%sz)/(sz-1)-0.5)*edge];\n' +
-          '[r,g,b,a] = [1,1,1,1];',
+      setup: `global _cx = [];
+global _cy = [];
+global _cz = [];
+for (_k = 0; _k < n; _k = _k + 1) {
+  _cx.push(floor(_k / (sy * sz)) / (sx - 1) - 0.5);
+  _cy.push(floor((_k % (sy * sz)) / sz) / (sy - 1) - 0.5);
+  _cz.push((_k % sz) / (sz - 1) - 0.5);
+}`,
+      process: `[x,y,z] = [_cx[i] * edge, _cy[i] * edge, _cz[i] * edge];
+[r,g,b,a] = [1,1,1,1];`,
     }),
   },
   torus: {
@@ -301,10 +314,13 @@ export const FUNCTION_PRESETS = {
     build: p => ({
       count: 717,
       vars: { major: { base: Number(p.major), kf: [] }, minor: { base: Number(p.minor), kf: [] }, m: { base: Number(p.m), kf: [] }, k: { base: Number(p.k), kf: [] } },
-      setup: '',
-      process: 'th = i%k/k*2*pi;\n' +
-          'ph = floor(i/k)/m*2*pi;\n' +
-          '[x,y,z] = [(major+minor*cos(th))*cos(ph), minor*sin(th), (major+minor*cos(th))*sin(ph)];',
+      setup: `global _th = [];
+global _ph = [];
+for (_k = 0; _k < n; _k = _k + 1) {
+  _th.push((_k % k) / k * 2 * pi);
+  _ph.push(floor(_k / k) / m * 2 * pi);
+}`,
+      process: `[x,y,z] = [(major + minor * cos(_th[i])) * cos(_ph[i]), minor * sin(_th[i]), (major + minor * cos(_th[i])) * sin(_ph[i])];`,
     }),
   },
   cylinder: {
@@ -320,13 +336,19 @@ export const FUNCTION_PRESETS = {
     build: p => ({
       count: 512,
       vars: { rad: { base: Number(p.rad), kf: [] }, h: { base: Number(p.h), kf: [] }, m: { base: Number(p.m), kf: [] }, k: { base: Number(p.k), kf: [] }, cr: { base: Number(p.cr), kf: [] } },
-      setup: '',
-      process: 'L = k + 2*cr;\n' +
-          'ly = floor(i/m);\n' +
-          'aa = i%m/m*2*pi;\n' +
-          'rr = rad*clamp(min(ly/(cr-1), (L-1-ly)/(cr-1)), 0, 1);\n' +
-          'yy = (clamp(ly, cr, cr+k-1)-cr)/(k-1)*h - h/2;\n' +
-          '[x,y,z] = [rr*cos(aa), yy, rr*sin(aa)];',
+      setup: `global _ly = [];
+global _aa = [];
+global _rf = [];
+global _yf = [];
+for (_k = 0; _k < n; _k = _k + 1) {
+  _ly.push(floor(_k / m));
+  _aa.push((_k % m) / m * 2 * pi);
+  _rf.push(clamp(min(_ly[_k] / (cr - 1), (k + 2 * cr - 1 - _ly[_k]) / (cr - 1)), 0, 1));
+  _yf.push((clamp(_ly[_k], cr, cr + k - 1) - cr) / (k - 1));
+}`,
+      process: `rr = rad * _rf[i];
+yy = _yf[i] * h - h / 2;
+[x,y,z] = [rr * cos(_aa[i]), yy, rr * sin(_aa[i])];`,
     }),
   },
   cone: {
@@ -339,8 +361,16 @@ export const FUNCTION_PRESETS = {
     build: p => ({
       count: 512,
       vars: { rad: { base: Number(p.rad), kf: [] }, h: { base: Number(p.h), kf: [] }, m: { base: 32, kf: [] }, k: { base: 16, kf: [] } },
-      setup: '',
-      process: 'aa = i%m/m*2*pi;\nyy = floor(i/m)/(k-1);\n[x,y,z] = [rad*(1-yy)*cos(aa), (yy-0.5)*h, rad*(1-yy)*sin(aa)];\n[r,g,b,a] = [1,1,1,1];\nglow = 0;\nlight = 0;',
+      setup: `global _aa = [];
+global _yy = [];
+for (_k = 0; _k < n; _k = _k + 1) {
+  _aa.push((_k % m) / m * 2 * pi);
+  _yy.push(floor(_k / m) / (k - 1));
+}`,
+      process: `[x,y,z] = [rad * (1 - _yy[i]) * cos(_aa[i]), (_yy[i] - 0.5) * h, rad * (1 - _yy[i]) * sin(_aa[i])];
+[r,g,b,a] = [1,1,1,1];
+glow = 0;
+light = 0;`,
     }),
   },
   helix: {
@@ -353,8 +383,16 @@ export const FUNCTION_PRESETS = {
     build: p => ({
       count: 120,
       vars: { rad: { base: Number(p.rad), kf: [] }, h: { base: Number(p.h), kf: [] }, turns: { base: 3, kf: [] }, ppr: { base: 40, kf: [] } },
-      setup: '',
-      process: 'aa = i/ppr*2*pi;\n[x,y,z] = [rad*cos(aa), (i/n-0.5)*h, rad*sin(aa)];\n[r,g,b,a] = [1,1,1,1];\nglow = 1;\nlight = 8;',
+      setup: `global _aa = [];
+global _yf = [];
+for (_k = 0; _k < n; _k = _k + 1) {
+  _aa.push(_k / ppr * 2 * pi);
+  _yf.push(_k / n - 0.5);
+}`,
+      process: `[x,y,z] = [rad * cos(_aa[i]), _yf[i] * h, rad * sin(_aa[i])];
+[r,g,b,a] = [1,1,1,1];
+glow = 1;
+light = 8;`,
     }),
   },
   plane: {
@@ -367,8 +405,16 @@ export const FUNCTION_PRESETS = {
     build: p => ({
       count: 256,
       vars: { w: { base: Number(p.w), kf: [] }, d: { base: Number(p.d), kf: [] }, cols: { base: 16, kf: [] }, rows: { base: 16, kf: [] } },
-      setup: '',
-      process: '[x,y,z] = [((i%cols)/(cols-1)-0.5)*w, 0, (floor(i/cols)/(rows-1)-0.5)*d];\n[r,g,b,a] = [1,1,1,1];\nglow = 0;\nlight = 0;',
+      setup: `global _xf = [];
+global _zf = [];
+for (_k = 0; _k < n; _k = _k + 1) {
+  _xf.push((_k % cols) / (cols - 1) - 0.5);
+  _zf.push(floor(_k / cols) / (rows - 1) - 0.5);
+}`,
+      process: `[x,y,z] = [_xf[i] * w, 0, _zf[i] * d];
+[r,g,b,a] = [1,1,1,1];
+glow = 0;
+light = 0;`,
     }),
   },
   circle: {
@@ -379,9 +425,11 @@ export const FUNCTION_PRESETS = {
     build: p => ({
       count: 200,
       vars: { rad: { base: Number(p.rad), kf: [] } },
-      setup: '',
-      process: 'ang = i / n * 2 * pi;\n' +
-          '[x,y,z] = [rad * cos(ang), 0, rad * sin(ang)];',
+      setup: `global _ang = [];
+for (_k = 0; _k < n; _k = _k + 1) {
+  _ang.push(_k / n * 2 * pi);
+}`,
+      process: `[x,y,z] = [rad * cos(_ang[i]), 0, rad * sin(_ang[i])];`,
     }),
   },
   disc: {
@@ -392,11 +440,15 @@ export const FUNCTION_PRESETS = {
     build: p => ({
       count: 400,
       vars: { diskR: { base: Number(p.diskR), kf: [] } },
-      setup: '',
-      process: 'rad = diskR * sqrt(i / n);\n' +
-          'th = i * pi * (3 - sqrt(5));\n' +
-          'x = rad * cos(th);\n' +
-          'z = rad * sin(th);',
+      setup: `global _rf = [];
+global _th = [];
+for (_k = 0; _k < n; _k = _k + 1) {
+  _rf.push(sqrt(_k / n));
+  _th.push(_k * pi * (3 - sqrt(5)));
+}`,
+      process: `rad = diskR * _rf[i];
+x = rad * cos(_th[i]);
+z = rad * sin(_th[i]);`,
     }),
   },
   star: {
@@ -407,8 +459,18 @@ export const FUNCTION_PRESETS = {
     build: p => ({
       count: 2000,
       vars: { rad: { base: Number(p.rad), kf: [] } },
-      setup: '',
-      process: 'm = floor(pow(n, 0.5));\nu = floor(i / m) * 2 * pi / m;\nv = i % m * pi / m - pi / 2;\nx = rad * pow(cos(u) * cos(v), 3);\ny = rad * pow(sin(u) * cos(v), 3);\nz = rad * pow(sin(v), 3);'
+      setup: `global _m = floor(pow(n, 0.5));
+global _cx = [];
+global _cy = [];
+global _cz = [];
+for (_k = 0; _k < n; _k = _k + 1) {
+  _cx.push(pow(cos(floor(_k / _m) * 2 * pi / _m) * cos((_k % _m) * pi / _m - pi / 2), 3));
+  _cy.push(pow(sin(floor(_k / _m) * 2 * pi / _m) * cos((_k % _m) * pi / _m - pi / 2), 3));
+  _cz.push(pow(sin((_k % _m) * pi / _m - pi / 2), 3));
+}`,
+      process: `x = rad * _cx[i];
+y = rad * _cy[i];
+z = rad * _cz[i];`
     })
   },
   rising_smoke: {
@@ -420,11 +482,18 @@ export const FUNCTION_PRESETS = {
     build: p => ({
       count: 2000,
       vars: { rad: { base: Number(p.rad), kf: []}, spd: { base: Number(p.spd), kf: [] } },
-      setup: '',
-      process: 'x = rand(i * 2) * 2 * rad - rad;\n' +
-          'z = rand(i * 4) * 2 * rad - rad;\n' +
-          '_y = rand(i * 6) * 2 * rad - rad; \n' +
-          'y = -rad + (_y + rad + t * spd) % (2 * rad);'
+      setup: `global _rx = [];
+global _rz = [];
+global _ry = [];
+for (_k = 0; _k < n; _k = _k + 1) {
+  _rx.push(rand(_k * 2));
+  _rz.push(rand(_k * 4));
+  _ry.push(rand(_k * 6));
+}`,
+      process: `x = (_rx[i] * 2 - 1) * rad;
+z = (_rz[i] * 2 - 1) * rad;
+_y = (_ry[i] * 2 - 1) * rad;
+y = -rad + (_y + rad + t * spd) % (2 * rad);`
     })
   },
 };
