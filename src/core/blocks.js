@@ -141,6 +141,7 @@ export const STMT_BLOCKS = {
 /* —— 调色板分组（顺序即显示顺序；label 为 i18n 键 blk.pal.<id>） —— */
 export const PALETTE_GROUPS = [
   { id: 'start', label: 'blk.pal.start' },
+  { id: 'funcs', label: 'blk.pal.funcs' },
   { id: 'pos', label: 'blk.pal.pos' },
   { id: 'color', label: 'blk.pal.color' },
   { id: 'appearance', label: 'blk.pal.appearance' },
@@ -239,7 +240,7 @@ export function exprComplete(node) {
     case 'ternary': return exprComplete(node.cond) && exprComplete(node.a) && exprComplete(node.b);
     case 'index': return exprComplete(node.target) && exprComplete(node.index);
     case 'method': return exprComplete(node.obj) && node.args.every(exprComplete);
-    case 'array': return node.items.every(exprComplete);
+    case 'array': return true; // 数组字面量允许留空；生成时跳过空槽（全空生成 []）
     default: return false;
   }
 }
@@ -356,9 +357,10 @@ function emitComment(s, pad) {
   return pad + '/*\n' + text.split('\n').map(l => pad + ' ' + l).join('\n') + '\n' + pad + ' */';
 }
 
-function emitStmt(s, level, spans) {
+function emitStmt(s, level, spans, lineStart) {
   if (!stmtComplete(s)) return '';
   const pad = indentPad(level);
+  const start = lineStart || 1;
   switch (s.kind) {
     case 'pos': return pad + '[x,y,z] = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
     case 'pos_vec': return pad + '[x,y,z] = ' + exprToCode(s.expr, 0);
@@ -378,50 +380,52 @@ function emitStmt(s, level, spans) {
     case 'return': return pad + (s.expr ? 'return ' + exprToCode(s.expr, 0) + ';' : 'return;');
     case 'if': {
       const cond = exprToCode(s.cond, 0);
-      const body = emitList(s.body || [], level + 1, spans);
+      const body = emitList(s.body || [], level + 1, spans, start + 1);
+      const bodyLines = lineCount(body);
       let out = pad + 'if (' + cond + ') {\n';
       if (body) out += body + '\n';
       out += pad + '}';
       if (s.elseBody && s.elseBody.length) {
+        const elseLine = start + bodyLines + 1;
         if (s.elseBody.length === 1 && s.elseBody[0].kind === 'if') {
-          out += ' else ' + emitStmt(s.elseBody[0], level, spans);
+          out += ' else ' + emitStmt(s.elseBody[0], level, spans, elseLine);
         } else {
           out += ' else {\n';
-          out += emitList(s.elseBody, level + 1, spans);
+          out += emitList(s.elseBody, level + 1, spans, elseLine + 1);
           out += '\n' + pad + '}';
         }
       }
       return out;
     }
     case 'while': {
-      const body = emitList(s.body || [], level + 1, spans);
+      const body = emitList(s.body || [], level + 1, spans, start + 1);
       return pad + 'while (' + exprToCode(s.cond, 0) + ') {\n' + body + '\n' + pad + '}';
     }
     case 'do': {
-      const body = emitList(s.body || [], level + 1, spans);
+      const body = emitList(s.body || [], level + 1, spans, start + 1);
       return pad + 'do {\n' + body + '\n' + pad + '} while (' + exprToCode(s.cond, 0) + ');';
     }
     case 'for': {
-      const body = emitList(s.body || [], level + 1, spans);
+      const body = emitList(s.body || [], level + 1, spans, start + 1);
       return pad + 'for (' + (s.init || '') + '; ' + (s.cond || '') + '; ' + (s.inc || '') + ') {\n' + body + '\n' + pad + '}';
     }
     case 'repeat': {
-      const body = emitList(s.body || [], level + 1, spans);
+      const body = emitList(s.body || [], level + 1, spans, start + 1);
       return pad + 'while (true) {\n' + body + '\n' + pad + '}';
     }
     case 'repeat_n': {
-      const body = emitList(s.body || [], level + 1, spans);
+      const body = emitList(s.body || [], level + 1, spans, start + 1);
       // 循环变量 _rep 与代码解析端约定一致，保证往返稳定。
       return pad + 'for (_rep = 0; _rep < ' + exprToCode(s.count, 0) + '; _rep = _rep + 1) {\n' + body + '\n' + pad + '}';
     }
     case 'repeat_until': {
-      const body = emitList(s.body || [], level + 1, spans);
+      const body = emitList(s.body || [], level + 1, spans, start + 1);
       // 「重复执行直到 cond」= while (!(cond))。
       const cond = exprToCode(s.cond, 0);
       return pad + 'while (!(' + cond + ')) {\n' + body + '\n' + pad + '}';
     }
     case 'func': {
-      const body = emitList(s.body || [], level + 1, spans);
+      const body = emitList(s.body || [], level + 1, spans, start + 1);
       return pad + 'func ' + s.name + '(' + (s.params || []).join(', ') + ') {\n' + body + '\n' + pad + '}';
     }
     case 'global': case 'static': return pad + s.kind + ' ' + s.name + (s.expr ? ' = ' + exprToCode(s.expr, 0) : '') + ';';
@@ -429,15 +433,18 @@ function emitStmt(s, level, spans) {
   }
 }
 
-function emitList(list, level, spans) {
+function emitList(list, level, spans, startLine) {
   let out = '';
+  let line = startLine || 1;
   for (const s of list || []) {
-    let code = emitStmt(s, level, spans);
+    let code = emitStmt(s, level, spans, line);
     if (code == null || code === '') continue;
     if (stmtNeedsSemi(code)) code += ';';
+    const n = lineCount(code);
+    if (spans) spans.push({ stmt: s, start: line, end: line + n - 1 });
     if (out) out += '\n';
-    if (spans) spans.push({ stmt: s, start: lineCount(out) + 1, end: lineCount(out) + lineCount(code) });
     out += code;
+    line += n;
   }
   return out;
 }
