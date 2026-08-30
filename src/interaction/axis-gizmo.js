@@ -31,9 +31,6 @@ export const AXIS_DIRS = {
   Z: new THREE.Vector3(0, 0, 1),
 };
 
-// 场景旋转始终围绕世界中心（与平移 target 解耦）
-const ORBIT_ORIGIN = new THREE.Vector3(0, 0, 0);
-
 // 六轴球：正轴实心（红X/绿Y/蓝Z），负轴填充半透明 + 描边（同轴色）
 export const AXIS_DEFS = [
   { key: '+X', axis: 'X', dir: new THREE.Vector3(1, 0, 0), color: '#ff5555', sign: +1 },
@@ -185,46 +182,51 @@ export function nearestBall(pt) {
   return best;
 }
 
-// 统一的自由旋转（turntable）：水平绕世界 Y，垂直绕相机右轴，
-// 刚体旋转 offset 与 up，可翻过极点，手感与中键一致。
-// 始终围绕世界中心旋转，与 OrbitControls 的平移 target 无关。
+// 统一的自由旋转（turntable）：水平绕世界 Y，垂直绕相机右轴。
+// 旋转中心跟随 controls.target（初始为世界原点；右键平移后跟随平移中心）。
+// 视角始终保持正立：camera.up 固定为世界 Y，球坐标俯仰角夹紧避免翻过极点产生翻滚。
 export function turntableRotate(dx, dy) {
-  const target = ORBIT_ORIGIN;
+  const target = controls.target;
   const offset = camera.position.clone().sub(target);
-  const up = camera.up.clone();
+  const radius = offset.length();
+  if (radius < 1e-6) return;
 
-  if (dx !== 0) {
-    offset.applyAxisAngle(_yAxis, -dx * ROT_SPEED);
-    up.applyAxisAngle(_yAxis, -dx * ROT_SPEED);
-  }
-  if (dy !== 0) {
-    _forward.copy(offset).negate().normalize();
-    _right.crossVectors(_forward, up).normalize();
-    offset.applyAxisAngle(_right, -dy * ROT_SPEED);
-    up.applyAxisAngle(_right, -dy * ROT_SPEED);
-  }
+  const y = THREE.MathUtils.clamp(offset.y / radius, -1, 1);
+  let theta = Math.atan2(offset.x, offset.z); // 绕 Y 的方位角（0 = +Z）
+  let phi = Math.acos(y);                     // 与 +Y 的夹角（0=顶，π/2=地平线，π=底）
+
+  theta -= dx * ROT_SPEED;
+  phi -= dy * ROT_SPEED;
+
+  const polarEps = 0.05;
+  phi = THREE.MathUtils.clamp(phi, polarEps, Math.PI - polarEps);
+
+  const sinPhi = Math.sin(phi);
+  offset.set(
+    radius * sinPhi * Math.sin(theta),
+    radius * Math.cos(phi),
+    radius * sinPhi * Math.cos(theta)
+  );
 
   camera.position.copy(target).add(offset);
-  camera.up.copy(up).normalize();
+  camera.up.set(0, 1, 0);
   camera.lookAt(target);
 }
 
-// 右键拖拽平移：只平移相机位置，始终 lookAt 世界原点，保持 controls.target 为原点。
-// 这样不会让 OrbitControls 的 target 漂移，后续中键 / gizmo / 轴视图切换仍围绕原点旋转。
+// 右键拖拽平移：相机与 controls.target 同步平移（纯平移，不改变朝向）。
+// dx>0 向右拖：相机沿右方向反向平移，场景跟手向右；dy>0 向下拖：相机沿上方向平移。
 export function panCamera(dx, dy) {
-  const target = ORBIT_ORIGIN;
-  const dist = Math.max(1e-4, camera.position.distanceTo(target));
+  const dist = Math.max(1e-4, camera.position.distanceTo(controls.target));
   const halfH = dist * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
   const scale = 2 * halfH / (renderer.domElement.clientHeight || 1);
   const dir = camera.getWorldDirection(new THREE.Vector3());
   const right = new THREE.Vector3().crossVectors(dir, camera.up).normalize();
   const up = camera.up.clone().normalize();
-  // dx>0 向右拖：相机沿右方向反向平移，场景跟手向右；dy>0 向下拖：相机沿上方向平移。
-  camera.position.addScaledVector(right, -dx * scale);
-  camera.position.addScaledVector(up, dy * scale);
-  controls.target.copy(target);
-  camera.up.copy(up);
-  camera.lookAt(target);
+  const pan = new THREE.Vector3()
+    .addScaledVector(right, -dx * scale)
+    .addScaledVector(up, dy * scale);
+  camera.position.add(pan);
+  controls.target.add(pan);
 }
 
 // gizmo 拖动自由旋转：打断过渡动画、恢复 XZ 后走 turntable
@@ -352,10 +354,10 @@ export function slerp(a, b, t) {
   return a.clone().applyQuaternion(_qInterp);
 }
 
-// 平滑切到 dir 方向的正交视图：保持当前距离、绕世界中心旋转过去、更新绘制平面
+// 平滑切到 dir 方向的正交视图：保持当前距离、绕当前旋转中心转过去、更新绘制平面
 export function orientToAxis(dir) {
-  const dist = camera.position.distanceTo(ORBIT_ORIGIN);
-  const target = ORBIT_ORIGIN.clone();
+  const target = controls.target.clone();
+  const dist = camera.position.distanceTo(target);
   const startDir = camera.position.clone().sub(target).normalize();
   const endPos = target.clone().sub(dir.clone().normalize().multiplyScalar(dist));
   const endDir = endPos.clone().sub(target).normalize();
