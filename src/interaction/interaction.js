@@ -643,7 +643,7 @@ export function ringHitInfo(clientX, clientY) {
   const c = [gizmoGroup.position.x, gizmoGroup.position.y, gizmoGroup.position.z];
   const rect = renderer.domElement.getBoundingClientRect();
   const px = clientX - rect.left, py = clientY - rect.top;
-  const scale = gizmoGroup.scale.x || 1;
+  const scale = (gizmoGroup.scale.x || 1) * (gizmoRotateGroup.scale.x || 1);
   const rotQ = gizmoRotateGroup.quaternion;
   let bestAxis = null, bestDist = Infinity;
   for (const ax of ['X', 'Y', 'Z']) {

@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { state, PLANES, SNAP_STEP, getFunction } from '../core/constants.js';
 import { shiftHeld } from './input-state.js';
-import { camera, renderer, raycaster, pointer, points, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, gizmoAxisHint, AXIS_RING_COLORS, RING_NORMALS, GIZMO_FACE_DEFS, setWorldAxisVisible, setWorldAxisGlow, resetWorldAxisState } from '../scene/scene.js';
+import { camera, renderer, raycaster, pointer, points, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoOrbitLines, gizmoViewRing, gizmoFaces, gizmoArrows, gizmoAxisHint, AXIS_RING_COLORS, RING_NORMALS, GIZMO_FACE_DEFS, setWorldAxisVisible, setWorldAxisGlow, resetWorldAxisState } from '../scene/scene.js';
 import { AXIS_COLORS, AXIS_VECTORS, modal, setGizmoHover, selectedGroupName, selectionHasDerived, derivedFxIdFromSelection, fxCurrentPos, hoverColor } from './interaction.js';
 import { currentVisual, orbitCenterAt } from '../core/animation.js';
 import { groupCurrentCentroid } from '../ui/tree.js';
@@ -116,15 +116,19 @@ export function updateGizmoFrame() {
   const depth = Math.max(0.5, toGizmo.dot(viewDir));
   const orbitT = orbitGizmoTarget();
   if (orbitT) {
-    // 公转模式：环半径 = 对象中心到公转中心的距离（环局部半径 0.5 → 缩放 2×距离）
+    // 公转模式：整体保持屏幕恒定大小，改由 gizmoRotateGroup 拉长细线环半径。
+    // 这样环覆盖对象中心到公转中心，而 LineLoop 线宽保持 1px，不会随距离变粗。
     const dist = Math.hypot(
       orbitT.objectCenter[0] - orbitT.orbitCenter[0],
       orbitT.objectCenter[1] - orbitT.orbitCenter[1],
       orbitT.objectCenter[2] - orbitT.orbitCenter[2],
     );
-    gizmoGroup.scale.setScalar(Math.max(dist * 2, depth * GIZMO_SCREEN_SCALE));
+    gizmoGroup.scale.setScalar(depth * GIZMO_SCREEN_SCALE);
+    const ringScale = Math.max(dist * 2 / (depth * GIZMO_SCREEN_SCALE), 0.0001);
+    gizmoRotateGroup.scale.setScalar(ringScale);
   } else {
     gizmoGroup.scale.setScalar(depth * GIZMO_SCREEN_SCALE);
+    gizmoRotateGroup.scale.setScalar(1);
   }
   // 外部白色视图环：始终正对摄像头（环面垂直于视线）
   gizmoViewRing.lookAt(camera.position);
@@ -145,17 +149,27 @@ export function updateGizmoFrame() {
     // 旋转拖拽：选中轴环整环显示并高亮；其他环与白环隐藏
     for (const ax of ['X', 'Y', 'Z']) {
       const active = showRotate && !viewDragging && m.axisKey === ax;
-      for (const seg of gizmoRingSegs[ax]) {
-        seg.visible = active;
-        seg.material.opacity = 1;
-        seg.material.color.set(active ? gizmoHl(AXIS_RING_COLORS[ax]) : AXIS_RING_COLORS[ax]);
+      if (orbitMode) {
+        for (const seg of gizmoRingSegs[ax]) seg.visible = false;
+        const line = gizmoOrbitLines[ax];
+        if (line) line.visible = active;
+      } else {
+        for (const seg of gizmoRingSegs[ax]) {
+          seg.visible = active;
+          seg.material.opacity = 1;
+          seg.material.color.set(active ? gizmoHl(AXIS_RING_COLORS[ax]) : AXIS_RING_COLORS[ax]);
+        }
+        if (gizmoOrbitLines[ax]) gizmoOrbitLines[ax].visible = false;
       }
     }
     gizmoViewRing.visible = showRotate && viewDragging;
     gizmoViewRing.material.color.set(viewDragging ? 0xffffff : 0xe4e8f2);
   } else if (isGrab) {
     // 移动拖拽：选中箭头/面高亮；环与白环隐藏
-    for (const ax of ['X', 'Y', 'Z']) for (const seg of gizmoRingSegs[ax]) seg.visible = false;
+    for (const ax of ['X', 'Y', 'Z']) {
+      for (const seg of gizmoRingSegs[ax]) seg.visible = false;
+      if (gizmoOrbitLines[ax]) gizmoOrbitLines[ax].visible = false;
+    }
     gizmoViewRing.visible = false;
     for (const ax of ['X', 'Y', 'Z']) {
       const a = gizmoArrows[ax];
@@ -172,6 +186,11 @@ export function updateGizmoFrame() {
     // 否则按角度隐藏位于「球体」后方的半边弧线（径向朝向相机一侧显示）。
     const rotQ = gizmoRotateGroup.quaternion;
     for (const ax of ['X', 'Y', 'Z']) {
+      if (orbitMode) {
+        for (const seg of gizmoRingSegs[ax]) seg.visible = false;
+        if (gizmoOrbitLines[ax]) gizmoOrbitLines[ax].visible = showRotate;
+        continue;
+      }
       const n = new THREE.Vector3(...RING_NORMALS[ax]).applyQuaternion(rotQ);
       const align = Math.abs(n.dot(camDir));
       const faceOn = align > 0.999; // 只有几乎正对该轴（视线沿轴）才整环显示
@@ -184,6 +203,7 @@ export function updateGizmoFrame() {
         segs[i].visible = op > 0.02;
         segs[i].material.opacity = op;
       }
+      if (gizmoOrbitLines[ax]) gizmoOrbitLines[ax].visible = false;
     }
     gizmoViewRing.visible = showRotate;
   }

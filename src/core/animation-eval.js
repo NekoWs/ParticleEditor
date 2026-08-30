@@ -32,14 +32,14 @@ export function baseValue(p, prop) {
   if (prop === 'pos') return p.pos.slice(0, 3);
   if (prop === 'col') return p.color.slice(0, 4);
   if (prop === 'vel') return (p.vel || [0, 0, 0]).slice(0, 3);
-  if (prop === 'rot') return [0, 0, 0];
+  if (prop === 'rot' || prop === 'spin' || prop === 'center') return [0, 0, 0];
   const s = p.scale || [1, 1, 1];
   return [s[0], s[1], s[2]];
 }
 
 // 零向量（按属性）
 export function zeroArray(prop) {
-  if (prop === 'pos' || prop === 'rot' || prop === 'vel' || prop === 'scl') return [0, 0, 0];
+  if (prop === 'pos' || prop === 'rot' || prop === 'spin' || prop === 'center' || prop === 'vel' || prop === 'scl') return [0, 0, 0];
   if (prop === 'col') return [0, 0, 0, 0];
   return [0];
 }

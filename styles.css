@@ -681,7 +681,7 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .tt-val, .tt-var-val {
   font-size: 11px; color: #e8eaf0; text-align: left;
   font-variant-numeric: tabular-nums; white-space: nowrap;
-  padding: 1px 3px; background: #12141a;
+  padding: 1px 3px; background: transparent;
   border: 1px solid #323848; border-radius: 3px;
 }
 .tt-val:focus, .tt-var-val:focus { border-color: var(--accent); outline: none; }
@@ -773,7 +773,7 @@ body.ctrl-held .kf-t { cursor: pointer; }
    每个属性之间以浅色竖线分隔。 */
 .vec3 {
   display: inline-flex; align-items: center; height: 26px; box-sizing: border-box;
-  background: var(--panel-3); border: 1px solid var(--border); border-radius: 5px;
+  background: #12141a; border: 1px solid var(--border); border-radius: 5px;
   overflow: hidden;
 }
 .vec3-seg {
