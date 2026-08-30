@@ -115,6 +115,7 @@ export function updateGizmoFrame() {
   const viewDir = camera.getWorldDirection(new THREE.Vector3());
   const depth = Math.max(0.5, toGizmo.dot(viewDir));
   const orbitT = orbitGizmoTarget();
+  const orbitMode = !!orbitT;
   if (orbitT) {
     // 公转模式：整体保持屏幕恒定大小，改由 gizmoRotateGroup 拉长细线环半径。
     // 这样环覆盖对象中心到公转中心，而 LineLoop 线宽保持 1px，不会随距离变粗。
