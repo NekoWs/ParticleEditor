@@ -764,6 +764,23 @@ body.ctrl-held .kf-t { cursor: pointer; }
   color: var(--text); border-radius: 5px; padding: 5px 7px;
   font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px; line-height: 1.4;
 }
+.fx-center {
+  display: inline-flex; align-items: center; gap: 2px;
+  height: 26px; padding: 0 4px; box-sizing: border-box;
+  background: var(--panel-3); border: 1px solid var(--border); border-radius: 5px;
+}
+.fx-center span { flex: none; font-size: 11px; color: var(--muted); margin: 0 2px; }
+.fx-center input {
+  width: 38px; height: auto; border: none; background: transparent;
+  padding: 0; text-align: center; box-shadow: none;
+}
+.fx-center input:focus { outline: none; }
+.fx-code-wrap { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 4px; }
+.fx-code-head { display: flex; align-items: center; gap: 6px; }
+.fx-code-toggle { flex: 1; text-align: left; }
+.fx-code-body { margin-top: 4px; display: flex; flex-direction: column; gap: 4px; }
+.fx-code-group { display: flex; flex-direction: column; gap: 2px; }
+.fx-code-headline { font-size: 12px; color: var(--muted); }
 .fx-code:focus { border-color: var(--accent); outline: none; }
 .fx-var { margin: 4px 0; }
 .fx-kf { padding: 8px 6px 8px 10px; display: flex; flex-direction: column; gap: 3px; margin-top: 2px; border-radius: 6px; }

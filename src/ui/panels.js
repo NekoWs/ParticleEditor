@@ -301,21 +301,25 @@ export function buildFunctionPanel(fx) {
   countRow.appendChild(countIn);
   wrap.appendChild(countRow);
 
-  // 中心点
+  // 中心点（合并为单个紧凑组合输入框）
   const centerRow = document.createElement('div');
   centerRow.className = 'row';
   const centerLabel = document.createElement('span');
   centerLabel.textContent = t('fx.center');
   centerRow.appendChild(centerLabel);
+  const centerGroup = document.createElement('div');
+  centerGroup.className = 'fx-center';
   ['X', 'Y', 'Z'].forEach((axis, idx) => {
+    const axisLabel = document.createElement('span');
+    axisLabel.textContent = axis;
     const inp = document.createElement('input');
     inp.type = 'number'; inp.step = '0.1'; inp.value = fx.center[idx];
-    inp.style.width = '46px';
     inp.title = axis;
     inp.onchange = () => { pushUndo(); fx.center[idx] = parseFloat(inp.value) || 0; commitFunctionRebuild(fx); };
-    centerRow.appendChild(document.createTextNode(axis));
-    centerRow.appendChild(inp);
+    centerGroup.appendChild(axisLabel);
+    centerGroup.appendChild(inp);
   });
+  centerRow.appendChild(centerGroup);
   wrap.appendChild(centerRow);
 
   // 预设参数
@@ -369,7 +373,65 @@ export function buildFunctionPanel(fx) {
   seedRow.appendChild(seedIn);
   wrap.appendChild(seedRow);
 
-  // 快速数学近似（按函数对象可选，默认关闭）
+  // 公式代码块（默认折叠；文本代码与快速数学放在折叠区内）
+  const codeWrap = document.createElement('div');
+  codeWrap.className = 'fx-code-wrap';
+  const codeHead = document.createElement('div');
+  codeHead.className = 'fx-code-head';
+  const codeToggle = document.createElement('button');
+  codeToggle.type = 'button';
+  codeToggle.className = 'mini fx-code-toggle';
+  codeToggle.textContent = t('fx.codeBlock') + ' ▸';
+  codeHead.appendChild(codeToggle);
+  const puzzleBtn = document.createElement('button');
+  puzzleBtn.className = 'mini';
+  puzzleBtn.textContent = t('fx.puzzle');
+  puzzleBtn.title = t('fx.puzzleHint');
+  puzzleBtn.onclick = () => openBlockDrawer(fx);
+  codeHead.appendChild(puzzleBtn);
+  codeWrap.appendChild(codeHead);
+
+  const codeBody = document.createElement('div');
+  codeBody.className = 'fx-code-body';
+  codeBody.style.display = 'none';
+  codeToggle.onclick = () => {
+    const opening = codeBody.style.display === 'none';
+    codeBody.style.display = opening ? 'block' : 'none';
+    codeToggle.textContent = t('fx.codeBlock') + (opening ? ' ▾' : ' ▸');
+  };
+  codeWrap.appendChild(codeBody);
+
+  // Setup（对象初始化一次）：标题与输入框合并在同一组内
+  const setupGroup = document.createElement('label');
+  setupGroup.className = 'fx-code-group';
+  const setupLabel = document.createElement('span');
+  setupLabel.className = 'fx-code-headline';
+  setupLabel.textContent = t('fx.setupBlock');
+  setupGroup.appendChild(setupLabel);
+  const setupArea = document.createElement('textarea');
+  setupArea.className = 'fx-code';
+  setupArea.rows = 4;
+  setupArea.value = fx.setup || '';
+  setupArea.onchange = () => { pushUndo(); fx.setup = setupArea.value; commitFunctionRebuild(fx); };
+  setupGroup.appendChild(setupArea);
+  codeBody.appendChild(setupGroup);
+
+  // Process（每粒子每帧）：标题与输入框合并在同一组内
+  const processGroup = document.createElement('label');
+  processGroup.className = 'fx-code-group';
+  const processLabel = document.createElement('span');
+  processLabel.className = 'fx-code-headline';
+  processLabel.textContent = t('fx.processBlock');
+  processGroup.appendChild(processLabel);
+  const processArea = document.createElement('textarea');
+  processArea.className = 'fx-code';
+  processArea.rows = 7;
+  processArea.value = fx.process || '';
+  processArea.onchange = () => { pushUndo(); fx.process = processArea.value; commitFunctionRebuild(fx); };
+  processGroup.appendChild(processArea);
+  codeBody.appendChild(processGroup);
+
+  // 快速数学近似（放在文本代码下方）
   const fmRow = document.createElement('label');
   fmRow.className = 'row';
   const fmChk = document.createElement('input');
@@ -382,43 +444,9 @@ export function buildFunctionPanel(fx) {
   };
   fmRow.appendChild(fmChk);
   fmRow.appendChild(document.createTextNode(' ' + t('fx.fastMath')));
-  wrap.appendChild(fmRow);
+  codeBody.appendChild(fmRow);
 
-  // 拼图入口
-  const codeLabel = document.createElement('div');
-  codeLabel.className = 'row';
-  codeLabel.textContent = t('fx.codeBlock');
-  const puzzleBtn = document.createElement('button');
-  puzzleBtn.className = 'mini';
-  puzzleBtn.textContent = t('fx.puzzle');
-  puzzleBtn.title = t('fx.puzzleHint');
-  puzzleBtn.onclick = () => openBlockDrawer(fx);
-  codeLabel.appendChild(puzzleBtn);
-  wrap.appendChild(codeLabel);
-
-  // Setup（对象初始化一次）
-  const setupLabel = document.createElement('div');
-  setupLabel.className = 'row';
-  setupLabel.textContent = t('fx.setupBlock');
-  wrap.appendChild(setupLabel);
-  const setupArea = document.createElement('textarea');
-  setupArea.className = 'fx-code';
-  setupArea.rows = 4;
-  setupArea.value = fx.setup || '';
-  setupArea.onchange = () => { pushUndo(); fx.setup = setupArea.value; commitFunctionRebuild(fx); };
-  wrap.appendChild(setupArea);
-
-  // Process（每粒子每帧）
-  const processLabel = document.createElement('div');
-  processLabel.className = 'row';
-  processLabel.textContent = t('fx.processBlock');
-  wrap.appendChild(processLabel);
-  const processArea = document.createElement('textarea');
-  processArea.className = 'fx-code';
-  processArea.rows = 7;
-  processArea.value = fx.process || '';
-  processArea.onchange = () => { pushUndo(); fx.process = processArea.value; commitFunctionRebuild(fx); };
-  wrap.appendChild(processArea);
+  wrap.appendChild(codeWrap);
 
   return wrap;
 }
