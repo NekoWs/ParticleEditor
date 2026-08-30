@@ -331,6 +331,50 @@ export function compOpDelta(p, prop, comp, T) {
   return delta;
 }
 
+// 仅组 op 增量（标量累加；与 compOpDelta 的组部分一致）
+export function compGroupOpDelta(p, prop, comp, T) {
+  const pr = compPr(prop, comp);
+  let delta = 0;
+  if (groupOpDeltaCache) {
+    const gs = groupMemberIndexCache && groupMemberIndexCache.get(p.id);
+    if (gs) {
+      for (const gname of gs) {
+        const m = groupOpDeltaCache.get(gname);
+        if (m) { const v = m.get(pr); if (v) delta += v; }
+      }
+    }
+    return delta;
+  }
+  for (const tr of opTracksCache) {
+    if (tr.pr !== pr || tr.kf.length === 0) continue;
+    for (const id of tr.ids) {
+      if (!id.startsWith('g:')) continue;
+      const members = groupSetCache.get(id.slice(2));
+      if (members && members.has(p.id)) delta += trackValueAt(tr, T, 0);
+    }
+  }
+  return delta;
+}
+
+// 仅函数对象 op 增量（标量累加；与 compOpDelta 的 fx 部分一致）
+export function compFxOpDelta(p, prop, comp, T) {
+  const pr = compPr(prop, comp);
+  if (!p.fx) return 0;
+  let delta = 0;
+  if (fxOpDeltaCache) {
+    const m = fxOpDeltaCache.get(p.fx);
+    if (m) { const v = m.get(pr); if (v) delta += v; }
+    return delta;
+  }
+  for (const tr of opTracksCache) {
+    if (tr.pr !== pr || tr.kf.length === 0) continue;
+    for (const id of tr.ids) {
+      if (id.startsWith('f:') && p.fx === id.slice(2)) delta += trackValueAt(tr, T, 0);
+    }
+  }
+  return delta;
+}
+
 // 某 id（'g:name' 或 'f:fxId'）的 rot 向量（三个分量，度）
 export function rotVectorAt(id, T) {
   return ['x', 'y', 'z'].map(c => {
@@ -489,7 +533,7 @@ export function currentVisual(p) {
 }
 
 // 派生粒子活源求值：每帧执行公式代码块（random 每帧变化，实现星光闪闪预览），
-// 再叠加函数对象整体旋转（rot）与位移增量（op），与游戏端活源语义一致。
+// 再按「自转 → 函数对象 pos op → 公转 → 组 op」顺序叠加整体变换，与游戏端活源语义一致。
 // 返回的 scale 为三分量数组 [sx,sy,sz]（函数对象整体缩放可独立分轴）。
 export function currentVisualDerived(p, T) {
   const fx = getFunction(p.fx);
@@ -513,8 +557,11 @@ export function currentVisualDerived(p, T) {
   }
   let pos = applyGroupScale(p, r.pos.slice(), T);
   pos = applySelfRotation(p, pos, T);
+  // 函数对象整体 pos op 位移必须在公转之前生效：对象实际世界位置应绕公转中心旋转。
+  // 组 op 位移仍保持公转之后（与组变换顺序一致）。
+  pos = pos.map((v, ci) => v + compFxOpDelta(p, 'pos', ['x', 'y', 'z'][ci], T));
   pos = applyOrbitRotation(p, pos, T);
-  pos = pos.map((v, ci) => v + compOpDelta(p, 'pos', ['x', 'y', 'z'][ci], T));
+  pos = pos.map((v, ci) => v + compGroupOpDelta(p, 'pos', ['x', 'y', 'z'][ci], T));
   return { pos, color: r.color, scale: scaleVec };
 }
 
