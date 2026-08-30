@@ -94,7 +94,7 @@ export const PR_TO_IDX = {
 export let trVersion = 0; // 每次 buildParticleIndex 递增，配合 p._trVersion 惰性失效 p._tr
 export function buildParticleIndex() {
   const map = new Map();
-  for (const p of state.particles) { map.set(p.id, p); p._hasRotation = false; }
+  for (const p of state.particles) map.set(p.id, p);
   setParticleIndex(map);
   const fm = new Map();
   for (const f of state.functions) fm.set(f.id, f);
@@ -115,13 +115,12 @@ export function buildTrackIndex() {
       if (c0 !== 103 && c0 !== 102) { // 排除 'g:' 组 / 'f:' 函数轨道（普通/派生粒子轨道）
         let idx = tr._idx;
         if (idx === undefined) { idx = PR_TO_IDX[tr.pr]; tr._idx = (idx === undefined) ? -1 : idx; }
-        const p = pidx.get(id);
-        if (p && idx >= 0) {
-          if (p._trVersion !== trVersion) { p._tr = new Array(13); p._trVersion = trVersion; }
-          p._tr[idx] = tr;
-        } else if (p && (tr.pr.startsWith('rot.') || tr.pr.startsWith('spin.') || tr.pr.startsWith('center.'))) {
-          // 旋转类轨道不写入 p._tr 分量数组；标记粒子，渲染时走完整求值（世界坐标公转）
-          p._hasRotation = true;
+        if (idx >= 0) {
+          const p = pidx.get(id);
+          if (p) {
+            if (p._trVersion !== trVersion) { p._tr = new Array(13); p._trVersion = trVersion; }
+            p._tr[idx] = tr;
+          }
         }
       }
     }

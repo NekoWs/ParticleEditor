@@ -188,10 +188,6 @@ function writePointBuffers(full) {
     let px, py, pz, cr, cg, cb, ca, ssx, ssy;
     if (p.fx) {
       [px, py, pz, cr, cg, cb, ca, ssx, ssy] = readVisualFallback(p, T);
-    } else if (p._hasRotation) {
-      // 普通粒子带自身公转/自转/公转中心轨道：快路径只覆盖位置/颜色/缩放/速度分量，
-      // 必须走完整求值才能在渲染缓冲中应用世界坐标公转。
-      [px, py, pz, cr, cg, cb, ca, ssx, ssy] = readVisualFallback(p, T);
     } else {
       const inGroup = hasGroups && memberIdx.has(p.id);
       const tr = (p._trVersion === trVersion) ? p._tr : null;
