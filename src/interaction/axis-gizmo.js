@@ -10,7 +10,7 @@
 
 import * as THREE from 'three';
 import { state } from '../core/constants.js';
-import { camera, renderer, grid, worldAxes, setWorldAxisVisible, camTransition, setCamTransition } from '../scene/scene.js';
+import { camera, renderer, controls, grid, worldAxes, setWorldAxisVisible, camTransition, setCamTransition } from '../scene/scene.js';
 export const gizmoCanvas = document.getElementById('axis-gizmo');
 export const gizmoCtx = gizmoCanvas.getContext('2d');
 
@@ -48,6 +48,7 @@ export let gizmoHovering = false;   // 鼠标是否悬停在 gizmo 上（决定�
 export let snappedAxis = null;       // 当前吸附的轴球 key（'+X'/'-X'/...）
 export let navDrag = null;           // gizmo 拖拽 { x, y, moved }
 export let midDrag = null;           // 中键拖拽 { x, y }
+export let rightPanDrag = null;      // 右键拖拽平移 { x, y }
 export let lastAxis = null;          // 上次点击 { axis:'X'|'Y'|'Z', sign:+1|-1 }
 export let navOriented = false;      // 切到轴视图后为 true，转动视角时恢复 XZ 并置 false
 
@@ -208,6 +209,24 @@ export function turntableRotate(dx, dy) {
   camera.lookAt(target);
 }
 
+// 右键拖拽平移：只平移相机位置，始终 lookAt 世界原点，保持 controls.target 为原点。
+// 这样不会让 OrbitControls 的 target 漂移，后续中键 / gizmo / 轴视图切换仍围绕原点旋转。
+export function panCamera(dx, dy) {
+  const target = ORBIT_ORIGIN;
+  const dist = Math.max(1e-4, camera.position.distanceTo(target));
+  const halfH = dist * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
+  const scale = 2 * halfH / (renderer.domElement.clientHeight || 1);
+  const dir = camera.getWorldDirection(new THREE.Vector3());
+  const right = new THREE.Vector3().crossVectors(dir, camera.up).normalize();
+  const up = camera.up.clone().normalize();
+  // dx>0 向右拖：相机沿右方向反向平移，场景跟手向右；dy>0 向下拖：相机沿上方向平移。
+  camera.position.addScaledVector(right, -dx * scale);
+  camera.position.addScaledVector(up, dy * scale);
+  controls.target.copy(target);
+  camera.up.copy(up);
+  camera.lookAt(target);
+}
+
 // gizmo 拖动自由旋转：打断过渡动画、恢复 XZ 后走 turntable
 export function orbitCamera(dx, dy) {
   if (camTransition) setCamTransition(null);
@@ -263,27 +282,43 @@ gizmoCanvas.addEventListener('pointerup', (ev) => {
   gizmoCanvas.style.cursor = inside ? 'pointer' : 'default';
 });
 
-// 中键自由旋转（与 gizmo 共用 turntable，方向一致）
+// 中键自由旋转（与 gizmo 共用 turntable，方向一致）；右键平移（保持 target 在原点）。
 renderer.domElement.addEventListener('pointerdown', (ev) => {
-  if (ev.button !== 1) return;
-  if (camTransition) setCamTransition(null);
-  if (navOriented) { setDrawPlane('XZ'); setWorldAxesOccluded(true); navOriented = false; }
-  midDrag = { x: ev.clientX, y: ev.clientY };
-  renderer.domElement.setPointerCapture(ev.pointerId);
+  if (ev.button === 1) {
+    if (camTransition) setCamTransition(null);
+    if (navOriented) { setDrawPlane('XZ'); setWorldAxesOccluded(true); navOriented = false; }
+    midDrag = { x: ev.clientX, y: ev.clientY };
+    renderer.domElement.setPointerCapture(ev.pointerId);
+    return;
+  }
+  if (ev.button === 2) {
+    if (camTransition) setCamTransition(null);
+    if (navOriented) { setDrawPlane('XZ'); setWorldAxesOccluded(true); navOriented = false; }
+    rightPanDrag = { x: ev.clientX, y: ev.clientY };
+    renderer.domElement.setPointerCapture(ev.pointerId);
+  }
 });
 
 renderer.domElement.addEventListener('pointermove', (ev) => {
-  if (!midDrag) return;
-  const dx = ev.clientX - midDrag.x, dy = ev.clientY - midDrag.y;
-  midDrag.x = ev.clientX; midDrag.y = ev.clientY;
-  turntableRotate(dx, dy);
+  if (midDrag) {
+    const dx = ev.clientX - midDrag.x, dy = ev.clientY - midDrag.y;
+    midDrag.x = ev.clientX; midDrag.y = ev.clientY;
+    turntableRotate(dx, dy);
+    return;
+  }
+  if (rightPanDrag) {
+    const dx = ev.clientX - rightPanDrag.x, dy = ev.clientY - rightPanDrag.y;
+    rightPanDrag.x = ev.clientX; rightPanDrag.y = ev.clientY;
+    panCamera(dx, dy);
+  }
 });
 
 renderer.domElement.addEventListener('pointerup', (ev) => {
   if (midDrag && ev.button === 1) midDrag = null;
+  if (rightPanDrag && ev.button === 2) rightPanDrag = null;
 });
 
-renderer.domElement.addEventListener('pointercancel', () => { midDrag = null; });
+renderer.domElement.addEventListener('pointercancel', () => { midDrag = null; rightPanDrag = null; });
 
 export function setDrawPlane(p) {
   state.drawPlane = p;

@@ -34,7 +34,7 @@ camera.position.set(12, 8, 14);
 export const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0, 0, 0);
 controls.update();
-controls.mouseButtons = { LEFT: null, MIDDLE: null, RIGHT: THREE.MOUSE.PAN };
+controls.mouseButtons = { LEFT: null, MIDDLE: null, RIGHT: null };
 
 export const raycaster = new THREE.Raycaster();
 export const pointer = new THREE.Vector2();
