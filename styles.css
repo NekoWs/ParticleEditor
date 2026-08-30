@@ -707,9 +707,9 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .ptree-head.func:hover { background: rgba(122,162,255,0.12); }
 .ptree-head.func-child { padding-left: 20px; }
 .ptree-head.func-child .pid { color: var(--muted); }
-.fx-panel { display: flex; flex-direction: column; gap: 3px; }
-.fx-panel .row { display: flex; align-items: center; gap: 5px; margin: 4px 0; }
-.fx-panel .row input[type="number"] { width: 64px; }
+.fx-panel { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.fx-panel .row { display: flex; align-items: center; gap: 4px; margin: 2px 0; }
+.fx-panel .row input[type="number"] { width: 58px; }
 .fx-panel .row input[type="text"] { flex: 1; min-width: 0; }
 .fx-panel .row select { flex: 1; }
 /* 预设下拉框美化（函数面板 + 侧栏新建） */
@@ -750,19 +750,19 @@ body.ctrl-held .kf-t { cursor: pointer; }
 }
 .fx-panel input, .fx-panel select {
   background: var(--panel-3); border: 1px solid var(--border);
-  color: var(--text); border-radius: 5px; padding: 6px 8px;
+  color: var(--text); border-radius: 5px; padding: 4px 6px; height: 26px; box-sizing: border-box;
 }
 .fx-panel input:focus, .fx-panel select:focus { border-color: var(--accent); outline: none; }
-.fx-params { padding-left: 10px; border-left: 1px solid var(--border); margin: 4px 0; }
-.fx-params .row { margin: 3px 0; }
-.fx-params input { width: 64px; }
+.fx-params { padding-left: 8px; border-left: 1px solid var(--border); margin: 2px 0; }
+.fx-params .row { margin: 2px 0; }
+.fx-params input { width: 58px; }
 .fx-vars { display: flex; flex-direction: column; }
 .fx-vars .var-row input.var-name { max-width: 70px; flex: none; }
 .fx-code {
   width: 100%; box-sizing: border-box; resize: vertical;
   background: var(--panel-3); border: 1px solid var(--border);
-  color: var(--text); border-radius: 5px; padding: 6px 8px;
-  font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px; line-height: 1.5;
+  color: var(--text); border-radius: 5px; padding: 5px 7px;
+  font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px; line-height: 1.4;
 }
 .fx-code:focus { border-color: var(--accent); outline: none; }
 .fx-var { margin: 4px 0; }
