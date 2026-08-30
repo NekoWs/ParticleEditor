@@ -10,7 +10,7 @@ import { resolveUV, refreshUVPanel } from '../ui/texture-editor.js';
 import { updateGizmo } from '../interaction/gizmo.js';
 import { drawTimeline, updatePropPanel } from '../ui/panels.js';
 
-import { buildParticleIndex, buildTrackIndex, buildGroupIndex, buildOpDeltaCache, buildGroupXforms, buildFxSclTrackCache, currentVisual, velOffsetAt, trackValueAt, trackIntegral, trVersion, groupMemberIndexCache, groupXformCache, invalidateMaxTickCache } from '../core/animation-eval.js';
+import { buildParticleIndex, buildTrackIndex, buildGroupIndex, buildOpDeltaCache, buildGroupXforms, buildFxSclTrackCache, currentVisual, velOffsetAt, trackValueAt, trackIntegral, trVersion, groupMemberIndexCache, groupXformCache, fxOpDeltaCache, fxSclTrackCache, invalidateMaxTickCache, getFxFrameAuto, evalFxParticleInto, spinVectorAt, rotVectorAt } from '../core/animation-eval.js';
 import * as THREE from "three";
 /* =========================================================================
  * 渲染
@@ -183,11 +183,35 @@ function writePointBuffers(full) {
   const xforms = groupXformCache;
   const SZF = PARTICLE_SIZE_FACTOR;
   hasAnimatedTex = false; // 主循环顺带统计动画贴图粒子，避免额外整表扫描
+  // 派生粒子活源求值帧：每个函数对象每帧只建一次（编译/变量/缓存/执行器复用），逐粒子只跑脚本。
+  const fxFrames = new Map();
+  const fxFast = new Map();
+  for (const fx of state.functions) {
+    const frame = getFxFrameAuto(fx, T, 0);
+    fxFrames.set(fx.id, frame);
+    const hasOp = fxOpDeltaCache && fxOpDeltaCache.has(fx.id);
+    const hasSpin = spinVectorAt('f:' + fx.id, T).some(v => v !== 0);
+    const hasRot = rotVectorAt('f:' + fx.id, T).some(v => v !== 0);
+    fxFast.set(fx.id, !hasOp && !hasSpin && !hasRot);
+  }
+  const derivedOut = { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0 };
   for (let i = 0; i < n; i++) {
     const p = state.particles[i];
     let px, py, pz, cr, cg, cb, ca, ssx, ssy;
     if (p.fx) {
-      [px, py, pz, cr, cg, cb, ca, ssx, ssy] = readVisualFallback(p, T);
+      const frame = fxFrames.get(p.fx);
+      const fast = frame && fxFast.get(p.fx) && !(hasGroups && memberIdx.has(p.id));
+      if (fast) {
+        const out = evalFxParticleInto(frame, p._statics || (p._statics = new Map()), p._fxIdx, derivedOut);
+        px = out.pos[0]; py = out.pos[1]; pz = out.pos[2];
+        cr = out.color[0]; cg = out.color[1]; cb = out.color[2]; ca = out.color[3];
+        const sclTrs = (fxSclTrackCache && fxSclTrackCache.get(p.fx)) || null;
+        const baseScale = out.scale;
+        ssx = sclTrs && sclTrs[0] ? trackValueAt(sclTrs[0], T, baseScale) : baseScale;
+        ssy = sclTrs && sclTrs[1] ? trackValueAt(sclTrs[1], T, baseScale) : baseScale;
+      } else {
+        [px, py, pz, cr, cg, cb, ca, ssx, ssy] = readVisualFallback(p, T);
+      }
     } else {
       const inGroup = hasGroups && memberIdx.has(p.id);
       const tr = (p._trVersion === trVersion) ? p._tr : null;
@@ -286,13 +310,22 @@ function writePointBuffers(full) {
     ca *= vis;
     positions[i * 3] = px; positions[i * 3 + 1] = py; positions[i * 3 + 2] = pz;
     colors[i * 4] = cr; colors[i * 4 + 1] = cg; colors[i * 4 + 2] = cb; colors[i * 4 + 3] = ca;
-    const uvForSize = computeParticleUV(p, UVOUT, hasAnyTexture);
-    if (uvForSize && uvForSize.mode === 'animated') hasAnimatedTex = true;
-    // 贴图大小缩放：使用用户设置的 texSize（控制粒子显示大小），基准 16px
-    const texW = uvForSize ? (uvForSize.texSize[0] || 16) : 16;
-    const texH = uvForSize ? (uvForSize.texSize[1] || 16) : 16;
-    const texScaleX = Math.max(1, texW) / 16;
-    const texScaleY = Math.max(1, texH) / 16;
+    let texScaleX = 1, texScaleY = 1;
+    if (hasAnyTexture) {
+      const uvForSize = computeParticleUV(p, UVOUT, true);
+      if (uvForSize && uvForSize.mode === 'animated') hasAnimatedTex = true;
+      // 贴图大小缩放：使用用户设置的 texSize（控制粒子显示大小），基准 16px
+      const texW = uvForSize ? (uvForSize.texSize[0] || 16) : 16;
+      const texH = uvForSize ? (uvForSize.texSize[1] || 16) : 16;
+      texScaleX = Math.max(1, texW) / 16;
+      texScaleY = Math.max(1, texH) / 16;
+      const i4 = i * 4, i2 = i * 2;
+      rpUV[i4] = UVOUT.au0; rpUV[i4 + 1] = UVOUT.av0; rpUV[i4 + 2] = UVOUT.au1; rpUV[i4 + 3] = UVOUT.av1;
+      rpUVScale[i4] = UVOUT.sx; rpUVScale[i4 + 1] = UVOUT.sy; rpUVScale[i4 + 2] = UVOUT.sw; rpUVScale[i4 + 3] = UVOUT.sh;
+      rpUVAnim[i4] = UVOUT.stepx; rpUVAnim[i4 + 1] = UVOUT.stepy; rpUVAnim[i4 + 2] = UVOUT.fps; rpUVAnim[i4 + 3] = UVOUT.maxFrame;
+      rpUVTex[i2] = UVOUT.tw; rpUVTex[i2 + 1] = UVOUT.th;
+      rpUVMode[i] = UVOUT.mode;
+    }
     let sx = ssx * SZF * texScaleX, sy = ssy * SZF * texScaleY;
     if (vis === 0) {
       sizes[i * 2] = 0; sizes[i * 2 + 1] = 0;   // 尺寸归零 → 无片段光栅化，预览层完全隐藏
@@ -300,17 +333,14 @@ function writePointBuffers(full) {
       sizes[i * 2] = sx > 0.02 ? sx : 0.02;
       sizes[i * 2 + 1] = sy > 0.02 ? sy : 0.02;
     }
-    const i4 = i * 4, i2 = i * 2;
-    rpUV[i4] = UVOUT.au0; rpUV[i4 + 1] = UVOUT.av0; rpUV[i4 + 2] = UVOUT.au1; rpUV[i4 + 3] = UVOUT.av1;
-    rpUVScale[i4] = UVOUT.sx; rpUVScale[i4 + 1] = UVOUT.sy; rpUVScale[i4 + 2] = UVOUT.sw; rpUVScale[i4 + 3] = UVOUT.sh;
-    rpUVAnim[i4] = UVOUT.stepx; rpUVAnim[i4 + 1] = UVOUT.stepy; rpUVAnim[i4 + 2] = UVOUT.fps; rpUVAnim[i4 + 3] = UVOUT.maxFrame;
-    rpUVTex[i2] = UVOUT.tw; rpUVTex[i2 + 1] = UVOUT.th;
-    rpUVMode[i] = UVOUT.mode;
   }
   setPointsGeometry(points, positions, colors, sizes);
-  setPointUVAttributes(points.geometry, { uv: rpUV, uvScale: rpUVScale, uvAnim: rpUVAnim, uvTex: rpUVTex, uvMode: rpUVMode });
+  const uvAttr = points.geometry.getAttribute('aUV');
+  if (hasAnyTexture || !uvAttr || uvAttr.array.length !== n * 4) {
+    setPointUVAttributes(points.geometry, { uv: rpUV, uvScale: rpUVScale, uvAnim: rpUVAnim, uvTex: rpUVTex, uvMode: rpUVMode });
+  }
 
-  const sel = state.particles.filter(p => state.selected.has(p.id));
+  const sel = state.selected.size > 0 ? state.particles.filter(p => state.selected.has(p.id)) : [];
   if (!rpSelPos || rpSelPos.length !== sel.length * 3) rpSelPos = new Float32Array(sel.length * 3);
   if (!rpSelCol || rpSelCol.length !== sel.length * 4) rpSelCol = new Float32Array(sel.length * 4);
   if (!rpSelSize || rpSelSize.length !== sel.length * 2) rpSelSize = new Float32Array(sel.length * 2);

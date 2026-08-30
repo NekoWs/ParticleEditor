@@ -2841,6 +2841,289 @@ function findHoistedAssignments(processStmts, varNames, globalNames, staticNames
   return out;
 }
 
+/* -------------------------------------------------------------------------
+ * 原生 JS 快路径编译器（process 直线标量代码）
+ * -------------------------------------------------------------------------
+ * 把「仅由标量赋值/拆包组成、无循环/分支/向量/矩阵/用户函数」的 process 编译为
+ * `new Function` 原生 JS，每个粒子只执行算术与数组读取，不再经过栈式 VM 的
+ * 逐指令分发、Map 作用域查找与值装箱。任何不支持的结构返回 null，调用方回退 VM。
+ * 保持与 Runtime 相同的：属性写入钳制、glow 阈值、light 取整、除零/越界报错。
+ * ======================================================================= */
+
+// 支持直接映射到 JS 标量运算的内建函数；其余（noise/fbm/rand/random/向量/矩阵/集合）回退 VM。
+const NATIVE_BUILTINS = {
+  sin: a => `(useFast?FM.sin([${a[0]}]):Math.sin(${a[0]}))`,
+  cos: a => `(useFast?FM.cos([${a[0]}]):Math.cos(${a[0]}))`,
+  tan: a => `(useFast?FM.tan([${a[0]}]):Math.tan(${a[0]}))`,
+  asin: a => `(useFast?FM.asin([${a[0]}]):Math.asin(${a[0]}))`,
+  acos: a => `(useFast?FM.acos([${a[0]}]):Math.acos(${a[0]}))`,
+  atan: a => `(useFast?FM.atan([${a[0]}]):Math.atan(${a[0]}))`,
+  atan2: a => `(useFast?FM.atan2([${a[0]},${a[1]}]):Math.atan2(${a[0]},${a[1]}))`,
+  sqrt: a => `Math.sqrt(${a[0]})`,
+  abs: a => `Math.abs(${a[0]})`,
+  sign: a => `Math.sign(${a[0]})`,
+  exp: a => `(useFast?FM.exp([${a[0]}]):Math.exp(${a[0]}))`,
+  log: a => `(useFast?FM.log([${a[0]}]):Math.log(${a[0]}))`,
+  ln: a => `(useFast?FM.log([${a[0]}]):Math.log(${a[0]}))`,
+  floor: a => `Math.floor(${a[0]})`,
+  ceil: a => `Math.ceil(${a[0]})`,
+  round: a => `Math.round(${a[0]})`,
+  fract: a => `(${a[0]}-Math.floor(${a[0]}))`,
+  pow: a => `(useFast?FM.pow([${a[0]},${a[1]}]):Math.pow(${a[0]},${a[1]}))`,
+  min: a => `Math.min(${a[0]},${a[1]})`,
+  max: a => `Math.max(${a[0]},${a[1]})`,
+  clamp: a => `Math.max(${a[1]},Math.min(${a[2]},${a[0]}))`,
+  lerp: a => `(${a[0]}+(${a[1]}-${a[0]})*${a[2]})`,
+  mix: a => `(${a[0]}+(${a[1]}-${a[0]})*${a[2]})`,
+  step: a => `(${a[1]}>=${a[0]}?1:0)`,
+  smoothstep: a => `(()=>{const __t=Math.max(0,Math.min(1,((${a[2]}-${a[0]})/(${a[1]}-${a[0]}))));return __t*__t*(3-2*__t);})()`,
+  mod: a => `(${a[0]}-${a[1]}*Math.floor(${a[0]}/${a[1]}))`,
+  map_range: a => `(${a[3]}+((${a[0]}-${a[1]})/(${a[2]}-${a[1]}))*(${a[4]}-${a[3]}))`,
+  remap: a => `(()=>{const __r=${a[3]}+((${a[0]}-${a[1]})/(${a[2]}-${a[1]}))*(${a[4]}-${a[3]});return Math.max(Math.min(${a[3]},${a[4]}),Math.min(Math.max(${a[3]},${a[4]}),__r));})()`,
+  int: a => `Math.trunc(${a[0]})`,
+  float: a => `(${a[0]})`,
+  bool: a => `(${a[0]}!==0)`,
+  ease_linear: a => `(${a[0]}+(${a[1]}-${a[0]})*${a[2]})`,
+  ease_in_out: a => `(()=>{const __t=Math.max(0,Math.min(1,${a[2]}));return ${a[0]}+(${a[1]}-${a[0]})*__t*__t*(3-2*__t);})()`,
+  ease_out_back: a => `(()=>{const __t=Math.max(0,Math.min(1,${a[2]}));const __u=__t-1;return ${a[0]}+(${a[1]}-${a[0]})*(1+(1.70158+1)*__u*__u*__u+1.70158*__u*__u);})()`,
+  ease_in_elastic: a => `(()=>{const __t=Math.max(0,Math.min(1,${a[2]}));let __v;if(__t===0)__v=0;else if(__t===1)__v=1;else __v=-Math.pow(2,10*(__t-1))*Math.sin((__t*10-10.75)*(2*Math.PI)/3);return ${a[0]}+(${a[1]}-${a[0]})*__v;})()`,
+};
+
+const FAIL = Symbol('native-fail');
+
+function compileNativeProcess(program, varNames, globalNames) {
+  const stmts = program.process;
+  const staticNamesSet = new Set(collectStaticNames(stmts));
+  const varNamesSet = new Set(varNames);
+  const globalNamesSet = new Set(globalNames);
+  const funcNames = new Set(program.functions.keys());
+
+  // 首次提及分析：只有「先写后读」的普通名才可作为原生局部变量，
+  // 避免把「先读（global/static/var）后写」的名字误编译为 TDZ 局部量。
+  const firstMention = new Map();
+  for (const st of stmts) {
+    if (st.type === 'assign' && st.target.type === 'var') {
+      const name = st.target.name;
+      if (!firstMention.has(name)) firstMention.set(name, 'write');
+      walkExpr(st.value, (e) => {
+        if (e.type === 'var' && !firstMention.has(e.name)) firstMention.set(e.name, 'read');
+      });
+    } else if (st.type === 'assign' && st.target.type === 'unpack') {
+      for (const name of st.target.names) {
+        if (!firstMention.has(name)) firstMention.set(name, 'write');
+      }
+      walkExpr(st.value, (e) => {
+        if (e.type === 'var' && !firstMention.has(e.name)) firstMention.set(e.name, 'read');
+      });
+    } else {
+      return null;
+    }
+  }
+
+  const tempNames = new Set();
+  for (const [name, mention] of firstMention) {
+    if (mention !== 'write') continue;
+    if (ATTR_SET.has(name) || BUILTIN_NAMES.has(name) || CONSTANTS.has(name) ||
+        varNamesSet.has(name) || globalNamesSet.has(name) || staticNamesSet.has(name) ||
+        funcNames.has(name) || BUILTIN_FUNCTIONS.has(name)) continue;
+    tempNames.add(name);
+  }
+
+  function readExpr(name) {
+    if (ATTR_SET.has(name)) {
+      switch (name) {
+        case 'x': return 'out.pos[0]';
+        case 'y': return 'out.pos[1]';
+        case 'z': return 'out.pos[2]';
+        case 'r': return 'out.color[0]';
+        case 'g': return 'out.color[1]';
+        case 'b': return 'out.color[2]';
+        case 'a': return 'out.color[3]';
+        case 'vx': return 'out.vel[0]';
+        case 'vy': return 'out.vel[1]';
+        case 'vz': return 'out.vel[2]';
+        case 'sc': return 'out.scale';
+        case 'glow': return '(out.glow?1:0)';
+        case 'light': return 'out.light';
+        default: return FAIL;
+      }
+    }
+    if (BUILTIN_NAMES.has(name)) {
+      switch (name) {
+        case 'i': case 'idx': return 'ctx.i';
+        case 'n': return 'ctx.n';
+        case 't': return 'ctx.t';
+        case 'dt': return 'ctx.dt';
+        case 'uv_x': return 'ctx.uv_x';
+        case 'uv_y': return 'ctx.uv_y';
+        case 'life': return 'ctx.life';
+        default: return FAIL;
+      }
+    }
+    if (CONSTANTS.has(name)) return `(${CONSTANTS.get(name)})`;
+    if (tempNames.has(name)) return name;
+    if (staticNamesSet.has(name)) return `s.get(${JSON.stringify(name)})`;
+    if (globalNamesSet.has(name)) return `g.get(${JSON.stringify(name)})`;
+    if (varNamesSet.has(name)) return `v[${JSON.stringify(name)}]`;
+    return FAIL;
+  }
+
+  function writeExpr(name, valExpr) {
+    if (ATTR_SET.has(name)) {
+      switch (name) {
+        case 'x': return `out.pos[0]=${valExpr};`;
+        case 'y': return `out.pos[1]=${valExpr};`;
+        case 'z': return `out.pos[2]=${valExpr};`;
+        case 'r': return `out.color[0]=__clamp01(${valExpr});`;
+        case 'g': return `out.color[1]=__clamp01(${valExpr});`;
+        case 'b': return `out.color[2]=__clamp01(${valExpr});`;
+        case 'a': return `out.color[3]=__clamp01(${valExpr});`;
+        case 'vx': return `out.vel[0]=${valExpr};`;
+        case 'vy': return `out.vel[1]=${valExpr};`;
+        case 'vz': return `out.vel[2]=${valExpr};`;
+        case 'sc': return `out.scale=${valExpr};`;
+        case 'glow': return `out.glow=(${valExpr})>0.5;`;
+        case 'light': return `out.light=__clamp15(${valExpr});`;
+        default: return FAIL;
+      }
+    }
+    if (BUILTIN_NAMES.has(name) || CONSTANTS.has(name) || varNamesSet.has(name)) return FAIL;
+    if (tempNames.has(name)) return `${name}=${valExpr};`;
+    if (staticNamesSet.has(name)) return `s.set(${JSON.stringify(name)},${valExpr});`;
+    if (globalNamesSet.has(name) || funcNames.has(name)) return FAIL;
+    return FAIL;
+  }
+
+  // 粒子属性写入必须是 num；若 RHS 可能产出 bool（VM 会抛错），退回 VM 保证语义一致。
+  function mayBeBool(node, boolTemps) {
+    switch (node.type) {
+      case 'bool': return true;
+      case 'num': case 'str': case 'array': case 'index': case 'comp': return false;
+      case 'var': return boolTemps.has(node.name);
+      case 'unary': return node.op === '!';
+      case 'binary': {
+        if (node.op === '&&' || node.op === '||') return mayBeBool(node.left, boolTemps) || mayBeBool(node.right, boolTemps);
+        if (node.op === '==' || node.op === '!=' || node.op === '<' || node.op === '<=' || node.op === '>' || node.op === '>=') return true;
+        return mayBeBool(node.left, boolTemps) || mayBeBool(node.right, boolTemps);
+      }
+      case 'ternary': return mayBeBool(node.thenExpr, boolTemps) || mayBeBool(node.elseExpr, boolTemps);
+      case 'call': return node.callee.type === 'var' && node.callee.name === 'bool';
+      default: return true;
+    }
+  }
+
+  function genExpr(node) {
+    switch (node.type) {
+      case 'num': return `(${node.value})`;
+      case 'bool': return node.value ? 'true' : 'false';
+      case 'str': return JSON.stringify(node.value);
+      case 'var': return readExpr(node.name);
+      case 'unary': {
+        const v = genExpr(node.operand);
+        if (v === FAIL) return FAIL;
+        return node.op === '-' ? `(-${v})` : `(!__truthy(${v}))`;
+      }
+      case 'binary': {
+        const l = genExpr(node.left);
+        const r = genExpr(node.right);
+        if (l === FAIL || r === FAIL) return FAIL;
+        switch (node.op) {
+          case '+': return `(${l}+${r})`;
+          case '-': return `(${l}-${r})`;
+          case '*': return `(${l}*${r})`;
+          case '/': return `__div(${l},${r})`;
+          case '%': return `(${l}%${r})`;
+          case '^': return `(${l}**${r})`;
+          case '==': return `(${l}===${r})`;
+          case '!=': return `(${l}!==${r})`;
+          case '<': return `(${l}<${r})`;
+          case '<=': return `(${l}<=${r})`;
+          case '>': return `(${l}>${r})`;
+          case '>=': return `(${l}>=${r})`;
+          case '&&': return `(__truthy(${l})?${r}:${l})`;
+          case '||': return `(__truthy(${l})?${l}:${r})`;
+          default: return FAIL;
+        }
+      }
+      case 'ternary': {
+        const c = genExpr(node.cond);
+        const t = genExpr(node.thenExpr);
+        const e = genExpr(node.elseExpr);
+        if (c === FAIL || t === FAIL || e === FAIL) return FAIL;
+        return `(__truthy(${c})?${t}:${e})`;
+      }
+      case 'index': {
+        const t = genExpr(node.target);
+        const i = genExpr(node.index);
+        if (t === FAIL || i === FAIL) return FAIL;
+        return `__idx(${t},${i})`;
+      }
+      case 'call': {
+        if (node.callee.type !== 'var') return FAIL;
+        const name = node.callee.name;
+        const impl = NATIVE_BUILTINS[name];
+        if (!impl) return FAIL;
+        const args = node.args.map(genExpr);
+        for (const a of args) if (a === FAIL) return FAIL;
+        return impl(args);
+      }
+      default:
+        return FAIL;
+    }
+  }
+
+  const bodyLines = [];
+  const boolTemps = new Set();
+  for (let si = 0; si < stmts.length; si++) {
+    const st = stmts[si];
+    if (st.type !== 'assign') return null;
+    const target = st.target;
+    if (target.type === 'var') {
+      if (ATTR_SET.has(target.name) && mayBeBool(st.value, boolTemps)) return null;
+      if (tempNames.has(target.name) && mayBeBool(st.value, boolTemps)) boolTemps.add(target.name);
+      const v = genExpr(st.value);
+      if (v === FAIL) return null;
+      const w = writeExpr(target.name, v);
+      if (w === FAIL) return null;
+      bodyLines.push(w);
+    } else if (target.type === 'unpack') {
+      if (st.value.type !== 'array' || st.value.items.length !== target.names.length) return null;
+      const vals = [];
+      for (let k = 0; k < target.names.length; k++) {
+        if (ATTR_SET.has(target.names[k]) && mayBeBool(st.value.items[k], boolTemps)) return null;
+        if (tempNames.has(target.names[k]) && mayBeBool(st.value.items[k], boolTemps)) boolTemps.add(target.names[k]);
+        const v = genExpr(st.value.items[k]);
+        if (v === FAIL) return null;
+        vals.push(v);
+      }
+      for (let k = 0; k < vals.length; k++) bodyLines.push(`const __u${si}_${k}=${vals[k]};`);
+      for (let k = 0; k < target.names.length; k++) {
+        const w = writeExpr(target.names[k], `__u${si}_${k}`);
+        if (w === FAIL) return null;
+        bodyLines.push(w);
+      }
+    } else {
+      return null;
+    }
+  }
+
+  const tempDecls = [...tempNames].map(name => `let ${name};`).join('');
+  const src = `'use strict';
+const __clamp01=(x)=>x<0?0:(x>1?1:x);
+const __clamp15=(x)=>{x=Math.round(x);return x<0?0:(x>15?15:x);};
+const __truthy=(x)=>(typeof x==='number'?x!==0:x);
+const __div=(a,b)=>{if(b===0)throw new Error('division by zero');return a/b;};
+const __idx=(a,i)=>{if(i%1!==0)throw new Error('array index requires an integer');const n=Math.trunc(i);if(n<0||n>=a.length)throw new Error('array index '+n+' out of bounds (size '+a.length+')');return a[n];};
+${tempDecls}
+${bodyLines.join('\n')}
+return out;`;
+  try {
+    return new Function('ctx', 'g', 's', 'v', 'out', 'useFast', 'FM', src);
+  } catch (e) {
+    return null;
+  }
+}
+
 function compileProgram(program, varNames, globalNames) {
   const c = new Compiler(program, varNames);
   const staticNames = collectStaticNames(program.process);
@@ -2890,6 +3173,7 @@ function compileProgram(program, varNames, globalNames) {
     prelude, preludeLocs, uniformCount: hoisted.length,
     loopCounterCount: c.loopCounters,
     mainStart, codeEnd, program,
+    native: compileNativeProcess(program, varNames, globalNames),
   };
 }
 
@@ -2925,12 +3209,39 @@ class Vm {
     this.scopeDepthStack = [];
     this.loopCounters = new Array(compiled.loopCounterCount || 0).fill(0);
     this.rt = new Runtime('process', compiled.program, objState, statics, null, ctx);
-    this.rt.pushScope(new Map());
+    this.topScope = new Map();
+    this.rt.pushScope(this.topScope);
+    // 复用的行号对象：process 热路径逐指令调用 nodeAt，避免每指令分配 {line,col}。
+    this._locObj = { line: 0, col: 0 };
+  }
+
+  // 复用一个 VM 实例执行多个粒子：重置栈/调用栈/作用域/循环计数，并切换 statics/ctx/uniforms。
+  resetForRun(statics, ctx, uniforms, startPc) {
+    this.statics = statics;
+    this.ctx = ctx;
+    this.uniforms = uniforms;
+    if (startPc != null) this.startPc = startPc;
+    this.stack.length = 0;
+    this.callStack.length = 0;
+    this.inFunctionStack.length = 0;
+    this.scopeDepthStack.length = 0;
+    this.loopCounters.fill(0);
+    const rt = this.rt;
+    rt.statics = statics;
+    rt.ctx = ctx;
+    rt.scopes.length = 0;
+    rt.funcDepth = 0;
+    rt.inFunction = false;
+    this.topScope.clear();
+    rt.pushScope(this.topScope);
   }
 
   nodeAt(opPc) {
     const loc = this.locs[opPc];
-    return loc ? makeLoc(loc[0], loc[1]) : null;
+    if (!loc) return null;
+    this._locObj.line = loc[0];
+    this._locObj.col = loc[1];
+    return this._locObj;
   }
 
   run() {
@@ -3189,11 +3500,26 @@ export function createStatics() {
   return new Map();
 }
 
+// 预编译 process 字节码（供高频求值路径复用；varNames/globalNames 每个 (fx,t) 只算一次）。
+export function prepareProcess(program, varNames, globalNames) {
+  return getCompiledProgram(program, varNames, globalNames);
+}
+
+// 创建可复用的 process 执行器（同一 (fx,t) 帧内逐粒子复用，避免每粒子 new Vm/new Runtime/Map）。
+export function createProcessRunner(compiled, objState, ctx, uniforms) {
+  return new Vm(compiled, objState, null, ctx, uniforms, null, null, compiled.mainStart);
+}
+
+// 执行原生 JS 快路径（compileNativeProcess 产物）。返回 ctx.out。
+export function runNativeProcess(native, objState, statics, ctx, out, useFast) {
+  return native(ctx, objState.globals, statics, ctx.vars, out, useFast, FAST_MATH);
+}
+
 // 计算 uniform 值（process 中与粒子无关的不变表达式，每个 (fx,t) 广播一次）。
-export function runUniformPrelude(program, objState, statics, ctx) {
+export function runUniformPrelude(program, objState, statics, ctx, compiledIn) {
   const varNames = ctx && ctx.vars ? Object.keys(ctx.vars) : [];
   const globalNames = objState && objState.globals ? [...objState.globals.keys()].sort() : [];
-  const compiled = getCompiledProgram(program, varNames, globalNames);
+  const compiled = compiledIn || getCompiledProgram(program, varNames, globalNames);
   const uniforms = new Array(compiled.uniformCount);
   if (compiled.prelude.length) {
     const vm = new Vm(compiled, objState, statics, ctx, uniforms, compiled.prelude, compiled.preludeLocs, 0);
@@ -3208,7 +3534,7 @@ export function evalProcess(program, objState, statics, ctx) {
   const varNames = ctx && ctx.vars ? Object.keys(ctx.vars) : [];
   const globalNames = objState && objState.globals ? [...objState.globals.keys()].sort() : [];
   const compiled = getCompiledProgram(program, varNames, globalNames);
-  const uniforms = (ctx && ctx.uniforms) || runUniformPrelude(program, objState, statics, ctx);
+  const uniforms = (ctx && ctx.uniforms) || runUniformPrelude(program, objState, statics, ctx, compiled);
   const vm = new Vm(compiled, objState, statics, ctx, uniforms, null, null, compiled.mainStart);
   vm.run();
   return ctx.out;

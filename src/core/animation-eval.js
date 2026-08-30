@@ -7,6 +7,7 @@
 import { COMP_INDEX, compPr, DEG2RAD, RAD2DEG, state, getParticle, getFunction, particleIndexCache, setParticleIndex, setFunctionIndex } from './constants.js';
 import { easeVal, FUNC_IMPL, matMat, vec3 } from './easing.js';
 import { evaluateParticleAt } from './generators.js';
+export { getFxFrameAuto, evalFxParticleInto } from './generators.js';
 import { groupCentroidValue } from '../ui/tree.js';
 import { rotateVector } from '../interaction/interaction.js';/* =========================================================================
  * 动画状态查询与渲染缓冲区组装

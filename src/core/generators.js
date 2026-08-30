@@ -14,7 +14,7 @@ import { modalAlert } from '../ui/ui.js';
 import { pushUndo } from '../state/undo.js';
 import { rebuildPoints } from './animation.js';
 import { refreshFunctionPanel } from '../ui/panels.js';
-import { parseProgram, createObjectState, runSetup, createStatics, evalProcess, runUniformPrelude } from './script-lang.js';
+import { parseProgram, createObjectState, runSetup, createStatics, evalProcess, runUniformPrelude, prepareProcess, createProcessRunner, runNativeProcess } from './script-lang.js';
 
 // 主循环中 1 秒 = 20 tick（见 main.js 的 `state.time += dt * 20`）。
 const TICKS_PER_SEC = 20;
@@ -108,26 +108,30 @@ function getObjectState(fx) {
 }
 
 // 每 (fx, n, t, dt) 求值上下文：vars 对象与 uniform 值只算一次，同帧所有粒子广播。
+// 同时预编译字节码并创建可复用 process 执行器，避免每粒子重复解析/分配。
 function getEvalContext(fx, objState, n, t, dt) {
   const key = (t || 0) + '|' + n + '|' + (dt || 0);
   if (fx._evalCtx && fx._evalCtx.key === key) return fx._evalCtx;
   const varsObj = varsAt(fx, t || 0);
   const life = lifeAt(fx, t || 0);
   const program = getProgram(fx);
+  const varNames = Object.keys(varsObj);
+  const globalNames = objState.globals ? [...objState.globals.keys()].sort() : [];
+  const compiled = prepareProcess(program, varNames, globalNames);
   const preCtx = {
     i: 0, n, t: t || 0, dt: dt || 0,
     life, uv_x: 0, uv_y: 0,
     vars: varsObj, fastMath: !!fx.fastMath,
     out: { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0 },
   };
-  const uniforms = runUniformPrelude(program, objState, null, preCtx);
-  const ctx = { key, varsObj, life, uniforms };
+  const uniforms = runUniformPrelude(program, objState, null, preCtx, compiled);
+  const runner = createProcessRunner(compiled, objState, preCtx, uniforms);
+  const ctx = { key, varsObj, life, uniforms, program, compiled, preCtx, runner, native: compiled.native };
   fx._evalCtx = ctx;
   return ctx;
 }
 
 function evalParticleFor(fx, objState, statics, i, n, t, dt) {
-  const program = getProgram(fx);
   const evalCtx = getEvalContext(fx, objState, n, t || 0, dt || 0);
   const uv = uvFor(fx, n, i);
   const ctx = {
@@ -139,7 +143,11 @@ function evalParticleFor(fx, objState, statics, i, n, t, dt) {
     uniforms: evalCtx.uniforms,
     out: { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0 },
   };
-  evalProcess(program, objState, statics, ctx);
+  if (evalCtx.native) {
+    runNativeProcess(evalCtx.native, objState, statics, ctx, ctx.out, !!fx.fastMath);
+  } else {
+    evalProcess(evalCtx.program, objState, statics, ctx);
+  }
   const out = ctx.out;
   const center = fx.center || [0, 0, 0];
   const clamp01 = x => (Number.isFinite(x) ? Math.min(1, Math.max(0, x)) : 0);
@@ -151,6 +159,66 @@ function evalParticleFor(fx, objState, statics, i, n, t, dt) {
     glow: !!out.glow,
     light: Math.max(0, Math.min(15, Math.round(out.light))),
   };
+}
+
+/* -------------------------------------------------------------------------
+ * 热路径：单帧内逐粒子复用的活源求值（渲染 20w 派生粒子时避免每粒子分配）
+ * ---------------------------------------------------------------------- */
+
+// 创建/复用某个 (fx,t) 帧的求值器：脚本字节码、uniforms、Runner 均只建一次。
+// 渲染热路径入口：按函数对象取/建对象级状态，并返回该 (fx,t) 的可复用求值帧。
+export function getFxFrameAuto(fx, t, dt) {
+  const objState = getObjectState(fx);
+  const n = Math.max(1, Math.round(fx.count) || 1);
+  return getFxFrame(fx, objState, n, t || 0, dt || 0);
+}
+
+export function getFxFrame(fx, objState, n, t, dt) {
+  const evalCtx = getEvalContext(fx, objState, n, t || 0, dt || 0);
+  const C = gridCols(fx, n);
+  const R = Math.max(1, Math.ceil(n / C));
+  return {
+    fx, objState, n, t: t || 0, dt: dt || 0,
+    life: evalCtx.life,
+    ctx: evalCtx.preCtx,
+    uniforms: evalCtx.uniforms,
+    runner: evalCtx.runner,
+    native: evalCtx.native,
+    C, R,
+  };
+}
+
+// 求值一个派生粒子并把结果写入复用 out（{pos,color,vel,scale,glow,light}）。
+// 返回值即 out；调用方必须立即消费（下一次调用会覆盖）。与 evalParticleFor 语义一致。
+export function evalFxParticleInto(frame, statics, i, out) {
+  const ctx = frame.ctx;
+  const o = out || ctx.out;
+  o.pos[0] = 0; o.pos[1] = 0; o.pos[2] = 0;
+  o.color[0] = 1; o.color[1] = 1; o.color[2] = 1; o.color[3] = 1;
+  o.vel[0] = 0; o.vel[1] = 0; o.vel[2] = 0;
+  o.scale = 1; o.glow = false; o.light = 0;
+  ctx.i = i;
+  const C = frame.C, R = frame.R;
+  ctx.uv_x = (C === 1) ? 0 : (i % C) / (C - 1);
+  ctx.uv_y = (R === 1) ? 0 : Math.floor(i / C) / (R - 1);
+  if (frame.native) {
+    runNativeProcess(frame.native, frame.objState, statics, ctx, o, !!frame.fx.fastMath);
+    const center = frame.fx.center || [0, 0, 0];
+    o.pos[0] += center[0]; o.pos[1] += center[1]; o.pos[2] += center[2];
+    return o;
+  }
+  frame.runner.resetForRun(statics, ctx, frame.uniforms);
+  frame.runner.run();
+  const center = frame.fx.center || [0, 0, 0];
+  o.pos[0] += center[0]; o.pos[1] += center[1]; o.pos[2] += center[2];
+  for (let c = 0; c < 4; c++) {
+    const v = o.color[c];
+    o.color[c] = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0;
+  }
+  o.scale = Number.isFinite(o.scale) ? o.scale : 1;
+  o.glow = !!o.glow;
+  o.light = Math.max(0, Math.min(15, Math.round(o.light)));
+  return o;
 }
 
 // 求值单个粒子在某时刻的完整状态（供 currentVisualDerived 等外部调用）。
