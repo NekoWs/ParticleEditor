@@ -201,6 +201,20 @@ export function editSelectionUniform(prop, values) {
   setValueAtTime(ids, prop, values);
 }
 
+// 统一写旋转类属性（rot 公转 / spin 自转 / center 公转中心）到当前选中目标。
+// 与 gizmo 旋转一致：开启捕获关键帧时写当前 tick，否则写 0t（基线）。
+export function editSelectionRotationUniform(prop, values) {
+  const t = state.captureKeyframes ? Math.round(state.time) : 0;
+  const comps = TRACK_COMPS[prop] || ['x', 'y', 'z'];
+  const fxId = state.selectedFunction;
+  const gname = selectedGroupName();
+  const targets = fxId ? ['f:' + fxId] : gname ? ['g:' + gname] : [...state.selected];
+  for (const id of targets) {
+    comps.forEach((comp, i) => setComponentKeyframe(id, prop, comp, t, values[i], 'set'));
+  }
+  rebuildPoints();
+}
+
 // 通用分量值编辑（时间轴 [值] 输入框用）：按 id 前缀分发到粒子/组/函数对象，
 // 在当前 tick 创建/更新关键帧（op 模式把绝对值换算为增量）
 export function editComponentValue(id, prop, comp, time, value) {

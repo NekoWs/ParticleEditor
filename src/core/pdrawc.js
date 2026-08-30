@@ -8,7 +8,7 @@ import { base64ToBytes, bytesToBase64, signData, verifyData } from './crypto.js'
 import { EASING_NONE } from './easing-constants.js';
 
 export const PDRAWC_MAGIC = new Uint8Array([0x50, 0x44, 0x43, 0x31]); // "PDC1"
-export const PDRAWC_VERSION = 3;
+export const PDRAWC_VERSION = 4;
 export const PDRAWC_SIG_LEN = 64;
 export const PDRAWC_PUB_LEN = 32;
 
@@ -19,6 +19,8 @@ export const PR_ENUM = {
   'col.r': 6, 'col.g': 7, 'col.b': 8, 'col.a': 9,
   'scl.x': 10, 'scl.y': 11, 'scl.z': 12,
   'rot.x': 13, 'rot.y': 14, 'rot.z': 15,
+  'spin.x': 16, 'spin.y': 17, 'spin.z': 18,
+  'center.x': 19, 'center.y': 20, 'center.z': 21,
 };
 export const PR_BY_ENUM = Object.fromEntries(Object.entries(PR_ENUM).map(([k, v]) => [v, k]));
 
@@ -380,7 +382,7 @@ export async function decodePdrawc(bytes) {
   const r = new ByteReader(bytes);
   readMagic(r);
   const version = r.varint();
-  if (version !== 3) throw new Error('pdrawc: unsupported version');
+  if (version !== PDRAWC_VERSION) throw new Error('pdrawc: unsupported version');
   const pubKeyBytes = r.bytes(PDRAWC_PUB_LEN);
   const rest = bytes.subarray(r.pos);
   const bodyBytes = await inflateRaw(rest);

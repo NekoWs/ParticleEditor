@@ -49,7 +49,9 @@ export const PLANES = {
 // 属性 → 分量键列表
 export const TRACK_COMPS = {
   pos: ['x', 'y', 'z'],
-  rot: ['x', 'y', 'z'],
+  rot: ['x', 'y', 'z'],     // 公转（绕 center）
+  spin: ['x', 'y', 'z'],    // 自转（绕自身中心）
+  center: ['x', 'y', 'z'],  // 公转中心（世界坐标）
   vel: ['x', 'y', 'z'],
   col: ['r', 'g', 'b', 'a'],
   scl: ['x', 'y', 'z'],
@@ -68,13 +70,13 @@ export function propComps(id, prop) {
 }
 
 // 属性 / 分量 显示标签
-export const PROP_LABELS = { pos: '位置', rot: '旋转', vel: '速度', col: '颜色', scl: '缩放' };
+export const PROP_LABELS = { pos: '位置', rot: '公转', spin: '自转', center: '公转中心', vel: '速度', col: '颜色', scl: '缩放' };
 export const COMP_LABELS = { x: 'X', y: 'Y', z: 'Z', r: 'R', g: 'G', b: 'B', a: 'A' };
 
-// 各对象类型可动画的属性
-export const PARTICLE_TRACK_DEFS = ['pos', 'vel', 'col', 'scl'];
-export const GROUP_PROP_DEFS = ['pos', 'rot', 'vel', 'col', 'scl'];
-export const FUNCTION_PROP_DEFS = ['pos', 'rot', 'scl'];
+// 各对象类型可动画的属性（普通粒子无自转，仅有公转与公转中心）
+export const PARTICLE_TRACK_DEFS = ['pos', 'rot', 'center', 'vel', 'col', 'scl'];
+export const GROUP_PROP_DEFS = ['pos', 'rot', 'spin', 'center', 'vel', 'col', 'scl'];
+export const FUNCTION_PROP_DEFS = ['pos', 'rot', 'spin', 'center', 'scl'];
 
 // 分量轨道 pr 拼接 / 解析
 export function compPr(prop, comp) { return comp ? prop + '.' + comp : prop; }
@@ -158,6 +160,7 @@ export const state = {
   tracks: [],
   functions: [],
   selectedFunction: null,
+  rotMode: 'orbit',   // 旋转 gizmo 编辑目标：'orbit'=公转(rot) | 'spin'=自转(spin)
   tool: 'select',
   drawPlane: 'XZ',
   drawCount: 30,

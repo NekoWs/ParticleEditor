@@ -88,7 +88,9 @@
 | 属性 | 分量 | 合法 `pr` |
 |---|---|---|
 | `pos` 位置 | `x/y/z` | `pos.x` `pos.y` `pos.z` |
-| `rot` 旋转 | `x/y/z` | `rot.x` `rot.y` `rot.z` |
+| `rot` 公转 | `x/y/z` | `rot.x` `rot.y` `rot.z` |
+| `spin` 自转 | `x/y/z` | `spin.x` `spin.y` `spin.z` |
+| `center` 公转中心 | `x/y/z` | `center.x` `center.y` `center.z` |
 | `vel` 速度 | `x/y/z` | `vel.x` `vel.y` `vel.z` |
 | `col` 颜色 | `r/g/b/a` | `col.r` `col.g` `col.b` `col.a` |
 | `scl` 缩放 | `x/y/z` | `scl.x` `scl.y` `scl.z` |

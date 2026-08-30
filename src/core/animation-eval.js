@@ -236,15 +236,28 @@ export function buildGroupXforms(T) {
       const tr = findTrackByPr(pr, 'g:' + gname);
       return (tr && tr.kf.length) ? tr : null;
     });
-    // 组旋转：预计算复合旋转矩阵（M = Mz·My·Mx，与 applyGroupRotation 的 rotateVector 顺序一致）
-    const r0 = (() => { const tr = findTrackByPr('rot.x', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
-    const r1 = (() => { const tr = findTrackByPr('rot.y', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
-    const r2 = (() => { const tr = findTrackByPr('rot.z', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
-    let rotMat = null;
-    if (r0 !== 0 || r1 !== 0 || r2 !== 0) {
-      const M = matMat(matMat(FUNC_IMPL.rotZ(r2 * DEG2RAD), FUNC_IMPL.rotY(r1 * DEG2RAD)), FUNC_IMPL.rotX(r0 * DEG2RAD));
-      rotMat = [M.m[0][0], M.m[0][1], M.m[0][2], M.m[1][0], M.m[1][1], M.m[1][2], M.m[2][0], M.m[2][1], M.m[2][2]];
+    // 组旋转：预计算复合旋转矩阵（M = Mz·My·Mx，与 rotatePointAround 顺序一致）
+    const rot0 = (() => { const tr = findTrackByPr('rot.x', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
+    const rot1 = (() => { const tr = findTrackByPr('rot.y', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
+    const rot2 = (() => { const tr = findTrackByPr('rot.z', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
+    let orbitMat = null;
+    if (rot0 !== 0 || rot1 !== 0 || rot2 !== 0) {
+      const M = matMat(matMat(FUNC_IMPL.rotZ(rot2 * DEG2RAD), FUNC_IMPL.rotY(rot1 * DEG2RAD)), FUNC_IMPL.rotX(rot0 * DEG2RAD));
+      orbitMat = [M.m[0][0], M.m[0][1], M.m[0][2], M.m[1][0], M.m[1][1], M.m[1][2], M.m[2][0], M.m[2][1], M.m[2][2]];
     }
+    const spin0 = (() => { const tr = findTrackByPr('spin.x', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
+    const spin1 = (() => { const tr = findTrackByPr('spin.y', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
+    const spin2 = (() => { const tr = findTrackByPr('spin.z', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
+    let spinMat = null;
+    if (spin0 !== 0 || spin1 !== 0 || spin2 !== 0) {
+      const M = matMat(matMat(FUNC_IMPL.rotZ(spin2 * DEG2RAD), FUNC_IMPL.rotY(spin1 * DEG2RAD)), FUNC_IMPL.rotX(spin0 * DEG2RAD));
+      spinMat = [M.m[0][0], M.m[0][1], M.m[0][2], M.m[1][0], M.m[1][1], M.m[1][2], M.m[2][0], M.m[2][1], M.m[2][2]];
+    }
+    const orbitCenter = [
+      (() => { const tr = findTrackByPr('center.x', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })(),
+      (() => { const tr = findTrackByPr('center.y', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })(),
+      (() => { const tr = findTrackByPr('center.z', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })(),
+    ];
     const opMap = groupOpDeltaCache ? groupOpDeltaCache.get(gname) : null;
     const op = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
     if (opMap) for (let i = 0; i < 10; i++) op[i] = opMap.get(TRACK_COMP_ORDER[i]) || 0;
@@ -260,9 +273,9 @@ export function buildGroupXforms(T) {
       scale[2] += opMap.get('scl.z') || 0;
     }
     xforms.set(gname, {
-      setTr, velTr, op, rotMat, pivot: groupCentroidPosCache.get(gname),
+      setTr, velTr, op, spinMat, orbitMat, orbitCenter, pivot: groupCentroidPosCache.get(gname),
       scale, hasScale: scale[0] !== 1 || scale[1] !== 1 || scale[2] !== 1,
-      hasSet: setTr.some(t => t !== null), hasRot: rotMat !== null,
+      hasSet: setTr.some(t => t !== null), hasSpin: spinMat !== null, hasRot: orbitMat !== null,
       hasOp: op.some(v => v !== 0), hasVel: velTr.some(t => t !== null),
     });
   }
@@ -317,7 +330,7 @@ export function compOpDelta(p, prop, comp, T) {
   return delta;
 }
 
-// 某 id（'g:name' 或 'f:fxId'）的 rot 向量（三个分量）
+// 某 id（'g:name' 或 'f:fxId'）的 rot 向量（三个分量，度）
 export function rotVectorAt(id, T) {
   return ['x', 'y', 'z'].map(c => {
     const tr = findTrackByPr('rot.' + c, id);
@@ -325,41 +338,79 @@ export function rotVectorAt(id, T) {
   });
 }
 
+// 某 id（'g:name' 或 'f:fxId'）的自转向量（三个分量，度）
+export function spinVectorAt(id, T) {
+  return ['x', 'y', 'z'].map(c => {
+    const tr = findTrackByPr('spin.' + c, id);
+    return tr ? trackValueAt(tr, T, 0) : 0;
+  });
+}
+
+// 某 id 的公转中心（世界坐标；无 center 轨道时默认世界原点）
+export function orbitCenterAt(id, T) {
+  return ['x', 'y', 'z'].map(c => {
+    const tr = findTrackByPr('center.' + c, id);
+    return tr ? trackValueAt(tr, T, 0) : 0;
+  });
+}
+
+// 绕 pivot 按欧拉角 XYZ（度）旋转一个点。
+export function rotatePointAround(value, pivot, rotDeg) {
+  let r = [value[0] - pivot[0], value[1] - pivot[1], value[2] - pivot[2]];
+  r = rotateVector(r, [1, 0, 0], rotDeg[0] * DEG2RAD);
+  r = rotateVector(r, [0, 1, 0], rotDeg[1] * DEG2RAD);
+  r = rotateVector(r, [0, 0, 1], rotDeg[2] * DEG2RAD);
+  return [pivot[0] + r[0], pivot[1] + r[1], pivot[2] + r[2]];
+}
+
 // 组变换 pivot（优先索引缓存，回退到质心重算）
 export function groupPivot(gname) {
   return (groupCentroidPosCache && groupCentroidPosCache.get(gname)) || groupCentroidValue(gname, 'pos');
 }
 
-// 组旋转信息（组件/函数对象的 rot + pivot）
-export function groupRotationInfo(p, T) {
+// 普通粒子的自身公转（只有 rot，无自转）：绕粒子自己的 center 轨道旋转。
+export function applyParticleOrbit(p, value, T) {
+  if (p.fx) return value; // 派生粒子没有独立公转轨道
+  const rot = rotVectorAt(p.id, T);
+  if (rot[0] === 0 && rot[1] === 0 && rot[2] === 0) return value;
+  return rotatePointAround(value, orbitCenterAt(p.id, T), rot);
+}
+
+// 自转：组绕自身质心、函数对象绕自身 center 旋转（spin 轨道）。
+export function applySelfRotation(p, value, T) {
+  const gs = groupMemberIndexCache && groupMemberIndexCache.get(p.id);
+  if (gs) {
+    for (const gname of gs) {
+      const spin = spinVectorAt('g:' + gname, T);
+      if (spin[0] === 0 && spin[1] === 0 && spin[2] === 0) continue;
+      return rotatePointAround(value, groupPivot(gname), spin);
+    }
+  }
+  if (p.fx) {
+    const spin = spinVectorAt('f:' + p.fx, T);
+    if (spin[0] === 0 && spin[1] === 0 && spin[2] === 0) return value;
+    const fx = getFunction(p.fx);
+    return rotatePointAround(value, fx ? fx.center.slice() : [0, 0, 0], spin);
+  }
+  return value;
+}
+
+// 公转：组/函数对象绕各自 center 轨道旋转（rot 轨道）。
+export function applyOrbitRotation(p, value, T) {
   const gs = groupMemberIndexCache && groupMemberIndexCache.get(p.id);
   if (gs) {
     for (const gname of gs) {
       const rot = rotVectorAt('g:' + gname, T);
       if (rot[0] === 0 && rot[1] === 0 && rot[2] === 0) continue;
-      const pivot = groupPivot(gname);
-      return { rot, pivot };
+      return rotatePointAround(value, orbitCenterAt('g:' + gname, T), rot);
     }
   }
   if (p.fx) {
     const rot = rotVectorAt('f:' + p.fx, T);
-    if (rot[0] === 0 && rot[1] === 0 && rot[2] === 0) return null;
-    const fx = getFunction(p.fx);
-    return { rot, pivot: fx ? fx.center.slice() : [0, 0, 0] };
+    if (rot[0] === 0 && rot[1] === 0 && rot[2] === 0) return value;
+    return rotatePointAround(value, orbitCenterAt('f:' + p.fx, T), rot);
   }
-  return null;
-}
-
-export function applyGroupRotation(p, value, T) {
-  const info = groupRotationInfo(p, T);
-  if (!info) return value;
-  const rot = info.rot;
-  const pivot = info.pivot;
-  let r = [value[0] - pivot[0], value[1] - pivot[1], value[2] - pivot[2]];
-  r = rotateVector(r, [1, 0, 0], rot[0] * DEG2RAD);
-  r = rotateVector(r, [0, 1, 0], rot[1] * DEG2RAD);
-  r = rotateVector(r, [0, 0, 1], rot[2] * DEG2RAD);
-  return [pivot[0] + r[0], pivot[1] + r[1], pivot[2] + r[2]];
+  return value;
 }
 
 // 组整体缩放向量（作用于成员相对组中心的偏移，而非粒子大小）。默认 [1,1,1]。
@@ -392,7 +443,7 @@ export function applyGroupScale(p, value, T) {
   return value;
 }
 
-// 粒子位置：set 覆盖 → 组整体缩放 → 组旋转 → op 增量
+// 粒子位置：set 覆盖 → 组整体缩放 → 粒子公转 → 自转 → 公转 → op 增量
 export function particlePosition(p, T) {
   let pos = ['x', 'y', 'z'].map(c => {
     let v = baseComponent(p, 'pos', c);
@@ -401,7 +452,9 @@ export function particlePosition(p, T) {
     return v;
   });
   pos = applyGroupScale(p, pos, T);
-  pos = applyGroupRotation(p, pos, T);
+  pos = applyParticleOrbit(p, pos, T);
+  pos = applySelfRotation(p, pos, T);
+  pos = applyOrbitRotation(p, pos, T);
   pos = pos.map((v, i) => v + compOpDelta(p, 'pos', ['x', 'y', 'z'][i], T));
   return pos;
 }
@@ -451,13 +504,15 @@ export function currentVisualDerived(p, T) {
     : [base, base, base];
   const gs = groupMemberIndexCache && groupMemberIndexCache.get(p.id);
   const hasFxOp = fxOpDeltaCache && fxOpDeltaCache.has(p.fx);
+  const hasFxSpin = spinVectorAt('f:' + p.fx, T).some(v => v !== 0);
   const hasFxRot = rotVectorAt('f:' + p.fx, T).some(v => v !== 0);
-  if (!gs && !hasFxOp && !hasFxRot) {
-    // 快速路径：无组关联、无函数 op、无函数旋转
+  if (!gs && !hasFxOp && !hasFxSpin && !hasFxRot) {
+    // 快速路径：无组关联、无函数 op / 自转 / 公转
     return { pos: r.pos, color: r.color, scale: scaleVec };
   }
   let pos = applyGroupScale(p, r.pos.slice(), T);
-  pos = applyGroupRotation(p, pos, T);
+  pos = applySelfRotation(p, pos, T);
+  pos = applyOrbitRotation(p, pos, T);
   pos = pos.map((v, ci) => v + compOpDelta(p, 'pos', ['x', 'y', 'z'][ci], T));
   return { pos, color: r.color, scale: scaleVec };
 }

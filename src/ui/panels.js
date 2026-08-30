@@ -9,7 +9,7 @@
 
 import { t, tf } from '../core/i18n.js';
 import { state, FUNCTION_PRESETS, getFunction, isDerivedParticle } from '../core/constants.js';
-import { currentVisual } from '../core/animation.js';
+import { currentVisual, rotVectorAt, spinVectorAt, orbitCenterAt } from '../core/animation.js';
 import { currentSelected, selectedGroupName, fxPosDeltaAt, fxScaleValuesAt } from '../interaction/interaction.js';
 import { groupCurrentCentroid } from './tree.js';
 import { modalAlert, rgbToHex, hexToRgb } from './ui.js';
@@ -21,6 +21,17 @@ import { r3 } from '../io/io.js';
 // 设置缩放 XYZ 三输入（vals 为 [x,y,z]；null 元素表示混合值显示空）
 export function setScaleInputs(vals) {
   ['prop-scale-x', 'prop-scale-y', 'prop-scale-z'].forEach((id, i) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const v = vals == null ? null : vals[i];
+    if (v == null) { el.value = ''; el.placeholder = '-'; }
+    else { el.value = (typeof v === 'number' ? Math.round(v * 100) / 100 : v); el.placeholder = ''; }
+  });
+}
+
+// 旋转类 XYZ 三输入（vals 为 [x,y,z]；null 元素显示空占位）
+function setRotTriple(ids, vals) {
+  ids.forEach((id, i) => {
     const el = document.getElementById(id);
     if (!el) return;
     const v = vals == null ? null : vals[i];
@@ -51,6 +62,13 @@ export function updatePropPanel() {
     const el = document.getElementById(id);
     if (el) el.disabled = readOnly;
   });
+  // 自转仅组/函数对象有；普通粒子隐藏自转行。旋转类输入在派生粒子只读。
+  const spinRow = document.getElementById('prop-spin-row');
+  if (spinRow) spinRow.style.display = (isFx || gname) ? '' : 'none';
+  ['prop-spin-x', 'prop-spin-y', 'prop-spin-z', 'prop-rot-x', 'prop-rot-y', 'prop-rot-z', 'prop-center-x', 'prop-center-y', 'prop-center-z'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = readOnly;
+  });
   // 函数对象：显示/编辑整体位置与缩放
   if (isFx) {
     const fx = getFunction(fxId);
@@ -60,6 +78,10 @@ export function updatePropPanel() {
     document.getElementById('prop-posy').value = (fx.center[1] + d[1]).toFixed(2);
     document.getElementById('prop-posz').value = (fx.center[2] + d[2]).toFixed(2);
     setScaleInputs(fxScaleValuesAt(fxId, state.time));
+    const fpre = 'f:' + fxId;
+    setRotTriple(['prop-spin-x', 'prop-spin-y', 'prop-spin-z'], spinVectorAt(fpre, state.time));
+    setRotTriple(['prop-rot-x', 'prop-rot-y', 'prop-rot-z'], rotVectorAt(fpre, state.time));
+    setRotTriple(['prop-center-x', 'prop-center-y', 'prop-center-z'], orbitCenterAt(fpre, state.time));
     return;
   }
   // 组：显示整体质心位置（缩放无独立显示）；寿命留空占位，填入即应用到全体成员
@@ -69,6 +91,10 @@ export function updatePropPanel() {
     document.getElementById('prop-posy').value = c[1].toFixed(2);
     document.getElementById('prop-posz').value = c[2].toFixed(2);
     setScaleInputs(null);
+    const gpre = 'g:' + gname;
+    setRotTriple(['prop-spin-x', 'prop-spin-y', 'prop-spin-z'], spinVectorAt(gpre, state.time));
+    setRotTriple(['prop-rot-x', 'prop-rot-y', 'prop-rot-z'], rotVectorAt(gpre, state.time));
+    setRotTriple(['prop-center-x', 'prop-center-y', 'prop-center-z'], orbitCenterAt(gpre, state.time));
     const lifeElG = document.getElementById('prop-life');
     if (lifeElG) { lifeElG.value = ''; lifeElG.placeholder = '-'; }
     return;
@@ -116,6 +142,15 @@ export function updatePropPanel() {
   setPos('prop-posx', pos[0].toFixed(2), xSame);
   setPos('prop-posy', pos[1].toFixed(2), ySame);
   setPos('prop-posz', pos[2].toFixed(2), zSame);
+
+  // 普通粒子：只有公转与公转中心；混合选择时用空占位表示不一致。
+  const rotBase = rotVectorAt(first.id, state.time);
+  const centerBase = orbitCenterAt(first.id, state.time);
+  const rotVals = ['x', 'y', 'z'].map((_, i) => same(q => rotVectorAt(q.id, state.time)[i]) ? rotBase[i] : null);
+  const centerVals = ['x', 'y', 'z'].map((_, i) => same(q => orbitCenterAt(q.id, state.time)[i]) ? centerBase[i] : null);
+  setRotTriple(['prop-rot-x', 'prop-rot-y', 'prop-rot-z'], rotVals);
+  setRotTriple(['prop-center-x', 'prop-center-y', 'prop-center-z'], centerVals);
+  setRotTriple(['prop-spin-x', 'prop-spin-y', 'prop-spin-z'], null);
 }
 
 export { rgbToHex, hexToRgb };

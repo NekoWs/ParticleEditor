@@ -17,11 +17,13 @@ export var LANGS = {
     'tab.props': '属性', 'tab.fx': '函数对象', 'tab.texture': '贴图 / UV', 'tab.import': '导入',
     // —— 场景工具栏 ——
     'tool.select': '选择（框选）', 'tool.move': '移动', 'tool.rotate': '旋转',
+    'tool.rotateSpin': '旋转（自转模式，按 R 切换）', 'tool.rotateOrbit': '旋转（公转模式，按 R 切换）',
+    'rotMode.spin': '自', 'rotMode.orbit': '公',
     'tool.pencil': '铅笔（点按放置）', 'tool.line': '直线', 'tool.circle': '圆', 'tool.rect': '矩形', 'tool.freehand': '手绘',
     // —— 属性面板 ——
     'props.opacity': '透明度', 'props.scale': '缩放', 'props.glow': '发光', 'props.light': '光照等级',
     'props.life': '寿命(tick)', 'props.lifeHint': '-1 或留空 = 无限（活到动画结束）',
-    'prop.pos': '位置', 'prop.rot': '旋转', 'prop.vel': '速度', 'prop.col': '颜色', 'prop.scl': '缩放',
+    'prop.pos': '位置', 'prop.rot': '公转', 'prop.spin': '自转', 'prop.center': '公转中心', 'prop.vel': '速度', 'prop.col': '颜色', 'prop.scl': '缩放',
     // —— 函数对象 ——
     'fx.addPresetTitle': '按预设新建函数对象', 'fx.noSelection': '选中一个函数对象以编辑属性',
     'fx.exprError': '表达式错误', 'fx.name': '名称 ', 'fx.sampleCount': '采样数 ', 'fx.center': '中心点 ',
@@ -209,11 +211,13 @@ export var LANGS = {
     'tab.props': 'Properties', 'tab.fx': 'Function Object', 'tab.texture': 'Texture / UV', 'tab.import': 'Import',
     // —— 场景工具栏 ——
     'tool.select': 'Select (Box)', 'tool.move': 'Move', 'tool.rotate': 'Rotate',
+    'tool.rotateSpin': 'Rotate (Spin mode, press R to toggle)', 'tool.rotateOrbit': 'Rotate (Orbit mode, press R to toggle)',
+    'rotMode.spin': 'S', 'rotMode.orbit': 'O',
     'tool.pencil': 'Pencil (Click to Place)', 'tool.line': 'Line', 'tool.circle': 'Circle', 'tool.rect': 'Rectangle', 'tool.freehand': 'Freehand',
     // —— 属性面板 ——
     'props.opacity': 'Opacity', 'props.scale': 'Scale', 'props.glow': 'Glow', 'props.light': 'Light Level',
     'props.life': 'Life (tick)', 'props.lifeHint': '-1 or empty = infinite (lives until animation ends)',
-    'prop.pos': 'Position', 'prop.rot': 'Rotation', 'prop.vel': 'Velocity', 'prop.col': 'Color', 'prop.scl': 'Scale',
+    'prop.pos': 'Position', 'prop.rot': 'Orbit', 'prop.spin': 'Spin', 'prop.center': 'Orbit Center', 'prop.vel': 'Velocity', 'prop.col': 'Color', 'prop.scl': 'Scale',
     // —— 函数对象 ——
     'fx.addPresetTitle': 'Create function object from preset', 'fx.noSelection': 'Select a function object to edit its properties',
     'fx.exprError': 'Expression Error', 'fx.name': 'Name ', 'fx.sampleCount': 'Sample Count ', 'fx.center': 'Center ',

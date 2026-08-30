@@ -232,9 +232,17 @@ function writePointBuffers(full) {
             py = pivot[1] + (py - pivot[1]) * sc[1];
             pz = pivot[2] + (pz - pivot[2]) * sc[2];
           }
-          if (xf.rotMat) {
-            const m = xf.rotMat;
+          if (xf.hasSpin) {
+            const m = xf.spinMat;
             const pivot = xf.pivot || [0, 0, 0];
+            const rx = px - pivot[0], ry = py - pivot[1], rz = pz - pivot[2];
+            px = pivot[0] + m[0] * rx + m[1] * ry + m[2] * rz;
+            py = pivot[1] + m[3] * rx + m[4] * ry + m[5] * rz;
+            pz = pivot[2] + m[6] * rx + m[7] * ry + m[8] * rz;
+          }
+          if (xf.hasRot) {
+            const m = xf.orbitMat;
+            const pivot = xf.orbitCenter || [0, 0, 0];
             const rx = px - pivot[0], ry = py - pivot[1], rz = pz - pivot[2];
             px = pivot[0] + m[0] * rx + m[1] * ry + m[2] * rz;
             py = pivot[1] + m[3] * rx + m[4] * ry + m[5] * rz;

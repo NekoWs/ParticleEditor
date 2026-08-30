@@ -380,12 +380,18 @@ body {
   padding: 5px; box-shadow: var(--shadow);
 }
 .tool {
+  position: relative;
   width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
   background: transparent; color: var(--muted); border: 1px solid transparent;
   border-radius: var(--radius-sm); cursor: pointer;
   transition: all 0.12s ease;
 }
 .tool svg { width: 18px; height: 18px; }
+.tool .rot-mode-badge {
+  position: absolute; right: 1px; bottom: 1px; min-width: 10px; height: 10px;
+  padding: 0 1px; border-radius: 5px; font-size: 8px; line-height: 10px; text-align: center;
+  background: #11141a; color: #fff; font-weight: 700;
+}
 .tool:hover { background: var(--panel-2); border-color: var(--accent); color: var(--accent); }
 .tool.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 

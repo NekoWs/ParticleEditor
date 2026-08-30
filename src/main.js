@@ -13,9 +13,9 @@ import { easeInOut } from './core/easing.js';
 import { openEasingEditor, easingCurveSVG } from './ui/easing-editor.js';
 import { viewport, renderer, camera, controls, scene, pointsMaterial, selectedMaterial, focalLengthPx, camTransition, setCamTransition, planePulse, setPlanePulse, updateRenderScale } from './scene/scene.js';
 import { rebuildPoints, rebuildPointsTime, maxTick, updateAnimatedUV } from './core/animation.js';
-import { editSelectionUniform } from './core/edit.js';
+import { editSelectionUniform, editSelectionRotationUniform } from './core/edit.js';
 import { pushUndo, undo, redo, beginContinuous, endContinuous } from './state/undo.js';
-import { currentSelected, selectedGroupName, deleteSelected, selectAll } from './interaction/interaction.js';
+import { currentSelected, selectedGroupName, deleteSelected, selectAll, updateRotateToolBadge } from './interaction/interaction.js';
 import { createGroup } from './ui/tree.js';
 import { createFunctionObject } from './core/generators.js';
 import { syncFunctionVarValues, drawTimeline, updateLoopIndicator, hexToRgb, TL_PX_PER_TICK, setTLPxPerTick, timelineViewStart, setTimelineViewStart, scrubAutoPan, timelineXToTick, refreshFunctionPanel } from './ui/panels.js';
@@ -119,8 +119,10 @@ export function initUI() {
     if (!btn) return;
     state.tool = btn.dataset.tool;
     document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active', b === btn));
+    updateRotateToolBadge();
     updateGizmo(); // 切换工具时立即刷新 gizmo 显示模式
   });
+  updateRotateToolBadge();
 
   // 右侧选项卡切换
   document.getElementById('sidebar-tabs').addEventListener('click', (ev) => {
@@ -160,6 +162,9 @@ export function initUI() {
   document.getElementById('prop-color').addEventListener('change', endContinuous);
   bindVec3Inputs(['prop-scale-x', 'prop-scale-y', 'prop-scale-z'], applyScaleFromInputs);
   bindVec3Inputs(['prop-posx', 'prop-posy', 'prop-posz'], applyPositionFromInputs);
+  bindVec3Inputs(['prop-spin-x', 'prop-spin-y', 'prop-spin-z'], applySpinFromInputs);
+  bindVec3Inputs(['prop-rot-x', 'prop-rot-y', 'prop-rot-z'], applyOrbitFromInputs);
+  bindVec3Inputs(['prop-center-x', 'prop-center-y', 'prop-center-z'], applyCenterFromInputs);
 
   // 时间轴
   document.getElementById('btn-play').addEventListener('click', togglePlay);
@@ -277,6 +282,21 @@ export function applyScaleFromInputs() {
     : ['prop-scale-x', 'prop-scale-y'];
   const v = readVec3Inputs(ids);
   if (v) editSelectionUniform('scl', v);
+}
+
+export function applySpinFromInputs() {
+  const v = readVec3Inputs(['prop-spin-x', 'prop-spin-y', 'prop-spin-z']);
+  if (v) editSelectionRotationUniform('spin', v);
+}
+
+export function applyOrbitFromInputs() {
+  const v = readVec3Inputs(['prop-rot-x', 'prop-rot-y', 'prop-rot-z']);
+  if (v) editSelectionRotationUniform('rot', v);
+}
+
+export function applyCenterFromInputs() {
+  const v = readVec3Inputs(['prop-center-x', 'prop-center-y', 'prop-center-z']);
+  if (v) editSelectionRotationUniform('center', v);
 }
 
 /* 右侧栏拖拽调整大小（左侧粒子列表已移除，仅保留时间轴粒子列表） */

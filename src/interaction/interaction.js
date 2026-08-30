@@ -12,7 +12,7 @@ import { currentVisual, rebuildPoints, setPreview, clearPreview, rotVectorAt, tr
 import { screenToNdc, planePointAt, worldToUV, computeShapePositions, snapGrid, snapValue, pickParticleAt, particleAt, projectToScreen, distToSegment, planeInfo, selectionCentroid, updateGizmoFrame } from './gizmo.js';
 import { groupCurrentCentroid, groupCentroidValue, deleteGroup, createGroup } from '../ui/tree.js';
 import { refreshFunctionPanel } from '../ui/panels.js';
-import { setFunctionTrackValue, setGroupTrackValue, editParticles, addParticle, autoGroup, removeGroupAndTracks } from '../core/edit.js';
+import { setFunctionTrackValue, setGroupTrackValue, setComponentKeyframe, editParticles, addParticle, autoGroup, removeGroupAndTracks } from '../core/edit.js';
 import { pushUndo, restore, undoStack, undo, redo } from '../state/undo.js';
 import { deleteFunctionObject } from '../core/generators.js';
 import { texUndo, texRedo, texActive } from '../ui/texture-editor.js';
@@ -174,6 +174,14 @@ export function angleInBasis(point, centroid, u, v) {
 
 export function groupRotationValueAt(gname, T) { return rotVectorAt('g:' + gname, T); }
 
+// 某 id 的自转向量（spin.x/y/z，度）
+export function spinRotationValueAt(id, T) {
+  return ['x', 'y', 'z'].map(c => {
+    const tr = findTrackByPr('spin.' + c, id);
+    return tr ? trackValueAt(tr, T, 0) : 0;
+  });
+}
+
 function posDeltaAt(prefix, T) {
   return ['x', 'y', 'z'].map(c => {
     const tr = findTrackByPr('pos.' + c, prefix);
@@ -222,8 +230,10 @@ export function enterRotate(clientX, clientY, axis) {
     const { axArr, u, v } = rotationBasis(axis);
     const p0 = rayOnAxisPlane(clientX, clientY, axArr, c);
     const startAngle = p0 ? angleInBasis(p0, c, u, v) : 0;
-    const startRot = fxRotationValueAt(fx.id, Math.round(state.time));
-    modal = { type: 'fx-rotate', fxId: fx.id, centroid: c, axis: axArr, axisKey: axis, axisIndex: AXIS_INDEX[axis] ?? 1, startRot, u, v, startAngle };
+    const T = Math.round(state.time);
+    const startRot = fxRotationValueAt(fx.id, T);
+    const startSpin = spinRotationValueAt('f:' + fx.id, T);
+    modal = { type: 'fx-rotate', fxId: fx.id, centroid: c, axis: axArr, axisKey: axis, axisIndex: AXIS_INDEX[axis] ?? 1, startRot, startSpin, u, v, startAngle };
     setDragAxisHighlight(modal);
     controls.enabled = false;
     return;
@@ -236,15 +246,20 @@ export function enterRotate(clientX, clientY, axis) {
   const startAngle = p0 ? angleInBasis(p0, c, u, v) : 0;
   const origins = snapshotSelection(p => currentVisual(p).pos.slice());
   if (gname) {
-    const startRot = groupRotationValueAt(gname, Math.round(state.time));
+    const T = Math.round(state.time);
+    const startRot = groupRotationValueAt(gname, T);
+    const startSpin = spinRotationValueAt('g:' + gname, T);
     modal = {
       type: 'group-rotate', gname, centroid: c, axis: axArr, axisKey: axis,
-      axisIndex: AXIS_INDEX[axis] ?? 1, startRot,
+      axisIndex: AXIS_INDEX[axis] ?? 1, startRot, startSpin,
       origins, u, v, startAngle,
     };
   } else {
+    const startRots = new Map();
+    for (const id of selectedMemberIds()) startRots.set(id, rotVectorAt(id, Math.round(state.time)));
     modal = {
-      type: 'rotate', origins, centroid: c, axis: axArr, axisKey: axis, u, v, startAngle,
+      type: 'rotate', origins, centroid: c, axis: axArr, axisKey: axis,
+      axisIndex: AXIS_INDEX[axis] ?? 1, u, v, startAngle, startRots,
     };
   }
   setDragAxisHighlight(modal);
@@ -285,8 +300,10 @@ export function enterViewRotate(clientX, clientY) {
   if (fx) {
     pushUndo();
     const c = fxCurrentPos(fx.id, Math.round(state.time));
-    const startRot = fxRotationValueAt(fx.id, Math.round(state.time));
-    modal = { type: 'fx-view-rotate', fxId: fx.id, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
+    const T = Math.round(state.time);
+    const startRot = fxRotationValueAt(fx.id, T);
+    const startSpin = spinRotationValueAt('f:' + fx.id, T);
+    modal = { type: 'fx-view-rotate', fxId: fx.id, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot, startSpin, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
     controls.enabled = false;
     return;
   }
@@ -295,10 +312,14 @@ export function enterViewRotate(clientX, clientY) {
   const c = gname ? groupCurrentCentroid(gname, 'pos') : selectionCentroid();
   const origins = snapshotSelection(p => currentVisual(p).pos.slice());
   if (gname) {
-    const startRot = groupRotationValueAt(gname, Math.round(state.time));
-    modal = { type: 'group-view-rotate', gname, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot, origins, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
+    const T = Math.round(state.time);
+    const startRot = groupRotationValueAt(gname, T);
+    const startSpin = spinRotationValueAt('g:' + gname, T);
+    modal = { type: 'group-view-rotate', gname, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot, startSpin, origins, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
   } else {
-    modal = { type: 'view-rotate', origins, centroid: c, view: true, lookAxis: viewAxisOf(c), angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
+    const startRots = new Map();
+    for (const id of selectedMemberIds()) startRots.set(id, rotVectorAt(id, Math.round(state.time)));
+    modal = { type: 'view-rotate', origins, centroid: c, view: true, lookAxis: viewAxisOf(c), startRots, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
   }
   controls.enabled = false;
 }
@@ -316,18 +337,27 @@ export function updateViewRotate(clientX, clientY) {
   let angle = -m.angle; // 绕「对象→相机」轴，负角度使对象与拖拽方向一致（顺时针拖 → 顺时针转）
   if (shiftHeld) angle = Math.round(angle * RAD2DEG / ROT_SNAP) * ROT_SNAP * DEG2RAD;
   const a = m.lookAxis;
-  if (m.type === 'fx-view-rotate' || (m.type === 'group-view-rotate' && state.captureKeyframes)) {
-    const newRot = applyWorldRotation(m.startRot, a, angle);
-    if (m.type === 'fx-view-rotate') {
-      const t = state.captureKeyframes ? Math.round(state.time) : 0;
-      setFunctionTrackValue(m.fxId, 'rot', 'set', t, newRot);
-    } else {
-      setGroupTrackValue(m.gname, 'rot', 'set', Math.round(state.time), newRot);
-    }
+  const prop = (state.rotMode === 'spin' && m.type !== 'view-rotate') ? 'spin' : 'rot';
+  if (m.type === 'fx-view-rotate') {
+    const base = prop === 'spin' ? m.startSpin : m.startRot;
+    const newRot = applyWorldRotation(base, a, angle);
+    const t = state.captureKeyframes ? Math.round(state.time) : 0;
+    setFunctionTrackValue(m.fxId, prop, 'set', t, newRot);
     return;
   }
-  // 普通粒子：直接绕质心、绕视线轴旋转位置（精确）
-  rotateOriginsAndCommit(m, a, angle);
+  if (m.type === 'group-view-rotate') {
+    const base = prop === 'spin' ? m.startSpin : m.startRot;
+    const newRot = applyWorldRotation(base, a, angle);
+    setGroupTrackValue(m.gname, prop, 'set', Math.round(state.time), newRot);
+    return;
+  }
+  // 普通粒子：写各自的公转轨道（绕各自 center、绕视线轴旋转）。
+  const t = state.captureKeyframes ? Math.round(state.time) : 0;
+  for (const [id, startRot] of m.startRots) {
+    const newRot = applyWorldRotation(startRot, a, angle);
+    ['x', 'y', 'z'].forEach((comp, i) => setComponentKeyframe(id, 'rot', comp, t, newRot[i], 'set'));
+  }
+  rebuildPoints();
 }
 
 export function cancelModal() {
@@ -451,24 +481,30 @@ export function updateRotate(clientX, clientY) {
   if (!p1) return;
   let angle = angleInBasis(p1, m.centroid, m.u, m.v) - m.startAngle;
   if (shiftHeld) angle = Math.round(angle * RAD2DEG / ROT_SNAP) * ROT_SNAP * DEG2RAD;
+  const prop = (state.rotMode === 'spin' && m.type !== 'rotate') ? 'spin' : 'rot'; // 普通粒子只有公转
   if (m.type === 'fx-rotate') {
-    const newRot = m.startRot.slice();
+    const base = prop === 'spin' ? m.startSpin : m.startRot;
+    const newRot = base.slice();
     newRot[m.axisIndex] += angle * RAD2DEG;
     const t = state.captureKeyframes ? Math.round(state.time) : 0;
-    setFunctionTrackValue(m.fxId, 'rot', 'set', t, newRot);
+    setFunctionTrackValue(m.fxId, prop, 'set', t, newRot);
     return;
   }
   if (m.type === 'group-rotate') {
-    const newRot = m.startRot.slice();
+    const base = prop === 'spin' ? m.startSpin : m.startRot;
+    const newRot = base.slice();
     newRot[m.axisIndex] += angle * RAD2DEG;
-    if (state.captureKeyframes) {
-      setGroupTrackValue(m.gname, 'rot', 'set', Math.round(state.time), newRot);
-    } else {
-      rotateOriginsAndCommit(m, m.axis, angle);
-    }
+    setGroupTrackValue(m.gname, prop, 'set', Math.round(state.time), newRot);
     return;
   }
-  rotateOriginsAndCommit(m, m.axis, angle);
+  // 普通粒子：写各自的公转轨道（绕各自 center 旋转），不再直接改位置。
+  const t = state.captureKeyframes ? Math.round(state.time) : 0;
+  for (const [id, startRot] of m.startRots) {
+    const newRot = startRot.slice();
+    newRot[m.axisIndex] += angle * RAD2DEG;
+    ['x', 'y', 'z'].forEach((comp, i) => setComponentKeyframe(id, 'rot', comp, t, newRot[i], 'set'));
+  }
+  rebuildPoints();
 }
 
 export function deleteSelected() {
@@ -663,6 +699,20 @@ export function setGizmoHover(arrowAxis, ringAxis, faceKey, viewRingHover) {
 export function setDragAxisHighlight(m) {
   // 操作轴提示线由 updateGizmoFrame 在中心显示
   resetWorldAxisState();
+}
+
+// 旋转工具角标 + title：显示当前 gizmo 编辑的是自转还是公转。
+export function updateRotateToolBadge() {
+  const badge = document.getElementById('rot-mode-badge');
+  const btn = document.querySelector('.tool[data-tool="rotate"]');
+  if (badge) {
+    if (state.tool !== 'rotate') badge.textContent = '';
+    else badge.textContent = state.rotMode === 'spin' ? t('rotMode.spin') : t('rotMode.orbit');
+  }
+  if (btn) {
+    if (state.tool !== 'rotate') btn.title = t('tool.rotate');
+    else btn.title = state.rotMode === 'spin' ? t('tool.rotateSpin') : t('tool.rotateOrbit');
+  }
 }
 
 renderer.domElement.addEventListener('pointerdown', (ev) => {
@@ -884,6 +934,15 @@ window.addEventListener('keydown', (ev) => {
       if (modal.axis) modal.face = null; // 切换为单轴约束时放弃面移动
       setDragAxisHighlight(modal);
     }
+    return;
+  }
+  if (k === 'r' && state.tool === 'rotate') {
+    if (state.selectedFunction || state.selectedGroup) {
+      state.rotMode = state.rotMode === 'orbit' ? 'spin' : 'orbit';
+    } else {
+      state.rotMode = 'orbit'; // 普通粒子无自转，固定公转
+    }
+    updateRotateToolBadge();
     return;
   }
   if (k === 's') enterScale(lastMouse.x);

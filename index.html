@@ -63,7 +63,7 @@
       <div class="toolbar" id="tools">
         <button class="tool active" data-tool="select" data-i18n-title="tool.select" title="选择（框选）"><svg viewBox="0 0 18 18"><path d="M4 2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 2"/></svg></button>
         <button class="tool" data-tool="move" data-i18n-title="tool.move" title="移动"><svg viewBox="0 0 18 18"><path d="M9 3v12M3 9h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M6 6l3-3 3 3M6 12l3 3 3-3M6 6l-3 3 3 3M12 6l3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-        <button class="tool" data-tool="rotate" data-i18n-title="tool.rotate" title="旋转"><svg viewBox="0 0 18 18"><path d="M14.5 9a5.5 5.5 0 1 1-1.6-3.9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M13.5 1.5v3.6h-3.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button class="tool" data-tool="rotate" data-i18n-title="tool.rotate" title="旋转"><svg viewBox="0 0 18 18"><path d="M14.5 9a5.5 5.5 0 1 1-1.6-3.9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M13.5 1.5v3.6h-3.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="rot-mode-badge" id="rot-mode-badge"></span></button>
         <button class="tool" data-tool="pencil" data-i18n-title="tool.pencil" title="铅笔（点按放置）"><svg viewBox="0 0 18 18"><path d="M3 15l1-4 9-9 3 3-9 9-4 1z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></button>
         <button class="tool" data-tool="line" data-i18n-title="tool.line" title="直线"><svg viewBox="0 0 18 18"><path d="M3 15L15 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
         <button class="tool" data-tool="circle" data-i18n-title="tool.circle" title="圆"><svg viewBox="0 0 18 18"><circle cx="9" cy="9" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
@@ -93,6 +93,21 @@
           <input id="prop-scale-x" type="number" min="0.05" step="0.05" value="1" title="X" />
           <input id="prop-scale-y" type="number" min="0.05" step="0.05" value="1" title="Y" />
           <input id="prop-scale-z" type="number" min="0.05" step="0.05" value="1" title="Z" />
+        </div>
+        <div class="row" id="prop-spin-row"><span data-i18n="prop.spin">自转</span>
+          <input id="prop-spin-x" type="number" step="1" value="0" title="X" />
+          <input id="prop-spin-y" type="number" step="1" value="0" title="Y" />
+          <input id="prop-spin-z" type="number" step="1" value="0" title="Z" />
+        </div>
+        <div class="row"><span data-i18n="prop.rot">公转</span>
+          <input id="prop-rot-x" type="number" step="1" value="0" title="X" />
+          <input id="prop-rot-y" type="number" step="1" value="0" title="Y" />
+          <input id="prop-rot-z" type="number" step="1" value="0" title="Z" />
+        </div>
+        <div class="row"><span data-i18n="prop.center">公转中心</span>
+          <input id="prop-center-x" type="number" step="0.1" value="0" title="X" />
+          <input id="prop-center-y" type="number" step="0.1" value="0" title="Y" />
+          <input id="prop-center-z" type="number" step="0.1" value="0" title="Z" />
         </div>
         <label class="chk"><input id="prop-glow" type="checkbox" /><span data-i18n="props.glow">发光</span></label>
         <label class="row"><span data-i18n="props.light">光照等级</span> <input id="prop-light" type="range" min="0" max="15" step="1" value="15" /><span id="light-val">15</span></label>

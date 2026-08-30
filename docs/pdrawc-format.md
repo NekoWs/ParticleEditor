@@ -18,7 +18,7 @@
 ```
 +--------------------+
 | magic     4 bytes  |  ASCII "PDC1" = 0x50 0x44 0x43 0x31
-| version   varint   |  3（当前）；1/2 = 旧版，已拒绝
+| version   varint   |  4（当前）；1/2/3 = 旧版，已拒绝
 | pubkey    32 bytes |  Ed25519 公钥（原始字节）
 +--------------------+
 | body（见 §2）      |  ← 签名覆盖范围：从 magic 到压缩 body 末尾
@@ -29,7 +29,8 @@
 ```
 
 **版本**：
-- `v3`（当前）：`body` 为 **raw DEFLATE**（RFC 1951，无 zlib/gzip 头尾）压缩后的字节；函数对象使用 `setup/process/seed`。
+- `v4`（当前）：`body` 为 **raw DEFLATE**（RFC 1951，无 zlib/gzip 头尾）压缩后的字节；函数对象使用 `setup/process/seed`；新增 `spin`/`center` 轨道。
+- `v3`（旧版）：`body` 为 raw DEFLATE，函数对象使用 `setup/process/seed`；读取端**拒绝**。
 - `v1`/`v2`（旧版）：读取端**拒绝**。
 
 **签名** = Ed25519 对「从 `magic` 起，到压缩 body 末尾为止」的全部字节做签名；
@@ -203,12 +204,14 @@ tag                        1 byte：
 
 | 值 | pr | 值 | pr | 值 | pr |
 |---|---|---|---|---|---|
-| 0 | pos.x | 6 | col.r | 12 | scl.z |
-| 1 | pos.y | 7 | col.g | 13 | rot.x |
-| 2 | pos.z | 8 | col.b | 14 | rot.y |
-| 3 | vel.x | 9 | col.a | 15 | rot.z |
-| 4 | vel.y | 10 | scl.x | | |
-| 5 | vel.z | 11 | scl.y | | |
+| 0 | pos.x | 8 | col.b | 16 | spin.x |
+| 1 | pos.y | 9 | col.a | 17 | spin.y |
+| 2 | pos.z | 10 | scl.x | 18 | spin.z |
+| 3 | vel.x | 11 | scl.y | 19 | center.x |
+| 4 | vel.y | 12 | scl.z | 20 | center.y |
+| 5 | vel.z | 13 | rot.x | 21 | center.z |
+| 6 | col.r | 14 | rot.y | | |
+| 7 | col.g | 15 | rot.z | | |
 
 ---
 
