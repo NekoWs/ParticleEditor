@@ -1645,6 +1645,14 @@ function renderVars(ctx, cw, ch, th) {
   ctx.restore();
 }
 
+function echoCodeText() {
+  if (!H || !H.getBctx()) return '';
+  const bctx = H.getBctx();
+  const setupCode = bctx.layout.setup ? statementsToCode(bctx.setupChain) : '';
+  const processCode = bctx.layout.chain ? statementsToCode(bctx.chain) : '';
+  return '// ' + t('blk.setup') + '\n' + setupCode + '\n\n// ' + t('blk.start') + '\n' + processCode;
+}
+
 function renderEchoCanvas() {
   const ctx = S.echoCtx, c = S.echoCanvas;
   if (!ctx || !c) return;
@@ -1653,7 +1661,7 @@ function renderEchoCanvas() {
   const ch = c.clientHeight || c.height;
   clearCanvas(ctx, c, th.panel);
   if (!H || !H.getBctx()) return;
-  const code = statementsToCode(H.getBctx().chain) || '';
+  const code = echoCodeText() || '';
   const font = FONT_MONO;
   ctx.font = font;
   const lh = 16;
@@ -2856,7 +2864,7 @@ function onEchoWheel(e) {
   e.preventDefault();
   const ch = S.echoCanvas.clientHeight || S.echoCanvas.height;
   const lh = 16;
-  const code = (H && H.getBctx()) ? statementsToCode(H.getBctx().chain) : '';
+  const code = echoCodeText();
   const lines = code ? code.split('\n').length + 2 : 1;
   const contentH = lines * lh + 20;
   S.echoScroll = Math.max(0, Math.min(S.echoScroll + (e.deltaY > 0 ? 30 : -30), Math.max(0, contentH - ch)));
