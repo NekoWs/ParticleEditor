@@ -7,9 +7,9 @@ import * as THREE from 'three';
 import { t } from '../core/i18n.js';
 import { state, getParticle, getFunction, isDerivedParticle, RAD2DEG, ROT_SNAP, PLANES, DEG2RAD, nextGroupName } from '../core/constants.js';
 import { shiftHeld } from './input-state.js';
-import { camera, renderer, controls, raycaster, pointer, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoOrbitLines, gizmoViewRing, gizmoFaces, gizmoArrows, AXIS_RING_COLORS, GIZMO_FACE_DEFS, resetWorldAxisState, focalLengthPx } from '../scene/scene.js';
+import { camera, renderer, controls, raycaster, pointer, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, AXIS_RING_COLORS, GIZMO_FACE_DEFS, resetWorldAxisState, focalLengthPx } from '../scene/scene.js';
 import { currentVisual, rebuildPoints, setPreview, clearPreview, rotVectorAt, orbitCenterAt, trackValueAt, findTrackByPr, groupScaleAt } from '../core/animation.js';
-import { screenToNdc, planePointAt, worldToUV, computeShapePositions, snapGrid, snapValue, pickParticleAt, particleAt, projectToScreen, distToSegment, planeInfo, selectionCentroid, updateGizmo, updateGizmoFrame, orbitGizmoTarget } from './gizmo.js';
+import { screenToNdc, planePointAt, worldToUV, computeShapePositions, snapGrid, snapValue, pickParticleAt, particleAt, projectToScreen, distToSegment, planeInfo, selectionCentroid, updateGizmo, updateGizmoFrame } from './gizmo.js';
 import { groupCurrentCentroid, groupCentroidValue, deleteGroup, createGroup } from '../ui/tree.js';
 import { refreshFunctionPanel } from '../ui/panels.js';
 import { setFunctionTrackValue, setGroupTrackValue, setComponentKeyframe, editParticles, addParticle, autoGroup, removeGroupAndTracks } from '../core/edit.js';
@@ -643,30 +643,17 @@ export function ringHitInfo(clientX, clientY) {
   const c = [gizmoGroup.position.x, gizmoGroup.position.y, gizmoGroup.position.z];
   const rect = renderer.domElement.getBoundingClientRect();
   const px = clientX - rect.left, py = clientY - rect.top;
-  const scale = (gizmoGroup.scale.x || 1) * (gizmoRotateGroup.scale.x || 1);
+  const scale = gizmoGroup.scale.x || 1;
   const rotQ = gizmoRotateGroup.quaternion;
-  const orbitMode = !!orbitGizmoTarget();
   let bestAxis = null, bestDist = Infinity;
   for (const ax of ['X', 'Y', 'Z']) {
-    if (orbitMode) {
-      const line = gizmoOrbitLines[ax];
-      if (!line || !line.visible) continue;
-      const dirs = gizmoRingSegDirs[ax];
-      for (let i = 0; i < dirs.length; i++) {
-        const d = dirs[i].clone().applyQuaternion(rotQ); // 本地 -> 世界
-        const p = projectToScreen(c[0] + d.x * 0.5 * scale, c[1] + d.y * 0.5 * scale, c[2] + d.z * 0.5 * scale);
-        const dist = Math.hypot(px - p.x, py - p.y);
-        if (dist < bestDist) { bestDist = dist; bestAxis = ax; }
-      }
-    } else {
-      const segs = gizmoRingSegs[ax], dirs = gizmoRingSegDirs[ax];
-      for (let i = 0; i < segs.length; i++) {
-        if (!segs[i].visible) continue;
-        const d = dirs[i].clone().applyQuaternion(rotQ); // 本地 -> 世界
-        const p = projectToScreen(c[0] + d.x * 0.5 * scale, c[1] + d.y * 0.5 * scale, c[2] + d.z * 0.5 * scale);
-        const dist = Math.hypot(px - p.x, py - p.y);
-        if (dist < bestDist) { bestDist = dist; bestAxis = ax; }
-      }
+    const segs = gizmoRingSegs[ax], dirs = gizmoRingSegDirs[ax];
+    for (let i = 0; i < segs.length; i++) {
+      if (!segs[i].visible) continue;
+      const d = dirs[i].clone().applyQuaternion(rotQ); // 本地 -> 世界
+      const p = projectToScreen(c[0] + d.x * 0.5 * scale, c[1] + d.y * 0.5 * scale, c[2] + d.z * 0.5 * scale);
+      const dist = Math.hypot(px - p.x, py - p.y);
+      if (dist < bestDist) { bestDist = dist; bestAxis = ax; }
     }
   }
   return bestAxis ? { axis: bestAxis, dist: bestDist } : null;

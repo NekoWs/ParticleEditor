@@ -712,7 +712,7 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .ptree-head.func-child .pid { color: var(--muted); }
 .fx-panel { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
 .fx-panel .row { display: flex; align-items: center; gap: 4px; margin: 2px 0; }
-.fx-panel .row input[type="number"] { width: 58px; }
+.fx-panel .row input[type="number"] { width: 58px; background: var(--bg); }
 .fx-panel .row input[type="text"] { flex: 1; min-width: 0; }
 .fx-panel .row select { flex: 1; }
 /* 预设下拉框美化（函数面板 + 侧栏新建） */
@@ -778,7 +778,7 @@ body.ctrl-held .kf-t { cursor: pointer; }
 }
 .vec3-seg {
   display: inline-flex; align-items: center; gap: 2px; height: 100%;
-  padding: 0 4px;
+  padding: 0 4px; background: var(--panel-3);
 }
 .vec3-seg + .vec3-seg { border-left: 1px solid var(--border); }
 .vec3-seg span {

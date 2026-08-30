@@ -345,7 +345,7 @@ export const gizmoRingSegDirs = {};                     // 各段中点方向（
     const segs = [], dirs = [];
     for (let i = 0; i < RING_SEGMENTS; i++) {
       // 圆环管（有粗细，管径 0.014）
-      const geo = new THREE.TorusGeometry(0.5, 0.014, 6, 6, RING_SEG_ARC);
+      const geo = new THREE.TorusGeometry(0.5, 0.006, 6, 6, RING_SEG_ARC);
       geo.rotateZ(i * RING_SEG_ARC);            // 段起点角度
       geo.applyQuaternion(align);               // 环面法线 Z -> 轴方向
       const mat = new THREE.MeshBasicMaterial({ color: AXIS_RING_COLORS[axis], depthWrite: false, depthTest: false, transparent: true });
@@ -363,31 +363,9 @@ export const gizmoRingSegDirs = {};                     // 各段中点方向（
     gizmoRingSegDirs[axis] = dirs;
   }
 })();
-// 公转模式细线环：与 gizmoRingSegs 同半径/朝向，但用 LineLoop 保持 1px 屏幕线宽，
-// 避免 orbit 半径很大时 Torus 管径随整体缩放变粗。
-export const gizmoOrbitLines = {};
-(function buildOrbitLines() {
-  const zAxis = new THREE.Vector3(0, 0, 1);
-  const pts = [];
-  for (let i = 0; i <= 128; i++) {
-    const a = (i / 128) * Math.PI * 2;
-    pts.push(new THREE.Vector3(Math.cos(a) * 0.5, Math.sin(a) * 0.5, 0));
-  }
-  for (const axis of ['X', 'Y', 'Z']) {
-    const geo = new THREE.BufferGeometry().setFromPoints(pts);
-    const mat = new THREE.LineBasicMaterial({ color: AXIS_RING_COLORS[axis], depthWrite: false, depthTest: false, transparent: true, opacity: 0.95 });
-    const line = new THREE.LineLoop(geo, mat);
-    line.quaternion.setFromUnitVectors(zAxis, new THREE.Vector3(...RING_NORMALS[axis]));
-    line.renderOrder = GIZMO_RING_RENDER_ORDER;
-    line.visible = false;
-    gizmoOrbitLines[axis] = line;
-    gizmoRotateGroup.add(line);
-  }
-})();
-
 // 外部白色视图环（绕视线方向旋转）
 export const gizmoViewRing = new THREE.Mesh(
-  new THREE.TorusGeometry(0.62, 0.016, 10, 96),
+  new THREE.TorusGeometry(0.62, 0.008, 10, 96),
   new THREE.MeshBasicMaterial({ color: 0xe4e8f2, depthWrite: false, depthTest: false, transparent: true, side: THREE.DoubleSide })
 );
 gizmoViewRing.renderOrder = GIZMO_RING_RENDER_ORDER - 1;
