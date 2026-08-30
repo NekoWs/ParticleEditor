@@ -93,6 +93,21 @@ export function freshTempName() {
   while (names.has('v' + k)) k++;
   return 'v' + k;
 }
+export function freshFuncName() {
+  const used = new Set((bctx && bctx.funcs ? bctx.funcs : []).map(f => f.stmt && f.stmt.name).filter(Boolean));
+  let n = 1;
+  while (used.has('fun' + n)) n++;
+  return 'fun' + n;
+}
+export function customFuncStmt(name) {
+  if (!bctx || !Array.isArray(bctx.funcs)) return null;
+  for (const f of bctx.funcs) if (f.stmt && f.stmt.name === name) return f.stmt;
+  return null;
+}
+export function customFuncParams(name) {
+  const stmt = customFuncStmt(name);
+  return stmt && Array.isArray(stmt.params) ? stmt.params : [];
+}
 export function findAllStmts() {
   const out = [];
   if (bctx) walkStatements([...bctx.chain, ...bctx.setupChain, ...bctx.frags.flatMap(f => f.stmts), ...bctx.funcs.map(f => f.stmt)], s => out.push(s));
@@ -218,7 +233,7 @@ export function newStmtNode(kind) {
     case 'repeat': return { kind: 'repeat', body: [] };
     case 'repeat_n': return { kind: 'repeat_n', count: null, body: [] };
     case 'repeat_until': return { kind: 'repeat_until', cond: null, body: [] };
-    case 'func': return { kind: 'func', name: '', params: [], body: [] };
+    case 'func': return { kind: 'func', name: freshFuncName(), params: [], body: [] };
     case 'global': case 'static': return { kind, name: '', expr: null };
     case 'comment': return { kind: 'comment', text: '' };
     case 'break': return { kind: 'break' };
@@ -232,7 +247,8 @@ export function newExprNodeFromTemplate(template) {
   if (template.kind === 'var') return { kind: 'var', name: template.name };
   if (template.kind === 'comp') return { kind: 'comp', axis: 'x', target: null };
   if (template.kind === 'func') {
-    const n = FUNC_BLOCKS[template.name].args.length;
+    const spec = FUNC_BLOCKS[template.name];
+    const n = spec ? spec.args.length : customFuncParams(template.name).length;
     return { kind: 'func', name: template.name, args: Array.from({ length: n }, () => null) };
   }
   if (template.kind === 'op') return { kind: 'op', op: template.op, a: null, b: null };
@@ -256,6 +272,10 @@ export function defaultExprFor(type) {
 
 export function funcInfo(name) {
   const f = FUNC_BLOCKS[name];
+  if (!f) {
+    const params = customFuncParams(name);
+    return t('blk.customFunc') + ' ' + name + (params.length ? '(' + params.join(', ') + ')' : '()');
+  }
   const args = (f.args || []).map(a => t(a[0])).join(', ');
   return t(f.desc) + (args ? '（' + args + '）' : '');
 }
@@ -279,6 +299,13 @@ export function buildPaletteGroup(g) {
     items.push({ key: 'hat:setup', type: 'hat', kind: 'setup', label: t('blk.setup'), info: t('blk.stmt.setup.desc') });
     items.push({ key: 'hat:process', type: 'hat', kind: 'process', label: t('blk.start'), info: t('blk.stmt.process.desc') });
     items.push({ key: 'hat:func', type: 'hat', kind: 'func', label: t('blk.stmt.func'), info: t('blk.stmt.func.desc') });
+  } else if (g.id === 'funcs') {
+    for (const f of (bctx && bctx.funcs ? bctx.funcs : [])) {
+      const name = f.stmt && f.stmt.name;
+      if (!name) continue;
+      const params = (f.stmt.params || []).join(', ');
+      items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name + (params ? '(' + params + ')' : '()'), info: t('blk.customFunc') + ' ' + name });
+    }
   } else if (g.id === 'pos') {
     ['pos', 'pos_vec', 'vel', 'vel_vec'].forEach(k => items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: t(STMT_BLOCKS[k].label), info: t(STMT_BLOCKS[k].desc) }));
     items.push({ key: 'stmt:attr', type: 'stmt', kind: 'attr', label: t(STMT_BLOCKS.attr.label), info: t(STMT_BLOCKS.attr.desc) });
@@ -482,6 +509,7 @@ function makePuzzleHost() {
     funcInfo: (name) => funcInfo(name),
     nodeInfo: (n) => nodeInfo(n),
     blockVarTypeOf: (name) => blockVarTypeOf(name),
+    customFuncParams: (name) => customFuncParams(name),
     findExprDetach: (node) => findExprDetach(node),
     removeChainOp: (chain, index) => removeChainOp(chain, index),
     stmtGroupLocation: (s) => stmtGroupLocation(s),
