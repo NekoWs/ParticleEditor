@@ -10,7 +10,7 @@
 import { t, tf, LANG } from '../core/i18n.js';
 import {
   state, TRACK_COMPS, propComps, COMP_LABELS, GROUP_PROP_DEFS, PARTICLE_TRACK_DEFS, FUNCTION_PROP_DEFS,
-  getParticle, getFunction, isDerivedParticle,
+  getParticle, getFunction, isDerivedParticle, plainParticleCache,
 } from '../core/constants.js';
 import { editComponentValue } from '../core/edit.js';
 import { targetComponentValue, startRename } from './tree.js';
@@ -104,7 +104,7 @@ function structureSignature() {
   parts.push('L:' + LANG);
   const groupedIds = new Set();
   for (const members of Object.values(state.groups)) for (const id of members) groupedIds.add(id);
-  const loose = state.particles.filter(p => !p.fx && !groupedIds.has(p.id));
+  const loose = plainParticleCache.filter(p => !groupedIds.has(p.id));
   let looseH = loose.length;
   for (const p of loose) looseH = hashStr(p.id, looseH);
   parts.push('P:' + looseH);
@@ -148,8 +148,8 @@ export function tlTreeFlatRows() {
   // 未成组、非派生的独立粒子（左侧列表已移除，这里是它们唯一入口）
   const groupedIds = new Set();
   for (const members of Object.values(state.groups)) for (const id of members) groupedIds.add(id);
-  for (const p of state.particles) {
-    if (p.fx || groupedIds.has(p.id)) continue;
+  for (const p of plainParticleCache) {
+    if (groupedIds.has(p.id)) continue;
     const pkey = 'p:' + p.id;
     const pexpanded = tlTreeState.expanded.has(pkey);
     rows.push({ key: pkey, kind: 'particle', p, expanded: pexpanded, depth: 0 });

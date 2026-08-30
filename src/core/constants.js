@@ -219,9 +219,11 @@ export function isDerivedParticle(p) { return p != null && !!p.fx; }
 // 粒子索引（animation.js 的 buildParticleIndex 在 rebuildPoints 时重建，供 getParticle O(1) 查找）
 export let particleIndexCache = null;
 export let functionIndexCache = null; // 函数对象索引（buildParticleIndex 时重建，供 getFunction O(1) 查找）
+export let plainParticleCache = [];   // 非派生粒子数组（时间轴树/签名用，避免每帧扫描 20w 派生粒子）
 // 索引缓存由 animation.js 的 buildParticleIndex 重建；这里提供 setter 供其写入（ESM 导入绑定不可重新赋值）。
 export function setParticleIndex(map) { particleIndexCache = map; }
 export function setFunctionIndex(map) { functionIndexCache = map; }
+export function setPlainParticles(arr) { plainParticleCache = arr; }
 // 供 nextId / addParticle 在批量添加期间维护索引，避免 nextId 退化为 O(N²)。
 function ensureParticleIndex() {
   if (!particleIndexCache) {

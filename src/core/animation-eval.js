@@ -4,7 +4,7 @@
  * 本模块只做求值与索引缓存，不接触 DOM / THREE 渲染对象；渲染缓冲见 render.js。
  * ======================================================================= */
 
-import { COMP_INDEX, compPr, DEG2RAD, RAD2DEG, state, getParticle, getFunction, particleIndexCache, setParticleIndex, setFunctionIndex } from './constants.js';
+import { COMP_INDEX, compPr, DEG2RAD, RAD2DEG, state, getParticle, getFunction, particleIndexCache, setParticleIndex, setFunctionIndex, setPlainParticles } from './constants.js';
 import { easeVal, FUNC_IMPL, matMat, vec3 } from './easing.js';
 import { evaluateParticleAt } from './generators.js';
 export { getFxFrameAuto, evalFxParticleInto } from './generators.js';
@@ -95,8 +95,13 @@ export const PR_TO_IDX = {
 export let trVersion = 0; // 每次 buildParticleIndex 递增，配合 p._trVersion 惰性失效 p._tr
 export function buildParticleIndex() {
   const map = new Map();
-  for (const p of state.particles) map.set(p.id, p);
+  const plain = [];
+  for (const p of state.particles) {
+    map.set(p.id, p);
+    if (!p.fx) plain.push(p);
+  }
   setParticleIndex(map);
+  setPlainParticles(plain);
   const fm = new Map();
   for (const f of state.functions) fm.set(f.id, f);
   setFunctionIndex(fm);

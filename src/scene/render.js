@@ -39,6 +39,30 @@ export function setPointsGeometry(pts, positions, colors, sizes) {
   geo.setDrawRange(0, positions.length / 3);
 }
 
+// 主粒子缓冲的直写路径：返回几何体 attribute 的底层 Float32Array，调用方直接写入，
+// 避免「先写中间数组再 array.set 复制一遍」的双份拷贝（20w 粒子每帧省约 1.8M 次 float 写）。
+export function ensurePointsGeometry(pts, n) {
+  let geo = pts.geometry;
+  const posAttr = geo && geo.getAttribute('position');
+  if (!geo || !posAttr || posAttr.array.length !== n * 3) {
+    geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+    geo.setAttribute('aColor', new THREE.BufferAttribute(new Float32Array(n * 4), 4));
+    geo.setAttribute('aSize', new THREE.BufferAttribute(new Float32Array(n * 2), 2));
+    const old = pts.geometry;
+    pts.geometry = geo;
+    if (old) old.dispose();
+  }
+  geo.setDrawRange(0, n);
+  const pos = geo.getAttribute('position');
+  const col = geo.getAttribute('aColor');
+  const size = geo.getAttribute('aSize');
+  pos.needsUpdate = true;
+  col.needsUpdate = true;
+  size.needsUpdate = true;
+  return { positions: pos.array, colors: col.array, sizes: size.array };
+}
+
 export let rpPos = null, rpCol = null, rpSize = null, rpSelPos = null, rpSelCol = null, rpSelSize = null;
 export let rpUV = null, rpUVScale = null, rpUVAnim = null, rpUVTex = null, rpUVMode = null;
 // 粒子 UV 求值的复用输出（fill 模式下强制全图采样）
@@ -163,19 +187,26 @@ function readVisualFallback(p, T) {
           v.scale[0], v.scale[1]];
 }
 
+// 确定性的「无 random/rand 且不依赖 t/dt/life」函数对象：rebuildFunctionObject 已按 t=0
+// 求出并写入 p.pos/p.color/p.scale，播放期间无需每帧重跑脚本，直接复用基础值即可。
+function isFxStaticScript(fx) {
+  const src = (fx.process || '') + '\n' + (fx.funcs || '');
+  if (/\b(random|rand)\s*\(/.test(src)) return false;
+  return !/(\bt\b|\bdt\b|\blife\b)/.test(src);
+}
+
 function writePointBuffers(full) {
   buildOpDeltaCache(state.time);
   buildGroupXforms(state.time);
   const n = state.particles.length;
-  if (!rpPos || rpPos.length !== n * 3) rpPos = new Float32Array(n * 3);
-  if (!rpCol || rpCol.length !== n * 4) rpCol = new Float32Array(n * 4);
-  if (!rpSize || rpSize.length !== n * 2) rpSize = new Float32Array(n * 2);
   if (!rpUV || rpUV.length !== n * 4) rpUV = new Float32Array(n * 4);
   if (!rpUVScale || rpUVScale.length !== n * 4) rpUVScale = new Float32Array(n * 4);
   if (!rpUVAnim || rpUVAnim.length !== n * 4) rpUVAnim = new Float32Array(n * 4);
   if (!rpUVTex || rpUVTex.length !== n * 2) rpUVTex = new Float32Array(n * 2);
   if (!rpUVMode || rpUVMode.length !== n) rpUVMode = new Float32Array(n);
-  const positions = rpPos, colors = rpCol, sizes = rpSize;
+  const mainGeo = ensurePointsGeometry(points, n);
+  const positions = mainGeo.positions, colors = mainGeo.colors, sizes = mainGeo.sizes;
+  rpPos = positions; rpCol = colors; rpSize = sizes;
   const T = state.time;
   const hasAnyTexture = Object.keys(texAtlasMap).length > 0;
   const memberIdx = groupMemberIndexCache;
@@ -185,27 +216,40 @@ function writePointBuffers(full) {
   hasAnimatedTex = false; // 主循环顺带统计动画贴图粒子，避免额外整表扫描
   // 派生粒子活源求值帧：每个函数对象每帧只建一次（编译/变量/缓存/执行器复用），逐粒子只跑脚本。
   const fxFrames = new Map();
-  const fxFast = new Map();
   for (const fx of state.functions) {
     const frame = getFxFrameAuto(fx, T, 0);
-    fxFrames.set(fx.id, frame);
     const hasOp = fxOpDeltaCache && fxOpDeltaCache.has(fx.id);
     const hasSpin = spinVectorAt('f:' + fx.id, T).some(v => v !== 0);
     const hasRot = rotVectorAt('f:' + fx.id, T).some(v => v !== 0);
-    fxFast.set(fx.id, !hasOp && !hasSpin && !hasRot);
+    fxFrames.set(fx.id, {
+      frame,
+      fast: !hasOp && !hasSpin && !hasRot,
+      staticScript: isFxStaticScript(fx),
+      gate: (functionIndexCache.get(fx.id) || fx),
+      sclTrs: (fxSclTrackCache && fxSclTrackCache.get(fx.id)) || null,
+    });
   }
   const derivedOut = { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0 };
   for (let i = 0; i < n; i++) {
     const p = state.particles[i];
     let px, py, pz, cr, cg, cb, ca, ssx, ssy;
+    let gate = p;
     if (p.fx) {
-      const frame = fxFrames.get(p.fx);
-      const fast = frame && fxFast.get(p.fx) && !(hasGroups && memberIdx.has(p.id));
-      if (fast) {
-        const out = evalFxParticleInto(frame, p._statics || (p._statics = new Map()), p._fxIdx, derivedOut);
+      const fr = fxFrames.get(p.fx);
+      if (fr) gate = fr.gate;
+      if (fr && fr.fast && !(hasGroups && memberIdx.has(p.id)) && fr.staticScript) {
+        // 确定性静态脚本：直接使用 rebuild 阶段写好的基础值，跳过每帧脚本求值。
+        px = p.pos[0]; py = p.pos[1]; pz = p.pos[2];
+        cr = p.color[0]; cg = p.color[1]; cb = p.color[2]; ca = p.color[3];
+        const sclTrs = fr.sclTrs;
+        const baseScale = p.scale[0];
+        ssx = sclTrs && sclTrs[0] ? trackValueAt(sclTrs[0], T, baseScale) : baseScale;
+        ssy = sclTrs && sclTrs[1] ? trackValueAt(sclTrs[1], T, baseScale) : baseScale;
+      } else if (fr && fr.fast && !(hasGroups && memberIdx.has(p.id))) {
+        const out = evalFxParticleInto(fr.frame, p._statics || (p._statics = new Map()), p._fxIdx, derivedOut);
         px = out.pos[0]; py = out.pos[1]; pz = out.pos[2];
         cr = out.color[0]; cg = out.color[1]; cb = out.color[2]; ca = out.color[3];
-        const sclTrs = (fxSclTrackCache && fxSclTrackCache.get(p.fx)) || null;
+        const sclTrs = fr.sclTrs;
         const baseScale = out.scale;
         ssx = sclTrs && sclTrs[0] ? trackValueAt(sclTrs[0], T, baseScale) : baseScale;
         ssy = sclTrs && sclTrs[1] ? trackValueAt(sclTrs[1], T, baseScale) : baseScale;
@@ -298,7 +342,6 @@ function writePointBuffers(full) {
       }
     }
     // 入场/寿命门控：t < st 隐藏；有限 life 到期后隐藏。fade 预设在出场窗口内做 alpha 渐显
-    const gate = p.fx ? (functionIndexCache.get(p.fx) || {}) : p;
     const gst = gate.st || 0;
     let vis = T >= gst ? 1 : 0;
     const glife = typeof gate.life === 'number' ? gate.life : -1;
@@ -334,7 +377,6 @@ function writePointBuffers(full) {
       sizes[i * 2 + 1] = sy > 0.02 ? sy : 0.02;
     }
   }
-  setPointsGeometry(points, positions, colors, sizes);
   const uvAttr = points.geometry.getAttribute('aUV');
   if (hasAnyTexture || !uvAttr || uvAttr.array.length !== n * 4) {
     setPointUVAttributes(points.geometry, { uv: rpUV, uvScale: rpUVScale, uvAnim: rpUVAnim, uvTex: rpUVTex, uvMode: rpUVMode });
