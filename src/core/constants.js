@@ -277,8 +277,7 @@ for (_k = 0; _k < n; _k = _k + 1) {
   _th.push(acos(1 - 2 * (_k + 0.5) / n));
   _ph.push(_k * pi * (3 - sqrt(5)));
 }`,
-      process: `[x,y,z] = [rad * sin(_th[i]) * cos(_ph[i]), rad * cos(_th[i]), rad * sin(_th[i]) * sin(_ph[i])];
-[r,g,b,a] = [1,1,1,1];`,
+      process: `[x,y,z] = [rad * sin(_th[i]) * cos(_ph[i]), rad * cos(_th[i]), rad * sin(_th[i]) * sin(_ph[i])];`,
     }),
   },
   cube: {
@@ -298,8 +297,7 @@ for (_k = 0; _k < n; _k = _k + 1) {
   _cy.push(floor((_k % (sy * sz)) / sz) / (sy - 1) - 0.5);
   _cz.push((_k % sz) / (sz - 1) - 0.5);
 }`,
-      process: `[x,y,z] = [_cx[i] * edge, _cy[i] * edge, _cz[i] * edge];
-[r,g,b,a] = [1,1,1,1];`,
+      process: `[x,y,z] = [_cx[i] * edge, _cy[i] * edge, _cz[i] * edge];`,
     }),
   },
   torus: {
@@ -367,10 +365,7 @@ for (_k = 0; _k < n; _k = _k + 1) {
   _aa.push((_k % m) / m * 2 * pi);
   _yy.push(floor(_k / m) / (k - 1));
 }`,
-      process: `[x,y,z] = [rad * (1 - _yy[i]) * cos(_aa[i]), (_yy[i] - 0.5) * h, rad * (1 - _yy[i]) * sin(_aa[i])];
-[r,g,b,a] = [1,1,1,1];
-glow = 0;
-light = 0;`,
+      process: `[x,y,z] = [rad * (1 - _yy[i]) * cos(_aa[i]), (_yy[i] - 0.5) * h, rad * (1 - _yy[i]) * sin(_aa[i])];`,
     }),
   },
   helix: {
@@ -389,10 +384,7 @@ for (_k = 0; _k < n; _k = _k + 1) {
   _aa.push(_k / ppr * 2 * pi);
   _yf.push(_k / n - 0.5);
 }`,
-      process: `[x,y,z] = [rad * cos(_aa[i]), _yf[i] * h, rad * sin(_aa[i])];
-[r,g,b,a] = [1,1,1,1];
-glow = 1;
-light = 8;`,
+      process: `[x,y,z] = [rad * cos(_aa[i]), _yf[i] * h, rad * sin(_aa[i])];`,
     }),
   },
   plane: {
@@ -411,10 +403,7 @@ for (_k = 0; _k < n; _k = _k + 1) {
   _xf.push((_k % cols) / (cols - 1) - 0.5);
   _zf.push(floor(_k / cols) / (rows - 1) - 0.5);
 }`,
-      process: `[x,y,z] = [_xf[i] * w, 0, _zf[i] * d];
-[r,g,b,a] = [1,1,1,1];
-glow = 0;
-light = 0;`,
+      process: `[x,y,z] = [_xf[i] * w, 0, _zf[i] * d];`,
     }),
   },
   circle: {
