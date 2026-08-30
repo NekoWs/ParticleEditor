@@ -16,7 +16,7 @@ import {
   FUNC_BLOCKS, STMT_BLOCKS, PALETTE_GROUPS,
   fmtNum, statementsToCode,
   STMT_SLOTS, BIG_BLOCKS, BUILTIN_VAR_NAMES, GROUP_COLOR,
-  isBoolOp, opSlotType, slotRef, N0,
+  isBoolOp, opSlotType, slotRef, N0, OP_LABELS,
 } from '../core/blocks.js';
 
 /* ============================ host 注入 ============================ */
@@ -355,11 +355,12 @@ function exprParts(node) {
     case 'var': P.push({ text: node.name }); break;
     case 'func': {
       const spec = FUNC_BLOCKS[node.name];
+      const customParams = spec ? null : (H && H.customFuncParams ? H.customFuncParams(node.name) : []);
       P.push({ text: node.name + '(' });
       (spec ? spec.args : node.args).forEach((arg, i) => {
         if (i > 0) P.push({ text: ', ' });
         const argType = spec ? spec.args[i][1] : T_ANY;
-        const argLabel = spec ? t(spec.args[i][0]) : '';
+        const argLabel = spec ? t(spec.args[i][0]) : (customParams && customParams[i] ? customParams[i] : '');
         P.push({ slot: { ref: slotRef(() => node.args[i], v => { node.args[i] = v; }, argType), type: argType, label: argLabel } });
       });
       P.push({ text: ')' });
@@ -367,7 +368,7 @@ function exprParts(node) {
     }
     case 'op':
       P.push({ slot: { ref: slotRef(() => node.a, v => { node.a = v; }, opSlotType(node.op, 'l')), type: opSlotType(node.op, 'l'), label: '' } });
-      P.push({ text: node.op });
+      P.push({ text: ' ' + (isBoolOp(node.op) ? t(OP_LABELS[node.op]) : node.op) + ' ' });
       P.push({ slot: { ref: slotRef(() => node.b, v => { node.b = v; }, opSlotType(node.op, 'r')), type: opSlotType(node.op, 'r'), label: '' } });
       break;
     case 'chain': {
@@ -513,7 +514,9 @@ function layoutSimpleStmt(s, x, y, out, ctx, opts) {
   const flow = inlineFlow(stmtParts(s), x + STMT_PAD_X, y + STMT_PAD_Y, children, seg, ctx, s);
   const w = flow.w + STMT_PAD_X * 2;
   const h = Math.max(EXPR_H, flow.h + STMT_PAD_Y * 2);
-  out.push({ kind: 'stmt', shape: 'stmt', cls: stmtCls(s), stmt: s, x, y, w, h, segments: seg, noBump: !!(opts && opts.noBump) });
+  // 整行表达式语句（如 arr.push(...)）使用表达式自身配色，避免出现一层橙色包装块。
+  const cls = (s.kind === 'expr' && s.expr) ? exprCls(s.expr) : stmtCls(s);
+  out.push({ kind: 'stmt', shape: 'stmt', cls, stmt: s, x, y, w, h, segments: seg, noBump: !!(opts && opts.noBump) });
   for (const c of children) { c.stmt = s; out.push(c); }
   return { w, h };
 }
@@ -707,21 +710,22 @@ function layoutSimpleCtl(s, x, y, out, ctx, opts) {
 
 function layoutCtlStmt(s, x, y, out, ctx, opts) {
   const seg = [];
-  const children = [];
+  const headerChildren = [];
+  const bodyRegions = [];
   const hx = x + CTL_MOUTH + CTL_PAD;
   const hy = y + CTL_PAD;
-  const flow = inlineFlow(ctlHeaderParts(s), hx, hy, children, seg, ctx, s);
+  const flow = inlineFlow(ctlHeaderParts(s), hx, hy, headerChildren, seg, ctx, s);
   let contentW = flow.w;
   let bodyY = hy + Math.max(EXPR_H, flow.h) + 8;
   let bodyH = 0, bodyW = 0;
   let tailY = bodyY;
 
   if (s.kind === 'if') {
-    const res = layoutIfElse(s, hx, bodyY, children, ctx);
+    const res = layoutIfElse(s, hx, bodyY, bodyRegions, ctx);
     bodyW = res.bodyW; bodyH = res.bodyH;
     tailY = bodyY + bodyH;
   } else if (s.kind === 'do') {
-    const b = layoutBody(s.body || [], hx + BODY_INDENT, bodyY, children, ctx, { chain: s.body });
+    const b = layoutBody(s.body || [], hx + BODY_INDENT, bodyY, bodyRegions, ctx, { chain: s.body });
     bodyW = b.w; bodyH = b.h;
     tailY = bodyY + bodyH;
     // do-while 尾部条件
@@ -729,13 +733,13 @@ function layoutCtlStmt(s, x, y, out, ctx, opts) {
     const tailFlow = inlineFlow([
       { text: ' ' + t('blk.stmt.while') + ' ' },
       { slot: { ref: slotRef(() => s.cond, v => { s.cond = v; }, T_ANY), type: T_ANY, label: '' } },
-    ], hx, tailY + 2, children, tailSeg, ctx);
+    ], hx, tailY + 2, headerChildren, tailSeg, ctx);
     seg.push(...tailSeg);
     contentW = Math.max(contentW, tailFlow.w);
     bodyH += tailFlow.h + 4;
     tailY += tailFlow.h + 4;
   } else {
-    const b = layoutBody(s.body || [], hx + BODY_INDENT, bodyY, children, ctx, { chain: s.body });
+    const b = layoutBody(s.body || [], hx + BODY_INDENT, bodyY, bodyRegions, ctx, { chain: s.body });
     bodyW = b.w; bodyH = b.h;
     tailY = bodyY + bodyH;
   }
@@ -744,7 +748,8 @@ function layoutCtlStmt(s, x, y, out, ctx, opts) {
   const w = contentW + CTL_PAD * 2 + CTL_MOUTH;
   const h = (tailY - y) + CTL_PAD;
   out.push({ kind: 'stmt', shape: 'stmt', cls: 'blk-ctl', stmt: s, x, y, w, h, segments: seg, noBump: !!(opts && opts.noBump) });
-  for (const c of children) { c.stmt = s; out.push(c); }
+  for (const c of headerChildren) { c.stmt = s; out.push(c); }
+  for (const r of bodyRegions) out.push(r);
   return { w, h };
 }
 
@@ -763,7 +768,7 @@ function layoutFuncHat(entry, x, y, out, ctx) {
   const bodyPh = placeholderFor(s.body);
   let cy = bodyY;
   let bodyW = 0;
-  const bx = hx + BODY_INDENT;
+  const bx = x;
   const placePh = () => {
     if (!bodyPh) return;
     const pw = Math.max(120, bodyPh.w || 0);
@@ -789,7 +794,7 @@ function layoutFuncHat(entry, x, y, out, ctx) {
     if (bodyPh && bodyPh.index === bodyArr.length) placePh();
   }
 
-  const w = Math.max(headerW, bodyW + BODY_INDENT + STMT_PAD_X);
+  const w = Math.max(headerW, bodyW);
   const h = bodyY - y;
   out.push({ kind: 'stmt', shape: 'hat', cls: 'blk-start', stmt: s, hatEntry: entry, x, y, w, h, segments: seg, noBump: false });
   for (const c of children) { c.stmt = s; out.push(c); }
@@ -1048,9 +1053,10 @@ function layoutPalette(contentW) {
   let cy = PAL_TOP;
   const innerW = contentW - PAL_LEFT * 2;
   for (const g of PALETTE_GROUPS) {
+    const items = H.buildPaletteGroup(g);
+    if (!items.length) continue;
     out.push({ kind: 'pal-title', shape: 'title', x: PAL_LEFT, y: cy, w: 0, h: 20, segments: [{ text: t(g.label), x: PAL_LEFT, y: cy + 10, font: FONT }] });
     cy += 24;
-    const items = H.buildPaletteGroup(g);
     let rx = PAL_LEFT, rowH = 0;
     for (const item of items) {
       const d = paletteItemSize(item, ctx);
@@ -1235,18 +1241,6 @@ function drawOpRegion(ctx, r) {
 
 function drawAppendRegion(ctx, r) {
   ctx.save();
-  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-  ctx.setLineDash([3, 3]);
-  ctx.lineWidth = 1;
-  rrPath(ctx, r.x, r.y, r.w, r.h, 5);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  drawSegments(ctx, r.segments, 'rgba(255,255,255,0.6)');
-  ctx.restore();
-}
-
-function drawArrayAppendRegion(ctx, r) {
-  ctx.save();
   ctx.fillStyle = 'rgba(255,255,255,0.12)';
   rrPath(ctx, r.x, r.y, r.w, r.h, 5);
   ctx.fill();
@@ -1255,6 +1249,10 @@ function drawArrayAppendRegion(ctx, r) {
   ctx.stroke();
   drawSegments(ctx, r.segments, '#fff');
   ctx.restore();
+}
+
+function drawArrayAppendRegion(ctx, r) {
+  drawAppendRegion(ctx, r);
 }
 
 function drawInlineEditContent(ctx, r, text, prefix) {
@@ -2323,7 +2321,7 @@ function startStmtGroupPending(r, e) {
   if (!loc) return;
   S.drag = {
     mode: 'stmt-group-pending',
-    source: { type: 'stmt-group-pending', stmt: r.stmt, loc },
+    source: { type: 'stmt-group-pending', stmt: r.stmt, loc, region: r },
     startX: e.clientX, startY: e.clientY, curX: e.clientX, curY: e.clientY,
     grabDx: e.clientX - rect.left, grabDy: e.clientY - rect.top,
     ghostScale: H.getBctx().layout.view.scale,
@@ -2527,7 +2525,15 @@ function endDrag(e) {
   renderGhost();
 
   if (d.mode === 'pan' || d.mode === 'chain-move' || d.mode === 'func-move' || d.mode === 'frag-move') { puzzleCanvasRender(); return; }
-  if (d.mode === 'stmt-group-pending') { puzzleCanvasRender(); return; }
+  if (d.mode === 'stmt-group-pending') {
+    // 注释块：未拖动松开视为单击，进入编辑。
+    if (d.source && d.source.region && d.source.stmt && d.source.stmt.kind === 'comment' &&
+        Math.hypot(e.clientX - d.startX, e.clientY - d.startY) <= DRAG_THRESHOLD) {
+      beginInlineEdit(d.source.region);
+    }
+    puzzleCanvasRender();
+    return;
+  }
   if (d.mode === 'edit-pending') {
     if (d.region && Math.hypot(e.clientX - d.startX, e.clientY - d.startY) <= DRAG_THRESHOLD) {
       beginInlineEdit(d.region);
@@ -2833,7 +2839,7 @@ function onWorkDown(e) {
       return;
     }
     if (hit.stmt && hit.stmt.kind === 'comment') {
-      startEditPending(hit, e);
+      startStmtGroupPending(hit, e);
       return;
     }
     if (hit.stmt && hit.stmt.kind === 'raw' && e.detail >= 2) {
