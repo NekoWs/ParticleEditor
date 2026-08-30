@@ -170,6 +170,7 @@ export function serializeFunction(fx) {
   if (fx.uv && fx.uv.texture) o.uv = serializeUV(fx.uv);
   if (fx.fastMath) o.fm = 1;
   if (fx.spinSpace === 'local') o.ss = 1;
+  if (fx.rotSpace === 'local') o.rs = 1;
   return o;
 }
 export function parseFunction(o) {
@@ -188,6 +189,7 @@ export function parseFunction(o) {
     uv: parseUV(o.uv),
     fastMath: !!o.fm,
     spinSpace: o.ss === 1 ? 'local' : 'world',
+    rotSpace: o.rs === 1 ? 'local' : 'world',
   };
 }
 
@@ -218,8 +220,11 @@ export function exportProject() {
   for (const [name, uv] of Object.entries(state.groupUV || {})) if (uv && uv.texture) guv[name] = serializeUV(uv);
   const gss = {};
   for (const [name, space] of Object.entries(state.groupSpinSpace || {})) if (space === 'local') gss[name] = 1;
+  const grs = {};
+  for (const [name, space] of Object.entries(state.groupRotSpace || {})) if (space === 'local') grs[name] = 1;
   const result = { v: 7, loop: state.loop, g, p, t, f, tex, guv };
   if (Object.keys(gss).length > 0) result.gss = gss;
+  if (Object.keys(grs).length > 0) result.grs = grs;
   if (state.key) result.key = { alg: KEY_ALG, private: state.key.private, public: state.key.public };
   if (Object.keys(texData).length > 0) result.texData = texData;
   return result;
@@ -247,6 +252,8 @@ export function parseParticlesTracks(obj) {
   for (const [name, uv] of Object.entries(obj.guv || {})) state.groupUV[name] = parseUV(uv);
   state.groupSpinSpace = {};
   for (const [name, v] of Object.entries(obj.gss || {})) state.groupSpinSpace[name] = v === 1 ? 'local' : 'world';
+  state.groupRotSpace = {};
+  for (const [name, v] of Object.entries(obj.grs || {})) state.groupRotSpace[name] = v === 1 ? 'local' : 'world';
   state.tracks = (obj.t || []).map(tr => {
     const [prop] = splitCompPr(tr.pr);
     return {
@@ -427,7 +434,7 @@ export async function newFile() {
   if (!name || !name.trim()) return;
   pushUndo();
   state.particles = []; state.tracks = []; state.groups = {}; state.functions = [];
-  state.textures = {}; state.currentTexture = null; state.groupUV = {}; state.groupSpinSpace = {};
+  state.textures = {}; state.currentTexture = null; state.groupUV = {}; state.groupSpinSpace = {}; state.groupRotSpace = {};
   state.selected.clear(); state.selectedGroup = null; state.selectedFunction = null;
   state.expandedParticles.clear(); state.expandedProps.clear();
   state.time = 0;

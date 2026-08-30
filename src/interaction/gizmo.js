@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { state, PLANES, SNAP_STEP, getFunction } from '../core/constants.js';
 import { shiftHeld } from './input-state.js';
 import { camera, renderer, raycaster, pointer, points, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, gizmoAxisHint, AXIS_RING_COLORS, RING_NORMALS, GIZMO_FACE_DEFS, setWorldAxisVisible, setWorldAxisGlow, resetWorldAxisState } from '../scene/scene.js';
-import { AXIS_COLORS, AXIS_VECTORS, modal, setGizmoHover, selectedGroupName, selectionHasDerived, derivedFxIdFromSelection, fxCurrentPos, hoverColor, currentSpinTarget, spinQuaternion } from './interaction.js';
+import { AXIS_COLORS, AXIS_VECTORS, modal, setGizmoHover, selectedGroupName, selectionHasDerived, derivedFxIdFromSelection, fxCurrentPos, hoverColor, currentSpinTarget, currentRotTarget, spinQuaternion } from './interaction.js';
 import { currentVisual, orbitCenterAt, spinVectorAt } from '../core/animation.js';
 import { groupCurrentCentroid } from '../ui/tree.js';
 export function snapValue(v) {
@@ -69,14 +69,21 @@ export const _gizmoTmp = new THREE.Vector3();
 export function gizmoHl(c) { return hoverColor(c); }
 
 
-// 局部自转模式下，旋转 gizmo 的轴向应跟随对象当前自转姿态。
+// 局部自转/局部公转模式下，旋转 gizmo 的轴向应跟随对象当前自转姿态。
 export function spinGizmoQuaternion() {
-  if (state.tool !== 'rotate' || state.rotMode !== 'spin') return null;
+  if (state.tool !== 'rotate') return null;
+  if (state.rotMode === 'orbit') {
+    const t = currentRotTarget();
+    if (!t || t.space !== 'local') return null;
+  } else {
+    const t = currentSpinTarget();
+    if (!t || t.space !== 'local') return null;
+  }
   const t = currentSpinTarget();
-  if (!t || t.space !== 'local') return null;
+  if (!t) return null;
   const spin = spinVectorAt(t.prefix, state.time);
   if (spin[0] === 0 && spin[1] === 0 && spin[2] === 0) return null;
-  return spinQuaternion(spin, 'local');
+  return spinQuaternion(spin, t.space);
 }
 
 export function updateGizmo() {

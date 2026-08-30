@@ -237,15 +237,7 @@ export function buildGroupXforms(T) {
       const tr = findTrackByPr(pr, 'g:' + gname);
       return (tr && tr.kf.length) ? tr : null;
     });
-    // 组旋转：预计算复合旋转矩阵（M = Mz·My·Mx，与 rotatePointAround 顺序一致）
-    const rot0 = (() => { const tr = findTrackByPr('rot.x', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
-    const rot1 = (() => { const tr = findTrackByPr('rot.y', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
-    const rot2 = (() => { const tr = findTrackByPr('rot.z', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
-    let orbitMat = null;
-    if (rot0 !== 0 || rot1 !== 0 || rot2 !== 0) {
-      const M = matMat(matMat(FUNC_IMPL.rotZ(rot2 * DEG2RAD), FUNC_IMPL.rotY(rot1 * DEG2RAD)), FUNC_IMPL.rotX(rot0 * DEG2RAD));
-      orbitMat = [M.m[0][0], M.m[0][1], M.m[0][2], M.m[1][0], M.m[1][1], M.m[1][2], M.m[2][0], M.m[2][1], M.m[2][2]];
-    }
+    // 组自转/公转：预计算复合旋转矩阵。自转在前，局部公转时公转轴跟随自转姿态。
     const spin0 = (() => { const tr = findTrackByPr('spin.x', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
     const spin1 = (() => { const tr = findTrackByPr('spin.y', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
     const spin2 = (() => { const tr = findTrackByPr('spin.z', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
@@ -254,6 +246,17 @@ export function buildGroupXforms(T) {
     if (spin0 !== 0 || spin1 !== 0 || spin2 !== 0) {
       const M = spinMatrix([spin0, spin1, spin2], spinSpace);
       spinMat = [M.m[0][0], M.m[0][1], M.m[0][2], M.m[1][0], M.m[1][1], M.m[1][2], M.m[2][0], M.m[2][1], M.m[2][2]];
+    }
+    const rot0 = (() => { const tr = findTrackByPr('rot.x', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
+    const rot1 = (() => { const tr = findTrackByPr('rot.y', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
+    const rot2 = (() => { const tr = findTrackByPr('rot.z', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
+    const rotSpace = (state.groupRotSpace && state.groupRotSpace[gname] === 'local') ? 'local' : 'world';
+    let orbitMat = null;
+    if (rot0 !== 0 || rot1 !== 0 || rot2 !== 0) {
+      const M = rotSpace === 'local'
+        ? orbitLocalMatrix([rot0, rot1, rot2], [spin0, spin1, spin2], spinSpace)
+        : spinMatrix([rot0, rot1, rot2], 'world');
+      orbitMat = [M.m[0][0], M.m[0][1], M.m[0][2], M.m[1][0], M.m[1][1], M.m[1][2], M.m[2][0], M.m[2][1], M.m[2][2]];
     }
     const orbitCenter = [
       (() => { const tr = findTrackByPr('center.x', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })(),
@@ -465,6 +468,38 @@ export function applyLocalSpinRotationVec(baseDeg, axisVec, angle) {
   return eulerFromSpinMatrix(matMat(M, R));
 }
 
+// 3x3 矩阵转置。
+function mat3Transpose(M) {
+  const m = M.m;
+  return { m: [
+    [m[0][0], m[1][0], m[2][0]],
+    [m[0][1], m[1][1], m[2][1]],
+    [m[0][2], m[1][2], m[2][2]],
+  ] };
+}
+
+// 局部公转的世界旋转矩阵：M = M_spin · M_localOrbit · M_spinᵀ。
+// 即公转轴跟随对象自转后的姿态（局部轴）。
+export function orbitLocalMatrix(rotDeg, spinDeg, spinSpace) {
+  const Ms = spinMatrix(spinDeg, spinSpace);
+  const Mo = spinMatrix(rotDeg, 'local');
+  return matMat(matMat(Ms, Mo), mat3Transpose(Ms));
+}
+
+// 局部公转合成：在现有局部公转基础上绕局部轴 axis 旋转 angle（弧度）。
+// 与自转不同，公转拖拽是在局部帧左乘增量（等价世界轴旋转后写回局部公转欧拉）。
+export function applyLocalOrbitRotation(baseRot, axis, angle) {
+  const M = spinMatrix(baseRot, 'local');
+  const R = axis === 'X' ? FUNC_IMPL.rotX(angle) : axis === 'Y' ? FUNC_IMPL.rotY(angle) : FUNC_IMPL.rotZ(angle);
+  return eulerFromSpinMatrix(matMat(R, M));
+}
+
+export function applyLocalOrbitRotationVec(baseRot, axisVec, angle) {
+  const M = spinMatrix(baseRot, 'local');
+  const R = FUNC_IMPL.rotAxis(vec3(axisVec[0], axisVec[1], axisVec[2]), angle);
+  return eulerFromSpinMatrix(matMat(R, M));
+}
+
 // 组变换 pivot（优先索引缓存，回退到质心重算）
 export function groupPivot(gname) {
   return (groupCentroidPosCache && groupCentroidPosCache.get(gname)) || groupCentroidValue(gname, 'pos');
@@ -507,13 +542,28 @@ export function applyOrbitRotation(p, value, T) {
     for (const gname of gs) {
       const rot = rotVectorAt('g:' + gname, T);
       if (rot[0] === 0 && rot[1] === 0 && rot[2] === 0) continue;
-      return rotatePointAround(value, orbitCenterAt('g:' + gname, T), rot);
+      const pivot = orbitCenterAt('g:' + gname, T);
+      const space = (state.groupRotSpace && state.groupRotSpace[gname] === 'local') ? 'local' : 'world';
+      if (space === 'local') {
+        const spin = spinVectorAt('g:' + gname, T);
+        const spinSpace = (state.groupSpinSpace && state.groupSpinSpace[gname] === 'local') ? 'local' : 'world';
+        return rotatePointByMatrix(value, pivot, orbitLocalMatrix(rot, spin, spinSpace));
+      }
+      return rotatePointAround(value, pivot, rot);
     }
   }
   if (p.fx) {
     const rot = rotVectorAt('f:' + p.fx, T);
     if (rot[0] === 0 && rot[1] === 0 && rot[2] === 0) return value;
-    return rotatePointAround(value, orbitCenterAt('f:' + p.fx, T), rot);
+    const fx = getFunction(p.fx);
+    const pivot = orbitCenterAt('f:' + p.fx, T);
+    const space = (fx && fx.rotSpace === 'local') ? 'local' : 'world';
+    if (space === 'local') {
+      const spin = spinVectorAt('f:' + p.fx, T);
+      const spinSpace = (fx && fx.spinSpace === 'local') ? 'local' : 'world';
+      return rotatePointByMatrix(value, pivot, orbitLocalMatrix(rot, spin, spinSpace));
+    }
+    return rotatePointAround(value, pivot, rot);
   }
   return value;
 }

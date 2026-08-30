@@ -218,8 +218,10 @@ function encodeBody(state, texPngOf) {
   const groupIndex = new Map(groupNames.map(([n], i) => [n, i]));
   w.varint(groupNames.length);
   for (const [name, idxs] of groupNames) {
-    // v5：组级自转空间（0 = world，1 = local）
-    w.u8((state.groupSpinSpace && state.groupSpinSpace[name] === 'local') ? 1 : 0);
+    // v5：组级自转/公转空间 flags：bit0=spinLocal, bit1=rotLocal
+    const spinLocal = (state.groupSpinSpace && state.groupSpinSpace[name] === 'local') ? 1 : 0;
+    const rotLocal = (state.groupRotSpace && state.groupRotSpace[name] === 'local') ? 2 : 0;
+    w.u8(spinLocal | rotLocal);
     w.varint(idxs.length);
     for (const idx of idxs) w.varint(idx);
   }
@@ -255,7 +257,8 @@ function encodeBody(state, texPngOf) {
     const fastMath = !!fx.fastMath;
     const hasFuncs = !!(fx.funcs && String(fx.funcs).trim());
     const spinLocal = fx.spinSpace === 'local';
-    w.u8((hasEnt ? 1 : 0) | (hasUV ? 2 : 0) | (fastMath ? 4 : 0) | (hasFuncs ? 8 : 0) | (spinLocal ? 16 : 0));
+    const rotLocal = fx.rotSpace === 'local';
+    w.u8((hasEnt ? 1 : 0) | (hasUV ? 2 : 0) | (fastMath ? 4 : 0) | (hasFuncs ? 8 : 0) | (spinLocal ? 16 : 0) | (rotLocal ? 32 : 0));
     if (hasEnt) writeEnt(w, fx.ent);
     if (hasUV) writeUV(w, fx.uv, texIndex.get(fx.uv.texture));
     if (hasFuncs) w.str(fx.funcs);
@@ -423,13 +426,15 @@ export async function decodePdrawc(bytes) {
   const groupCount = br.varint();
   const groups = [];
   const groupSpinLocal = [];
+  const groupRotLocal = [];
   for (let i = 0; i < groupCount; i++) {
-    const spinLocal = br.u8() !== 0;
+    const gflags = br.u8();
     const n = br.varint();
     const members = [];
     for (let j = 0; j < n; j++) members.push(br.varint());
     groups.push(members);
-    groupSpinLocal.push(spinLocal);
+    groupSpinLocal.push((gflags & 1) !== 0);
+    groupRotLocal.push((gflags & 2) !== 0);
   }
 
   const guvCount = br.varint();
@@ -455,6 +460,7 @@ export async function decodePdrawc(bytes) {
     const uv = (flags & 2) ? readUV(br) : null;
     const fastMath = !!(flags & 4);
     const spinLocal = !!(flags & 16);
+    const rotLocal = !!(flags & 32);
     const funcs = (flags & 8) ? br.str() : '';
     const varCount = br.varint();
     const vars = [];
@@ -464,7 +470,7 @@ export async function decodePdrawc(bytes) {
       const kf = readKf(br);
       vars.push({ name, base, kf });
     }
-    functions.push({ center, count, setup, process, funcs, seed, duration, st, ent, uv, vars, fastMath, spinLocal });
+    functions.push({ center, count, setup, process, funcs, seed, duration, st, ent, uv, vars, fastMath, spinLocal, rotLocal });
   }
 
   const trackCount = br.varint();
@@ -486,7 +492,7 @@ export async function decodePdrawc(bytes) {
 
   if (br.remaining !== 0) throw new Error('pdrawc: trailing bytes in body');
 
-  return { loop, textures, particles, groups, groupSpinLocal, groupUV, functions, tracks, pubKeyBytes };
+  return { loop, textures, particles, groups, groupSpinLocal, groupRotLocal, groupUV, functions, tracks, pubKeyBytes };
 }
 
 /** 从完整 .pdrawc 提取公钥 base64（用于验签）。 */

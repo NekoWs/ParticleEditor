@@ -176,6 +176,19 @@ export function initUI() {
     }
     rebuildPoints();
   });
+  document.getElementById('prop-rot-space').addEventListener('click', () => {
+    const fxId = state.selectedFunction;
+    const gname = selectedGroupName();
+    if (!fxId && !gname) return;
+    pushUndo();
+    if (fxId) {
+      const fx = getFunction(fxId);
+      if (fx) fx.rotSpace = fx.rotSpace === 'local' ? 'world' : 'local';
+    } else {
+      state.groupRotSpace[gname] = state.groupRotSpace[gname] === 'local' ? 'world' : 'local';
+    }
+    rebuildPoints();
+  });
 
   // 时间轴
   document.getElementById('btn-play').addEventListener('click', togglePlay);
@@ -253,7 +266,7 @@ export function initUI() {
 export function clearAll() {
   pushUndo();
   state.particles = []; state.tracks = []; state.groups = {}; state.functions = [];
-  state.textures = {}; state.currentTexture = null; state.groupUV = {}; state.groupSpinSpace = {};
+  state.textures = {}; state.currentTexture = null; state.groupUV = {}; state.groupSpinSpace = {}; state.groupRotSpace = {};
   state.selected.clear(); state.selectedGroup = null; state.selectedFunction = null;
   state.expandedParticles.clear(); state.expandedProps.clear();
   if (tlTreeState && tlTreeState.expanded) tlTreeState.expanded.clear();

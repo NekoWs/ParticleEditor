@@ -38,6 +38,7 @@
   "tex": [ "a", "b" ],          // 贴图名列表
   "guv": { ... },               // 组级 UV：组名 -> UV 对象
   "gss": { "组A": 1 },          // v7 新增，可选：组级自转空间（1 = local；缺省/0 = world）
+  "grs": { "组A": 1 },          // v7 新增，可选：组级公转空间（1 = local；缺省/0 = world）
   "texData": { ... }            // 可选：贴图名 -> base64 PNG
 }
 ```
@@ -158,14 +159,15 @@
   "ui": { ... },                // 可选，拼图编辑器布局（对播放无意义）
   "uv": { ... },                // 可选，函数对象级 UV
   "fm": 1,                      // 可选，fastMath：process 标量数学近似；缺省/0 = 关闭
-  "ss": 1                       // v7 新增，可选：自转空间（1 = local；缺省/0 = world）
+  "ss": 1,                      // v7 新增，可选：自转空间（1 = local；缺省/0 = world）
+  "rs": 1                       // v7 新增，可选：公转空间（1 = local；缺省/0 = world）
 }
 ```
 
 - `vars`：`{ 变量名: { b: 数值基值, kf: [[tick,value,easing],...] } }`。
   当前编辑器使用**数值基值 + 关键帧**模型（不再使用表达式字符串）。
 - 函数对象脚本语法见 [`script-lang-spec.md`](./script-lang-spec.md)。
-- 解析回退：`name→'函数对象'`、`center→[0,0,0]`、`count→30`、`duration→0`、`step→5`、`st→0`、`setup/process/funcs→''`、`seed→0`、`fm→false`、`ss→'world'`。
+- 解析回退：`name→'函数对象'`、`center→[0,0,0]`、`count→30`、`duration→0`、`step→5`、`st→0`、`setup/process/funcs→''`、`seed→0`、`fm→false`、`ss→'world'`、`rs→'world'`。
 
 ---
 

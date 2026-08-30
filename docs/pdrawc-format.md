@@ -92,7 +92,7 @@ count × {
 ```
 count                       varint
 count × {
-  spinLocal                 1 byte：0 = world，1 = local（自转空间）
+  flags                     1 byte：bit0=spinLocal, bit1=rotLocal
   memberCount               varint
   memberCount × particleIdx varint：粒子索引（0-based，指向 particles）
 }
@@ -124,7 +124,7 @@ count × {
   seed                      varint：随机种子（有符号截断后按 int 解释）
   duration                  varint：tick
   st                        varint：入场 tick
-  flags                     1 byte：bit0=hasEnt, bit1=hasUV, bit2=fastMath, bit3=hasFuncs, bit4=spinLocal
+  flags                     1 byte：bit0=hasEnt, bit1=hasUV, bit2=fastMath, bit3=hasFuncs, bit4=spinLocal, bit5=rotLocal
   [ent]                     仅 flags.hasEnt 时存在：见 §3.2
   [uv]                      仅 flags.hasUV 时存在：见 §3.1
   [funcs]                   仅 flags.hasFuncs 时存在：funcsLen varint + funcs 字节 UTF-8（顶层函数定义）

@@ -77,6 +77,20 @@ function toggleSpinSpace(id) {
   refreshTimelineTree(true);
 }
 
+// 切换公转空间（world/local）。id 为 'g:组名' 或 'f:fxId'。
+function toggleRotSpace(id) {
+  pushUndo();
+  if (id.startsWith('f:')) {
+    const fx = getFunction(id.slice(2));
+    if (fx) fx.rotSpace = fx.rotSpace === 'local' ? 'world' : 'local';
+  } else if (id.startsWith('g:')) {
+    const gname = id.slice(2);
+    state.groupRotSpace[gname] = state.groupRotSpace[gname] === 'local' ? 'world' : 'local';
+  }
+  rebuildPoints();
+  refreshTimelineTree(true);
+}
+
 // 字符串哈希（结构签名用，避免超大成员列表 join 成巨型字符串）
 function hashStr(s, h) {
   h = h | 0;
@@ -280,6 +294,18 @@ function renderFlatRow(row) {
         spaceBtn.dataset.id = row.id;
         div.appendChild(spaceBtn);
       }
+      // 公转行：组/函数对象显示 世界/局部 切换按钮
+      if (row.prop === 'rot' && (row.id.startsWith('g:') || row.id.startsWith('f:'))) {
+        const spaceBtn = el('button', 'tt-rot-space');
+        spaceBtn.type = 'button';
+        const cur = row.id.startsWith('f:')
+          ? ((getFunction(row.id.slice(2)) || {}).rotSpace === 'local')
+          : (state.groupRotSpace && state.groupRotSpace[row.id.slice(2)] === 'local');
+        spaceBtn.textContent = t(cur ? 'rotSpace.local' : 'rotSpace.world');
+        spaceBtn.title = t('rotSpace.hint');
+        spaceBtn.dataset.id = row.id;
+        div.appendChild(spaceBtn);
+      }
 
       // XYZ 行：合并为组合输入框（不显示 XYZ 字样，靠分隔线区分三个属性）
       const vec = el('div', 'vec3');
@@ -454,6 +480,12 @@ function onTreeClick(ev) {
   if (spinSpaceBtn) {
     ev.stopPropagation();
     toggleSpinSpace(spinSpaceBtn.dataset.id);
+    return;
+  }
+  const rotSpaceBtn = ev.target.closest('.tt-rot-space');
+  if (rotSpaceBtn) {
+    ev.stopPropagation();
+    toggleRotSpace(rotSpaceBtn.dataset.id);
     return;
   }
 

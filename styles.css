@@ -784,6 +784,12 @@ body.ctrl-held .kf-t { cursor: pointer; }
   color: var(--muted); font-size: 10px; cursor: pointer;
 }
 .tt-spin-space:hover { border-color: var(--accent); color: var(--accent); }
+.tt-rot-space {
+  margin: 0 6px 0 2px; padding: 0 6px; height: 20px;
+  background: var(--panel-3); border: 1px solid var(--border); border-radius: 4px;
+  color: var(--muted); font-size: 10px; cursor: pointer;
+}
+.tt-rot-space:hover { border-color: var(--accent); color: var(--accent); }
 .vec3 {
   display: inline-flex; align-items: center; height: 26px; box-sizing: border-box;
   background: #12141a; border: 1px solid var(--border); border-radius: 5px;
