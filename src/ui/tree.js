@@ -13,7 +13,7 @@ import { removeGroupAndTracks, baseValueFor } from '../core/edit.js';
 import { pushUndo, popUndo } from '../state/undo.js';
 import { makeEasingBtn, easingCurveSVG } from './easing-editor.js';
 import { r3 } from '../io/io.js';
-import { TL_PX_PER_TICK, compTimelineViewStart } from './panels.js';
+import { TL_PX_PER_TICK, compTimelineViewStart, commitFunctionRebuild } from './panels.js';
 
 /* =========================================================================
  * 组操作
@@ -264,4 +264,91 @@ export function openKeyframeEditor(canvas, id, pr, tick, clientX, clientY) {
   keyframeEditorInputs = { tIn, vIn, kf };
   keyframeEditorBox = box;
   setTimeout(() => document.addEventListener('pointerdown', onKfDocPointerDown), 0);
+}
+
+/** 函数对象变量的关键帧编辑弹窗（变量关键帧存储在 fx.vars[name].kf，不走粒子轨道）。 */
+export function openVarKeyframeEditor(canvas, fx, name, tick, clientX, clientY) {
+  const v = fx && fx.vars && fx.vars[name];
+  const kfArr = v && v.kf ? v.kf : [];
+  const kf = kfArr.find(k => k[0] === tick);
+  if (!kf) return;
+  closeContextMenu();
+  closeKeyframeEditor(true);
+
+  const orig = [kf[0], kf[1], kf[2]];
+
+  const box = document.createElement('div');
+  box.id = 'kf-editor-pop';
+  box.className = 'kf-editor';
+  const title = document.createElement('div');
+  title.className = 'ke-title';
+  title.textContent = tf('tree.editVarKf', name);
+  box.appendChild(title);
+
+  const mkLabel = (text) => { const s = document.createElement('span'); s.className = 'ke-label'; s.textContent = text; return s; };
+
+  const tRow = document.createElement('div');
+  tRow.className = 'row';
+  tRow.appendChild(mkLabel(t('tree.time')));
+  const tIn = document.createElement('input');
+  tIn.type = 'number'; tIn.min = '0'; tIn.value = kf[0];
+  tRow.appendChild(tIn);
+  box.appendChild(tRow);
+
+  const vRow = document.createElement('div');
+  vRow.className = 'row';
+  vRow.appendChild(mkLabel(t('tree.value')));
+  const vIn = document.createElement('input');
+  vIn.type = 'number'; vIn.step = '0.01'; vIn.value = r3(kf[1]);
+  vRow.appendChild(vIn);
+  box.appendChild(vRow);
+
+  const eRow = document.createElement('div');
+  eRow.className = 'row';
+  eRow.appendChild(mkLabel(t('tree.easingLabel')));
+  const easeBtn = makeEasingBtn(kf[2], (nv) => { kf[2] = nv; easeBtn.innerHTML = easingCurveSVG(nv); });
+  eRow.appendChild(easeBtn);
+  box.appendChild(eRow);
+
+  const btnRow = document.createElement('div');
+  btnRow.className = 'ke-btns';
+  const okBtn = document.createElement('button');
+  okBtn.textContent = t('common.ok');
+  okBtn.onclick = () => {
+    pushUndo();
+    kf[0] = Math.max(0, parseInt(tIn.value) || 0);
+    kf[1] = parseFloat(vIn.value) || 0;
+    kfArr.sort((a, b) => a[0] - b[0]);
+    commitFunctionRebuild(fx);
+    closeKeyframeEditor();
+  };
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = t('common.cancel');
+  cancelBtn.onclick = () => {
+    kf[0] = orig[0]; kf[1] = orig[1]; kf[2] = orig[2];
+    closeKeyframeEditor();
+    commitFunctionRebuild(fx);
+  };
+  btnRow.appendChild(okBtn); btnRow.appendChild(cancelBtn);
+  box.appendChild(btnRow);
+
+  document.body.appendChild(box);
+
+  if (clientX != null && clientY != null) {
+    box.style.left = Math.min(Math.max(8, clientX + 8), window.innerWidth - box.offsetWidth - 8) + 'px';
+    box.style.top = Math.min(Math.max(8, clientY + 8), window.innerHeight - box.offsetHeight - 8) + 'px';
+  }
+
+  keyframeEditorInputs = { tIn, vIn, kf };
+  keyframeEditorBox = box;
+  setTimeout(() => document.addEventListener('pointerdown', onKfDocPointerDown), 0);
+}
+
+/** 删除函数对象变量的关键帧。 */
+export function removeVarKeyframe(fx, name, tick) {
+  const v = fx && fx.vars && fx.vars[name];
+  if (!v || !Array.isArray(v.kf)) return;
+  pushUndo();
+  v.kf = v.kf.filter(k => k[0] !== tick);
+  commitFunctionRebuild(fx);
 }

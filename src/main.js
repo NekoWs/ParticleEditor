@@ -95,6 +95,11 @@ export function initUI() {
     if (!btn) return;
     closeMenus();
     setLanguage(btn.dataset.lang);
+    // 动态面板不依赖 data-i18n，需在语言切换后就地重建/刷新
+    refreshFxPresetOptions();
+    refreshFunctionPanel();
+    refreshTimelineTree();
+    drawTimelineLayers();
   });
   document.getElementById('btn-new').addEventListener('click', () => { closeMenus(); newFile(); });
   document.getElementById('btn-open').addEventListener('click', () => { closeMenus(); openFile(); });

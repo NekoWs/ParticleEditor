@@ -11,6 +11,7 @@ import { camera, renderer, controls, raycaster, pointer, gizmoGroup, gizmoRotate
 import { currentVisual, rebuildPoints, setPreview, clearPreview, rotVectorAt, trackValueAt, findTrackByPr, groupScaleAt } from '../core/animation.js';
 import { screenToNdc, planePointAt, worldToUV, computeShapePositions, snapGrid, snapValue, pickParticleAt, particleAt, projectToScreen, distToSegment, planeInfo, selectionCentroid, updateGizmoFrame } from './gizmo.js';
 import { groupCurrentCentroid, groupCentroidValue, deleteGroup, createGroup } from '../ui/tree.js';
+import { refreshFunctionPanel } from '../ui/panels.js';
 import { setFunctionTrackValue, setGroupTrackValue, editParticles, addParticle, autoGroup, removeGroupAndTracks } from '../core/edit.js';
 import { pushUndo, restore, undoStack, undo, redo } from '../state/undo.js';
 import { deleteFunctionObject } from '../core/generators.js';

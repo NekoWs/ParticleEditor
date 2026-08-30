@@ -20,7 +20,7 @@ import { commitFunctionRebuild, refreshFunctionPanel, drawTimeline } from './pan
 import { rebuildPoints } from '../core/animation.js';
 import { gizmoGroup } from '../scene/scene.js';
 import { resize } from '../main.js';
-import { setPuzzleHost, initPuzzleCanvas, puzzleCanvasRender, puzzleCanvasResize, puzzleCanvasBeginLens, puzzleCanvasCancelEdit } from './puzzle-canvas.js';
+import { setPuzzleHost, initPuzzleCanvas, puzzleCanvasRender, puzzleCanvasResize, puzzleCanvasCancelEdit } from './puzzle-canvas.js';
 
 export const TYPE_LABEL = { scalar: 'blk.type.scalar', vec: 'blk.type.vec', mat: 'blk.type.mat', any: 'blk.type.any' };
 
@@ -280,15 +280,28 @@ export function funcInfo(name) {
   return t(f.desc) + (args ? '（' + args + '）' : '');
 }
 
+// 数组方法帮助文本：优先取 blk.method.<name>.desc，缺失时回退到通用描述。
+export function methodInfo(name) {
+  const k = 'blk.method.' + name + '.desc';
+  const s = t(k);
+  return s === k ? t('blk.methodDesc') : s;
+}
+
 export function nodeInfo(n) {
   switch (n.kind) {
     case 'num': return t('blk.constNum');
+    case 'bool': return t('blk.constNum');
     case 'var': return (BUILTIN_VAR_INFO[n.name] && t(BUILTIN_VAR_INFO[n.name])) || t('blk.var');
     case 'func': return funcInfo(n.name);
     case 'op': return (OP_LABELS[n.op] && t(OP_LABELS[n.op])) || t('blk.op');
     case 'chain': return t('blk.chainDesc');
     case 'comp': return t('blk.compDesc');
     case 'neg': return t('blk.neg');
+    case 'not': return t('blk.notDesc');
+    case 'ternary': return t('blk.ternaryDesc');
+    case 'index': return t('blk.indexDesc');
+    case 'method': return methodInfo(n.method);
+    case 'array': return t('blk.arrayDesc');
     default: return '';
   }
 }
@@ -303,8 +316,12 @@ export function buildPaletteGroup(g) {
     for (const f of (bctx && bctx.funcs ? bctx.funcs : [])) {
       const name = f.stmt && f.stmt.name;
       if (!name) continue;
-      const params = (f.stmt.params || []).join(', ');
-      items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name + (params ? '(' + params + ')' : '()'), info: t('blk.customFunc') + ' ' + name });
+      const params = f.stmt.params || [];
+      items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name + (params.length ? '(' + params.join(', ') + ')' : '()'), info: t('blk.customFunc') + ' ' + name });
+      // 每个函数参数生成一个可拖入表达式的变量拼图，便于在函数体内引用参数。
+      for (const param of params) {
+        items.push({ key: 'func-param:' + name + ':' + param, type: 'expr', template: { kind: 'var', name: param }, label: param, info: tf('blk.funcParam', param) });
+      }
     }
   } else if (g.id === 'pos') {
     ['pos', 'pos_vec', 'vel', 'vel_vec'].forEach(k => items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: t(STMT_BLOCKS[k].label), info: t(STMT_BLOCKS[k].desc) }));
@@ -349,7 +366,7 @@ export function buildPaletteGroup(g) {
     items.push({ key: 'expr:array', type: 'expr', template: { kind: 'array' }, label: '[]', info: t('blk.arrayDesc') });
     items.push({ key: 'expr:index', type: 'expr', template: { kind: 'index' }, label: '[ ]', info: t('blk.indexDesc') });
     for (const method of Object.keys(METHOD_ARITY)) {
-      items.push({ key: 'method:' + method, type: 'method', method, template: { kind: 'method', method }, label: '.' + method + '()', info: t('blk.methodDesc') });
+      items.push({ key: 'method:' + method, type: 'method', method, template: { kind: 'method', method }, label: '.' + method + '()', info: methodInfo(method) });
     }
   } else if (g.id === 'mat') {
     ['rotX', 'rotY', 'rotZ', 'rotAxis'].forEach(name => items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name, info: funcInfo(name) }));
@@ -570,13 +587,6 @@ export function ensurePuzzleDom() {
   const fxName = document.createElement('span'); fxName.className = 'pz-fx'; fxName.id = 'puzzle-fx-name';
   const spacer = document.createElement('span'); spacer.className = 'pz-spacer';
   toolbar.appendChild(title); toolbar.appendChild(fxName); toolbar.appendChild(spacer);
-  const lensBtn = document.createElement('button');
-  lensBtn.id = 'puzzle-lens';
-  lensBtn.className = 'pz-lens';
-  lensBtn.textContent = '🔍';
-  lensBtn.title = t('blk.lensHint');
-  lensBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); puzzleCanvasBeginLens(e); });
-  toolbar.appendChild(lensBtn);
   toolbar.appendChild(mkBtn('puzzle-ok', t('common.ok'), 'btn bd-ok'));
   toolbar.appendChild(mkBtn('puzzle-cancel', t('common.cancel')));
   document.body.appendChild(toolbar);
@@ -587,7 +597,7 @@ export function ensurePuzzleDom() {
   document.body.appendChild(sceneWin.el);
 
   // 代码回显悬浮窗（默认在场景上方）
-  const echoWin = makeFloatWindow('fwin-echo', t('blk.code'), { x: vw - 440, y: vh - 560, w: 340, h: 200, minW: 200, minH: 120 });
+  const echoWin = makeFloatWindow('fwin-echo', t('blk.code'), { x: vw - 440, y: vh - 560, w: 340, h: 200, minW: 200, minH: 120, onResize: () => { if (typeof puzzleCanvasResize === 'function') puzzleCanvasResize(); } });
   const echoCanvas = document.createElement('canvas');
   echoCanvas.id = 'puzzle-echo-canvas';
   echoWin.body.appendChild(echoCanvas);

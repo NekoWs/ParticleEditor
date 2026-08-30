@@ -11,7 +11,7 @@
 
 import { t } from '../core/i18n.js';
 import { state, TRACK_COMPS, propComps, compPr, getFunction, getParticle } from '../core/constants.js';
-import { TL_PX_PER_TICK, timelineViewStart, setTimelineViewStart, drawTimeline, scrubAutoPan, tlNiceStep } from './panels.js';
+import { TL_PX_PER_TICK, timelineViewStart, setTimelineViewStart, drawTimeline, scrubAutoPan, tlNiceStep, commitFunctionRebuild } from './panels.js';
 import { rebuildPoints, maxTick } from '../core/animation.js';
 import { findTrackByPr } from '../core/animation-eval.js';
 import { varKfValue } from '../core/easing.js';
@@ -20,7 +20,7 @@ import { saveWorkspaceState } from './blocks-ui.js';
 import { resize, applyTimeChange } from '../main.js';
 import { pushUndo } from '../state/undo.js';
 import { refreshTimelineTree, tlTreeFlatRows, TL_TREE_ROW_H } from './timeline-tree.js';
-import { openKeyframeEditor, showContextMenu, drawDiamond } from './tree.js';
+import { openKeyframeEditor, openVarKeyframeEditor, removeVarKeyframe, showContextMenu, drawDiamond } from './tree.js';
 
 export const tlLayerState = { scroll: 0, drag: null, hit: [], selectedKf: null };
 const TL_KF_HIT_PX = 6;
@@ -83,10 +83,10 @@ function drawKfsForTrack(ctx, tr, id, prop, comp, w, cy, color, X) {
     const x = X(kf[0]);
     if (x < -6 || x > w + 6) continue;
     const pr = compPr(prop, comp);
-    const sel = tlLayerState.selectedKf && tlLayerState.selectedKf.id === id &&
-      tlLayerState.selectedKf.pr === pr && tlLayerState.selectedKf.tick === kf[0];
+    const sel = tlLayerState.selectedKf && tlLayerState.selectedKf.kind === 'track' &&
+      tlLayerState.selectedKf.id === id && tlLayerState.selectedKf.pr === pr && tlLayerState.selectedKf.tick === kf[0];
     drawDiamond(ctx, x, cy, 4, sel ? '#5b9dff' : color);
-    laneKfHits.push({ x, y: cy, id, pr, tick: kf[0], kf, tr });
+    laneKfHits.push({ kind: 'track', x, y: cy, id, pr, tick: kf[0], kf, tr });
   }
 }
 
@@ -112,7 +112,10 @@ function drawVarLane(ctx, row, y, w, rowH, X) {
   for (const kf of kfs) {
     const x = X(kf[0]);
     if (x < -6 || x > w + 6) continue;
-    drawDiamond(ctx, x, cy, 4, '#ffcc55');
+    const sel = tlLayerState.selectedKf && tlLayerState.selectedKf.kind === 'var' &&
+      tlLayerState.selectedKf.fxId === row.fx.id && tlLayerState.selectedKf.name === row.name && tlLayerState.selectedKf.tick === kf[0];
+    drawDiamond(ctx, x, cy, 4, sel ? '#5b9dff' : '#ffcc55');
+    laneKfHits.push({ kind: 'var', x, y: cy, fxId: row.fx.id, name: row.name, tick: kf[0], kf, v, fx: row.fx });
   }
 }
 
@@ -306,9 +309,15 @@ export function tlInitLayerEvents() {
     const kfHit = hitKeyframeAt(ev.clientX, ev.clientY);
     if (kfHit) {
       // 点击即选中；拖动时才 pushUndo（见 pointermove）
-      tlLayerState.selectedKf = { id: kfHit.id, pr: kfHit.pr, tick: kfHit.tick };
-      canvas.setPointerCapture(ev.pointerId);
-      tlLayerState.drag = { kind: 'kf', ...kfHit, startX: ev.clientX, undoPushed: false };
+      if (kfHit.kind === 'var') {
+        tlLayerState.selectedKf = { kind: 'var', fxId: kfHit.fxId, name: kfHit.name, tick: kfHit.tick };
+        canvas.setPointerCapture(ev.pointerId);
+        tlLayerState.drag = { kind: 'varkf', ...kfHit, startX: ev.clientX, undoPushed: false };
+      } else {
+        tlLayerState.selectedKf = { kind: 'track', id: kfHit.id, pr: kfHit.pr, tick: kfHit.tick };
+        canvas.setPointerCapture(ev.pointerId);
+        tlLayerState.drag = { kind: 'kf', ...kfHit, startX: ev.clientX, undoPushed: false };
+      }
       drawTimelineLayers();
       return;
     }
@@ -376,7 +385,19 @@ export function tlInitLayerEvents() {
         if (!d.undoPushed) { pushUndo(); d.undoPushed = true; }
         d.kf[0] = t;
         if (d.tr) d.tr.kf.sort((a, b) => a[0] - b[0]);
-        tlLayerState.selectedKf = { id: d.id, pr: d.pr, tick: t };
+        tlLayerState.selectedKf = { kind: 'track', id: d.id, pr: d.pr, tick: t };
+        refreshAllPanelsLight();
+      }
+      return;
+    }
+    if (d.kind === 'varkf') {
+      const t = Math.max(0, Math.round(timelineXToTickL(ev.clientX)));
+      if (t !== d.kf[0]) {
+        if (!d.undoPushed) { pushUndo(); d.undoPushed = true; }
+        d.kf[0] = t;
+        if (d.v) d.v.kf.sort((a, b) => a[0] - b[0]);
+        tlLayerState.selectedKf = { kind: 'var', fxId: d.fxId, name: d.name, tick: t };
+        commitFunctionRebuild(d.fx);
         refreshAllPanelsLight();
       }
       return;
@@ -442,7 +463,27 @@ export function tlInitLayerEvents() {
     const kfHit = hitKeyframeAt(ev.clientX, ev.clientY);
     if (!kfHit) return;
     ev.preventDefault();
-    tlLayerState.selectedKf = { id: kfHit.id, pr: kfHit.pr, tick: kfHit.tick };
+    if (kfHit.kind === 'var') {
+      tlLayerState.selectedKf = { kind: 'var', fxId: kfHit.fxId, name: kfHit.name, tick: kfHit.tick };
+      drawTimelineLayers();
+      showContextMenu(ev.clientX, ev.clientY, [
+        {
+          label: t('tree.edit'),
+          action: () => openVarKeyframeEditor(canvas, kfHit.fx, kfHit.name, kfHit.tick, ev.clientX, ev.clientY),
+        },
+        {
+          label: t('common.delete'),
+          danger: true,
+          action: () => {
+            removeVarKeyframe(kfHit.fx, kfHit.name, kfHit.tick);
+            tlLayerState.selectedKf = null;
+            refreshAllPanelsLight();
+          },
+        },
+      ]);
+      return;
+    }
+    tlLayerState.selectedKf = { kind: 'track', id: kfHit.id, pr: kfHit.pr, tick: kfHit.tick };
     drawTimelineLayers();
     showContextMenu(ev.clientX, ev.clientY, [
       {

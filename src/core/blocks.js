@@ -344,7 +344,7 @@ function indentPad(level) { return '  '.repeat(Math.max(0, level || 0)); }
 function lineCount(str) { return (str === '') ? 0 : str.split('\n').length; }
 
 function stmtNeedsSemi(code) {
-  const t = (code || '').trimEnd();
+  const t = (code || '').trim();
   if (!t) return false;
   if (t.endsWith('}') || t.endsWith(';') || t.endsWith('*/')) return false;
   if (t.startsWith('//')) return false;

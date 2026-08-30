@@ -322,8 +322,8 @@ export function buildFunctionPanel(fx) {
   centerRow.appendChild(centerGroup);
   wrap.appendChild(centerRow);
 
-  // 预设参数
-  if (fx.preset && FUNCTION_PRESETS[fx.preset]) {
+  // 预设参数（无参数时不渲染空容器，避免中心点与时长之间出现多余的空 .fx-params 区块）
+  if (fx.preset && FUNCTION_PRESETS[fx.preset] && (FUNCTION_PRESETS[fx.preset].params || []).length > 0) {
     const preset = FUNCTION_PRESETS[fx.preset];
     const pbox = document.createElement('div');
     pbox.className = 'fx-params';
@@ -332,9 +332,10 @@ export function buildFunctionPanel(fx) {
       row.className = 'row';
       row.textContent = t('fx.param.' + prm.key) + ' ';
       const inp = document.createElement('input');
-      inp.type = 'number'; inp.step = '0.1'; inp.value = fx.params[prm.key] != null ? fx.params[prm.key] : prm.def;
+      inp.type = 'number'; inp.step = '0.1'; inp.value = fx.params && fx.params[prm.key] != null ? fx.params[prm.key] : prm.def;
       inp.onchange = () => {
         pushUndo();
+        if (!fx.params) fx.params = {};
         fx.params[prm.key] = parseFloat(inp.value) || 0;
         applyPresetBuild(fx);
         commitFunctionRebuild(fx);
@@ -416,7 +417,7 @@ export function buildFunctionPanel(fx) {
   setupGroup.appendChild(setupArea);
   codeBody.appendChild(setupGroup);
 
-  // Process（每粒子每帧）：标题与输入框合并在同一组内
+  // Process（粒子每帧）：标题与输入框合并在同一组内
   const processGroup = document.createElement('label');
   processGroup.className = 'fx-code-group';
   const processLabel = document.createElement('span');
@@ -431,9 +432,26 @@ export function buildFunctionPanel(fx) {
   processGroup.appendChild(processArea);
   codeBody.appendChild(processGroup);
 
-  // 快速数学近似（放在文本代码下方）
+  // 顶层函数（文本代码块同样显示/编辑函数定义）
+  const funcsGroup = document.createElement('label');
+  funcsGroup.className = 'fx-code-group';
+  const funcsLabel = document.createElement('span');
+  funcsLabel.className = 'fx-code-headline';
+  funcsLabel.textContent = t('fx.funcsBlock');
+  funcsGroup.appendChild(funcsLabel);
+  const funcsArea = document.createElement('textarea');
+  funcsArea.className = 'fx-code';
+  funcsArea.rows = 4;
+  funcsArea.value = fx.funcs || '';
+  funcsArea.onchange = () => { pushUndo(); fx.funcs = funcsArea.value; commitFunctionRebuild(fx); };
+  funcsGroup.appendChild(funcsArea);
+  codeBody.appendChild(funcsGroup);
+
+  // 快速数学近似（放在文本代码下方）：左侧 label，右侧勾选框
   const fmRow = document.createElement('label');
-  fmRow.className = 'row';
+  fmRow.className = 'row fx-fastmath-row';
+  const fmLabel = document.createElement('span');
+  fmLabel.textContent = t('fx.fastMath');
   const fmChk = document.createElement('input');
   fmChk.type = 'checkbox';
   fmChk.checked = !!fx.fastMath;
@@ -442,8 +460,8 @@ export function buildFunctionPanel(fx) {
     fx.fastMath = fmChk.checked;
     commitFunctionRebuild(fx);
   };
+  fmRow.appendChild(fmLabel);
   fmRow.appendChild(fmChk);
-  fmRow.appendChild(document.createTextNode(' ' + t('fx.fastMath')));
   codeBody.appendChild(fmRow);
 
   wrap.appendChild(codeWrap);

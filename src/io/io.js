@@ -7,7 +7,7 @@ import { t } from '../core/i18n.js';
 import { state, setDirty, DEFAULT_EASING, UV_MODES, PROP_LABELS, splitCompPr, nextId } from '../core/constants.js';
 import { pushUndo } from '../state/undo.js';
 import { rebuildPoints } from '../core/animation.js';
-import { updateLoopIndicator } from '../ui/panels.js';
+import { updateLoopIndicator, refreshFunctionPanel } from '../ui/panels.js';
 import { updateTimeUI } from '../main.js';
 import { rebuildFunctionObject } from '../core/generators.js';
 import { markTextureChanged, refreshTexturePanel } from '../ui/texture-editor.js';
@@ -435,6 +435,11 @@ export async function newFile() {
   document.getElementById('tl-loop').checked = true;
   updateTimeUI(); rebuildPoints();
   if (typeof refreshTexturePanel === 'function') refreshTexturePanel();
+  if (typeof refreshFunctionPanel === 'function') refreshFunctionPanel();
+  try {
+    const { refreshTimelineTree } = await import('../ui/timeline-tree.js');
+    if (typeof refreshTimelineTree === 'function') refreshTimelineTree();
+  } catch (_) { /* 动态加载失败不影响新建流程 */ }
   setDirty(false);
 }
 

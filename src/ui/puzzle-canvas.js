@@ -41,6 +41,7 @@ const CTL_PAD = 8;
 const CTL_MOUTH = 0;    // 左侧 C 形开口已按需求移除，子块仍缩进
 const OP_W = 20, OP_H = 18;
 const APPEND_W = 22;
+const PARAM_ADD_W = 18;
 const COLOR_W = 26, COLOR_H = 18;
 const TOGGLE_H = 20, EDIT_H = 20, ATTR_H = 20;
 const DRAG_THRESHOLD = 5;
@@ -90,8 +91,10 @@ const S = {
   drag: null,
   edit: null,
   editMouse: null,
-  lens: null,
+  altHover: null,
   dropHover: null,
+  dropPreview: null,
+  trashOver: false,
   hover: null,
   colorPicker: null,
   colorDrag: null,
@@ -305,6 +308,9 @@ function inlineFlow(parts, x, y, out, seg, ctx, owner) {
     } else if (p.arrayAppend) {
       children.push({ kind: 'array-append', shape: 'array-append', arrayAppend: p.arrayAppend, x: cx, y, w: APPEND_W, h: OP_H, segments: [{ text: '+', x: cx + APPEND_W / 2, y: y + OP_H / 2, font: FONT, align: 'center' }] });
       cx += APPEND_W; partH = OP_H;
+    } else if (p.paramAdd) {
+      children.push({ kind: 'param-add', shape: 'param-add', paramAdd: p.paramAdd, x: cx, y, w: PARAM_ADD_W, h: OP_H, segments: [{ text: '+', x: cx + PARAM_ADD_W / 2, y: y + OP_H / 2, font: FONT, align: 'center' }] });
+      cx += PARAM_ADD_W; partH = OP_H;
     } else if (p.comp) {
       const label = '.' + p.comp.node.axis;
       const tw = textW(ctx, label, FONT);
@@ -508,12 +514,16 @@ function stmtParts(s) {
   ];
 }
 
+// 上方有凹口（顶部与上一块咬合）的积木：内部文本额外下沉约 3px，避免贴在凹口上。
+function topExtra(opts) { return (opts && opts.noBump) ? 0 : 3; }
+
 function layoutSimpleStmt(s, x, y, out, ctx, opts) {
   const seg = [];
   const children = [];
-  const flow = inlineFlow(stmtParts(s), x + STMT_PAD_X, y + STMT_PAD_Y, children, seg, ctx, s);
+  const ty = y + STMT_PAD_Y + topExtra(opts);
+  const flow = inlineFlow(stmtParts(s), x + STMT_PAD_X, ty, children, seg, ctx, s);
   const w = flow.w + STMT_PAD_X * 2;
-  const h = Math.max(EXPR_H, flow.h + STMT_PAD_Y * 2);
+  const h = Math.max(EXPR_H, flow.h + STMT_PAD_Y * 2 + topExtra(opts));
   // 整行表达式语句（如 arr.push(...)）使用表达式自身配色，避免出现一层橙色包装块。
   const cls = (s.kind === 'expr' && s.expr) ? exprCls(s.expr) : stmtCls(s);
   out.push({ kind: 'stmt', shape: 'stmt', cls, stmt: s, x, y, w, h, segments: seg, noBump: !!(opts && opts.noBump) });
@@ -527,10 +537,11 @@ function layoutBigStmt(s, x, y, out, ctx, opts) {
   const head = t(STMT_BLOCKS[s.kind].label);
   const headW = textW(ctx, head, FONT);
   const padX = STMT_PAD_X, padY = STMT_PAD_Y;
+  const ty = y + padY + topExtra(opts);
   let maxW = headW;
   const rows = [];
   const spec = STMT_SLOTS[s.kind] || [];
-  let cy = y + padY + TEXT_H;
+  let cy = ty + TEXT_H;
   spec.forEach((sl, i) => {
     const lab = t(sl[0]);
     const lw = textW(ctx, lab, FONT);
@@ -541,7 +552,7 @@ function layoutBigStmt(s, x, y, out, ctx, opts) {
   });
   const w = maxW + padX * 2;
   const h = (cy - y) + padY - 3;
-  seg.push({ text: head, x: x + padX, y: y + padY + TEXT_H / 2, font: FONT });
+  seg.push({ text: head, x: x + padX, y: ty + TEXT_H / 2, font: FONT });
   for (const r of rows) {
     seg.push({ text: r.lab, x: r.lx, y: r.y + EXPR_H / 2, font: FONT });
   }
@@ -615,6 +626,14 @@ function ctlHeaderParts(s) {
     P.push({ edit: { kind: 'text', key: 'name', ident: true, value: s.name, commit: (v) => { s.name = String(v).trim(); return true; } } });
     P.push({ text: '(' });
     P.push({ edit: { kind: 'text', key: 'params', value: (s.params || []).join(', '), commit: (v) => { s.params = String(v).split(',').map(x => x.trim()).filter(Boolean); return true; } } });
+    P.push({ paramAdd: { stmt: s, title: t('blk.addParam'), onClick: () => {
+      H.pushUndo();
+      const ps = s.params || (s.params = []);
+      let k = 0;
+      while (ps.includes('p' + k)) k++;
+      ps.push('p' + k);
+      return true;
+    } } });
     P.push({ text: ') ' });
   } else if (s.kind === 'global' || s.kind === 'static') {
     P.push({ text: t('blk.stmt.' + s.kind) + ' ' });
@@ -634,19 +653,25 @@ function ctlHeaderParts(s) {
 
 function layoutBody(list, bx, by, out, ctx, ref) {
   const arr = list || [];
+  const specs = specsFor(arr);
+  const noBumpFor = (i) => i === 0; // 控制流体内首块顶部平直
   let cy = by;
   let maxW = 0;
+  for (const sp of specsAt(specs, 0)) maxW = Math.max(maxW, sp.w);
   if (arr.length === 0) {
-    out.push(dropRegion(ref, 0, bx, cy, 200, 22));
-    return { w: 200, h: 22 };
+    cy = placeSpecs(specs, 0, bx, cy, out, noBumpFor(0));
+    out.push(dropRegion(ref, 0, bx, cy, Math.max(200, maxW), 22));
+    return { w: Math.max(200, maxW), h: cy - by };
   }
   for (let i = 0; i < arr.length; i++) {
-    out.push(dropRegion(ref, i, bx, cy - 5, 200, 10));
-    const d = layoutStmt(arr[i], bx, cy, out, ctx, { noBump: i === 0 });
+    out.push(dropRegion(ref, i, bx, cy - 5, Math.max(200, maxW), 10));
+    cy = placeSpecs(specs, i, bx, cy, out, noBumpFor(i));
+    const d = layoutStmt(arr[i], bx, cy, out, ctx, { noBump: noBumpFor(i) });
     maxW = Math.max(maxW, d.w);
     cy += d.h;
   }
-  out.push(dropRegion(ref, arr.length, bx, cy - 5, 200, 10));
+  out.push(dropRegion(ref, arr.length, bx, cy - 5, Math.max(200, maxW), 10));
+  cy = placeSpecs(specs, arr.length, bx, cy, out, noBumpFor(arr.length));
   return { w: maxW, h: cy - by };
 }
 
@@ -700,9 +725,10 @@ function layoutIfElse(ifStmt, hx, bodyY, out, ctx) {
 function layoutSimpleCtl(s, x, y, out, ctx, opts) {
   const seg = [];
   const children = [];
-  const flow = inlineFlow(ctlHeaderParts(s), x + STMT_PAD_X, y + STMT_PAD_Y, children, seg, ctx, s);
+  const ty = y + STMT_PAD_Y + topExtra(opts);
+  const flow = inlineFlow(ctlHeaderParts(s), x + STMT_PAD_X, ty, children, seg, ctx, s);
   const w = flow.w + STMT_PAD_X * 2;
-  const h = Math.max(EXPR_H, flow.h + STMT_PAD_Y * 2);
+  const h = Math.max(EXPR_H, flow.h + STMT_PAD_Y * 2 + topExtra(opts));
   out.push({ kind: 'stmt', shape: 'stmt', cls: 'blk-ctl', stmt: s, x, y, w, h, segments: seg, noBump: !!(opts && opts.noBump) });
   for (const c of children) { c.stmt = s; out.push(c); }
   return { w, h };
@@ -713,7 +739,7 @@ function layoutCtlStmt(s, x, y, out, ctx, opts) {
   const headerChildren = [];
   const bodyRegions = [];
   const hx = x + CTL_MOUTH + CTL_PAD;
-  const hy = y + CTL_PAD;
+  const hy = y + CTL_PAD + topExtra(opts);
   const flow = inlineFlow(ctlHeaderParts(s), hx, hy, headerChildren, seg, ctx, s);
   let contentW = flow.w;
   let bodyY = hy + Math.max(EXPR_H, flow.h) + 8;
@@ -746,7 +772,8 @@ function layoutCtlStmt(s, x, y, out, ctx, opts) {
 
   contentW = Math.max(contentW, bodyW + BODY_INDENT);
   const w = contentW + CTL_PAD * 2 + CTL_MOUTH;
-  const h = (tailY - y) + CTL_PAD;
+  // 控制块内部拼图需要底部留白：底部凸起不贴住容器底边。
+  const h = (tailY - y) + CTL_PAD + topExtra(opts) + BUMP_H;
   out.push({ kind: 'stmt', shape: 'stmt', cls: 'blk-ctl', stmt: s, x, y, w, h, segments: seg, noBump: !!(opts && opts.noBump) });
   for (const c of headerChildren) { c.stmt = s; out.push(c); }
   for (const r of bodyRegions) out.push(r);
@@ -765,40 +792,34 @@ function layoutFuncHat(entry, x, y, out, ctx) {
 
   // 函数体按「链」排布：首块保留顶部凹口，与起始块底部凸起咬合。
   const bodyArr = s.body || [];
-  const bodyPh = placeholderFor(s.body);
+  const specs = specsFor(s.body);
+  const noBumpFor = () => false;
   let cy = bodyY;
   let bodyW = 0;
   const bx = x;
-  const placePh = () => {
-    if (!bodyPh) return;
-    const pw = Math.max(120, bodyPh.w || 0);
-    const phh = Math.max(20, bodyPh.h || 0);
-    out.push({ kind: 'placeholder', shape: 'stmt', x: bx, y: cy, w: pw, h: phh, segments: [] });
-    bodyW = Math.max(bodyW, pw);
-    cy += phh;
-  };
+  for (const sp of specs) bodyW = Math.max(bodyW, sp.w);
   if (bodyArr.length === 0) {
-    if (bodyPh && bodyPh.index === 0) placePh();
-    out.push(dropRegion({ chain: s.body }, 0, bx, cy, 200, 22));
+    cy = placeSpecs(specs, 0, bx, cy, out, noBumpFor(0));
+    out.push(dropRegion({ chain: s.body }, 0, bx, cy, Math.max(200, bodyW), 22));
     cy += 22;
     bodyW = Math.max(bodyW, 200);
   } else {
     for (let i = 0; i < bodyArr.length; i++) {
       out.push(dropRegion({ chain: s.body }, i, bx, cy - 5, Math.max(bodyW, 120), 10));
-      if (bodyPh && bodyPh.index === i) placePh();
+      cy = placeSpecs(specs, i, bx, cy, out, noBumpFor(i));
       const d = layoutStmt(bodyArr[i], bx, cy, out, ctx, { noBump: false });
       bodyW = Math.max(bodyW, d.w);
       cy += d.h;
     }
     out.push(dropRegion({ chain: s.body }, bodyArr.length, bx, cy - 5, Math.max(bodyW, 120), 10));
-    if (bodyPh && bodyPh.index === bodyArr.length) placePh();
+    cy = placeSpecs(specs, bodyArr.length, bx, cy, out, noBumpFor(bodyArr.length));
   }
 
   const w = Math.max(headerW, bodyW);
   const h = bodyY - y;
   out.push({ kind: 'stmt', shape: 'hat', cls: 'blk-start', stmt: s, hatEntry: entry, x, y, w, h, segments: seg, noBump: false });
   for (const c of children) { c.stmt = s; out.push(c); }
-  return { w, h: cy - y + STMT_PAD_Y };
+  return { w, h: cy - y + STMT_PAD_Y + BUMP_H };
 }
 
 function layoutStmt(s, x, y, out, ctx, opts) {
@@ -818,29 +839,20 @@ function layoutChain(arr, x, y, out, ctx, opts) {
   const isFrag = !!opts.frag;
   const hasHead = !isFrag && !!opts.head;
   const headH = isFrag ? 0 : HAT_H;
-  const ph = opts.placeholder || null;
+  const specs = specsFor(arr);
+  const noBumpFor = (i) => i === 0 && !hasHead;
 
   // 预量宽度，保证起始块与链内最宽积木对齐。
   let stackW = 0;
   const measure = [];
   for (let i = 0; i < arr.length; i++) {
-    if (ph && ph.index === i) stackW = Math.max(stackW, ph.w || 0);
-    const d = layoutStmt(arr[i], x, y, measure, ctx, { noBump: i === 0 && !hasHead });
+    for (const sp of specsAt(specs, i)) stackW = Math.max(stackW, sp.w);
+    const d = layoutStmt(arr[i], x, y, measure, ctx, { noBump: noBumpFor(i) });
     stackW = Math.max(stackW, d.w);
   }
-  if (ph && (ph.index === arr.length || (arr.length === 0 && ph.index === 0))) {
-    stackW = Math.max(stackW, ph.w || 0);
-  }
+  for (const sp of specsAt(specs, arr.length)) stackW = Math.max(stackW, sp.w);
 
   let cy = y + headH;
-  const placePh = () => {
-    if (!ph) return;
-    const pw = Math.max(120, ph.w || 0);
-    const phh = Math.max(20, ph.h || 0);
-    out.push({ kind: 'placeholder', shape: 'stmt', x, y: cy, w: pw, h: phh, segments: [] });
-    cy += phh;
-  };
-
   if (hasHead) {
     const titleW = textW(ctx, opts.title, FONT) + 28;
     const headW = Math.max(titleW, stackW, 60);
@@ -854,18 +866,18 @@ function layoutChain(arr, x, y, out, ctx, opts) {
 
   const dropRef = { chain: opts.dropRef.chain || null, frag: opts.dropRef.frag || null };
   if (arr.length === 0) {
-    if (ph && ph.index === 0) placePh();
+    cy = placeSpecs(specs, 0, x, cy, out, noBumpFor(0));
     out.push(dropRegion(dropRef, 0, x, cy, Math.max(stackW, 200), 22));
     return { w: Math.max(stackW, 200), h: cy - y };
   }
   for (let i = 0; i < arr.length; i++) {
     out.push(dropRegion(dropRef, i, x, cy - 5, Math.max(stackW, 120), 10));
-    if (ph && ph.index === i) placePh();
-    const d = layoutStmt(arr[i], x, cy, out, ctx, { noBump: i === 0 && !hasHead });
+    cy = placeSpecs(specs, i, x, cy, out, noBumpFor(i));
+    const d = layoutStmt(arr[i], x, cy, out, ctx, { noBump: noBumpFor(i) });
     cy += d.h;
   }
   out.push(dropRegion(dropRef, arr.length, x, cy - 5, Math.max(stackW, 120), 10));
-  if (ph && ph.index === arr.length) placePh();
+  cy = placeSpecs(specs, arr.length, x, cy, out, noBumpFor(arr.length));
   return { w: Math.max(stackW, 120), h: cy - y };
 }
 
@@ -878,9 +890,33 @@ function dragOrigin() {
   return (S.drag && S.drag.source && S.drag.source.origin) || null;
 }
 
-function placeholderFor(arr) {
+// 某个语句列表在拖动期间需要插入的占位：源链灰色占位 + 落点预览占位。
+// 同一位置同时存在源占位与落点预览时，合并为落点预览（避免重复撑高）。
+function specsFor(arr) {
+  const specs = [];
+  const push = (kind, index, w, h) => {
+    const ex = specs.find(sp => sp.index === index);
+    if (ex) {
+      if (kind === 'target') ex.kind = 'target';
+      ex.w = Math.max(ex.w, w);
+      ex.h = Math.max(ex.h, h);
+    } else {
+      specs.push({ kind, index, w, h });
+    }
+  };
   const origin = dragOrigin();
-  return (origin && origin.arr === arr) ? origin : null;
+  if (origin && origin.arr === arr) push('origin', origin.index, origin.w || 120, Math.max(20, origin.h || 20));
+  const tp = S.dropPreview;
+  if (tp && tp.list === arr) push('target', tp.index, tp.w || 120, Math.max(20, tp.h || 20));
+  return specs;
+}
+function specsAt(specs, idx) { return specs.filter(sp => sp.index === idx); }
+function placeSpecs(specs, idx, x, y, out, noBump) {
+  for (const sp of specsAt(specs, idx)) {
+    out.push({ kind: 'placeholder', shape: 'stmt', placeholderKind: sp.kind, noBump, x, y, w: sp.w, h: sp.h, segments: [] });
+    y += sp.h;
+  }
+  return y;
 }
 
 function layoutWorkspace() {
@@ -892,20 +928,18 @@ function layoutWorkspace() {
   if (l.setup) {
     layoutChain(bctx.setupChain, l.setup.x, l.setup.y, out, ctx, {
       title: t('blk.setup'), head: { key: 'setup' }, dropRef: { chain: bctx.setupChain },
-      placeholder: placeholderFor(bctx.setupChain),
     });
   }
   if (l.chain) {
     layoutChain(bctx.chain, l.chain.x, l.chain.y, out, ctx, {
       title: t('blk.start'), head: { key: 'chain' }, dropRef: { chain: bctx.chain },
-      placeholder: placeholderFor(bctx.chain),
     });
   }
   for (const f of bctx.funcs || []) {
     layoutFuncHat(f, f.x, f.y, out, ctx);
   }
   for (const f of bctx.frags) {
-    layoutChain(f.stmts, f.x, f.y, out, ctx, { frag: f, dropRef: { frag: f }, placeholder: placeholderFor(f.stmts) });
+    layoutChain(f.stmts, f.x, f.y, out, ctx, { frag: f, dropRef: { frag: f } });
   }
   S.wsRegions = out;
 }
@@ -1090,7 +1124,7 @@ function strokeRegionPath(ctx, r, pad) {
   else if (r.shape === 'stmt') stmtPath(ctx, x, y, w, h, !!r.noBump);
   else if (r.shape === 'bool') hexPath(ctx, x, y, w, h);
   else if (r.shape === 'raw') rrPath(ctx, x, y, w, h, 6);
-  else if (r.shape === 'slot' || r.shape === 'edit' || r.shape === 'attr' || r.shape === 'append' || r.shape === 'array-append') rrPath(ctx, x, y, w, h, 6);
+  else if (r.shape === 'slot' || r.shape === 'edit' || r.shape === 'attr' || r.shape === 'append' || r.shape === 'array-append' || r.shape === 'param-add') rrPath(ctx, x, y, w, h, 6);
   else if (r.shape === 'op' || r.shape === 'toggle' || r.shape === 'color') rrPath(ctx, x, y, w, h, 5);
   else if (r.shape === 'row' || r.shape === 'tag' || r.shape === 'pal-item') rrPath(ctx, x, y, w, h, 6);
   else if (r.shape === 'drop') rrPath(ctx, x, y, w, h, 3);
@@ -1255,6 +1289,18 @@ function drawArrayAppendRegion(ctx, r) {
   drawAppendRegion(ctx, r);
 }
 
+function drawParamAddRegion(ctx, r) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.14)';
+  rrPath(ctx, r.x, r.y, r.w, r.h, 5);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  drawSegments(ctx, r.segments, '#fff');
+  ctx.restore();
+}
+
 function drawInlineEditContent(ctx, r, text, prefix) {
   const p = prefix || '';
   const font = (r.segments && r.segments[0] && r.segments[0].font) || FONT;
@@ -1348,11 +1394,12 @@ function drawCompRegion(ctx, r) {
 }
 
 function drawPlaceholderRegion(ctx, r) {
+  const target = (r.placeholderKind === 'target');
   ctx.save();
-  ctx.fillStyle = 'rgba(148,158,178,0.20)';
-  stmtPath(ctx, r.x, r.y, r.w, r.h, false);
+  ctx.fillStyle = target ? 'rgba(91,157,255,0.18)' : 'rgba(148,158,178,0.20)';
+  stmtPath(ctx, r.x, r.y, r.w, r.h, !!r.noBump);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(148,158,178,0.75)';
+  ctx.strokeStyle = target ? 'rgba(91,157,255,0.9)' : 'rgba(148,158,178,0.75)';
   ctx.setLineDash([5, 4]);
   ctx.lineWidth = 1.5;
   ctx.stroke();
@@ -1404,6 +1451,7 @@ function drawRegion(ctx, r, th) {
     case 'op': drawOpRegion(ctx, r); break;
     case 'append': drawAppendRegion(ctx, r); break;
     case 'array-append': drawArrayAppendRegion(ctx, r); break;
+    case 'param-add': drawParamAddRegion(ctx, r); break;
     case 'edit': drawEditRegion(ctx, r); break;
     case 'attr': drawAttrRegion(ctx, r); break;
     case 'toggle': drawToggleRegion(ctx, r); break;
@@ -1543,6 +1591,17 @@ function renderPaletteCanvas() {
     rrPath(ctx, sb.trackX, sb.thumbTop, sb.trackW, sb.thumbH, 3);
     ctx.fill();
   }
+  // 拖动起始块/函数起始块到调色板时显示删除高亮
+  if (S.trashOver) {
+    ctx.setTransform(S.dpr, 0, 0, S.dpr, 0, 0);
+    ctx.strokeStyle = 'rgba(255,107,107,0.95)';
+    ctx.lineWidth = 2;
+    rrPath(ctx, 3, 3, cw - 6, ch - 6, 8);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,107,107,0.10)';
+    rrPath(ctx, 3, 3, cw - 6, ch - 6, 8);
+    ctx.fill();
+  }
 }
 
 function renderWorkCanvas() {
@@ -1586,23 +1645,8 @@ function renderWorkCanvas() {
     drawHighlight(ctx, r, S.dropHover.valid ? 'rgba(255,255,255,0.85)' : 'rgba(255,107,107,0.9)', 1 / scale);
   }
 
-  // Scratch 式落点预览：在有效语句落点处画一个占位块
-  if (S.dropHover && S.dropHover.valid && S.dropHover.region && S.dropHover.region.kind === 'drop' && S.dropHover.previewH) {
-    const r = S.dropHover.region;
-    const ph = S.dropHover.previewH;
-    // 插入点与落点带上边缘对齐（普通落点带高 10，边界在其中心；空链落点带从其上边缘开始）
-    const py = r.h > 12 ? r.y + r.h / 2 : r.y;
-    ctx.save();
-    ctx.fillStyle = 'rgba(91,157,255,0.16)';
-    ctx.strokeStyle = 'rgba(91,157,255,0.85)';
-    ctx.lineWidth = 1.5 / scale;
-    stmtPath(ctx, r.x, py, Math.max(r.w, 120), ph, false);
-    ctx.fill();
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  // 报错积木标红
+  // 落点预览占位已并入布局（layoutWorkspace 会按 S.dropPreview 在目标位置插入占位块），
+  // 此处只保留落点高亮；报错积木标红。
   for (const err of S.errors || []) {
     for (const r of S.wsRegions) {
       if (r.kind === 'stmt' && r.stmt === err.stmt) drawErrorMark(ctx, r, scale);
@@ -1648,9 +1692,13 @@ function renderVars(ctx, cw, ch, th) {
 function echoCodeText() {
   if (!H || !H.getBctx()) return '';
   const bctx = H.getBctx();
+  const funcsCode = statementsToCode((bctx.funcs || []).map(f => f.stmt));
   const setupCode = bctx.layout.setup ? statementsToCode(bctx.setupChain) : '';
   const processCode = bctx.layout.chain ? statementsToCode(bctx.chain) : '';
-  return '// ' + t('blk.setup') + '\n' + setupCode + '\n\n// ' + t('blk.start') + '\n' + processCode;
+  let out = '';
+  if (funcsCode) out += '// ' + t('blk.pal.funcs') + '\n' + funcsCode + '\n\n';
+  out += '// ' + t('blk.setup') + '\n' + setupCode + '\n\n// ' + t('blk.start') + '\n' + processCode;
+  return out;
 }
 
 function renderEchoCanvas() {
@@ -1698,28 +1746,39 @@ function renderGhost() {
   clearCanvas(ctx, c, 'rgba(0,0,0,0)');
   ctx.setTransform(S.dpr, 0, 0, S.dpr, 0, 0);
 
-  if (S.lens) {
-    ctx.font = '22px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('🔍', S.lens.x, S.lens.y);
-    if (S.lens.info) {
-      const info = S.lens.info;
-      ctx.font = FONT;
-      const tw = ctx.measureText(info).width;
-      const bx = S.lens.x + 14, by = S.lens.y + 14;
+  if (S.altHover && S.altHover.text) {
+    const info = S.altHover.text;
+    ctx.font = FONT;
+    const maxW = 260;
+    const words = String(info).split(/\s+/);
+    const lines = [];
+    let cur = '';
+    for (const w of words) {
+      const test = cur ? cur + ' ' + w : w;
+      if (cur && ctx.measureText(test).width > maxW) { lines.push(cur); cur = w; }
+      else cur = test;
+    }
+    if (cur) lines.push(cur);
+    if (lines.length) {
+      const lh = 15;
+      const tw = Math.max(...lines.map(l => ctx.measureText(l).width));
+      const wBox = Math.max(40, tw + 20);
+      const hBox = lines.length * lh + 14;
+      let bx = S.altHover.x + 14, by = S.altHover.y + 14;
+      const vw = window.innerWidth || 1200, vh = window.innerHeight || 800;
+      if (bx + wBox > vw - 8) bx = Math.max(8, S.altHover.x - wBox - 14);
+      if (by + hBox > vh - 8) by = Math.max(8, S.altHover.y - hBox - 14);
       ctx.fillStyle = 'rgba(47,52,64,0.97)';
-      rrPath(ctx, bx, by, tw + 20, 30, 6);
+      rrPath(ctx, bx, by, wBox, hBox, 6);
       ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+      ctx.strokeStyle = 'rgba(255,255,255,0.22)';
       ctx.lineWidth = 1;
       ctx.stroke();
       ctx.fillStyle = '#fff';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.fillText(info, bx + 10, by + 15);
+      lines.forEach((ln, i) => ctx.fillText(ln, bx + 10, by + 12 + i * lh));
     }
-    return;
   }
 
   const d = S.drag;
@@ -2340,12 +2399,12 @@ function startStmtGroupPending(r, e) {
 function startChainMove(r, e) {
   const key = r.head.key;
   const pos = H.getBctx().layout[key] || H.getBctx().layout.chain;
-  S.drag = { mode: 'chain-move', key, startX: e.clientX, startY: e.clientY, lx: pos.x, ly: pos.y };
+  S.drag = { mode: 'chain-move', key, startX: e.clientX, startY: e.clientY, lx: pos.x, ly: pos.y, overTrash: false };
 }
 function startFuncMove(r, e) {
   const entry = r.hatEntry;
   if (!entry) return;
-  S.drag = { mode: 'func-move', entry, startX: e.clientX, startY: e.clientY, lx: entry.x, ly: entry.y };
+  S.drag = { mode: 'func-move', entry, startX: e.clientX, startY: e.clientY, lx: entry.x, ly: entry.y, overTrash: false };
 }
 function startFragMove(r, e) {
   const f = r.head.frag;
@@ -2361,10 +2420,16 @@ function startPan(e) {
   if (S.workCanvas.setPointerCapture) S.workCanvas.setPointerCapture(e.pointerId);
 }
 
+function overPalette(e) {
+  const palRect = S.palCanvas && S.palCanvas.getBoundingClientRect();
+  return !!(palRect && e.clientX >= palRect.left && e.clientX <= palRect.right && e.clientY >= palRect.top && e.clientY <= palRect.bottom);
+}
+
 function computeDropTarget(e) {
   const d = S.drag;
   const src = d.source;
   S.dropHover = null;
+  S.dropPreview = null;
   d.target = null;
   d.valid = false;
 
@@ -2440,8 +2505,16 @@ function computeDropTarget(e) {
     const nearest = nearestDropWorld(gx, gy, view.scale);
     if (nearest) {
       d.target = { kind: 'stmt-drop', drop: nearest.drop };
-      d.valid = src.type === 'palette' ? src.stmt : true;
-      S.dropHover = { region: nearest, valid: d.valid, previewH: dragPreviewH(src) };
+      const valid = src.type === 'palette' ? src.stmt : true;
+      d.valid = valid;
+      const previewH = dragPreviewH(src);
+      if (valid) {
+        const list = nearest.drop.frag ? nearest.drop.frag.stmts : nearest.drop.chain;
+        S.dropPreview = { list, index: nearest.drop.index, w: Math.max(nearest.w || 120, 120), h: previewH };
+        S.dropHover = { region: nearest, valid: true, previewH };
+      } else {
+        S.dropHover = { region: nearest, valid: false };
+      }
       return;
     }
   }
@@ -2477,6 +2550,8 @@ function updateDrag(e) {
     const scale = H.getBctx().layout.view.scale || 1;
     pos.x = d.lx + (e.clientX - d.startX) / scale;
     pos.y = d.ly + (e.clientY - d.startY) / scale;
+    d.overTrash = overPalette(e);
+    S.trashOver = d.overTrash;
     puzzleCanvasRender();
     return;
   }
@@ -2484,6 +2559,8 @@ function updateDrag(e) {
     const scale = H.getBctx().layout.view.scale || 1;
     d.entry.x = d.lx + (e.clientX - d.startX) / scale;
     d.entry.y = d.ly + (e.clientY - d.startY) / scale;
+    d.overTrash = overPalette(e);
+    S.trashOver = d.overTrash;
     puzzleCanvasRender();
     return;
   }
@@ -2530,9 +2607,33 @@ function endDrag(e) {
   if (!d) return;
   S.drag = null;
   S.dropHover = null;
+  S.dropPreview = null;
+  S.trashOver = false;
   renderGhost();
 
-  if (d.mode === 'pan' || d.mode === 'chain-move' || d.mode === 'func-move' || d.mode === 'frag-move') { puzzleCanvasRender(); return; }
+  if (d.mode === 'pan' || d.mode === 'frag-move') { puzzleCanvasRender(); return; }
+  if (d.mode === 'chain-move' || d.mode === 'func-move') {
+    if (d.overTrash) {
+      const bctx = H.getBctx();
+      if (!bctx) { puzzleCanvasRender(); return; }
+      H.pushUndo();
+      if (d.mode === 'chain-move') {
+        if (d.key === 'setup') {
+          bctx.layout.setup = null;
+          bctx.setupChain.length = 0;
+        } else {
+          bctx.layout.chain = null;
+          bctx.chain.length = 0;
+        }
+      } else {
+        const idx = bctx.funcs.indexOf(d.entry);
+        if (idx >= 0) bctx.funcs.splice(idx, 1);
+      }
+      H.refreshPreview();
+    }
+    puzzleCanvasRender();
+    return;
+  }
   if (d.mode === 'stmt-group-pending') {
     // 注释块：未拖动松开视为单击，进入编辑。
     if (d.source && d.source.region && d.source.stmt && d.source.stmt.kind === 'comment' &&
@@ -2715,38 +2816,58 @@ function endDrag(e) {
 
 /* ============================ 放大镜 ============================ */
 
-export function puzzleCanvasBeginLens(e) {
-  S.lens = { x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY, moved: false, info: '' };
-  renderGhost();
-}
-function updateLens(e) {
-  if (!S.lens) return;
-  S.lens.x = e.clientX; S.lens.y = e.clientY;
-  if (Math.hypot(e.clientX - S.lens.startX, e.clientY - S.lens.startY) > 3) S.lens.moved = true;
+function hoverInfoAt(e) {
   let info = '';
   const palRect = S.palCanvas && S.palCanvas.getBoundingClientRect();
   if (palRect && e.clientX >= palRect.left && e.clientX <= palRect.right && e.clientY >= palRect.top && e.clientY <= palRect.bottom) {
     const hit = hitPalette(e.clientX - palRect.left, e.clientY - palRect.top);
     if (hit && hit.item) info = hit.item.info || '';
-  } else if (S.workCanvas) {
+  } else if (S.workCanvas && H && H.getBctx()) {
     const rect = S.workCanvas.getBoundingClientRect();
     const mx = e.clientX - rect.left, my = e.clientY - rect.top;
     const ch = S.workCanvas.clientHeight || S.workCanvas.height;
-    const hit = my < (ch - VARS_H) ? hitWorkspace(mx, my, false) : null;
+    const hit = my < (ch - VARS_H) ? hitWorkspace(mx, my, false) : hitVars(mx, my);
     if (hit && hit.kind === 'expr') info = H.nodeInfo(hit.node) || '';
     else if (hit && hit.kind === 'stmt' && hit.stmt) info = t(STMT_BLOCKS[hit.stmt.kind] ? STMT_BLOCKS[hit.stmt.kind].desc : '') || '';
-    else if (hit && hit.kind === 'head') info = hit.head.frag ? t('blk.fragment') : t('blk.start');
+    else if (hit && hit.kind === 'head') info = hit.head.frag ? t('blk.fragment') : (hit.head.key === 'setup' ? t('blk.setup') : t('blk.start'));
+    else if (hit && hit.kind === 'attr-var') info = tf('blk.attrRefHint', hit.attrVar);
+    else if (hit && hit.kind === 'var-row' && hit.varRow && hit.varRow.name) info = tf('blk.varHasKf', hit.varRow.name);
   }
-  S.lens.info = info;
+  return info;
+}
+
+function updateAltHover(e) {
+  if (!e.altKey || !H || !H.getBctx()) {
+    if (S.altHover) { S.altHover = null; renderGhost(); }
+    return;
+  }
+  const info = hoverInfoAt(e);
+  if (info) {
+    S.altHover = { x: e.clientX, y: e.clientY, text: info };
+  } else {
+    S.altHover = null;
+  }
+  setPuzzleCursor(e.altKey ? 'help' : null, e);
   renderGhost();
 }
-function endLens() { S.lens = null; renderGhost(); }
+
+function setPuzzleCursor(cursor, e) {
+  if (S.workCanvas) S.workCanvas.style.cursor = cursor || '';
+  if (S.palCanvas) S.palCanvas.style.cursor = cursor || '';
+}
+
+function clearAltHover() {
+  if (S.altHover) { S.altHover = null; renderGhost(); }
+  if (S.workCanvas) S.workCanvas.style.cursor = '';
+  if (S.palCanvas) S.palCanvas.style.cursor = '';
+}
 
 /* ============================ 指针事件 ============================ */
 
 function onPalDown(e) {
   if (!H || !H.getBctx()) return;
   if (e.button !== 0) return;
+  if (S.altHover) clearAltHover();
   if (S.edit) commitEdit();
   const rect = S.palCanvas.getBoundingClientRect();
   const mx = e.clientX - rect.left, my = e.clientY - rect.top;
@@ -2771,6 +2892,7 @@ function onPalDown(e) {
 function onWorkDown(e) {
   if (!H || !H.getBctx()) return;
   if (e.button !== 0) return;
+  if (S.altHover) clearAltHover();
   const rect = S.workCanvas.getBoundingClientRect();
   const mx = e.clientX - rect.left, my = e.clientY - rect.top;
   const ch = S.workCanvas.clientHeight || S.workCanvas.height;
@@ -2828,6 +2950,11 @@ function onWorkDown(e) {
   if (hit.kind === 'toggle') {
     e.preventDefault();
     if (hit.toggle && hit.toggle.onClick && hit.toggle.onClick()) { H.refreshPreview(); puzzleCanvasRender(); }
+    return;
+  }
+  if (hit.kind === 'param-add') {
+    e.preventDefault();
+    if (hit.paramAdd && hit.paramAdd.onClick && hit.paramAdd.onClick()) { H.refreshPreview(); puzzleCanvasRender(); }
     return;
   }
   if (hit.kind === 'color') { e.preventDefault(); openColorEdit(hit); return; }
@@ -2915,8 +3042,9 @@ function onWindowMove(e) {
     }
     return;
   }
-  if (S.lens) { updateLens(e); return; }
   if (S.drag) { updateDrag(e); return; }
+  if (e.altKey) { updateAltHover(e); return; }
+  if (S.altHover) clearAltHover();
   updateHover(e);
 }
 function onWindowUp(e) {
@@ -2926,7 +3054,6 @@ function onWindowUp(e) {
     S.editMouse = null;
     return;
   }
-  if (S.lens) { endLens(); return; }
   if (S.drag) {
     // 数字块：未拖动的点击直接进入输入浮层编辑
     const d = S.drag;
@@ -2968,10 +3095,13 @@ function updateHover(e) {
   }
   if (hover !== S.hover) {
     S.hover = hover;
-    if (S.workCanvas) {
-      const kind = hover && hover.kind;
-      S.workCanvas.style.cursor = (kind === 'edit') ? 'text' : (kind === 'attr' || kind === 'toggle' || kind === 'color' || kind === 'array-append') ? 'pointer' : (kind === 'expr' || kind === 'stmt' || kind === 'head' || kind === 'op' || kind === 'attr-var' || kind === 'pal-item') ? 'grab' : 'default';
-    }
+    const kind = hover && hover.kind;
+    const cursor = (kind === 'edit') ? 'text'
+      : (kind === 'attr' || kind === 'toggle' || kind === 'color' || kind === 'array-append' || kind === 'param-add') ? 'pointer'
+      : (kind === 'expr' || kind === 'stmt' || kind === 'head' || kind === 'op' || kind === 'attr-var') ? 'grab'
+      : 'default';
+    if (S.workCanvas) S.workCanvas.style.cursor = (kind === 'pal-item') ? 'default' : cursor;
+    if (S.palCanvas) S.palCanvas.style.cursor = (kind === 'pal-item') ? 'grab' : cursor;
     puzzleCanvasRender();
   }
 }
@@ -3097,6 +3227,10 @@ export function initPuzzleCanvas() {
       ev.preventDefault();
       H.close(false);
     }
+  });
+  // 松开 Alt：清除帮助气泡并恢复光标
+  window.addEventListener('keyup', (ev) => {
+    if (ev.key === 'Alt') clearAltHover();
   });
   puzzleCanvasResize();
 }
