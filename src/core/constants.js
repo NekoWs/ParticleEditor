@@ -160,7 +160,7 @@ export const state = {
   tracks: [],
   functions: [],
   selectedFunction: null,
-  rotMode: 'orbit',   // 旋转 gizmo 编辑目标：'orbit'=公转(rot) | 'spin'=自转(spin)
+  rotMode: 'spin',    // 旋转 gizmo 编辑目标：默认自转；按住 R 时临时改为公转(orbit)
   tool: 'select',
   drawPlane: 'XZ',
   drawCount: 30,

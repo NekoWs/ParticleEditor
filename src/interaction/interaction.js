@@ -8,8 +8,8 @@ import { t } from '../core/i18n.js';
 import { state, getParticle, getFunction, isDerivedParticle, RAD2DEG, ROT_SNAP, PLANES, DEG2RAD, nextGroupName } from '../core/constants.js';
 import { shiftHeld } from './input-state.js';
 import { camera, renderer, controls, raycaster, pointer, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, AXIS_RING_COLORS, GIZMO_FACE_DEFS, resetWorldAxisState, focalLengthPx } from '../scene/scene.js';
-import { currentVisual, rebuildPoints, setPreview, clearPreview, rotVectorAt, trackValueAt, findTrackByPr, groupScaleAt } from '../core/animation.js';
-import { screenToNdc, planePointAt, worldToUV, computeShapePositions, snapGrid, snapValue, pickParticleAt, particleAt, projectToScreen, distToSegment, planeInfo, selectionCentroid, updateGizmoFrame } from './gizmo.js';
+import { currentVisual, rebuildPoints, setPreview, clearPreview, rotVectorAt, orbitCenterAt, trackValueAt, findTrackByPr, groupScaleAt } from '../core/animation.js';
+import { screenToNdc, planePointAt, worldToUV, computeShapePositions, snapGrid, snapValue, pickParticleAt, particleAt, projectToScreen, distToSegment, planeInfo, selectionCentroid, updateGizmo, updateGizmoFrame } from './gizmo.js';
 import { groupCurrentCentroid, groupCentroidValue, deleteGroup, createGroup } from '../ui/tree.js';
 import { refreshFunctionPanel } from '../ui/panels.js';
 import { setFunctionTrackValue, setGroupTrackValue, setComponentKeyframe, editParticles, addParticle, autoGroup, removeGroupAndTracks } from '../core/edit.js';
@@ -226,21 +226,26 @@ export function enterRotate(clientX, clientY, axis) {
   const fx = getFunction(state.selectedFunction);
   if (fx) {
     pushUndo();
-    const c = fxCurrentPos(fx.id, Math.round(state.time));
+    const c = state.rotMode === 'orbit'
+      ? orbitCenterAt('f:' + fx.id, state.time)
+      : fxCurrentPos(fx.id, Math.round(state.time));
     const { axArr, u, v } = rotationBasis(axis);
     const p0 = rayOnAxisPlane(clientX, clientY, axArr, c);
     const startAngle = p0 ? angleInBasis(p0, c, u, v) : 0;
     const T = Math.round(state.time);
     const startRot = fxRotationValueAt(fx.id, T);
     const startSpin = spinRotationValueAt('f:' + fx.id, T);
-    modal = { type: 'fx-rotate', fxId: fx.id, centroid: c, axis: axArr, axisKey: axis, axisIndex: AXIS_INDEX[axis] ?? 1, startRot, startSpin, u, v, startAngle };
+    modal = { type: 'fx-rotate', fxId: fx.id, centroid: c, axis: axArr, axisKey: axis, axisIndex: AXIS_INDEX[axis] ?? 1, startRot, startSpin, rotMode: state.rotMode, u, v, startAngle };
     setDragAxisHighlight(modal);
     controls.enabled = false;
     return;
   }
   const gname = beginSelectionTransform(() => enterRotate(clientX, clientY, axis));
   if (gname === undefined) return;
-  const c = gname ? groupCurrentCentroid(gname, 'pos') : selectionCentroid();
+  const selParticles = state.particles.filter(p => state.selected.has(p.id));
+  const c = gname
+    ? (state.rotMode === 'orbit' ? orbitCenterAt('g:' + gname, state.time) : groupCurrentCentroid(gname, 'pos'))
+    : (state.rotMode === 'orbit' && selParticles.length === 1 ? orbitCenterAt(selParticles[0].id, state.time) : selectionCentroid());
   const { axArr, u, v } = rotationBasis(axis);
   const p0 = rayOnAxisPlane(clientX, clientY, axArr, c);
   const startAngle = p0 ? angleInBasis(p0, c, u, v) : 0;
@@ -251,7 +256,7 @@ export function enterRotate(clientX, clientY, axis) {
     const startSpin = spinRotationValueAt('g:' + gname, T);
     modal = {
       type: 'group-rotate', gname, centroid: c, axis: axArr, axisKey: axis,
-      axisIndex: AXIS_INDEX[axis] ?? 1, startRot, startSpin,
+      axisIndex: AXIS_INDEX[axis] ?? 1, startRot, startSpin, rotMode: state.rotMode,
       origins, u, v, startAngle,
     };
   } else {
@@ -259,7 +264,7 @@ export function enterRotate(clientX, clientY, axis) {
     for (const id of selectedMemberIds()) startRots.set(id, rotVectorAt(id, Math.round(state.time)));
     modal = {
       type: 'rotate', origins, centroid: c, axis: axArr, axisKey: axis,
-      axisIndex: AXIS_INDEX[axis] ?? 1, u, v, startAngle, startRots,
+      axisIndex: AXIS_INDEX[axis] ?? 1, rotMode: state.rotMode, u, v, startAngle, startRots,
     };
   }
   setDragAxisHighlight(modal);
@@ -299,27 +304,32 @@ export function enterViewRotate(clientX, clientY) {
   const fx = getFunction(state.selectedFunction);
   if (fx) {
     pushUndo();
-    const c = fxCurrentPos(fx.id, Math.round(state.time));
+    const c = state.rotMode === 'orbit'
+      ? orbitCenterAt('f:' + fx.id, state.time)
+      : fxCurrentPos(fx.id, Math.round(state.time));
     const T = Math.round(state.time);
     const startRot = fxRotationValueAt(fx.id, T);
     const startSpin = spinRotationValueAt('f:' + fx.id, T);
-    modal = { type: 'fx-view-rotate', fxId: fx.id, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot, startSpin, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
+    modal = { type: 'fx-view-rotate', fxId: fx.id, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot, startSpin, rotMode: state.rotMode, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
     controls.enabled = false;
     return;
   }
   const gname = beginSelectionTransform(() => enterViewRotate(clientX, clientY));
   if (gname === undefined) return;
-  const c = gname ? groupCurrentCentroid(gname, 'pos') : selectionCentroid();
+  const selParticles = state.particles.filter(p => state.selected.has(p.id));
+  const c = gname
+    ? (state.rotMode === 'orbit' ? orbitCenterAt('g:' + gname, state.time) : groupCurrentCentroid(gname, 'pos'))
+    : (state.rotMode === 'orbit' && selParticles.length === 1 ? orbitCenterAt(selParticles[0].id, state.time) : selectionCentroid());
   const origins = snapshotSelection(p => currentVisual(p).pos.slice());
   if (gname) {
     const T = Math.round(state.time);
     const startRot = groupRotationValueAt(gname, T);
     const startSpin = spinRotationValueAt('g:' + gname, T);
-    modal = { type: 'group-view-rotate', gname, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot, startSpin, origins, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
+    modal = { type: 'group-view-rotate', gname, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot, startSpin, rotMode: state.rotMode, origins, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
   } else {
     const startRots = new Map();
     for (const id of selectedMemberIds()) startRots.set(id, rotVectorAt(id, Math.round(state.time)));
-    modal = { type: 'view-rotate', origins, centroid: c, view: true, lookAxis: viewAxisOf(c), startRots, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
+    modal = { type: 'view-rotate', origins, centroid: c, view: true, lookAxis: viewAxisOf(c), startRots, rotMode: state.rotMode, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
   }
   controls.enabled = false;
 }
@@ -337,7 +347,7 @@ export function updateViewRotate(clientX, clientY) {
   let angle = -m.angle; // 绕「对象→相机」轴，负角度使对象与拖拽方向一致（顺时针拖 → 顺时针转）
   if (shiftHeld) angle = Math.round(angle * RAD2DEG / ROT_SNAP) * ROT_SNAP * DEG2RAD;
   const a = m.lookAxis;
-  const prop = (state.rotMode === 'spin' && m.type !== 'view-rotate') ? 'spin' : 'rot';
+  const prop = (m.rotMode === 'spin' && m.type !== 'view-rotate') ? 'spin' : 'rot';
   if (m.type === 'fx-view-rotate') {
     const base = prop === 'spin' ? m.startSpin : m.startRot;
     const newRot = applyWorldRotation(base, a, angle);
@@ -481,7 +491,7 @@ export function updateRotate(clientX, clientY) {
   if (!p1) return;
   let angle = angleInBasis(p1, m.centroid, m.u, m.v) - m.startAngle;
   if (shiftHeld) angle = Math.round(angle * RAD2DEG / ROT_SNAP) * ROT_SNAP * DEG2RAD;
-  const prop = (state.rotMode === 'spin' && m.type !== 'rotate') ? 'spin' : 'rot'; // 普通粒子只有公转
+  const prop = (m.rotMode === 'spin' && m.type !== 'rotate') ? 'spin' : 'rot'; // 普通粒子只有公转
   if (m.type === 'fx-rotate') {
     const base = prop === 'spin' ? m.startSpin : m.startRot;
     const newRot = base.slice();
@@ -699,20 +709,6 @@ export function setGizmoHover(arrowAxis, ringAxis, faceKey, viewRingHover) {
 export function setDragAxisHighlight(m) {
   // 操作轴提示线由 updateGizmoFrame 在中心显示
   resetWorldAxisState();
-}
-
-// 旋转工具角标 + title：显示当前 gizmo 编辑的是自转还是公转。
-export function updateRotateToolBadge() {
-  const badge = document.getElementById('rot-mode-badge');
-  const btn = document.querySelector('.tool[data-tool="rotate"]');
-  if (badge) {
-    if (state.tool !== 'rotate') badge.textContent = '';
-    else badge.textContent = state.rotMode === 'spin' ? t('rotMode.spin') : t('rotMode.orbit');
-  }
-  if (btn) {
-    if (state.tool !== 'rotate') btn.title = t('tool.rotate');
-    else btn.title = state.rotMode === 'spin' ? t('tool.rotateSpin') : t('tool.rotateOrbit');
-  }
 }
 
 renderer.domElement.addEventListener('pointerdown', (ev) => {
@@ -937,17 +933,20 @@ window.addEventListener('keydown', (ev) => {
     return;
   }
   if (k === 'r' && state.tool === 'rotate') {
-    if (state.selectedFunction || state.selectedGroup) {
-      state.rotMode = state.rotMode === 'orbit' ? 'spin' : 'orbit';
-    } else {
-      state.rotMode = 'orbit'; // 普通粒子无自转，固定公转
-    }
-    updateRotateToolBadge();
+    state.rotMode = 'orbit'; // 按住 R 期间为公转
+    updateGizmo();
     return;
   }
   if (k === 's') enterScale(lastMouse.x);
   else if (k === 'delete') deleteSelected();
   else if (k === 'escape') { state.selected.clear(); state.selectedGroup = null; state.selectedFunction = null; rebuildPoints(); }
+});
+
+window.addEventListener('keyup', (ev) => {
+  if (ev.key.toLowerCase() === 'r') {
+    state.rotMode = 'spin'; // 松开 R 恢复自转
+    if (state.tool === 'rotate') updateGizmo();
+  }
 });
 
 export function updateBoxOverlay() {

@@ -186,6 +186,7 @@ function renderFlatRow(row) {
   const div = el('div', 'tt-row tt-' + row.kind);
   div.style.height = TL_TREE_ROW_H + 'px';
   div.style.paddingLeft = (4 + (row.depth || 0) * 12) + 'px';
+  div.dataset.tlkey = row.key;
   const expanded = !!row.expanded;
 
   switch (row.kind) {
@@ -253,12 +254,11 @@ function renderFlatRow(row) {
       label.textContent = t('prop.' + row.prop);
       div.appendChild(label);
 
-      // XYZ 行：[x, y, z] 三个可编辑当前值
-      const vec = el('span', 'tt-vec');
-      vec.appendChild(document.createTextNode('['));
-      propComps(row.id, row.prop).forEach((comp, i) => {
-        if (i > 0) vec.appendChild(document.createTextNode(','));
-        const inp = el('input', 'tt-val');
+      // XYZ 行：合并为组合输入框（不显示 XYZ 字样，靠分隔线区分三个属性）
+      const vec = el('div', 'vec3');
+      propComps(row.id, row.prop).forEach((comp) => {
+        const seg = el('div', 'vec3-seg');
+        const inp = el('input', 'tt-val vec3-input');
         inp.type = 'number';
         inp.step = '0.01';
         inp.dataset.id = row.id;
@@ -266,9 +266,9 @@ function renderFlatRow(row) {
         inp.dataset.comp = comp;
         inp.title = COMP_LABELS[comp];
         if (row.readOnly) inp.disabled = true;
-        vec.appendChild(inp);
+        seg.appendChild(inp);
+        vec.appendChild(seg);
       });
-      vec.appendChild(document.createTextNode(']'));
       div.appendChild(vec);
       break;
     }
@@ -427,6 +427,11 @@ function onTreeClick(ev) {
   // 选中底部列表中的组 / 粒子 / 函数对象；支持 Ctrl 多选与 Shift 连续选择。
   const rowEl = ev.target.closest('.tt-row');
   if (!rowEl) return;
+  // 点击整行即可展开/折叠（无需精准点三角形）；输入框/按钮/三角形保持原交互。
+  const tlkey = rowEl.dataset.tlkey;
+  if (tlkey && !ev.target.closest('input') && !ev.target.closest('button') && !ev.target.closest('.tt-arrow')) {
+    toggleKey(tlkey);
+  }
   const selkind = rowEl.dataset.selkind;
   if (!selkind) return;
   const multi = ev.ctrlKey || ev.metaKey;

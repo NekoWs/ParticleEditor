@@ -387,11 +387,6 @@ body {
   transition: all 0.12s ease;
 }
 .tool svg { width: 18px; height: 18px; }
-.tool .rot-mode-badge {
-  position: absolute; right: 1px; bottom: 1px; min-width: 10px; height: 10px;
-  padding: 0 1px; border-radius: 5px; font-size: 8px; line-height: 10px; text-align: center;
-  background: #11141a; color: #fff; font-weight: 700;
-}
 .tool:hover { background: var(--panel-2); border-color: var(--accent); color: var(--accent); }
 .tool.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
@@ -669,7 +664,7 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .tt-sub-label { flex: 0 1 auto; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tt-empty { color: var(--muted); padding: 6px 8px; font-size: 12px; }
 
-.tt-plabel { flex: 0 0 34px; color: #9aa0ad; font-size: 12px; }
+.tt-plabel { flex: 0 0 52px; color: #9aa0ad; font-size: 11px; white-space: nowrap; }
 .tt-vec {
   flex: 0 0 auto; display: inline-flex; align-items: center; gap: 2px;
   color: var(--muted); font-size: 11px; white-space: nowrap;
@@ -691,6 +686,8 @@ body.ctrl-held .kf-t { cursor: pointer; }
 }
 .tt-val:focus, .tt-var-val:focus { border-color: var(--accent); outline: none; }
 .tt-val:disabled, .tt-var-val:disabled { opacity: 0.55; }
+.tt-row .vec3 { height: 20px; }
+.tt-row .vec3 input { width: 34px; font-size: 10px; }
 
 .tt-add-kf, .tt-add-var-kf, .tt-add-var {
   flex: 0 0 auto; width: 22px; height: 18px; padding: 0;
@@ -772,18 +769,33 @@ body.ctrl-held .kf-t { cursor: pointer; }
   color: var(--text); border-radius: 5px; padding: 5px 7px;
   font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px; line-height: 1.4;
 }
+/* 统一组合 XYZ 输入框：三个输入框分别对应 X/Y/Z；需要显示 XYZ 时标签居左，
+   每个属性之间以浅色竖线分隔。 */
+.vec3 {
+  display: inline-flex; align-items: center; height: 26px; box-sizing: border-box;
+  background: var(--panel-3); border: 1px solid var(--border); border-radius: 5px;
+  overflow: hidden;
+}
+.vec3-seg {
+  display: inline-flex; align-items: center; gap: 2px; height: 100%;
+  padding: 0 4px;
+}
+.vec3-seg + .vec3-seg { border-left: 1px solid var(--border); }
+.vec3-seg span {
+  flex: none; font-size: 11px; color: var(--muted); line-height: 1;
+}
+.vec3 input {
+  width: 38px; height: 100%; border: none; background: transparent;
+  padding: 0; text-align: center; box-shadow: none;
+  font-size: 11px; color: var(--text); font-variant-numeric: tabular-nums;
+}
+.vec3 input:focus { outline: none; }
+.vec3 input:disabled { opacity: 0.55; }
 .fx-center {
   display: inline-flex; align-items: center; gap: 2px;
   height: 26px; padding: 0 4px; box-sizing: border-box;
   background: var(--panel-3); border: 1px solid var(--border); border-radius: 5px;
 }
-.fx-center span { flex: none; font-size: 11px; color: var(--muted); margin: 0 2px; background: transparent; }
-.fx-panel .fx-center input,
-.fx-center input {
-  width: 38px; height: auto; border: none; background: transparent;
-  padding: 0; text-align: center; box-shadow: none;
-}
-.fx-center input:focus { outline: none; }
 .fx-code-wrap { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 4px; }
 .fx-code-head { display: flex; align-items: center; gap: 6px; }
 .fx-code-toggle { flex: 1; text-align: left; }

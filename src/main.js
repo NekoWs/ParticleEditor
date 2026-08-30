@@ -15,7 +15,7 @@ import { viewport, renderer, camera, controls, scene, pointsMaterial, selectedMa
 import { rebuildPoints, rebuildPointsTime, maxTick, updateAnimatedUV } from './core/animation.js';
 import { editSelectionUniform, editSelectionRotationUniform } from './core/edit.js';
 import { pushUndo, undo, redo, beginContinuous, endContinuous } from './state/undo.js';
-import { currentSelected, selectedGroupName, deleteSelected, selectAll, updateRotateToolBadge } from './interaction/interaction.js';
+import { currentSelected, selectedGroupName, deleteSelected, selectAll } from './interaction/interaction.js';
 import { createGroup } from './ui/tree.js';
 import { createFunctionObject } from './core/generators.js';
 import { syncFunctionVarValues, drawTimeline, updateLoopIndicator, hexToRgb, TL_PX_PER_TICK, setTLPxPerTick, timelineViewStart, setTimelineViewStart, scrubAutoPan, timelineXToTick, refreshFunctionPanel } from './ui/panels.js';
@@ -119,10 +119,8 @@ export function initUI() {
     if (!btn) return;
     state.tool = btn.dataset.tool;
     document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active', b === btn));
-    updateRotateToolBadge();
     updateGizmo(); // 切换工具时立即刷新 gizmo 显示模式
   });
-  updateRotateToolBadge();
 
   // 右侧选项卡切换
   document.getElementById('sidebar-tabs').addEventListener('click', (ev) => {

@@ -343,16 +343,19 @@ export function buildFunctionPanel(fx) {
   centerLabel.textContent = t('fx.center');
   centerRow.appendChild(centerLabel);
   const centerGroup = document.createElement('div');
-  centerGroup.className = 'fx-center';
+  centerGroup.className = 'vec3';
   ['X', 'Y', 'Z'].forEach((axis, idx) => {
+    const seg = document.createElement('div');
+    seg.className = 'vec3-seg';
     const axisLabel = document.createElement('span');
     axisLabel.textContent = axis;
     const inp = document.createElement('input');
     inp.type = 'number'; inp.step = '0.1'; inp.value = fx.center[idx];
     inp.title = axis;
     inp.onchange = () => { pushUndo(); fx.center[idx] = parseFloat(inp.value) || 0; commitFunctionRebuild(fx); };
-    centerGroup.appendChild(axisLabel);
-    centerGroup.appendChild(inp);
+    seg.appendChild(axisLabel);
+    seg.appendChild(inp);
+    centerGroup.appendChild(seg);
   });
   centerRow.appendChild(centerGroup);
   wrap.appendChild(centerRow);

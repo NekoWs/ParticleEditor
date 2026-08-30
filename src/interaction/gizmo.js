@@ -11,7 +11,7 @@ import { state, PLANES, SNAP_STEP, getFunction } from '../core/constants.js';
 import { shiftHeld } from './input-state.js';
 import { camera, renderer, raycaster, pointer, points, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, gizmoAxisHint, AXIS_RING_COLORS, RING_NORMALS, GIZMO_FACE_DEFS, setWorldAxisVisible, setWorldAxisGlow, resetWorldAxisState } from '../scene/scene.js';
 import { AXIS_COLORS, AXIS_VECTORS, modal, setGizmoHover, selectedGroupName, selectionHasDerived, derivedFxIdFromSelection, fxCurrentPos, hoverColor } from './interaction.js';
-import { currentVisual } from '../core/animation.js';
+import { currentVisual, orbitCenterAt } from '../core/animation.js';
 import { groupCurrentCentroid } from '../ui/tree.js';
 export function snapValue(v) {
   return Math.round(v / SNAP_STEP) * SNAP_STEP;
@@ -31,6 +31,31 @@ export function selectionCentroid() {
   const c = [0, 0, 0];
   for (const p of sel) { const v = currentVisual(p).pos; c[0] += v[0]; c[1] += v[1]; c[2] += v[2]; }
   return [c[0] / sel.length, c[1] / sel.length, c[2] / sel.length];
+}
+
+// 公转模式下 gizmo 应定位到公转中心，并根据对象中心到公转中心的距离缩放。
+// 仅当能唯一确定目标时返回；多选粒子无法唯一显示公转中心时回退普通 gizmo。
+export function orbitGizmoTarget() {
+  if (state.tool !== 'rotate' || state.rotMode !== 'orbit') return null;
+  const fx = getFunction(state.selectedFunction);
+  if (fx) {
+    const objectCenter = fxCurrentPos(fx.id, state.time);
+    const orbitCenter = orbitCenterAt('f:' + fx.id, state.time);
+    return { objectCenter, orbitCenter };
+  }
+  const gname = selectedGroupName();
+  if (gname) {
+    const objectCenter = groupCurrentCentroid(gname, 'pos');
+    const orbitCenter = orbitCenterAt('g:' + gname, state.time);
+    return { objectCenter, orbitCenter };
+  }
+  const sel = state.particles.filter(p => state.selected.has(p.id));
+  if (sel.length === 1) {
+    const objectCenter = currentVisual(sel[0]).pos;
+    const orbitCenter = orbitCenterAt(sel[0].id, state.time);
+    return { objectCenter, orbitCenter };
+  }
+  return null;
 }
 
 /* =========================================================================
@@ -67,7 +92,9 @@ export function updateGizmo() {
   }
   if (!c) { gizmoGroup.visible = false; return; }
   gizmoGroup.visible = true;
-  gizmoGroup.position.set(c[0], c[1], c[2]);
+  const orbitT = orbitGizmoTarget();
+  if (orbitT) gizmoGroup.position.set(orbitT.orbitCenter[0], orbitT.orbitCenter[1], orbitT.orbitCenter[2]);
+  else gizmoGroup.position.set(c[0], c[1], c[2]);
   gizmoGroup.rotation.set(0, 0, 0); // 移动控制器：世界朝向
   gizmoRotateGroup.rotation.set(0, 0, 0); // 旋转控制器：世界坐标系（不随对象旋转）
   updateGizmoFrame();
@@ -87,7 +114,18 @@ export function updateGizmoFrame() {
   const toGizmo = _gizmoTmp.set(c.x - camera.position.x, c.y - camera.position.y, c.z - camera.position.z);
   const viewDir = camera.getWorldDirection(new THREE.Vector3());
   const depth = Math.max(0.5, toGizmo.dot(viewDir));
-  gizmoGroup.scale.setScalar(depth * GIZMO_SCREEN_SCALE);
+  const orbitT = orbitGizmoTarget();
+  if (orbitT) {
+    // 公转模式：环半径 = 对象中心到公转中心的距离（环局部半径 0.5 → 缩放 2×距离）
+    const dist = Math.hypot(
+      orbitT.objectCenter[0] - orbitT.orbitCenter[0],
+      orbitT.objectCenter[1] - orbitT.orbitCenter[1],
+      orbitT.objectCenter[2] - orbitT.orbitCenter[2],
+    );
+    gizmoGroup.scale.setScalar(Math.max(dist * 2, depth * GIZMO_SCREEN_SCALE));
+  } else {
+    gizmoGroup.scale.setScalar(depth * GIZMO_SCREEN_SCALE);
+  }
   // 外部白色视图环：始终正对摄像头（环面垂直于视线）
   gizmoViewRing.lookAt(camera.position);
   // 面移动器：固定朝向该面（构建时已设定），不做 billboard
