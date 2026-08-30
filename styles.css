@@ -769,7 +769,8 @@ body.ctrl-held .kf-t { cursor: pointer; }
   height: 26px; padding: 0 4px; box-sizing: border-box;
   background: var(--panel-3); border: 1px solid var(--border); border-radius: 5px;
 }
-.fx-center span { flex: none; font-size: 11px; color: var(--muted); margin: 0 2px; }
+.fx-center span { flex: none; font-size: 11px; color: var(--muted); margin: 0 2px; background: transparent; }
+.fx-panel .fx-center input,
 .fx-center input {
   width: 38px; height: auto; border: none; background: transparent;
   padding: 0; text-align: center; box-shadow: none;
