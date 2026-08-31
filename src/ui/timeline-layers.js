@@ -12,7 +12,7 @@
 import { t } from '../core/i18n.js';
 import { state, TRACK_COMPS, propComps, compPr, getFunction, getParticle } from '../core/constants.js';
 import { TL_PX_PER_TICK, timelineViewStart, setTimelineViewStart, drawTimeline, scrubAutoPan, tlNiceStep, commitFunctionRebuild } from './panels.js';
-import { rebuildPoints, maxTick } from '../core/animation.js';
+import { rebuildPoints, maxTick, invalidateMaxTickCache } from '../core/animation.js';
 import { findTrackByPr } from '../core/animation-eval.js';
 import { varKfValue } from '../core/easing.js';
 import { baseValueFor, removeKeyframe } from '../core/edit.js';
@@ -292,6 +292,9 @@ function hitKeyframeAt(clientX, clientY) {
 
 /** 轻刷新：st/life 改动后同步时长显示、标尺、lane 区与预览。 */
 export function refreshAllPanelsLight() {
+  // 先失效 maxTick 缓存：st/life/duration 改动会改变时间轴总长，必须在读取前失效，
+  // 否则 #tl-max 与循环播放边界仍取到上一次的缓存值（rebuildPoints 内部的失效发生在读值之后）。
+  invalidateMaxTickCache();
   const maxEl = document.getElementById('tl-max');
   if (maxEl) maxEl.textContent = maxTick();
   if (typeof drawTimeline === 'function') drawTimeline();
@@ -434,6 +437,10 @@ export function tlInitLayerEvents() {
       d.fx.duration = Math.max(minDur, Math.round(ptrTick - d.grabOff));
       const durEl = document.getElementById('fx-duration');
       if (durEl && document.activeElement !== durEl) durEl.value = d.fx.duration;
+      // duration 改变会 (1) 失效脚本/life 求值缓存 (2) 重建派生轨道采样范围；
+      // 否则缩短时长后 state.tracks 残留 tick > duration 的旧派生关键帧，maxTick() 仍取旧长度，
+      // 编辑器预览会「设置 50 却播放到 100」。与 varkf 分支一致地重建。
+      commitFunctionRebuild(d.fx);
     } else if (d.kind === 'grouplife') {
       const t = Math.round(ptrTick);
       const delta = t - d.lastTick;
