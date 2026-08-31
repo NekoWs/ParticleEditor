@@ -306,6 +306,10 @@ export function tlInitLayerEvents() {
 
   canvas.addEventListener('pointerdown', ev => {
     if (ev.button !== 0) return;
+    // 拖动时间轴时，之前聚焦的输入框应取消焦点而非保持/重新聚焦
+    if (document.activeElement && document.activeElement !== document.body && document.activeElement.blur) {
+      document.activeElement.blur();
+    }
     const kfHit = hitKeyframeAt(ev.clientX, ev.clientY);
     if (kfHit) {
       // 点击即选中；拖动时才 pushUndo（见 pointermove）
@@ -419,6 +423,8 @@ export function tlInitLayerEvents() {
       setParticleLife(d.p, Math.max(1, Math.round(ptrTick - d.grabOff)));
     } else if (d.kind === 'fxdur') {
       d.fx.duration = Math.max(1, Math.round(ptrTick - d.grabOff));
+      const durEl = document.getElementById('fx-duration');
+      if (durEl && document.activeElement !== durEl) durEl.value = d.fx.duration;
     } else if (d.kind === 'grouplife') {
       const t = Math.round(ptrTick);
       const delta = t - d.lastTick;

@@ -46,6 +46,12 @@ export function updatePropPanel() {
   const isFx = !!fxId;
   const gname = selectedGroupName();
   if (sel.length === 0 && !isFx && !gname) return;
+  // 用户正在属性面板/函数面板的输入框上编辑时，跳过回显以免覆盖其 .value 丢失选区/光标
+  const ae = document.activeElement;
+  if (ae && ae.matches && ae.matches(
+    '#pane-props input, #pane-props select, #pane-props textarea, #fx-panel input, #fx-panel select, #fx-panel textarea')) {
+    return;
+  }
   // 粒子缩放无 Z 分量：Z 输入仅在函数对象（整体缩放）时显示
   const scaleZ = document.getElementById('prop-scale-z');
   if (scaleZ) scaleZ.style.display = isFx ? '' : 'none';
@@ -399,7 +405,7 @@ export function buildFunctionPanel(fx) {
   const durLabel = document.createElement('span'); durLabel.textContent = t('fx.duration');
   durRow.appendChild(durLabel);
   const durIn = document.createElement('input');
-  durIn.type = 'number'; durIn.min = '0'; durIn.value = fx.duration; durIn.style.width = '52px';
+  durIn.type = 'number'; durIn.min = '0'; durIn.id = 'fx-duration'; durIn.value = fx.duration; durIn.style.width = '52px';
   durIn.onchange = () => { pushUndo(); fx.duration = Math.max(0, parseInt(durIn.value) || 0); commitFunctionRebuild(fx); };
   durRow.appendChild(durIn);
   const stepLabel = document.createElement('span'); stepLabel.textContent = t('fx.interval');

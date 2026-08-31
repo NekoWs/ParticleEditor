@@ -671,7 +671,7 @@ body.ctrl-held .kf-t { cursor: pointer; }
 }
 .tt-vec input.tt-val { width: 40px; }
 .tt-clabel { flex: 0 0 16px; font-size: 11px; color: #9aa0ad; text-align: center; font-weight: 700; }
-.tt-cval { width: 52px; }
+.tt-cval { width: 35px; }
 .tt-vname {
   flex: 0 0 64px; min-width: 0; font-size: 12px; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -694,6 +694,7 @@ body.ctrl-held .kf-t { cursor: pointer; }
   font-size: 11px; line-height: 1; border-radius: 4px;
   background: transparent; color: #9aa0ad;
   border: 1px solid #3a3f4b; cursor: pointer;
+  margin-left: 5px;
 }
 .tt-add-kf:hover, .tt-add-var-kf:hover, .tt-add-var:hover { color: #ffcc55; border-color: #ffcc55; }
 .tt-add-kf:disabled, .tt-add-var-kf:disabled { opacity: 0.4; cursor: default; }
@@ -712,7 +713,7 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .ptree-head.func-child .pid { color: var(--muted); }
 .fx-panel { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
 .fx-panel .row { display: flex; align-items: center; gap: 4px; margin: 2px 0; }
-.fx-panel .row input[type="number"] { width: 58px; background: var(--bg); }
+.fx-panel .row input[type="number"] { width: 58px; background: var(--panel-3); }
 .fx-panel .row input[type="text"] { flex: 1; min-width: 0; }
 .fx-panel .row select { flex: 1; }
 /* 预设下拉框美化（函数面板 + 侧栏新建） */
@@ -792,12 +793,14 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .tt-rot-space:hover { border-color: var(--accent); color: var(--accent); }
 .vec3 {
   display: inline-flex; align-items: center; height: 26px; box-sizing: border-box;
-  background: #12141a; border: 1px solid var(--border); border-radius: 5px;
-  overflow: hidden;
+  border: 1px solid var(--border); border-radius: 5px; overflow: hidden;
+}
+.vec3-wrap {
+  display: inline-flex; align-items: center; gap: 6px;
 }
 .vec3-seg {
   display: inline-flex; align-items: center; gap: 2px; height: 100%;
-  padding: 0 4px; background: var(--panel-3);
+  padding: 0 4px; background: var(--panel-2);
 }
 .vec3-seg + .vec3-seg { border-left: 1px solid var(--border); }
 .vec3-seg span {
@@ -1528,3 +1531,20 @@ body.puzzle-mode #puzzle-ghost-canvas { display: block; }
   outline: none;
 }
 .pc-color-hex:focus { border-color: var(--accent); }
+
+/* ---- 自定义悬停气泡提示（替代原生 title） ---- */
+.app-tooltip {
+  position: fixed;
+  z-index: 9999;
+  max-width: 320px;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.8);
+  color: #eceff5;
+  font-size: 12px;
+  line-height: 1.4;
+  border-radius: 5px;
+  pointer-events: none;
+  white-space: normal;
+  overflow-wrap: break-word;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}

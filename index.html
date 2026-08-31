@@ -94,35 +94,43 @@
           <input id="prop-scale-y" type="number" min="0.05" step="0.05" value="1" title="Y" />
           <input id="prop-scale-z" type="number" min="0.05" step="0.05" value="1" title="Z" />
         </div>
-        <div class="row" id="prop-spin-row"><span data-i18n="prop.spin">自转</span>
-          <button id="prop-spin-space" class="spin-space-btn" type="button" data-i18n-title="spinSpace.hint" title="切换自转空间：世界 / 局部">世界</button>
+        <div class="row" id="prop-pos-row"><span data-i18n="prop.pos">位置</span>
           <div class="vec3">
-            <div class="vec3-seg"><span>X</span><input id="prop-spin-x" type="number" step="1" value="0" title="X" /></div>
-            <div class="vec3-seg"><span>Y</span><input id="prop-spin-y" type="number" step="1" value="0" title="Y" /></div>
-            <div class="vec3-seg"><span>Z</span><input id="prop-spin-z" type="number" step="1" value="0" title="Z" /></div>
+            <div class="vec3-seg"><input id="prop-posx" type="number" step="0.1" value="0" /></div>
+            <div class="vec3-seg"><input id="prop-posy" type="number" step="0.1" value="0" /></div>
+            <div class="vec3-seg"><input id="prop-posz" type="number" step="0.1" value="0" /></div>
+          </div>
+        </div>
+        <div class="row" id="prop-spin-row"><span data-i18n="prop.spin">自转</span>
+          <div class="vec3-wrap">
+            <div class="vec3">
+              <div class="vec3-seg"><input id="prop-spin-x" type="number" step="1" value="0" /></div>
+              <div class="vec3-seg"><input id="prop-spin-y" type="number" step="1" value="0" /></div>
+              <div class="vec3-seg"><input id="prop-spin-z" type="number" step="1" value="0" /></div>
+            </div>
+            <button id="prop-spin-space" class="spin-space-btn" type="button" data-i18n-title="spinSpace.hint" title="切换自转空间：世界 / 局部">世界</button>
           </div>
         </div>
         <div class="row" id="prop-rot-row"><span data-i18n="prop.rot">公转</span>
-          <button id="prop-rot-space" class="spin-space-btn" type="button" data-i18n-title="rotSpace.hint" title="切换公转空间：世界 / 局部">世界</button>
-          <div class="vec3">
-            <div class="vec3-seg"><span>X</span><input id="prop-rot-x" type="number" step="1" value="0" title="X" /></div>
-            <div class="vec3-seg"><span>Y</span><input id="prop-rot-y" type="number" step="1" value="0" title="Y" /></div>
-            <div class="vec3-seg"><span>Z</span><input id="prop-rot-z" type="number" step="1" value="0" title="Z" /></div>
+          <div class="vec3-wrap">
+            <div class="vec3">
+              <div class="vec3-seg"><input id="prop-rot-x" type="number" step="1" value="0" /></div>
+              <div class="vec3-seg"><input id="prop-rot-y" type="number" step="1" value="0" /></div>
+              <div class="vec3-seg"><input id="prop-rot-z" type="number" step="1" value="0" /></div>
+            </div>
+            <button id="prop-rot-space" class="spin-space-btn" type="button" data-i18n-title="rotSpace.hint" title="切换公转空间：世界 / 局部">世界</button>
           </div>
         </div>
         <div class="row"><span data-i18n="prop.center">公转中心</span>
           <div class="vec3">
-            <div class="vec3-seg"><span>X</span><input id="prop-center-x" type="number" step="0.1" value="0" title="X" /></div>
-            <div class="vec3-seg"><span>Y</span><input id="prop-center-y" type="number" step="0.1" value="0" title="Y" /></div>
-            <div class="vec3-seg"><span>Z</span><input id="prop-center-z" type="number" step="0.1" value="0" title="Z" /></div>
+            <div class="vec3-seg"><input id="prop-center-x" type="number" step="0.1" value="0" /></div>
+            <div class="vec3-seg"><input id="prop-center-y" type="number" step="0.1" value="0" /></div>
+            <div class="vec3-seg"><input id="prop-center-z" type="number" step="0.1" value="0" /></div>
           </div>
         </div>
         <label class="chk"><input id="prop-glow" type="checkbox" /><span data-i18n="props.glow">发光</span></label>
         <label class="row"><span data-i18n="props.light">光照等级</span> <input id="prop-light" type="range" min="0" max="15" step="1" value="15" /><span id="light-val">15</span></label>
         <label class="row"><span data-i18n="props.life">寿命(tick)</span> <input id="prop-life" type="number" min="-1" step="1" value="20" data-i18n-title="props.lifeHint" title="-1 或留空 = 无限（活到动画结束）" /></label>
-        <label class="row">X <input id="prop-posx" type="number" step="0.1" value="0" /></label>
-        <label class="row">Y <input id="prop-posy" type="number" step="0.1" value="0" /></label>
-        <label class="row">Z <input id="prop-posz" type="number" step="0.1" value="0" /></label>
       </div>
 
       <div class="tab-pane" id="pane-fx">

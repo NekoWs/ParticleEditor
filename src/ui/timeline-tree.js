@@ -114,6 +114,8 @@ function structureSignature() {
       for (const id of members) h = hashStr(id, h);
     }
     parts.push('G:' + name + ':' + h);
+    parts.push('GS:' + name + ':' + ((state.groupSpinSpace && state.groupSpinSpace[name]) || 'world'));
+    parts.push('GR:' + name + ':' + ((state.groupRotSpace && state.groupRotSpace[name]) || 'world'));
   }
   for (const fx of state.functions) {
     const names = Object.keys(fx.vars || {});
@@ -122,6 +124,7 @@ function structureSignature() {
       for (const n of names) h = hashStr(n, h);
     }
     parts.push('F:' + fx.id + ':' + hashStr(fx.name || '', 0) + ':' + fx.count + ':' + h);
+    parts.push('FS:' + fx.id + ':' + (fx.spinSpace || 'world') + ':' + (fx.rotSpace || 'world'));
   }
   parts.push('X:' + [...tlTreeState.expanded].sort().join('|'));
   return parts.join(';');
@@ -401,13 +404,8 @@ export function drawTimelineTree() {
       return;
     }
     const kf = v.kf || [];
-    if (kf.length > 0) {
-      inp.value = fmtNum(varKfValue(kf, state.time));
-      inp.disabled = true;
-    } else {
-      inp.value = fmtNum(Number.isFinite(v.base) ? v.base : 0);
-      inp.disabled = false;
-    }
+    inp.disabled = false;
+    inp.value = fmtNum(kf.length > 0 ? varKfValue(kf, state.time) : (Number.isFinite(v.base) ? v.base : 0));
   });
 }
 
@@ -440,6 +438,7 @@ export function initTimelineTree() {
   if (!eventsBound) {
     eventsBound = true;
     root.addEventListener('click', onTreeClick);
+    root.addEventListener('dblclick', onTreeDblClick);
     root.addEventListener('change', onTreeChange);
   }
   refreshTimelineTree();
@@ -492,11 +491,7 @@ function onTreeClick(ev) {
   // 选中底部列表中的组 / 粒子 / 函数对象；支持 Ctrl 多选与 Shift 连续选择。
   const rowEl = ev.target.closest('.tt-row');
   if (!rowEl) return;
-  // 点击整行即可展开/折叠（无需精准点三角形）；输入框/按钮/三角形保持原交互。
-  const tlkey = rowEl.dataset.tlkey;
-  if (tlkey && !ev.target.closest('input') && !ev.target.closest('button') && !ev.target.closest('.tt-arrow')) {
-    toggleKey(tlkey);
-  }
+  // 展开/折叠改为双击行触发；三角形点击仍即时切换（见 onTreeClick 顶部与 onTreeDblClick）。
   const selkind = rowEl.dataset.selkind;
   if (!selkind) return;
   const multi = ev.ctrlKey || ev.metaKey;
@@ -550,6 +545,16 @@ function onTreeClick(ev) {
   }
 }
 
+// 双击整行展开/折叠（三角形点击仍即时切换）；输入框/按钮双击不触发。
+function onTreeDblClick(ev) {
+  const rowEl = ev.target.closest('.tt-row');
+  if (!rowEl) return;
+  const tlkey = rowEl.dataset.tlkey;
+  if (!tlkey) return;
+  if (ev.target.closest('input') || ev.target.closest('button') || ev.target.closest('.tt-arrow')) return;
+  toggleKey(tlkey);
+}
+
 function syncSelectionClasses() {
   const root = document.getElementById('tl-tree');
   if (!root) return;
@@ -587,7 +592,12 @@ function onTreeChange(ev) {
     const nv = parseFloat(target.value);
     if (!isFinite(nv)) return;
     pushUndo();
-    v.base = nv;
+    // 与其他关键帧一致：直接输入值即在当前时间创建/更新关键帧
+    const tick = Math.max(0, Math.round(state.time));
+    const kf = v.kf || (v.kf = []);
+    const existing = kf.find(k => k[0] === tick);
+    if (existing) existing[1] = nv;
+    else { kf.push([tick, nv, state.defaultEasing]); kf.sort((a, b) => a[0] - b[0]); }
     commitFunctionRebuild(fx);
     refreshTimelineTree();
   }

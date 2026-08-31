@@ -23,6 +23,7 @@ import { drawTimelineLayers, tlInitLayerEvents, refreshAllPanelsLight } from './
 import { initTimelineTree, refreshTimelineTree, tlTreeState } from './ui/timeline-tree.js';
 import { initTextureEditor, syncTextureSelection, updateTexOverlay, texAnimOverlayActive, refreshTexturePanel } from './ui/texture-editor.js';
 import { applyWorkspaceState, saveWorkspaceState } from './ui/blocks-ui.js';
+import { initTooltip } from './ui/tooltip.js';
 import { initImportMenu } from './ui/import-image.js';
 import { newFile, openFile, saveFile, saveFileAs, exportAnimation, loadFile, confirmDiscardChanges, ensureProjectKey } from './io/io.js';
 import { drawAxisGizmo, slerp } from './interaction/axis-gizmo.js';
@@ -55,6 +56,27 @@ window.addEventListener('keyup', (e) => { if (e.key === 'Shift') setShiftHeld(fa
 window.addEventListener('keydown', (e) => { if (e.key === 'Control') document.body.classList.add('ctrl-held'); });
 window.addEventListener('keyup', (e) => { if (e.key === 'Control') document.body.classList.remove('ctrl-held'); });
 
+// 数字输入框滚轮：步进至少 0.1（不再 0.01 微调），按 min/max 钳制并触发 input/change 提交。
+window.addEventListener('wheel', (ev) => {
+  const el = ev.target;
+  if (!el || el.tagName !== 'INPUT' || el.type !== 'number') return;
+  if (el.disabled) return;
+  ev.preventDefault();
+  const dir = ev.deltaY < 0 ? 1 : -1;
+  let step = parseFloat(el.step);
+  if (!isFinite(step) || step < 0.1) step = 0.1;
+  const cur = parseFloat(el.value);
+  const base = isFinite(cur) ? cur : 0;
+  let next = base + dir * step;
+  next = Math.round(next * 1000) / 1000;
+  if (el.min !== '' && next < parseFloat(el.min)) next = parseFloat(el.min);
+  if (el.max !== '' && next > parseFloat(el.max)) next = parseFloat(el.max);
+  if (next === base) return;
+  el.value = next;
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+}, { passive: false });
+
 // 重建函数对象预设下拉（语言切换后重新取标签）
 export function refreshFxPresetOptions() {
   const sel = document.getElementById('fx-preset-add');
@@ -70,6 +92,7 @@ export function refreshFxPresetOptions() {
 export function initUI() {
   applyI18nDom();
   ensureProjectKey(); // 启动即确保密钥存在：未点「新建」直接编辑保存也能带私钥
+  initTooltip();
   initImportMenu();
   syncPlayButton();
   const tlEase = document.getElementById('tl-easing');
@@ -175,6 +198,7 @@ export function initUI() {
       state.groupSpinSpace[gname] = state.groupSpinSpace[gname] === 'local' ? 'world' : 'local';
     }
     rebuildPoints();
+    refreshTimelineTree();
   });
   document.getElementById('prop-rot-space').addEventListener('click', () => {
     const fxId = state.selectedFunction;
@@ -188,6 +212,7 @@ export function initUI() {
       state.groupRotSpace[gname] = state.groupRotSpace[gname] === 'local' ? 'world' : 'local';
     }
     rebuildPoints();
+    refreshTimelineTree();
   });
 
   // 时间轴
@@ -213,6 +238,10 @@ export function initUI() {
   let tlDrag = null; // { mode: 'scrub' | 'pan', lastX }
   tlCanvas.addEventListener('pointerdown', (ev) => {
     if (ev.button !== 0 && ev.button !== 1) return;
+    // 拖动时间轴时，之前聚焦的输入框应取消焦点而非保持/重新聚焦
+    if (document.activeElement && document.activeElement !== document.body && document.activeElement.blur) {
+      document.activeElement.blur();
+    }
     ev.preventDefault();
     tlCanvas.setPointerCapture(ev.pointerId);
     if (ev.button === 1) { // 中键：平移视图
@@ -373,7 +402,6 @@ function snapToDisplayRefresh(rawFps, range = 2) {
 }
 
 export function animate(now) {
-  requestAnimationFrame(animate);
   const frameMs = now - last;
   const dt = Math.min(frameMs / 1000, 0.1);
   last = now;
@@ -435,6 +463,14 @@ export function animate(now) {
   // UV 动画预览：贴图 tab 激活且当前为动画模式时，逐帧刷新 overlay 让 UV 预览框跟随动画帧移动
   if (texAnimOverlayActive()) {
     updateTexOverlay();
+  }
+
+  // 调度下一帧：渲染器卡顿（帧耗时超阈值）时改用 setTimeout(0) 让出主线程给 DOM 事件，
+  // 避免持续满载导致浏览器弹出「网页未响应」、输入/点击等交互被拖垮。
+  if (frameMs > 50) {
+    setTimeout(() => requestAnimationFrame(animate), 0);
+  } else {
+    requestAnimationFrame(animate);
   }
 }
 
