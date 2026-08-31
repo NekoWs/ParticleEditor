@@ -182,6 +182,8 @@ export const state = {
   groupUV: {},           // 组级 UV/贴图设置（继承 f > g > p）
   groupSpinSpace: {},    // 组级自转空间（'world' | 'local'；缺省 world）
   groupRotSpace: {},     // 组级公转空间（'world' | 'local'；缺省 world）
+  cameras: [],           // 摄像机对象数组：{ id,name,pos:[x,y,z],rot:[pitch,yaw,roll](度),fov }
+  activeCamera: null,    // 当前锁定的摄像机 id（null = 默认/自由视角）
 };
 
 export function setDirty(v) {
@@ -213,6 +215,19 @@ export function nextFunctionId() {
   while (state.functions.some(f => f.id === 'fx' + n)) n++;
   return 'fx' + n;
 }
+export function nextCameraId() {
+  let n = 1;
+  while (state.cameras.some(c => c.id === 'cam' + n)) n++;
+  return 'cam' + n;
+}
+export function nextCameraName() {
+  let n = 1;
+  const pre = t('default.cameraName');
+  while (state.cameras.some(c => c.name === pre + n)) n++;
+  return pre + n;
+}
+export function getCamera(id) { return state.cameras.find(c => c.id === id) || null; }
+export const DEFAULT_CAMERA_ID = '__default__';
 export function getFunction(id) { return functionIndexCache ? functionIndexCache.get(id) : state.functions.find(f => f.id === id); }
 // 粒子是否由函数对象派生（基础属性只读）
 export function isDerivedParticle(p) { return p != null && !!p.fx; }

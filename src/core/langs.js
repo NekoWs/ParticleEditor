@@ -102,7 +102,12 @@ export var LANGS = {
     // —— 悬浮窗 ——
     'fwin.minimize': '最小化',
     // —— 默认命名 ——
-    'default.particleName': '粒子', 'default.groupName': '组',
+    'default.particleName': '粒子', 'default.groupName': '组', 'default.cameraName': '摄像机',
+    // —— 摄像机 ——
+    'tab.camera': '摄像机', 'tool.camera': '新建摄像机（点按放置）',
+    'cam.default': '默认', 'cam.position': '位置', 'cam.rotation': '旋转', 'cam.fov': 'FOV',
+    'cam.apply': '应用', 'cam.cancel': '取消', 'cam.delete': '删除', 'cam.rename': '重命名',
+    'cam.renameHint': '摄像机名称', 'cam.noSelection': '选择摄像机以编辑（点击视口上方选项卡）',
     // —— 贴图提示 ——
     'alert.uploadFailed': '上传失败', 'alert.texTooBig': '贴图超过 5MB 上限', 'alert.pngOnly': '仅支持 PNG 格式',
     'alert.pngParseFail': '无法解析该 PNG 文件', 'alert.exportFailed': '导出失败',
@@ -301,7 +306,12 @@ export var LANGS = {
     // —— 悬浮窗 ——
     'fwin.minimize': 'Minimize',
     // —— 默认命名 ——
-    'default.particleName': 'Particle', 'default.groupName': 'Group',
+    'default.particleName': 'Particle', 'default.groupName': 'Group', 'default.cameraName': 'Camera',
+    // —— 摄像机 ——
+    'tab.camera': 'Camera', 'tool.camera': 'New camera (click to place)',
+    'cam.default': 'Default', 'cam.position': 'Position', 'cam.rotation': 'Rotation', 'cam.fov': 'FOV',
+    'cam.apply': 'Apply', 'cam.cancel': 'Cancel', 'cam.delete': 'Delete', 'cam.rename': 'Rename',
+    'cam.renameHint': 'Camera name', 'cam.noSelection': 'Select a camera to edit (click a tab above the viewport)',
     // —— 贴图提示 ——
     'alert.uploadFailed': 'Upload Failed', 'alert.texTooBig': 'Texture exceeds the 5MB limit', 'alert.pngOnly': 'Only PNG format is supported',
     'alert.pngParseFail': 'Unable to parse this PNG file', 'alert.exportFailed': 'Export Failed',

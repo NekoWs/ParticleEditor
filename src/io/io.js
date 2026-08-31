@@ -7,8 +7,8 @@ import { t } from '../core/i18n.js';
 import { state, setDirty, DEFAULT_EASING, UV_MODES, PROP_LABELS, splitCompPr, nextId } from '../core/constants.js';
 import { pushUndo } from '../state/undo.js';
 import { rebuildPoints } from '../core/animation.js';
-import { updateLoopIndicator, refreshFunctionPanel } from '../ui/panels.js';
-import { updateTimeUI } from '../main.js';
+import { updateLoopIndicator, refreshFunctionPanel, refreshCameraPanel } from '../ui/panels.js';
+import { updateTimeUI, refreshCameraTabs } from '../main.js';
 import { rebuildFunctionObject } from '../core/generators.js';
 import { markTextureChanged, refreshTexturePanel } from '../ui/texture-editor.js';
 import { buildModal, modalPrompt, modalAlert } from '../ui/ui.js';
@@ -222,9 +222,16 @@ export function exportProject() {
   for (const [name, space] of Object.entries(state.groupSpinSpace || {})) if (space === 'local') gss[name] = 1;
   const grs = {};
   for (const [name, space] of Object.entries(state.groupRotSpace || {})) if (space === 'local') grs[name] = 1;
-  const result = { v: 7, loop: state.loop, g, p, t, f, tex, guv };
+  const result = { v: 8, loop: state.loop, g, p, t, f, tex, guv };
   if (Object.keys(gss).length > 0) result.gss = gss;
   if (Object.keys(grs).length > 0) result.grs = grs;
+  // 摄像机对象（v8 新增；默认摄像机不持久化，仅存用户新建的摄像机）
+  if (state.cameras.length > 0) {
+    result.cam = state.cameras.map(c => ({
+      id: c.id, name: c.name,
+      pos: c.pos.map(r3), rot: c.rot.map(r3), fov: r3(c.fov),
+    }));
+  }
   if (state.key) result.key = { alg: KEY_ALG, private: state.key.private, public: state.key.public };
   if (Object.keys(texData).length > 0) result.texData = texData;
   return result;
@@ -264,6 +271,13 @@ export function parseParticlesTracks(obj) {
     };
   });
   state.loop = !!obj.loop;
+  state.cameras = (obj.cam || []).map(c => ({
+    id: String(c.id || ''),
+    name: c.name || '',
+    pos: (c.pos || [0, 0, 0]).map(Number).slice(0, 3),
+    rot: (c.rot || [0, 0, 0]).map(Number).slice(0, 3),
+    fov: Number.isFinite(Number(c.fov)) ? Number(c.fov) : 50,
+  })).filter(c => c.id);
 }
 
 export async function importProject(obj) {
@@ -278,6 +292,7 @@ export async function importProject(obj) {
   updateLoopIndicator();
   state.selected.clear(); state.selectedGroup = null; state.time = 0;
   state.expandedParticles.clear(); state.expandedProps.clear();
+  state.activeCamera = null;
   for (const fx of state.functions) {
     try { rebuildFunctionObject(fx); } catch (e) { console.warn('函数对象求值失败：' + fx.id + ' ' + e.message); }
   }
@@ -294,6 +309,7 @@ export async function importProject(obj) {
     });
   }
   updateTimeUI(); rebuildPoints();
+  refreshCameraTabs(); refreshCameraPanel();
   setDirty(keyGenerated);
 }
 
@@ -315,7 +331,7 @@ export async function loadFile(file) {
   const text = await file.text();
   const obj = JSON.parse(text);
   if (file.name.toLowerCase().endsWith('.pdraw') || obj.f || obj.v >= 2) {
-    if (obj.v !== 7) {
+    if (obj.v !== 7 && obj.v !== 8) {
       modalAlert(t('filePicker.oldVersionTitle'), t('filePicker.oldVersionMsg'));
       return;
     }
@@ -435,6 +451,7 @@ export async function newFile() {
   pushUndo();
   state.particles = []; state.tracks = []; state.groups = {}; state.functions = [];
   state.textures = {}; state.currentTexture = null; state.groupUV = {}; state.groupSpinSpace = {}; state.groupRotSpace = {};
+  state.cameras = []; state.activeCamera = null;
   state.selected.clear(); state.selectedGroup = null; state.selectedFunction = null;
   state.expandedParticles.clear(); state.expandedProps.clear();
   state.time = 0;

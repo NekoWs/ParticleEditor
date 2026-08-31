@@ -5,7 +5,8 @@
 
 import { state, setDirty } from '../core/constants.js';
 import { rebuildPoints } from '../core/animation.js';
-import { refreshFunctionPanel, updateLoopIndicator } from '../ui/panels.js';
+import { refreshFunctionPanel, refreshCameraPanel, updateLoopIndicator } from '../ui/panels.js';
+import { refreshCameraTabs } from '../main.js';
 export const undoStack = [];
 export const redoStack = [];
 
@@ -44,6 +45,8 @@ export function snapshot() {
     selected: [...state.selected],
     selectedGroup: state.selectedGroup,
     selectedFunction: state.selectedFunction,
+    cameras: state.cameras.map(c => ({ id: c.id, name: c.name, pos: c.pos.slice(), rot: c.rot.slice(), fov: c.fov })),
+    activeCamera: state.activeCamera,
   };
 }
 
@@ -57,10 +60,14 @@ export function restore(s) {
   state.selected = new Set(s.selected);
   state.selectedGroup = s.selectedGroup;
   state.selectedFunction = s.selectedFunction;
+  state.cameras = (s.cameras || []).map(c => ({ id: c.id, name: c.name, pos: c.pos.slice(), rot: c.rot.slice(), fov: c.fov }));
+  state.activeCamera = s.activeCamera || null;
   document.getElementById('tl-loop').checked = state.loop;
   updateLoopIndicator();
   rebuildPoints();
   if (typeof refreshFunctionPanel === 'function') refreshFunctionPanel();
+  if (typeof refreshCameraPanel === 'function') refreshCameraPanel();
+  if (typeof refreshCameraTabs === 'function') refreshCameraTabs();
 }
 
 export function pushUndo() {

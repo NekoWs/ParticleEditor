@@ -8,11 +8,13 @@
 
 
 import { t, tf } from '../core/i18n.js';
-import { state, FUNCTION_PRESETS, getFunction, isDerivedParticle } from '../core/constants.js';
+import { state, FUNCTION_PRESETS, getFunction, isDerivedParticle, getCamera, DEFAULT_CAMERA_ID, nextCameraName } from '../core/constants.js';
+import { camera } from '../scene/scene.js';
+import { camEdit, unlockCamera, commitPending, cancelPending, hasPendingChange } from '../core/cameras.js';
 import { currentVisual, rotVectorAt, spinVectorAt, orbitCenterAt } from '../core/animation.js';
 import { currentSelected, selectedGroupName, fxPosDeltaAt, fxScaleValuesAt } from '../interaction/interaction.js';
 import { groupCurrentCentroid } from './tree.js';
-import { modalAlert, rgbToHex, hexToRgb } from './ui.js';
+import { modalAlert, modalPrompt, rgbToHex, hexToRgb } from './ui.js';
 import { varKfValue } from '../core/easing.js';
 import { applyPresetBuild, rebuildFunctionObject } from '../core/generators.js';
 import { openBlockDrawer } from './blocks-ui.js';
@@ -532,4 +534,246 @@ export function syncFunctionVarValues() {
     const kf = v && v.kf;
     if (kf && kf.length > 0) inp.value = r3(varKfValue(kf, state.time)).toFixed(2);
   });
+}
+
+/* =========================================================================
+ * 摄像机属性面板
+ * 职责：位置/旋转/FOV 输入框回显与写入；锁定态待确认（黄高亮）+ 应用/取消；删除/重命名
+ * ======================================================================= */
+
+// 构建摄像机面板 DOM（一次性）；数据回显由 refreshCameraPanel 完成
+function buildCameraPanel() {
+  const host = document.getElementById('cam-panel');
+  if (!host || host.dataset.built) return;
+  host.dataset.built = '1';
+
+  const head = document.createElement('div');
+  head.className = 'cam-head';
+  const name = document.createElement('span');
+  name.className = 'cam-name';
+  name.id = 'cam-name';
+  head.appendChild(name);
+
+  const renameBtn = document.createElement('button');
+  renameBtn.className = 'mini';
+  renameBtn.id = 'cam-rename';
+  renameBtn.textContent = t('cam.rename');
+  head.appendChild(renameBtn);
+
+  host.appendChild(head);
+
+  // 位置
+  const posRow = document.createElement('div');
+  posRow.className = 'row';
+  const posLabel = document.createElement('span');
+  posLabel.textContent = t('cam.position');
+  posRow.appendChild(posLabel);
+  const posVec = document.createElement('div');
+  posVec.className = 'vec3';
+  posVec.id = 'cam-pos';
+  ['x', 'y', 'z'].forEach((a, i) => {
+    const seg = document.createElement('div');
+    seg.className = 'vec3-seg';
+    const sp = document.createElement('span');
+    sp.textContent = a;
+    const inp = document.createElement('input');
+    inp.type = 'number'; inp.step = '0.1';
+    inp.id = 'cam-pos-' + a.toLowerCase();
+    inp.dataset.camField = 'pos'; inp.setAttribute('data-cam-idx', i);
+    seg.appendChild(sp); seg.appendChild(inp);
+    posVec.appendChild(seg);
+  });
+  posRow.appendChild(posVec);
+  host.appendChild(posRow);
+
+  // 旋转（欧拉角 pitch/yaw/roll）
+  const rotRow = document.createElement('div');
+  rotRow.className = 'row';
+  const rotLabel = document.createElement('span');
+  rotLabel.textContent = t('cam.rotation');
+  rotRow.appendChild(rotLabel);
+  const rotVec = document.createElement('div');
+  rotVec.className = 'vec3';
+  rotVec.id = 'cam-rot';
+  [['p', 0], ['y', 1], ['r', 2]].forEach(([a, i]) => {
+    const seg = document.createElement('div');
+    seg.className = 'vec3-seg';
+    const sp = document.createElement('span');
+    sp.textContent = a;
+    const inp = document.createElement('input');
+    inp.type = 'number'; inp.step = '1';
+    inp.id = 'cam-rot-' + ['pitch', 'yaw', 'roll'][i];
+    inp.dataset.camField = 'rot'; inp.setAttribute('data-cam-idx', i);
+    seg.appendChild(sp); seg.appendChild(inp);
+    rotVec.appendChild(seg);
+  });
+  rotRow.appendChild(rotVec);
+  host.appendChild(rotRow);
+
+  // FOV
+  const fovRow = document.createElement('div');
+  fovRow.className = 'row cam-fov-row';
+  const fovLabel = document.createElement('span');
+  fovLabel.textContent = t('cam.fov');
+  fovRow.appendChild(fovLabel);
+  const fovInp = document.createElement('input');
+  fovInp.type = 'number'; fovInp.step = '1'; fovInp.min = '1'; fovInp.max = '179';
+  fovInp.id = 'cam-fov';
+  fovInp.dataset.camField = 'fov';
+  fovRow.appendChild(fovInp);
+  host.appendChild(fovRow);
+
+  // 动作按钮
+  const actions = document.createElement('div');
+  actions.className = 'cam-actions';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'btn bd-cancel';
+  cancelBtn.id = 'cam-cancel';
+  cancelBtn.textContent = t('cam.cancel');
+  const applyBtn = document.createElement('button');
+  applyBtn.className = 'btn bd-ok';
+  applyBtn.id = 'cam-apply';
+  applyBtn.textContent = t('cam.apply');
+  actions.appendChild(cancelBtn);
+  actions.appendChild(applyBtn);
+  host.appendChild(actions);
+
+  const delBtn = document.createElement('button');
+  delBtn.className = 'btn cam-del-btn';
+  delBtn.id = 'cam-delete';
+  delBtn.textContent = t('cam.delete');
+  host.appendChild(delBtn);
+
+  host.appendChild(document.createElement('div'));
+
+  // 事件
+  host.addEventListener('input', (ev) => {
+    const inp = ev.target.closest('input[data-cam-field]');
+    if (!inp) return;
+    onCamFieldInput(inp);
+  });
+  renameBtn.onclick = () => onCamRename();
+  cancelBtn.onclick = () => { cancelPending(); refreshCameraPanel(); };
+  applyBtn.onclick = () => onCamApply();
+  delBtn.onclick = () => onCamDelete();
+}
+
+function onCamFieldInput(inp) {
+  if (camEdit.id == null) return;
+  const v = parseFloat(inp.value);
+  if (!isFinite(v)) return;
+  const field = inp.dataset.camField;
+  const idx = parseInt(inp.getAttribute('data-cam-idx'), 10);
+  if (field === 'fov') {
+    camEdit.cur.fov = v;
+    camera.fov = v; camera.updateProjectionMatrix();
+  } else {
+    camEdit.cur[field][idx] = (field === 'rot') ? v : v;
+    if (field === 'pos') camera.position.setComponent(idx, v);
+    else camera.rotation.set(
+      camEdit.cur.rot[0] * Math.PI / 180,
+      camEdit.cur.rot[1] * Math.PI / 180,
+      camEdit.cur.rot[2] * Math.PI / 180,
+      'XYZ'
+    );
+  }
+  markPendingFields();
+}
+
+// 根据 camEdit.cur 与 camEdit.base 的差异，给输入框加 .pending 高亮
+function markPendingFields() {
+  const mark = (inp, isDiff) => inp.classList.toggle('pending', isDiff);
+  if (camEdit.id == null || !camEdit.base) {
+    document.querySelectorAll('#cam-panel input[data-cam-field]').forEach(i => i.classList.remove('pending'));
+    return;
+  }
+  const base = camEdit.base, cur = camEdit.cur;
+  ['pos', 'rot'].forEach(field => {
+    for (let i = 0; i < 3; i++) {
+      const inp = document.querySelector(`input[data-cam-field="${field}"][data-cam-idx="${i}"]`);
+      if (inp) mark(inp, Math.abs(cur[field][i] - base[field][i]) > 1e-6);
+    }
+  });
+  const fov = document.querySelector('input[data-cam-field="fov"]');
+  if (fov) mark(fov, Math.abs(cur.fov - base.fov) > 1e-6);
+}
+
+function onCamApply() {
+  if (camEdit.id == null) return;
+  if (hasPendingChange()) {
+    pushUndo();      // 快照必须先于 commitPending 的原地修改
+    commitPending();
+  }
+  refreshCameraPanel();
+}
+
+function onCamDelete() {
+  if (camEdit.id == null) return;
+  const cam = getCamera(camEdit.id);
+  if (!cam) return;
+  pushUndo();
+  const idx = state.cameras.indexOf(cam);
+  if (idx >= 0) state.cameras.splice(idx, 1);
+  unlockCamera();
+  refreshCameraPanel();
+}
+
+function onCamRename() {
+  if (camEdit.id == null) return;
+  const cam = getCamera(camEdit.id);
+  if (!cam) return;
+  // 复用 modalPrompt
+  modalPrompt(t('cam.rename'), cam.name, t('cam.renameHint')).then(name => {
+    if (name && name.trim()) { pushUndo(); cam.name = name.trim(); }
+    refreshCameraPanel();
+  });
+}
+
+// 刷新摄像机面板回显（无锁定显示提示；锁定显示编辑器）
+export function refreshCameraPanel() {
+  const host = document.getElementById('cam-panel');
+  if (!host) return;
+  if (host.dataset.built !== '1') buildCameraPanel();
+
+  const isDefault = !state.activeCamera || state.activeCamera === DEFAULT_CAMERA_ID;
+  const cam = isDefault ? null : getCamera(state.activeCamera);
+
+  // 提示文本 vs 编辑器
+  const hint = host.querySelector('.hint');
+  if (isDefault || !cam) {
+    host.classList.add('cam-empty');
+    document.querySelectorAll('#cam-panel .cam-head, #cam-panel .row, #cam-panel .cam-actions, #cam-panel .cam-del-btn')
+      .forEach(el => el.style.display = 'none');
+    if (!hint) {
+      const h = document.createElement('p');
+      h.className = 'hint';
+      h.textContent = t('cam.noSelection');
+      host.appendChild(h);
+    } else { hint.style.display = ''; }
+    return;
+  }
+  if (hint) hint.style.display = 'none';
+  host.classList.remove('cam-empty');
+  document.querySelectorAll('#cam-panel .cam-head, #cam-panel .row, #cam-panel .cam-actions, #cam-panel .cam-del-btn')
+    .forEach(el => el.style.display = '');
+
+  document.getElementById('cam-name').textContent = cam.name;
+  document.getElementById('cam-rename').style.display = '';
+  document.getElementById('cam-delete').style.display = '';
+
+  // 用户正在摄像机面板输入框编辑时跳过回显，避免覆盖 .value / 光标
+  const ae = document.activeElement;
+  if (ae && ae.matches && ae.matches('#cam-panel input')) {
+    markPendingFields();
+    return;
+  }
+
+  // 回显当前值（优先 camEdit.cur，否则摄像机原值）
+  const cur = camEdit.cur || { pos: cam.pos, rot: cam.rot, fov: cam.fov };
+  for (let i = 0; i < 3; i++) {
+    document.querySelector(`input[data-cam-field="pos"][data-cam-idx="${i}"]`).value = cur.pos[i].toFixed(2);
+    document.querySelector(`input[data-cam-field="rot"][data-cam-idx="${i}"]`).value = cur.rot[i].toFixed(2);
+  }
+  document.querySelector('input[data-cam-field="fov"]').value = cur.fov.toFixed(1);
+  markPendingFields();
 }

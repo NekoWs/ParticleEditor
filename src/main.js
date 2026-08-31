@@ -28,6 +28,9 @@ import { initImportMenu } from './ui/import-image.js';
 import { newFile, openFile, saveFile, saveFileAs, exportAnimation, loadFile, confirmDiscardChanges, ensureProjectKey } from './io/io.js';
 import { drawAxisGizmo, slerp } from './interaction/axis-gizmo.js';
 import { updateGizmo, updateGizmoFrame, restoreAxisColors, setAxisGlow } from './interaction/gizmo.js';
+import { getCamera, DEFAULT_CAMERA_ID } from './core/constants.js';
+import { lockCamera, unlockCamera, refreshPending } from './core/cameras.js';
+import { refreshCameraPanel } from './ui/panels.js';
 
 // 时间轴数值变化后的统一刷新：粒子状态、时间 UI、函数变量插值显示。
 // 多处 scrub / 播放头拖动路径共用，避免漏刷某一项。
@@ -89,6 +92,101 @@ export function refreshFxPresetOptions() {
   sel.value = 'blank';
 }
 
+// 重建视口上方摄像机选项卡：『默认』固定第一项 + 各摄像机 + 每项删除/重命名
+export function refreshCameraTabs() {
+  const host = document.getElementById('camera-tabs');
+  if (!host) return;
+  host.innerHTML = '';
+
+  const mkTab = (id, label, isDefault) => {
+    const el = document.createElement('button');
+    el.className = 'cam-tab';
+    el.dataset.camId = id;
+    el.dataset.camDefault = isDefault ? '1' : '';
+    const sp = document.createElement('span');
+    sp.textContent = label;
+    el.appendChild(sp);
+    if (!isDefault) {
+      const del = document.createElement('span');
+      del.className = 'cam-del';
+      del.textContent = '×';
+      del.dataset.del = '1';
+      el.appendChild(del);
+    }
+    return el;
+  };
+
+  const active = state.activeCamera || DEFAULT_CAMERA_ID;
+  const defTab = mkTab(DEFAULT_CAMERA_ID, t('cam.default'), true);
+  defTab.classList.toggle('active', active === DEFAULT_CAMERA_ID);
+  host.appendChild(defTab);
+
+  for (const c of state.cameras) {
+    const el = mkTab(c.id, c.name, false);
+    el.classList.toggle('active', active === c.id);
+    host.appendChild(el);
+  }
+}
+
+function handleCameraTabClick(ev) {
+  const delEl = ev.target.closest('.cam-del');
+  const tab = ev.target.closest('.cam-tab');
+  if (!tab) return;
+  const id = tab.dataset.camId;
+  if (delEl) {
+    // 删除摄像机
+    const cam = getCamera(id);
+    if (!cam) return;
+    pushUndo();
+    const idx = state.cameras.indexOf(cam);
+    if (idx >= 0) state.cameras.splice(idx, 1);
+    unlockCamera();
+    refreshCameraTabs();
+    refreshCameraPanel();
+    return;
+  }
+  if (id === DEFAULT_CAMERA_ID) {
+    unlockCamera();
+  } else {
+    lockCamera(id);
+  }
+  refreshCameraTabs();
+  refreshCameraPanel();
+}
+
+// 双击选项卡重命名（非默认）
+function handleCameraTabDblClick(ev) {
+  const tab = ev.target.closest('.cam-tab');
+  if (!tab || tab.dataset.camDefault) return;
+  const cam = getCamera(tab.dataset.camId);
+  if (!cam) return;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = cam.name;
+  input.style.cssText = 'width:80px;height:18px;font-size:12px;border:1px solid var(--accent);border-radius:3px;padding:0 4px;';
+  tab.textContent = '';
+  tab.appendChild(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const finish = (commitRename) => {
+    if (done) return;
+    done = true;
+    if (commitRename) {
+      const v = input.value.trim();
+      if (v && v !== cam.name) { pushUndo(); cam.name = v; }
+    }
+    refreshCameraTabs();
+    refreshCameraPanel();
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.stopPropagation(); finish(true); }
+    else if (e.key === 'Escape') { e.stopPropagation(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(true));
+  input.addEventListener('click', (e) => e.stopPropagation());
+}
+
 export function initUI() {
   applyI18nDom();
   ensureProjectKey(); // 启动即确保密钥存在：未点「新建」直接编辑保存也能带私钥
@@ -123,8 +221,13 @@ export function initUI() {
     refreshFunctionPanel();
     refreshTimelineTree();
     drawTimelineLayers();
+    // 摄像机面板/选项卡（标签动态构建，语言切换后重建）
+    const camPanel = document.getElementById('cam-panel');
+    if (camPanel) { camPanel.dataset.built = ''; camPanel.innerHTML = ''; }
+    refreshCameraTabs();
+    refreshCameraPanel();
   });
-  document.getElementById('btn-new').addEventListener('click', () => { closeMenus(); newFile(); });
+  document.getElementById('btn-new').addEventListener('click', async () => { closeMenus(); await newFile(); refreshCameraTabs(); refreshCameraPanel(); });
   document.getElementById('btn-open').addEventListener('click', () => { closeMenus(); openFile(); });
   document.getElementById('btn-save').addEventListener('click', () => { closeMenus(); saveFile(); });
   document.getElementById('btn-saveas').addEventListener('click', () => { closeMenus(); saveFileAs(); });
@@ -145,6 +248,12 @@ export function initUI() {
     updateGizmo(); // 切换工具时立即刷新 gizmo 显示模式
   });
 
+  // 摄像机选项卡（视口上方）
+  const camTabs = document.getElementById('camera-tabs');
+  camTabs.addEventListener('click', handleCameraTabClick);
+  camTabs.addEventListener('dblclick', handleCameraTabDblClick);
+  refreshCameraTabs();
+
   // 右侧选项卡切换
   document.getElementById('sidebar-tabs').addEventListener('click', (ev) => {
     const btn = ev.target.closest('.tab');
@@ -152,6 +261,7 @@ export function initUI() {
     document.querySelectorAll('#sidebar-tabs .tab').forEach(b => b.classList.toggle('active', b === btn));
     document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'pane-' + btn.dataset.tab));
     if (btn.dataset.tab === 'texture') refreshTexturePanel();
+    if (btn.dataset.tab === 'camera') refreshCameraPanel();
   });
 
   // 函数对象
@@ -296,11 +406,13 @@ export function clearAll() {
   pushUndo();
   state.particles = []; state.tracks = []; state.groups = {}; state.functions = [];
   state.textures = {}; state.currentTexture = null; state.groupUV = {}; state.groupSpinSpace = {}; state.groupRotSpace = {};
+  state.cameras = []; state.activeCamera = null;
   state.selected.clear(); state.selectedGroup = null; state.selectedFunction = null;
   state.expandedParticles.clear(); state.expandedProps.clear();
   if (tlTreeState && tlTreeState.expanded) tlTreeState.expanded.clear();
   state.time = 0;
   updateTimeUI(); rebuildPoints(); refreshTimelineTree(); refreshFunctionPanel();
+  refreshCameraTabs(); refreshCameraPanel();
 }
 
 // 读取三个数值输入框组成的向量；任一框为空/非法时返回 null。
@@ -455,6 +567,13 @@ export function animate(now) {
   drawTimelineLayers();
   controls.update();
   updateGizmoFrame();
+  // 锁定摄像机时，OrbitControls 自由操作后读回当前值作为待确认预览（黄高亮）
+  if (state.activeCamera && state.activeCamera !== DEFAULT_CAMERA_ID) {
+    refreshPending();
+    if (document.getElementById('pane-camera').classList.contains('active')) {
+      refreshCameraPanel();
+    }
+  }
   pointsMaterial.uniforms.uTime.value = performance.now() / 1000;
   renderer.render(scene, camera);
   drawAxisGizmo();
