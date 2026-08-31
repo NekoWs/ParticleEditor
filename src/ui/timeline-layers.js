@@ -38,6 +38,15 @@ export function particleLifeEnd(p) {
   return life < 0 ? Infinity : s + life;
 }
 
+/** 函数对象所有变量关键帧的最大 tick（约束对象时长的下限）。 */
+export function fxVarMaxTick(fx) {
+  let max = 0;
+  for (const v of Object.values(fx.vars || {})) {
+    for (const k of (v.kf || [])) if (k[0] > max) max = k[0];
+  }
+  return max;
+}
+
 /** 顶层对象行的可见性跨度 [start, end]；end 可为 Infinity（无限寿命）。 */
 export function rowSpan(r) {
   if (r.kind === 'group') {
@@ -54,8 +63,7 @@ export function rowSpan(r) {
   }
   if (r.kind === 'fx') {
     const fx = r.fx;
-    let extent = fx.duration || 0;
-    for (const v of Object.values(fx.vars)) for (const k of (v.kf || [])) if (k[0] > extent) extent = k[0];
+    let extent = Math.max(fx.duration || 0, fxVarMaxTick(fx));
     return [fx.st || 0, (fx.st || 0) + extent];
   }
   const s = r.p.st || 0, e = particleLifeEnd(r.p);
@@ -422,7 +430,8 @@ export function tlInitLayerEvents() {
     } else if (d.kind === 'life') {
       setParticleLife(d.p, Math.max(1, Math.round(ptrTick - d.grabOff)));
     } else if (d.kind === 'fxdur') {
-      d.fx.duration = Math.max(1, Math.round(ptrTick - d.grabOff));
+      const minDur = Math.max(1, fxVarMaxTick(d.fx));
+      d.fx.duration = Math.max(minDur, Math.round(ptrTick - d.grabOff));
       const durEl = document.getElementById('fx-duration');
       if (durEl && document.activeElement !== durEl) durEl.value = d.fx.duration;
     } else if (d.kind === 'grouplife') {
