@@ -187,9 +187,15 @@ function readVisualFallback(p, T) {
           v.scale[0], v.scale[1]];
 }
 
-// 确定性的「无 random/rand 且不依赖 t/dt/life」函数对象：rebuildFunctionObject 已按 t=0
-// 求出并写入 p.pos/p.color/p.scale，播放期间无需每帧重跑脚本，直接复用基础值即可。
+// 确定性的「无 random/rand、不依赖 t/dt/life、变量无关键帧」函数对象：
+// rebuildFunctionObject 已按 t=0 求出并写入 p.pos/p.color/p.scale，播放期间无需每帧重跑脚本。
+// 变量关键帧会随时间改变 fx.vars 注入值，必须走活源求值。
 function isFxStaticScript(fx) {
+  const vars = fx.vars || {};
+  for (const name in vars) {
+    const v = vars[name];
+    if (v && v.kf && v.kf.length > 0) return false;
+  }
   const src = (fx.process || '') + '\n' + (fx.funcs || '');
   if (/\b(random|rand)\s*\(/.test(src)) return false;
   return !/(\bt\b|\bdt\b|\blife\b)/.test(src);
