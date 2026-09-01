@@ -100,6 +100,12 @@ function drawKfsForTrack(ctx, tr, id, prop, comp, w, cy, color, X) {
 
 function drawPropLane(ctx, row, y, w, rowH, X) {
   const cy = y + rowH / 2;
+  if (row.prop === 'fov') {
+    // FOV 标量行：无分量，直接画 fov 轨道菱形
+    const tr = findTrackByPr('fov', row.id);
+    if (tr) drawKfsForTrack(ctx, tr, row.id, 'fov', '', w, cy, '#ffcc55', X);
+    return;
+  }
   for (const comp of propComps(row.id, row.prop)) {
     const tr = findTrackByPr(compPr(row.prop, comp), row.id);
     if (!tr) continue;

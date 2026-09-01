@@ -118,7 +118,7 @@ export function buildTrackIndex() {
     if (tr.ids.length === 1) {
       const id = tr.ids[0];
       const c0 = id.charCodeAt(0);
-      if (c0 !== 103 && c0 !== 102) { // 排除 'g:' 组 / 'f:' 函数轨道（普通/派生粒子轨道）
+      if (c0 !== 103 && c0 !== 102 && c0 !== 99) { // 排除 'g:' 组 / 'f:' 函数 / 'c:' 摄像机轨道（普通/派生粒子轨道）
         let idx = tr._idx;
         if (idx === undefined) { idx = PR_TO_IDX[tr.pr]; tr._idx = (idx === undefined) ? -1 : idx; }
         if (idx >= 0) {

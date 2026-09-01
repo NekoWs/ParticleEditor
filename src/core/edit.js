@@ -7,7 +7,7 @@
  * ======================================================================= */
 
 
-import { TRACK_COMPS, PARTICLE_SCALE_COMPS, COMP_INDEX, compPr, state, getParticle, getFunction, isDerivedParticle, nextId, nextGroupName, indexParticle } from './constants.js';
+import { TRACK_COMPS, PARTICLE_SCALE_COMPS, COMP_INDEX, compPr, state, getParticle, getFunction, getCamera, isDerivedParticle, nextId, nextGroupName, indexParticle } from './constants.js';
 import { baseComponent, componentValueAt, findTrackByPr, PR_TO_IDX, trVersion, rebuildPoints } from './animation.js';
 import { groupCentroidValue, targetComponentValue } from '../ui/tree.js';
 import { pushUndo } from '../state/undo.js';
@@ -21,7 +21,7 @@ export function applyBaseValue(p, prop, values) {
   else if (prop === 'scl') p.scale = [values[0], values[1], 1]; // 粒子缩放无 Z 分量
 }
 
-// 某 id（'p0' | 'g:g0' | 'f:fx0'）在某分量的基础值
+// 某 id（'p0' | 'g:g0' | 'f:fx0' | 'c:cam1'）在某分量的基础值
 export function baseValueFor(id, prop, comp) {
   if (id.startsWith('g:')) {
     const gname = id.slice(2);
@@ -33,6 +33,14 @@ export function baseValueFor(id, prop, comp) {
     if (prop === 'pos') return fx ? fx.center[COMP_INDEX[comp]] : 0;
     if (prop === 'scl') return 1;
     return 0; // rot
+  }
+  if (id.startsWith('c:')) {
+    const cam = getCamera(id.slice(2));
+    if (!cam) return 0;
+    if (prop === 'fov') return cam.fov;
+    if (prop === 'pos') return cam.pos[COMP_INDEX[comp]];
+    if (prop === 'rot') return cam.rot[COMP_INDEX[comp]];
+    return 0;
   }
   const p = getParticle(id);
   return p ? baseComponent(p, prop, comp) : 0;
@@ -215,7 +223,7 @@ export function editSelectionRotationUniform(prop, values) {
   rebuildPoints();
 }
 
-// 通用分量值编辑（时间轴 [值] 输入框用）：按 id 前缀分发到粒子/组/函数对象，
+// 通用分量值编辑（时间轴 [值] 输入框用）：按 id 前缀分发到粒子/组/函数对象/摄像机，
 // 在当前 tick 创建/更新关键帧（op 模式把绝对值换算为增量）
 export function editComponentValue(id, prop, comp, time, value) {
   pushUndo();
@@ -234,6 +242,13 @@ export function editComponentValue(id, prop, comp, time, value) {
     else if (prop === 'col') p.color[COMP_INDEX[comp]] = value;
     else if (prop === 'vel') (p.vel || (p.vel = [0, 0, 0]))[COMP_INDEX[comp]] = value;
     else p.scale[COMP_INDEX[comp]] = value;
+  } else if (id.startsWith('c:') && time === 0) {
+    const cam = getCamera(id.slice(2));
+    if (cam) {
+      if (prop === 'pos') cam.pos[COMP_INDEX[comp]] = value;
+      else if (prop === 'rot') cam.rot[COMP_INDEX[comp]] = value;
+      else if (prop === 'fov') cam.fov = value;
+    }
   }
   rebuildPoints();
 

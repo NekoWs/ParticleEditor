@@ -9,8 +9,11 @@
 
 
 import * as THREE from 'three';
-import { state } from '../core/constants.js';
+import { state, DEFAULT_CAMERA_ID, getCamera } from '../core/constants.js';
 import { camera, renderer, controls, grid, worldAxes, setWorldAxisVisible, camTransition, setCamTransition } from '../scene/scene.js';
+import { snapshotCamera } from '../core/cameras.js';
+import { setComponentKeyframe } from '../core/edit.js';
+import { pushUndo } from '../state/undo.js';
 export const gizmoCanvas = document.getElementById('axis-gizmo');
 export const gizmoCtx = gizmoCanvas.getContext('2d');
 
@@ -213,6 +216,48 @@ export function turntableRotate(dx, dy) {
   camera.lookAt(target);
 }
 
+// 切到某摄像机后，中键旋转改为旋转该摄像机视角（欧拉角），不改位置：
+// 在当前 tick 写 rot 关键帧，并即时更新相机姿态。
+function rotateActiveCamera(dx, dy) {
+  const camId = state.activeCamera;
+  const cam = getCamera(camId);
+  if (!cam) return;
+  const DEG = 180 / Math.PI;
+  const snap = snapshotCamera();
+  const pitch = snap.rot[0] - dy * ROT_SPEED * DEG;
+  const yaw = snap.rot[1] - dx * ROT_SPEED * DEG;
+  const roll = snap.rot[2];
+  const t = Math.round(state.time);
+  const id = 'c:' + camId;
+  setComponentKeyframe(id, 'rot', 'x', t, pitch, 'set');
+  setComponentKeyframe(id, 'rot', 'y', t, yaw, 'set');
+  setComponentKeyframe(id, 'rot', 'z', t, roll, 'set');
+  camera.rotation.set(pitch / DEG, yaw / DEG, roll / DEG, 'XYZ');
+}
+
+// 切到某摄像机后，右键平移改为平移该摄像机位置（不动 controls.target）：
+// 在当前 tick 写 pos 关键帧，并即时更新相机位置。
+function panActiveCamera(dx, dy) {
+  const camId = state.activeCamera;
+  const cam = getCamera(camId);
+  if (!cam) return;
+  const dist = Math.max(1e-4, camera.position.distanceTo(controls.target));
+  const halfH = dist * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
+  const scale = 2 * halfH / (renderer.domElement.clientHeight || 1);
+  const dir = camera.getWorldDirection(new THREE.Vector3());
+  const right = new THREE.Vector3().crossVectors(dir, camera.up).normalize();
+  const up = camera.up.clone().normalize();
+  const pan = new THREE.Vector3()
+    .addScaledVector(right, -dx * scale)
+    .addScaledVector(up, dy * scale);
+  camera.position.add(pan);
+  const t = Math.round(state.time);
+  const id = 'c:' + camId;
+  setComponentKeyframe(id, 'pos', 'x', t, camera.position.x, 'set');
+  setComponentKeyframe(id, 'pos', 'y', t, camera.position.y, 'set');
+  setComponentKeyframe(id, 'pos', 'z', t, camera.position.z, 'set');
+}
+
 // 右键拖拽平移：相机与 controls.target 同步平移（纯平移，不改变朝向）。
 // dx>0 向右拖：相机沿右方向反向平移，场景跟手向右；dy>0 向下拖：相机沿上方向平移。
 export function panCamera(dx, dy) {
@@ -289,6 +334,7 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
   if (ev.button === 1) {
     if (camTransition) setCamTransition(null);
     if (navOriented) { setDrawPlane('XZ'); setWorldAxesOccluded(true); navOriented = false; }
+    if (state.activeCamera && state.activeCamera !== DEFAULT_CAMERA_ID) pushUndo();
     midDrag = { x: ev.clientX, y: ev.clientY };
     renderer.domElement.setPointerCapture(ev.pointerId);
     return;
@@ -296,6 +342,7 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
   if (ev.button === 2) {
     if (camTransition) setCamTransition(null);
     if (navOriented) { setDrawPlane('XZ'); setWorldAxesOccluded(true); navOriented = false; }
+    if (state.activeCamera && state.activeCamera !== DEFAULT_CAMERA_ID) pushUndo();
     rightPanDrag = { x: ev.clientX, y: ev.clientY };
     renderer.domElement.setPointerCapture(ev.pointerId);
   }
@@ -305,13 +352,15 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
   if (midDrag) {
     const dx = ev.clientX - midDrag.x, dy = ev.clientY - midDrag.y;
     midDrag.x = ev.clientX; midDrag.y = ev.clientY;
-    turntableRotate(dx, dy);
+    if (state.activeCamera && state.activeCamera !== DEFAULT_CAMERA_ID) rotateActiveCamera(dx, dy);
+    else turntableRotate(dx, dy);
     return;
   }
   if (rightPanDrag) {
     const dx = ev.clientX - rightPanDrag.x, dy = ev.clientY - rightPanDrag.y;
     rightPanDrag.x = ev.clientX; rightPanDrag.y = ev.clientY;
-    panCamera(dx, dy);
+    if (state.activeCamera && state.activeCamera !== DEFAULT_CAMERA_ID) panActiveCamera(dx, dy);
+    else panCamera(dx, dy);
   }
 });
 

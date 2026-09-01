@@ -9,8 +9,8 @@
 
 import { t, tf, LANG } from '../core/i18n.js';
 import {
-  state, TRACK_COMPS, propComps, COMP_LABELS, GROUP_PROP_DEFS, PARTICLE_TRACK_DEFS, FUNCTION_PROP_DEFS,
-  getParticle, getFunction, isDerivedParticle, plainParticleCache,
+  state, TRACK_COMPS, propComps, COMP_LABELS, GROUP_PROP_DEFS, PARTICLE_TRACK_DEFS, FUNCTION_PROP_DEFS, CAMERA_PROP_DEFS,
+  getParticle, getFunction, getCamera, isDerivedParticle, plainParticleCache, DEFAULT_CAMERA_ID,
 } from '../core/constants.js';
 import { editComponentValue } from '../core/edit.js';
 import { targetComponentValue, startRename } from './tree.js';
@@ -19,6 +19,7 @@ import { varKfValue, ATTR_NAMES, FUNCS } from '../core/easing.js';
 import { modalAlert } from './ui.js';
 import { rebuildPoints } from '../core/animation.js';
 import { refreshFunctionPanel, commitFunctionRebuild } from './panels.js';
+import { cameraValueAt, camTrackId, lockCamera } from '../core/cameras.js';
 
 export const TL_TREE_ROW_H = 22;
 export const tlTreeState = { expanded: new Set() };
@@ -126,6 +127,9 @@ function structureSignature() {
     parts.push('F:' + fx.id + ':' + hashStr(fx.name || '', 0) + ':' + fx.count + ':' + h);
     parts.push('FS:' + fx.id + ':' + (fx.spinSpace || 'world') + ':' + (fx.rotSpace || 'world'));
   }
+  for (const cam of state.cameras) {
+    parts.push('C:' + cam.id + ':' + hashStr(cam.name || '', 0));
+  }
   parts.push('X:' + [...tlTreeState.expanded].sort().join('|'));
   return parts.join(';');
 }
@@ -206,6 +210,16 @@ export function tlTreeFlatRows() {
     }
   }
 
+  // 摄像机：顶层对象，展开后显示 pos/rot/fov 属性行
+  for (const cam of state.cameras) {
+    const cid = camTrackId(cam.id);
+    const ckey = cid;
+    const cexpanded = tlTreeState.expanded.has(ckey);
+    rows.push({ key: ckey, kind: 'camera', cam, expanded: cexpanded, depth: 0 });
+    if (!cexpanded) continue;
+    for (const prop of CAMERA_PROP_DEFS) pushPropRows(rows, cid, prop, 1, false);
+  }
+
   return rows;
 }
 
@@ -267,6 +281,20 @@ function renderFlatRow(row) {
       div.appendChild(label);
       break;
     }
+    case 'camera': {
+      div.dataset.selkind = 'camera';
+      div.dataset.camid = row.cam.id;
+      if (state.activeCamera === row.cam.id) div.classList.add('selected');
+      div.appendChild(makeArrow(row.key, expanded));
+      const label = el('span', 'tt-label');
+      label.textContent = row.cam.name;
+      label.title = row.cam.name;
+      const icon = el('span', 'tt-cam-icon');
+      icon.textContent = '🎥';
+      div.insertBefore(icon, label);
+      div.appendChild(label);
+      break;
+    }
     case 'vars': {
       div.appendChild(makeArrow(row.key, expanded));
       const label = el('span', 'tt-sub-label');
@@ -282,8 +310,29 @@ function renderFlatRow(row) {
     case 'prop': {
       div.appendChild(makeArrow(row.key, expanded));
       const label = el('span', 'tt-plabel');
-      label.textContent = t('prop.' + row.prop);
+      // 摄像机旋转是欧拉角，标签用「旋转」；其余用通用属性标签
+      label.textContent = (row.id.startsWith('c:') && row.prop === 'rot') ? t('cam.rotation') : t('prop.' + row.prop);
       div.appendChild(label);
+
+      // FOV 标量行：单输入框 + 加帧按钮（无 XYZ 三段、无展开分量）
+      if (row.prop === 'fov') {
+        const inp = el('input', 'tt-val tt-cval');
+        inp.type = 'number';
+        inp.step = '1';
+        inp.min = '1'; inp.max = '179';
+        inp.dataset.id = row.id;
+        inp.dataset.prop = row.prop;
+        inp.dataset.comp = '';
+        const add = el('button', 'tt-add-kf');
+        add.textContent = '◇+';
+        add.title = t('tree.addKfHint');
+        add.dataset.id = row.id;
+        add.dataset.prop = row.prop;
+        add.dataset.comp = '';
+        div.appendChild(inp);
+        div.appendChild(add);
+        break;
+      }
 
       // 自转行：组/函数对象显示 世界/局部 切换按钮
       if (row.prop === 'spin' && (row.id.startsWith('g:') || row.id.startsWith('f:'))) {
@@ -542,6 +591,21 @@ function onTreeClick(ev) {
     rebuildPoints();
     refreshFunctionPanel();
     syncSelectionClasses();
+    return;
+  }
+  if (selkind === 'camera') {
+    const camid = rowEl.dataset.camid;
+    if (!camid) return;
+    state.selected.clear();
+    state.selectedGroup = null;
+    state.selectedFunction = null;
+    lockCamera(camid);
+    tlTreeAnchor = { kind: 'camera', id: camid };
+    syncSelectionClasses();
+    // 同步顶部摄像机选项卡高亮（不引入 main.js 依赖）
+    document.querySelectorAll('#camera-tabs .cam-tab').forEach(t => {
+      t.classList.toggle('active', t.dataset.camId === camid);
+    });
   }
 }
 
@@ -566,6 +630,9 @@ function syncSelectionClasses() {
   });
   root.querySelectorAll('.tt-fx').forEach(r => {
     r.classList.toggle('selected', state.selectedFunction === r.dataset.fxid);
+  });
+  root.querySelectorAll('.tt-camera').forEach(r => {
+    r.classList.toggle('selected', state.activeCamera === r.dataset.camid);
   });
 }
 

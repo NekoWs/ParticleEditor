@@ -5,7 +5,7 @@
 
 import { state, setDirty } from '../core/constants.js';
 import { rebuildPoints } from '../core/animation.js';
-import { refreshFunctionPanel, refreshCameraPanel, updateLoopIndicator } from '../ui/panels.js';
+import { refreshFunctionPanel, updateLoopIndicator } from '../ui/panels.js';
 import { refreshCameraTabs } from '../main.js';
 export const undoStack = [];
 export const redoStack = [];
@@ -66,7 +66,6 @@ export function restore(s) {
   updateLoopIndicator();
   rebuildPoints();
   if (typeof refreshFunctionPanel === 'function') refreshFunctionPanel();
-  if (typeof refreshCameraPanel === 'function') refreshCameraPanel();
   if (typeof refreshCameraTabs === 'function') refreshCameraTabs();
 }
 

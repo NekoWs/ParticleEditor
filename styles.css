@@ -209,23 +209,6 @@ body {
 .cam-tab:hover .cam-del { display: inline-block; color: #fff; background: rgba(0,0,0,0.25); }
 .cam-tab .cam-del:hover { background: var(--danger); }
 
-/* ---- 摄像机属性面板 ---- */
-#cam-panel .cam-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-#cam-panel .cam-name { flex: 1; min-width: 0; font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#cam-panel .cam-actions { display: flex; gap: 6px; margin-top: 10px; }
-#cam-panel .cam-actions .btn { flex: 1; padding: 6px 10px; font-size: 12px; }
-#cam-panel .cam-actions .bd-ok { background: var(--accent); border-color: var(--accent); color: #fff; }
-#cam-panel .cam-actions .bd-ok:hover { color: #fff; filter: brightness(1.1); }
-#cam-panel .cam-actions .bd-cancel { background: var(--panel-3); }
-#cam-panel .cam-del-btn { color: var(--danger); }
-#cam-panel .cam-del-btn:hover { border-color: var(--danger); }
-
-/* 待确认变更：输入框黄色高亮 */
-#cam-panel input.pending,
-#cam-panel .vec3.pending { border-color: var(--orange); background: var(--orange-soft); }
-#cam-panel input.pending { background: var(--orange-soft); }
-#cam-panel .cam-fov-row input.pending { background: var(--orange-soft); }
-
 .row { display: flex; align-items: center; gap: 8px; margin: 7px 0; white-space: nowrap; }
 .row input[type="text"], .row input[type="number"], .row select {
   flex: 1; min-width: 0; background: var(--panel-3); border: 1px solid var(--border);
@@ -686,6 +669,8 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .tt-group .tt-label { color: #c9a24b; }
 .tt-fx .tt-label { color: #a99bf5; }
 .tt-particle .tt-label { color: #7fb3e8; }
+.tt-camera .tt-label { color: #63c9a1; }
+.tt-cam-icon { flex: 0 0 auto; font-size: 12px; line-height: 1; margin-right: 2px; }
 .tt-arrow {
   flex: 0 0 16px; width: 16px; text-align: center;
   cursor: pointer; color: var(--muted); font-size: 11px;

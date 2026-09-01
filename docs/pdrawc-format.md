@@ -18,7 +18,7 @@
 ```
 +--------------------+
 | magic     4 bytes  |  ASCII "PDC1" = 0x50 0x44 0x43 0x31
-| version   varint   |  5（当前）；1/2/3/4 = 旧版，已拒绝
+| version   varint   |  6（当前）；1/2/3/4/5 = 旧版，已拒绝
 | pubkey    32 bytes |  Ed25519 公钥（原始字节）
 +--------------------+
 | body（见 §2）      |  ← 签名覆盖范围：从 magic 到压缩 body 末尾
@@ -29,7 +29,8 @@
 ```
 
 **版本**：
-- `v5`（当前）：`body` 为 **raw DEFLATE**（RFC 1951，无 zlib/gzip 头尾）压缩后的字节；新增组级/函数对象级**自转空间**（world/local）。
+- `v6`（当前）：新增摄像机对象（`cameras` section + 摄像机轨道引用 kind=3 + `fov` pr）。
+- `v5`（旧版）：`body` 为 **raw DEFLATE**（RFC 1951，无 zlib/gzip 头尾）压缩后的字节；新增组级/函数对象级**自转空间**（world/local）。
 - `v4`（旧版）：新增 `spin`/`center` 轨道；读取端**拒绝**。
 - `v3`（旧版）：`body` 为 raw DEFLATE，函数对象使用 `setup/process/seed`；读取端**拒绝**。
 - `v1`/`v2`（旧版）：读取端**拒绝**。
@@ -52,6 +53,7 @@ particles                    独立粒子（不含派生粒子）
 groups                       组（成员引用粒子索引）
 groupUV                      组级 UV（引用组索引）
 functions                    函数对象定义
+cameras                      摄像机对象（v6）
 tracks                       分量级轨道
 ```
 
@@ -143,7 +145,25 @@ count × {
 
 > 函数对象脚本语法见 `docs/script-lang-spec.md`；变量使用**数值基值 + 关键帧**模型。
 
-### 2.6 tracks
+### 2.6 cameras
+
+```
+count                       varint
+count × {
+  idLen                     varint
+  id                        idLen 字节 UTF-8（编辑器用户可见 id，如 "cam1"）
+  nameLen                   varint
+  name                      nameLen 字节 UTF-8（编辑器用户可见名称）
+  pos                       3 × float32：[x,y,z]（世界坐标）
+  rot                       3 × float32：[pitch,yaw,roll]（欧拉角，度，XYZ 顺序）
+  fov                       float32：视场角（度）
+}
+```
+
+摄像机的位置/旋转/FOV 关键帧走 §2.7 tracks（轨道 id 为 `c:<id>`，pr 为 `pos.x`/`rot.y`/`fov` 等）。
+播放端**不自动改变玩家相机**，仅按 id 查询姿态数据（见 §7 运行时合成 id）。
+
+### 2.7 tracks
 
 ```
 count                       varint
@@ -212,7 +232,7 @@ tag                        1 byte：
 | 3 | vel.x | 11 | scl.y | 19 | center.x |
 | 4 | vel.y | 12 | scl.z | 20 | center.y |
 | 5 | vel.z | 13 | rot.x | 21 | center.z |
-| 6 | col.r | 14 | rot.y | | |
+| 6 | col.r | 14 | rot.y | 22 | fov |
 | 7 | col.g | 15 | rot.z | | |
 
 ---
@@ -220,7 +240,7 @@ tag                        1 byte：
 ## 5. 轨道 id 引用
 
 ```
-kind                        1 byte：0=粒子, 1=组, 2=函数对象
+kind                        1 byte：0=粒子, 1=组, 2=函数对象, 3=摄像机
 index                       varint：对应数组的 0-based 索引
 ```
 
@@ -231,6 +251,7 @@ index                       varint：对应数组的 0-based 索引
 | 0 | `p<index>` |
 | 1 | `g:g<index>` |
 | 2 | `f:fx<index>` |
+| 3 | `c:<cameras[index].id>` |
 
 ---
 
@@ -240,15 +261,16 @@ index                       varint：对应数组的 0-based 索引
 - 组：`g0, g1, …`。
 - 函数对象：`fx0, fx1, …`。
 - 派生粒子：`fx<函数索引>:p<序号>`。
+- 摄像机：`<cameras[index].id>`（保留编辑器用户可见 id，如 `cam1`）；其轨道 id 为 `c:<id>`。
 
 这些合成 id 与模组现有字符串运行时模型无缝衔接；编辑期用户可见命名
-（`粒子0`/`组A` 等）与播放无关，故不进入 `.pdrawc`。
+（`粒子0`/`组A` 等）与播放无关，故不进入 `.pdrawc`（摄像机 id 除外，供播放端按 id 查询姿态）。
 
 ---
 
 ## 7. 版本与拒绝语义
 
-- 魔数不是 `PDC1`、版本不是 3、或数据截断/越界 → **拒绝**。
+- 魔数不是 `PDC1`、版本不是 6、或数据截断/越界 → **拒绝**。
 - 签名验证失败 → **拒绝播放**。
 - raw DEFLATE 解压失败 → **拒绝**。
 - 未知 `pr` 枚举、未知 UV mode、未知 easing tag 等 → 视为损坏数据拒绝。

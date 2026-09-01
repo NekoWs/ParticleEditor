@@ -11,7 +11,8 @@ import { camera, renderer, controls, raycaster, pointer, gizmoGroup, gizmoRotate
 import { currentVisual, rebuildPoints, setPreview, clearPreview, rotVectorAt, spinVectorAt, orbitCenterAt, trackValueAt, findTrackByPr, groupScaleAt, spinMatrix, mat3VecArray, applyLocalSpinRotation, applyLocalSpinRotationVec, applyLocalOrbitRotation, applyLocalOrbitRotationVec } from '../core/animation.js';
 import { screenToNdc, planePointAt, worldToUV, computeShapePositions, snapGrid, snapValue, pickParticleAt, particleAt, projectToScreen, distToSegment, planeInfo, selectionCentroid, updateGizmo, updateGizmoFrame } from './gizmo.js';
 import { groupCurrentCentroid, groupCentroidValue, deleteGroup, createGroup } from '../ui/tree.js';
-import { refreshFunctionPanel, refreshCameraPanel } from '../ui/panels.js';
+import { refreshFunctionPanel } from '../ui/panels.js';
+import { refreshTimelineTree } from '../ui/timeline-tree.js';
 import { setFunctionTrackValue, setGroupTrackValue, setComponentKeyframe, editParticles, addParticle, autoGroup, removeGroupAndTracks } from '../core/edit.js';
 import { pushUndo, restore, undoStack, undo, redo } from '../state/undo.js';
 import { deleteFunctionObject } from '../core/generators.js';
@@ -886,7 +887,7 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
       state.cameras.push(cam);
       lockCamera(cam.id);
       refreshCameraTabs();
-      refreshCameraPanel();
+      refreshTimelineTree();
       state.tool = 'select';
       document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active', b.dataset.tool === 'select'));
     }

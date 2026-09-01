@@ -10,6 +10,7 @@ import { state, COMP_LABELS, compPr, splitCompPr, getParticle, isDerivedParticle
 import { modalAlert } from './ui.js';
 import { baseValue, componentValueAt, particleValueAt, trackValueAt, findTrackByPr, zeroArray, rebuildPoints } from '../core/animation.js';
 import { removeGroupAndTracks, baseValueFor } from '../core/edit.js';
+import { cameraValueAt } from '../core/cameras.js';
 import { pushUndo, popUndo } from '../state/undo.js';
 import { makeEasingBtn, easingCurveSVG } from './easing-editor.js';
 import { r3 } from '../io/io.js';
@@ -111,7 +112,7 @@ function syncRenameWidth(input) {
  * 数据查询
  * ======================================================================= */
 
-// 目标分量值（id 可为 'p0' | 'g:g0' | 'f:fx0'）
+// 目标分量值（id 可为 'p0' | 'g:g0' | 'f:fx0' | 'c:cam1'）
 export function targetComponentValue(id, prop, comp, T) {
   const pr = compPr(prop, comp);
   if (id.startsWith('g:') || id.startsWith('f:')) {
@@ -119,6 +120,9 @@ export function targetComponentValue(id, prop, comp, T) {
     const tr = findTrackByPr(pr, id);
     if (!tr || tr.kf.length === 0) return base;
     return tr.m === 'op' ? base + trackValueAt(tr, T, 0) : trackValueAt(tr, T, base);
+  }
+  if (id.startsWith('c:')) {
+    return cameraValueAt(id.slice(2), prop, comp, T);
   }
   const p = getParticle(id);
   return p ? componentValueAt(p, prop, comp, T) : 0;

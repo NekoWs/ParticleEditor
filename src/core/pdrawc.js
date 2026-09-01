@@ -8,7 +8,7 @@ import { base64ToBytes, bytesToBase64, signData, verifyData } from './crypto.js'
 import { EASING_NONE } from './easing-constants.js';
 
 export const PDRAWC_MAGIC = new Uint8Array([0x50, 0x44, 0x43, 0x31]); // "PDC1"
-export const PDRAWC_VERSION = 5;
+export const PDRAWC_VERSION = 6;
 export const PDRAWC_SIG_LEN = 64;
 export const PDRAWC_PUB_LEN = 32;
 
@@ -21,6 +21,7 @@ export const PR_ENUM = {
   'rot.x': 13, 'rot.y': 14, 'rot.z': 15,
   'spin.x': 16, 'spin.y': 17, 'spin.z': 18,
   'center.x': 19, 'center.y': 20, 'center.z': 21,
+  'fov': 22,
 };
 export const PR_BY_ENUM = Object.fromEntries(Object.entries(PR_ENUM).map(([k, v]) => [v, k]));
 
@@ -271,6 +272,18 @@ function encodeBody(state, texPngOf) {
     }
   }
 
+  // 摄像机对象（v6 新增；供播放端按 id 查询位置/旋转/FOV 关键帧）
+  const cameras = state.cameras || [];
+  const cameraIndex = new Map(cameras.map((c, i) => [c.id, i]));
+  w.varint(cameras.length);
+  for (const c of cameras) {
+    w.str(c.id || '');
+    w.str(c.name || '');
+    w.f32(c.pos[0]); w.f32(c.pos[1]); w.f32(c.pos[2]);
+    w.f32(c.rot[0]); w.f32(c.rot[1]); w.f32(c.rot[2]);
+    w.f32(c.fov != null ? c.fov : 50);
+  }
+
   // 轨道（非函数对象轨道）
   const tracks = state.tracks.filter(tr => !tr.fx);
   const outTracks = [];
@@ -285,6 +298,9 @@ function encodeBody(state, texPngOf) {
       } else if (id.startsWith('f:')) {
         const fi = functionIndex.get(id.slice(2));
         if (fi != null) refs.push([2, fi]);
+      } else if (id.startsWith('c:')) {
+        const ci = cameraIndex.get(id.slice(2));
+        if (ci != null) refs.push([3, ci]);
       } else {
         const pi = particleIndex.get(id);
         if (pi != null) refs.push([0, pi]);
@@ -473,6 +489,17 @@ export async function decodePdrawc(bytes) {
     functions.push({ center, count, setup, process, funcs, seed, duration, st, ent, uv, vars, fastMath, spinLocal, rotLocal });
   }
 
+  const camCount = br.varint();
+  const cameras = [];
+  for (let i = 0; i < camCount; i++) {
+    const id = br.str();
+    const name = br.str();
+    const pos = [br.f32(), br.f32(), br.f32()];
+    const rot = [br.f32(), br.f32(), br.f32()];
+    const fov = br.f32();
+    cameras.push({ id, name, pos, rot, fov });
+  }
+
   const trackCount = br.varint();
   const tracks = [];
   for (let i = 0; i < trackCount; i++) {
@@ -483,7 +510,7 @@ export async function decodePdrawc(bytes) {
     const ids = [];
     for (let j = 0; j < idCount; j++) {
       const kind = br.u8();
-      if (kind > 2) throw new Error('pdrawc: unknown ref kind');
+      if (kind > 3) throw new Error('pdrawc: unknown ref kind');
       ids.push({ kind, index: br.varint() });
     }
     const kf = readKf(br);
@@ -492,7 +519,7 @@ export async function decodePdrawc(bytes) {
 
   if (br.remaining !== 0) throw new Error('pdrawc: trailing bytes in body');
 
-  return { loop, textures, particles, groups, groupSpinLocal, groupRotLocal, groupUV, functions, tracks, pubKeyBytes };
+  return { loop, textures, particles, groups, groupSpinLocal, groupRotLocal, groupUV, functions, cameras, tracks, pubKeyBytes };
 }
 
 /** 从完整 .pdrawc 提取公钥 base64（用于验签）。 */

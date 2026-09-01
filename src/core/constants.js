@@ -63,20 +63,23 @@ export const COMP_INDEX = { x: 0, y: 1, z: 2, r: 0, g: 1, b: 2, a: 3 };
 // 粒子缩放只有 X/Y 两个有效分量（billboard 无 Z 缩放）；组/函数对象缩放仍为 XYZ 三分量
 export const PARTICLE_SCALE_COMPS = ['x', 'y'];
 
-// 按对象 id 取属性的可编辑分量列表：粒子 scl 仅 X/Y，其余按 TRACK_COMPS
+// 按对象 id 取属性的可编辑分量列表：粒子 scl 仅 X/Y；fov 无分量（标量）；其余按 TRACK_COMPS
 export function propComps(id, prop) {
-  if (prop === 'scl' && id && !id.startsWith('g:') && !id.startsWith('f:')) return PARTICLE_SCALE_COMPS;
+  if (prop === 'fov') return []; // 标量，无分量
+  if (prop === 'scl' && id && !id.startsWith('g:') && !id.startsWith('f:') && !id.startsWith('c:')) return PARTICLE_SCALE_COMPS;
   return TRACK_COMPS[prop];
 }
 
 // 属性 / 分量 显示标签
-export const PROP_LABELS = { pos: '位置', rot: '公转', spin: '自转', center: '公转中心', vel: '速度', col: '颜色', scl: '缩放' };
+export const PROP_LABELS = { pos: '位置', rot: '公转', spin: '自转', center: '公转中心', vel: '速度', col: '颜色', scl: '缩放', fov: 'FOV' };
 export const COMP_LABELS = { x: 'X', y: 'Y', z: 'Z', r: 'R', g: 'G', b: 'B', a: 'A' };
 
 // 各对象类型可动画的属性（普通粒子无自转，仅有公转与公转中心）
 export const PARTICLE_TRACK_DEFS = ['pos', 'rot', 'center', 'vel', 'col', 'scl'];
 export const GROUP_PROP_DEFS = ['pos', 'rot', 'spin', 'center', 'vel', 'col', 'scl'];
 export const FUNCTION_PROP_DEFS = ['pos', 'rot', 'spin', 'center', 'scl'];
+// 摄像机可动画属性：位置/旋转(欧拉角)/FOV
+export const CAMERA_PROP_DEFS = ['pos', 'rot', 'fov'];
 
 // 分量轨道 pr 拼接 / 解析
 export function compPr(prop, comp) { return comp ? prop + '.' + comp : prop; }

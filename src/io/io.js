@@ -7,7 +7,7 @@ import { t } from '../core/i18n.js';
 import { state, setDirty, DEFAULT_EASING, UV_MODES, PROP_LABELS, splitCompPr, nextId } from '../core/constants.js';
 import { pushUndo } from '../state/undo.js';
 import { rebuildPoints } from '../core/animation.js';
-import { updateLoopIndicator, refreshFunctionPanel, refreshCameraPanel } from '../ui/panels.js';
+import { updateLoopIndicator, refreshFunctionPanel } from '../ui/panels.js';
 import { updateTimeUI, refreshCameraTabs } from '../main.js';
 import { rebuildFunctionObject } from '../core/generators.js';
 import { markTextureChanged, refreshTexturePanel } from '../ui/texture-editor.js';
@@ -309,7 +309,7 @@ export async function importProject(obj) {
     });
   }
   updateTimeUI(); rebuildPoints();
-  refreshCameraTabs(); refreshCameraPanel();
+  refreshCameraTabs();
   setDirty(keyGenerated);
 }
 
