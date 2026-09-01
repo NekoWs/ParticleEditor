@@ -25,6 +25,23 @@ function newOut() {
   return { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0 };
 }
 
+// 记录脚本运行时错误（不弹窗；提交/重建路径会另行弹窗提示）。
+function markFxError(fx, e) {
+  if (fx) fx._error = (e && e.message) ? e.message : String(e);
+}
+
+// 脚本求值失败时回退到粒子已存储的基础值（上次成功重建写入的 p.pos/p.color/p.scale）。
+function storedVisual(p) {
+  return {
+    pos: (p && p.pos) ? p.pos.slice() : [0, 0, 0],
+    color: (p && p.color) ? p.color.slice() : [1, 1, 1, 1],
+    vel: (p && p.vel) ? p.vel.slice() : [0, 0, 0],
+    scale: (p && p.scale && Number.isFinite(p.scale[0])) ? p.scale[0] : 1,
+    glow: !!(p && p.glow),
+    light: (p && p.lightLevel != null) ? p.lightLevel : 0,
+  };
+}
+
 /* -------------------------------------------------------------------------
  * 脚本编译缓存
  * ---------------------------------------------------------------------- */
@@ -172,14 +189,34 @@ function evalParticleFor(fx, objState, statics, i, n, t, dt) {
 
 // 创建/复用某个 (fx,t) 帧的求值器：脚本字节码、uniforms、Runner 均只建一次。
 // 渲染热路径入口：按函数对象取/建对象级状态，并返回该 (fx,t) 的可复用求值帧。
+function failedFxFrame(fx, t, dt) {
+  return {
+    fx, objState: null, n: Math.max(1, Math.round(fx.count) || 1),
+    t: t || 0, dt: dt || 0, C: 1, R: 1, life: 0,
+    ctx: null, uniforms: [], runner: null, native: null,
+    failed: true,
+  };
+}
+
 export function getFxFrameAuto(fx, t, dt) {
-  const objState = getObjectState(fx);
-  const n = Math.max(1, Math.round(fx.count) || 1);
-  return getFxFrame(fx, objState, n, t || 0, dt || 0);
+  try {
+    const objState = getObjectState(fx);
+    const n = Math.max(1, Math.round(fx.count) || 1);
+    return getFxFrame(fx, objState, n, t || 0, dt || 0);
+  } catch (e) {
+    markFxError(fx, e);
+    return failedFxFrame(fx, t, dt);
+  }
 }
 
 export function getFxFrame(fx, objState, n, t, dt) {
-  const evalCtx = getEvalContext(fx, objState, n, t || 0, dt || 0);
+  let evalCtx;
+  try {
+    evalCtx = getEvalContext(fx, objState, n, t || 0, dt || 0);
+  } catch (e) {
+    markFxError(fx, e);
+    return failedFxFrame(fx, t, dt);
+  }
   const C = gridCols(fx, n);
   const R = Math.max(1, Math.ceil(n / C));
   return {
@@ -197,27 +234,34 @@ export function getFxFrame(fx, objState, n, t, dt) {
 // 返回值即 out；调用方必须立即消费（下一次调用会覆盖）。与 evalParticleFor 语义一致。
 export function evalFxParticleInto(frame, statics, i, out) {
   const ctx = frame.ctx;
-  const o = out || ctx.out;
+  const o = out || (ctx ? ctx.out : newOut());
   o.pos[0] = 0; o.pos[1] = 0; o.pos[2] = 0;
   o.color[0] = 1; o.color[1] = 1; o.color[2] = 1; o.color[3] = 1;
   o.vel[0] = 0; o.vel[1] = 0; o.vel[2] = 0;
   o.scale = 1; o.glow = false; o.light = 0;
+  if (!ctx || frame.failed) return o;
   ctx.i = i;
   const C = frame.C, R = frame.R;
   ctx.uv_x = (C === 1) ? 0 : (i % C) / (C - 1);
   ctx.uv_y = (R === 1) ? 0 : Math.floor(i / C) / (R - 1);
-  if (frame.native) {
-    runNativeProcess(frame.native, frame.objState, statics, ctx, o, !!frame.fx.fastMath);
-    const center = frame.fx.center || [0, 0, 0];
-    o.pos[0] += center[0]; o.pos[1] += center[1]; o.pos[2] += center[2];
+  try {
+    if (frame.native) {
+      runNativeProcess(frame.native, frame.objState, statics, ctx, o, !!frame.fx.fastMath);
+      const center = frame.fx.center || [0, 0, 0];
+      o.pos[0] += center[0]; o.pos[1] += center[1]; o.pos[2] += center[2];
+      return o;
+    }
+    frame.runner.resetForRun(statics, ctx, frame.uniforms);
+    // VM 路径：runner 通过 ensureOut(ctx) 写入 ctx.out。当调用方显式传入复用 out 时，
+    // 必须让 ctx.out 指向该对象，否则 runner 写入的是 frame.ctx 里的旧 out，而返回值读取的是传入的 o，
+    // 导致所有粒子被写成默认值（位置归原点、颜色/alpha 为 1）。
+    ctx.out = o;
+    frame.runner.run();
+  } catch (e) {
+    markFxError(frame.fx, e);
+    frame.failed = true;
     return o;
   }
-  frame.runner.resetForRun(statics, ctx, frame.uniforms);
-  // VM 路径：runner 通过 ensureOut(ctx) 写入 ctx.out。当调用方显式传入复用 out 时，
-  // 必须让 ctx.out 指向该对象，否则 runner 写入的是 frame.ctx 里的旧 out，而返回值读取的是传入的 o，
-  // 导致所有粒子被写成默认值（位置归原点、颜色/alpha 为 1）。
-  ctx.out = o;
-  frame.runner.run();
   const center = frame.fx.center || [0, 0, 0];
   o.pos[0] += center[0]; o.pos[1] += center[1]; o.pos[2] += center[2];
   for (let c = 0; c < 4; c++) {
@@ -231,11 +275,18 @@ export function evalFxParticleInto(frame, statics, i, out) {
 }
 
 // 求值单个粒子在某时刻的完整状态（供 currentVisualDerived 等外部调用）。
+// 脚本运行错误在此被捕获并回退到粒子已存储的基础值，避免编辑器交互/渲染被未捕获异常打断。
 export function evaluateParticleAt(fx, i, n, t) {
-  const objState = getObjectState(fx);
-  const p = getParticle(fx.id + ':p' + i);
-  const statics = (p && p._statics) || createStatics();
-  return evalParticleFor(fx, objState, statics, i, Math.max(1, Math.round(n) || 1), t || 0, 0);
+  try {
+    const objState = getObjectState(fx);
+    const p = getParticle(fx.id + ':p' + i);
+    const statics = (p && p._statics) || createStatics();
+    return evalParticleFor(fx, objState, statics, i, Math.max(1, Math.round(n) || 1), t || 0, 0);
+  } catch (e) {
+    markFxError(fx, e);
+    const p = fx ? getParticle(fx.id + ':p' + i) : null;
+    return storedVisual(p);
+  }
 }
 
 export function evaluateParticleBase(fx, i, n) {

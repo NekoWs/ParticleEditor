@@ -312,7 +312,7 @@ export async function importProject(obj) {
   state.expandedParticles.clear(); state.expandedProps.clear();
   state.activeCamera = null;
   for (const fx of state.functions) {
-    try { rebuildFunctionObject(fx); } catch (e) { console.warn('函数对象求值失败：' + fx.id + ' ' + e.message); }
+    try { rebuildFunctionObject(fx); fx._error = null; } catch (e) { fx._error = e.message; console.warn('函数对象求值失败：' + fx.id + ' ' + e.message); }
   }
   // 内嵌贴图（v4+）
   if (obj.texData && typeof obj.texData === 'object') {
