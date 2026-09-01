@@ -5,7 +5,7 @@
  * ======================================================================= */
 
 import {PARTICLE_SIZE_FACTOR, state, functionIndexCache, effMaxFrame, autoFramesFor} from '../core/constants.js';
-import { points, selectedPoints, previewPoints, texAtlasMap, cameraWidgetMap, buildCameraWidget, removeCameraWidget, CAM_WIDGET_COLOR, CAM_WIDGET_ACTIVE_COLOR } from './scene.js';
+import { points, selectedPoints, previewPoints, texAtlasMap, camera, cameraWidgetMap, buildCameraWidget, removeCameraWidget, CAM_WIDGET_COLOR, CAM_WIDGET_ACTIVE_COLOR } from './scene.js';
 import { cameraPoseAt } from '../core/cameras.js';
 import { resolveUV, refreshUVPanel } from '../ui/texture-editor.js';
 import { updateGizmo } from '../interaction/gizmo.js';
