@@ -79,8 +79,9 @@ export const COMP_LABELS = { x: 'X', y: 'Y', z: 'Z', r: 'R', g: 'G', b: 'B', a: 
 export const PARTICLE_TRACK_DEFS = ['pos', 'rot', 'center', 'vel', 'col', 'scl'];
 export const GROUP_PROP_DEFS = ['pos', 'rot', 'spin', 'center', 'vel', 'col', 'scl'];
 export const FUNCTION_PROP_DEFS = ['pos', 'rot', 'spin', 'center', 'scl'];
-// 摄像机可动画属性：位置/看向目标点/FOV（朝向由 lookAt(target) 自动计算，roll 为静态基值）
-export const CAMERA_PROP_DEFS = ['pos', 'target', 'fov'];
+// 摄像机可动画属性：位置/旋转(公转)/看向目标点/FOV（朝向由 lookAt(target) 自动计算，roll 为静态基值）
+// 旋转 = 摄像机围绕「看向目标点」公转（与粒子公转同一套 rot 轨道语义），放在位置 XYZ 之后。
+export const CAMERA_PROP_DEFS = ['pos', 'rot', 'target', 'fov'];
 
 // 分量轨道 pr 拼接 / 解析
 export function compPr(prop, comp) { return comp ? prop + '.' + comp : prop; }
@@ -184,8 +185,8 @@ export const state = {
   textures: {},          // { name: { width, height, data(Uint8Array RGBA), fileHandle? } }
   currentTexture: null,  // 当前贴图编辑器正在编辑的贴图名
   groupUV: {},           // 组级 UV/贴图设置（继承 f > g > p）
-  groupSpinSpace: {},    // 组级自转空间（'world' | 'local'；缺省 world）
-  groupRotSpace: {},     // 组级公转空间（'world' | 'local'；缺省 world）
+  groupSpinSpace: {},    // 组级自转空间（'world' | 'local'；缺省 local）
+  groupRotSpace: {},     // 组级公转空间（'world' | 'local'；缺省 local）
   cameras: [],           // 摄像机对象数组：{ id,name,pos:[x,y,z],target:[x,y,z],roll(度),fov }
   activeCamera: null,    // 当前锁定的摄像机 id（null = 默认/自由视角）
   selectedCamera: null,  // 在底部时间轴树选中的摄像机 id（与 activeCamera 视角切换分离）

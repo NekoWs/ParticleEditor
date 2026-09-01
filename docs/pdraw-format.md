@@ -152,7 +152,8 @@
   "pos": [12, 8, 14],              // 位置 [x,y,z]（世界坐标）
   "target": [0, 8, 14],            // 看向目标点 [x,y,z]（世界坐标），pitch/yaw 由 lookAt 自动计算
   "roll": 0,                       // 翻滚角（度，绕视线方向，静态基础值）
-  "fov": 50                        // 视场角（度），默认 50
+  "fov": 50,                       // 视场角（度），默认 50
+  "rsw": 1                         // 可选：旋转（公转）空间；1=world，缺省/省略=local
 }
 ```
 
@@ -161,9 +162,11 @@
   `camera.rotateZ(roll)`；`roll` 是静态基础值，不走关键帧。
 - 旧 v8 兼容：读取时若仅有 `rot:[pitch,yaw,roll]`（`THREE.Euler` `XYZ` 顺序，度），按前向
   （相机 -Z 方向经 pitch/yaw 旋转）反推 `target = pos + forward`，且 `roll = rot[2]`。
-- `pos`/`target`/`fov` 支持**关键帧**：轨道 id 为 `c:<id>`（如 `c:cam1`），pr 为 `pos.x`/`target.y`/`fov` 等，
-  随 `t[]` 一并序列化；`cam` 内字段仅存基值（`roll` 无轨道）。
-- 解析回退：`name→''`、`pos→[0,0,0]`、`target→[0,0,0]`、`roll→0`、`fov→50`；`id` 缺失的项丢弃。
+- `pos`/`rot`/`target`/`fov` 支持**关键帧**：轨道 id 为 `c:<id>`（如 `c:cam1`），pr 为
+  `pos.x`/`rot.y`/`target.z`/`fov` 等，随 `t[]` 一并序列化；`cam` 内字段仅存基值（`roll` 无轨道）。
+  `rot` = 摄像机位置绕 `target` 公转（世界空间绕世界轴；局部空间以 lookAt+roll 自身朝向为轴，
+  与粒子「公转空间」同构），空间由 `rsw` 决定。
+- 解析回退：`name→''`、`pos→[0,0,0]`、`target→[0,0,0]`、`roll→0`、`fov→50`、`rsw→local`；`id` 缺失的项丢弃。
 
 > 播放端（NeoForge 模组）解析 `.pdrawc` 时消费摄像机对象（按 id 查询姿态，见
 > `docs/pdrawc-format.md`），**不自动改变玩家相机**；解析 `.pdraw` 时应忽略未知字段、

@@ -18,7 +18,7 @@
 ```
 +--------------------+
 | magic     4 bytes  |  ASCII "PDC1" = 0x50 0x44 0x43 0x31
-| version   varint   |  6（当前）；1/2/3/4/5 = 旧版，已拒绝
+| version   varint   |  8（当前）；1/2/3/4/5/6/7 = 旧版，已拒绝
 | pubkey    32 bytes |  Ed25519 公钥（原始字节）
 +--------------------+
 | body（见 §2）      |  ← 签名覆盖范围：从 magic 到压缩 body 末尾
@@ -29,7 +29,8 @@
 ```
 
 **版本**：
-- `v7`（当前）：摄像机朝向改为「看向目标点」`target` + 翻滚角 `roll`（pitch/yaw 由 lookAt 自动计算），新增 `target.x/y/z` pr 枚举。
+- `v8`（当前）：新增摄像机「旋转」空间 flags（bit0=rotLocal；局部=摄像机 lookAt+roll 自身朝向，世界=世界轴）；组级自转/公转空间**缺省改为 local**（flags 位语义不变，编辑器总是写入显式值）。
+- `v7`（旧版）：摄像机朝向改为「看向目标点」`target` + 翻滚角 `roll`（pitch/yaw 由 lookAt 自动计算），新增 `target.x/y/z` pr 枚举；读取端**拒绝**。
 - `v6`（旧版）：新增摄像机对象（`cameras` section + 摄像机轨道引用 kind=3 + `fov` pr）；读取端**拒绝**。
 - `v5`（旧版）：`body` 为 **raw DEFLATE**（RFC 1951，无 zlib/gzip 头尾）压缩后的字节；新增组级/函数对象级**自转空间**（world/local）。
 - `v4`（旧版）：新增 `spin`/`center` 轨道；读取端**拒绝**。
@@ -159,12 +160,17 @@ count × {
   target                    3 × float32：[x,y,z]（看向目标点，世界坐标；v7 起替代 rot）
   roll                      float32：翻滚角（度，绕视线方向，静态基础值；v7 起）
   fov                       float32：视场角（度）
+  flags                     1 byte：bit0=rotLocal（v8 起；0=世界空间，1=局部空间）
 }
 ```
 
-摄像机的位置/目标/FOV 关键帧走 §2.7 tracks（轨道 id 为 `c:<id>`，pr 为 `pos.x`/`target.y`/`fov` 等；
-`roll` 无轨道）。播放端**不自动改变玩家相机**，仅按 id 查询姿态数据（见 §7 运行时合成 id）。
-姿态 = `lookAt(pos, target)`（up=(0,1,0)）+ 绕视线方向翻滚 `roll`。
+摄像机的位置/目标/FOV/旋转关键帧走 §2.7 tracks（轨道 id 为 `c:<id>`，pr 为
+`pos.x`/`target.y`/`rot.z`/`fov` 等；`roll` 无轨道）。播放端**不自动改变玩家相机**，
+仅按 id 查询姿态数据（见 §6 运行时合成 id）。
+姿态 = `lookAt(pos, target)`（up=(0,1,0)）+ 绕视线方向翻滚 `roll`；
+「旋转」= 摄像机位置绕 `target` 公转：世界空间绕世界 X/Y/Z 轴依次旋转；
+局部空间以 `lookAt+roll` 自身朝向为局部坐标系做 intrinsic XYZ 旋转
+（等价 M = M_look · M_localOrbit · M_lookᵀ，与粒子「局部公转跟随自转姿态」同构）。
 
 ### 2.7 tracks
 
@@ -274,7 +280,7 @@ index                       varint：对应数组的 0-based 索引
 
 ## 7. 版本与拒绝语义
 
-- 魔数不是 `PDC1`、版本不是 6、或数据截断/越界 → **拒绝**。
+- 魔数不是 `PDC1`、版本不是 8、或数据截断/越界 → **拒绝**。
 - 签名验证失败 → **拒绝播放**。
 - raw DEFLATE 解压失败 → **拒绝**。
 - 未知 `pr` 枚举、未知 UV mode、未知 easing tag 等 → 视为损坏数据拒绝。

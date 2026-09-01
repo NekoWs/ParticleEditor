@@ -8,7 +8,7 @@ import { base64ToBytes, bytesToBase64, signData, verifyData } from './crypto.js'
 import { EASING_NONE } from './easing-constants.js';
 
 export const PDRAWC_MAGIC = new Uint8Array([0x50, 0x44, 0x43, 0x31]); // "PDC1"
-export const PDRAWC_VERSION = 7;
+export const PDRAWC_VERSION = 8;
 export const PDRAWC_SIG_LEN = 64;
 export const PDRAWC_PUB_LEN = 32;
 
@@ -220,9 +220,10 @@ function encodeBody(state, texPngOf) {
   const groupIndex = new Map(groupNames.map(([n], i) => [n, i]));
   w.varint(groupNames.length);
   for (const [name, idxs] of groupNames) {
-    // v5：组级自转/公转空间 flags：bit0=spinLocal, bit1=rotLocal
-    const spinLocal = (state.groupSpinSpace && state.groupSpinSpace[name] === 'local') ? 1 : 0;
-    const rotLocal = (state.groupRotSpace && state.groupRotSpace[name] === 'local') ? 2 : 0;
+    // v5：组级自转/公转空间 flags：bit0=spinLocal, bit1=rotLocal。
+    // v8 起空间缺省为 local：仅显式 world 时写 0，缺省（local）写 1。
+    const spinLocal = (state.groupSpinSpace && state.groupSpinSpace[name] === 'world') ? 0 : 1;
+    const rotLocal = (state.groupRotSpace && state.groupRotSpace[name] === 'world') ? 0 : 2;
     w.u8(spinLocal | rotLocal);
     w.varint(idxs.length);
     for (const idx of idxs) w.varint(idx);
@@ -273,7 +274,7 @@ function encodeBody(state, texPngOf) {
     }
   }
 
-  // 摄像机对象（v6 新增；v7 起朝向改为 target 目标点 + roll 翻滚角）
+  // 摄像机对象（v6 新增；v7 起朝向改为 target 目标点 + roll 翻滚角；v8 起新增旋转空间 flags）
   const cameras = state.cameras || [];
   const cameraIndex = new Map(cameras.map((c, i) => [c.id, i]));
   w.varint(cameras.length);
@@ -285,6 +286,8 @@ function encodeBody(state, texPngOf) {
     w.f32(t[0]); w.f32(t[1]); w.f32(t[2]);
     w.f32(c.roll != null ? c.roll : 0);
     w.f32(c.fov != null ? c.fov : 50);
+    // flags：bit0=rotLocal（缺省 local，显式 world 时写 0）
+    w.u8(c.rotSpace === 'world' ? 0 : 1);
   }
 
   // 轨道（非函数对象轨道）
@@ -501,7 +504,8 @@ export async function decodePdrawc(bytes) {
     const target = [br.f32(), br.f32(), br.f32()];
     const roll = br.f32();
     const fov = br.f32();
-    cameras.push({ id, name, pos, target, roll, fov });
+    const cflags = br.u8();
+    cameras.push({ id, name, pos, target, roll, fov, rotLocal: (cflags & 1) !== 0 });
   }
 
   const trackCount = br.varint();

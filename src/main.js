@@ -300,7 +300,7 @@ export function initUI() {
       const fx = getFunction(fxId);
       if (fx) fx.spinSpace = fx.spinSpace === 'local' ? 'world' : 'local';
     } else {
-      state.groupSpinSpace[gname] = state.groupSpinSpace[gname] === 'local' ? 'world' : 'local';
+      state.groupSpinSpace[gname] = state.groupSpinSpace[gname] === 'world' ? 'local' : 'world';
     }
     rebuildPoints();
     refreshTimelineTree();
@@ -314,7 +314,7 @@ export function initUI() {
       const fx = getFunction(fxId);
       if (fx) fx.rotSpace = fx.rotSpace === 'local' ? 'world' : 'local';
     } else {
-      state.groupRotSpace[gname] = state.groupRotSpace[gname] === 'local' ? 'world' : 'local';
+      state.groupRotSpace[gname] = state.groupRotSpace[gname] === 'world' ? 'local' : 'world';
     }
     rebuildPoints();
     refreshTimelineTree();

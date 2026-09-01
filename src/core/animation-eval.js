@@ -240,7 +240,7 @@ export function buildGroupXforms(T) {
     const spin0 = (() => { const tr = findTrackByPr('spin.x', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
     const spin1 = (() => { const tr = findTrackByPr('spin.y', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
     const spin2 = (() => { const tr = findTrackByPr('spin.z', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
-    const spinSpace = (state.groupSpinSpace && state.groupSpinSpace[gname] === 'local') ? 'local' : 'world';
+    const spinSpace = (state.groupSpinSpace && state.groupSpinSpace[gname] === 'world') ? 'world' : 'local';
     let spinMat = null;
     if (spin0 !== 0 || spin1 !== 0 || spin2 !== 0) {
       const M = spinMatrix([spin0, spin1, spin2], spinSpace);
@@ -249,7 +249,7 @@ export function buildGroupXforms(T) {
     const rot0 = (() => { const tr = findTrackByPr('rot.x', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
     const rot1 = (() => { const tr = findTrackByPr('rot.y', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
     const rot2 = (() => { const tr = findTrackByPr('rot.z', 'g:' + gname); return (tr && tr.m !== 'op' && tr.kf.length) ? trackValueAt(tr, T, 0) : 0; })();
-    const rotSpace = (state.groupRotSpace && state.groupRotSpace[gname] === 'local') ? 'local' : 'world';
+    const rotSpace = (state.groupRotSpace && state.groupRotSpace[gname] === 'world') ? 'world' : 'local';
     let orbitMat = null;
     if (rot0 !== 0 || rot1 !== 0 || rot2 !== 0) {
       const M = rotSpace === 'local'
@@ -513,7 +513,7 @@ export function applySelfRotation(p, value, T) {
     for (const gname of gs) {
       const spin = spinVectorAt('g:' + gname, T);
       if (spin[0] === 0 && spin[1] === 0 && spin[2] === 0) continue;
-      const space = (state.groupSpinSpace && state.groupSpinSpace[gname] === 'local') ? 'local' : 'world';
+      const space = (state.groupSpinSpace && state.groupSpinSpace[gname] === 'world') ? 'world' : 'local';
       return rotatePointByMatrix(value, groupPivot(gname), spinMatrix(spin, space));
     }
   }
@@ -521,7 +521,7 @@ export function applySelfRotation(p, value, T) {
     const spin = spinVectorAt('f:' + p.fx, T);
     if (spin[0] === 0 && spin[1] === 0 && spin[2] === 0) return value;
     const fx = getFunction(p.fx);
-    const space = (fx && fx.spinSpace === 'local') ? 'local' : 'world';
+    const space = (fx && fx.spinSpace === 'world') ? 'world' : 'local';
     return rotatePointByMatrix(value, fx ? fx.center.slice() : [0, 0, 0], spinMatrix(spin, space));
   }
   return value;
@@ -535,10 +535,10 @@ export function applyOrbitRotation(p, value, T) {
       const rot = rotVectorAt('g:' + gname, T);
       if (rot[0] === 0 && rot[1] === 0 && rot[2] === 0) continue;
       const pivot = orbitCenterAt('g:' + gname, T);
-      const space = (state.groupRotSpace && state.groupRotSpace[gname] === 'local') ? 'local' : 'world';
+      const space = (state.groupRotSpace && state.groupRotSpace[gname] === 'world') ? 'world' : 'local';
       if (space === 'local') {
         const spin = spinVectorAt('g:' + gname, T);
-        const spinSpace = (state.groupSpinSpace && state.groupSpinSpace[gname] === 'local') ? 'local' : 'world';
+        const spinSpace = (state.groupSpinSpace && state.groupSpinSpace[gname] === 'world') ? 'world' : 'local';
         return rotatePointByMatrix(value, pivot, orbitLocalMatrix(rot, spin, spinSpace));
       }
       return rotatePointAround(value, pivot, rot);
@@ -549,10 +549,10 @@ export function applyOrbitRotation(p, value, T) {
     if (rot[0] === 0 && rot[1] === 0 && rot[2] === 0) return value;
     const fx = getFunction(p.fx);
     const pivot = orbitCenterAt('f:' + p.fx, T);
-    const space = (fx && fx.rotSpace === 'local') ? 'local' : 'world';
+    const space = (fx && fx.rotSpace === 'world') ? 'world' : 'local';
     if (space === 'local') {
       const spin = spinVectorAt('f:' + p.fx, T);
-      const spinSpace = (fx && fx.spinSpace === 'local') ? 'local' : 'world';
+      const spinSpace = (fx && fx.spinSpace === 'world') ? 'world' : 'local';
       return rotatePointByMatrix(value, pivot, orbitLocalMatrix(rot, spin, spinSpace));
     }
     return rotatePointAround(value, pivot, rot);

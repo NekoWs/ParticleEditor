@@ -5,7 +5,7 @@
 
 import * as THREE from 'three';
 import { t } from '../core/i18n.js';
-import { state, getParticle, getFunction, isDerivedParticle, RAD2DEG, ROT_SNAP, PLANES, DEG2RAD, nextGroupName } from '../core/constants.js';
+import { state, getParticle, getFunction, getCamera, isDerivedParticle, RAD2DEG, ROT_SNAP, PLANES, DEG2RAD, nextGroupName } from '../core/constants.js';
 import { shiftHeld } from './input-state.js';
 import { camera, renderer, controls, raycaster, pointer, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, AXIS_RING_COLORS, GIZMO_FACE_DEFS, resetWorldAxisState, focalLengthPx } from '../scene/scene.js';
 import { currentVisual, rebuildPoints, setPreview, clearPreview, rotVectorAt, spinVectorAt, orbitCenterAt, trackValueAt, findTrackByPr, groupScaleAt, spinMatrix, mat3VecArray, applyLocalSpinRotation, applyLocalSpinRotationVec, applyLocalOrbitRotation, applyLocalOrbitRotationVec } from '../core/animation.js';
@@ -20,7 +20,7 @@ import { texUndo, texRedo, texActive } from '../ui/texture-editor.js';
 import { togglePlay, refreshCameraTabs } from '../main.js';
 import { saveFile, openFile, newFile } from '../io/io.js';
 import { nextCameraId, nextCameraName } from '../core/constants.js';
-import { createCameraAt, lockCamera } from '../core/cameras.js';
+import { createCameraAt, lockCamera, camOrientationQuaternion, cameraPoseAt } from '../core/cameras.js';
 
 export let drag = null;
 export let modal = null;
@@ -33,6 +33,15 @@ export function selectedGroupName() {
   return state.selectedGroup && state.groups[state.selectedGroup] ? state.selectedGroup : null;
 }
 
+// 仅当「只选中摄像机（无粒子/组/函数对象选中）」时返回该摄像机；否则返回 null，
+// 保证旋转 gizmo 在混合选择时优先服务粒子/组/函数对象。
+export function selectedCameraForRotate() {
+  const cam = getCamera(state.selectedCamera);
+  if (!cam) return null;
+  if (state.selected.size > 0 || state.selectedFunction || state.selectedGroup) return null;
+  return cam;
+}
+
 // 当前旋转目标的自转空间（仅组/函数对象有自转）。
 export function currentSpinTarget() {
   const fxId = state.selectedFunction;
@@ -41,7 +50,7 @@ export function currentSpinTarget() {
     if (fx) return { prefix: 'f:' + fxId, space: fx.spinSpace === 'local' ? 'local' : 'world' };
   }
   const gname = selectedGroupName();
-  if (gname) return { prefix: 'g:' + gname, space: (state.groupSpinSpace && state.groupSpinSpace[gname] === 'local') ? 'local' : 'world' };
+  if (gname) return { prefix: 'g:' + gname, space: (state.groupSpinSpace && state.groupSpinSpace[gname] === 'world') ? 'world' : 'local' };
   return null;
 }
 
@@ -58,7 +67,7 @@ export function currentRotTarget() {
     if (fx) return { prefix: 'f:' + fxId, space: fx.rotSpace === 'local' ? 'local' : 'world' };
   }
   const gname = selectedGroupName();
-  if (gname) return { prefix: 'g:' + gname, space: (state.groupRotSpace && state.groupRotSpace[gname] === 'local') ? 'local' : 'world' };
+  if (gname) return { prefix: 'g:' + gname, space: (state.groupRotSpace && state.groupRotSpace[gname] === 'world') ? 'world' : 'local' };
   return null;
 }
 
@@ -255,6 +264,31 @@ export function rotationBasis(axis, axisVecOverride) {
 }
 
 export function enterRotate(clientX, clientY, axis) {
+  // 摄像机：旋转 = 绕「看向目标点」公转（逻辑与粒子公转一致）。
+  // 局部空间时环轴 = 摄像机看向目标后的自身朝向；世界空间时环轴 = 世界轴。
+  const cam = selectedCameraForRotate();
+  if (cam && state.tool === 'rotate') {
+    pushUndo();
+    const T = Math.round(state.time);
+    const pose = cameraPoseAt(cam.id, T);
+    if (!pose) return;
+    const pivot = pose.target;
+    const startRot = rotVectorAt('c:' + cam.id, T);
+    const rotSpace = cam.rotSpace === 'world' ? 'world' : 'local';
+    let axisWorld = AXIS_VECTORS[axis];
+    if (rotSpace === 'local') {
+      const q = camOrientationQuaternion(cam.id, T) || new THREE.Quaternion();
+      const v = new THREE.Vector3(axisWorld[0], axisWorld[1], axisWorld[2]).applyQuaternion(q);
+      axisWorld = [v.x, v.y, v.z];
+    }
+    const { axArr, u, v } = rotationBasis(axis, axisWorld);
+    const p0 = rayOnAxisPlane(clientX, clientY, axArr, pivot);
+    const startAngle = p0 ? angleInBasis(p0, pivot, u, v) : 0;
+    modal = { type: 'camera-rotate', camId: cam.id, centroid: pivot, axis: axArr, axisKey: axis, axisIndex: AXIS_INDEX[axis] ?? 1, startRot, rotSpace, u, v, startAngle };
+    setDragAxisHighlight(modal);
+    controls.enabled = false;
+    return;
+  }
   const fx = getFunction(state.selectedFunction);
   if (fx) {
     pushUndo();
@@ -284,10 +318,10 @@ export function enterRotate(clientX, clientY, axis) {
   const T = Math.round(state.time);
   const startSpin = gname ? spinVectorAt('g:' + gname, T) : [0, 0, 0];
   const spinSpace = (gname && state.rotMode === 'spin')
-    ? ((state.groupSpinSpace && state.groupSpinSpace[gname] === 'local') ? 'local' : 'world')
+    ? ((state.groupSpinSpace && state.groupSpinSpace[gname] === 'world') ? 'world' : 'local')
     : 'world';
   const rotSpace = (gname && state.rotMode === 'orbit')
-    ? ((state.groupRotSpace && state.groupRotSpace[gname] === 'local') ? 'local' : 'world')
+    ? ((state.groupRotSpace && state.groupRotSpace[gname] === 'world') ? 'world' : 'local')
     : 'world';
   const c = gname
     ? (state.rotMode === 'orbit' ? orbitCenterAt('g:' + gname, state.time) : groupCurrentCentroid(gname, 'pos'))
@@ -361,6 +395,20 @@ export function spinQuaternion(deg, space) {
 }
 
 export function enterViewRotate(clientX, clientY) {
+  // 摄像机：白环绕「目标 → 摄像机」视线方向公转（与普通对象一致）
+  const cam = selectedCameraForRotate();
+  if (cam && state.tool === 'rotate') {
+    pushUndo();
+    const pose = cameraPoseAt(cam.id, state.time);
+    if (!pose) return;
+    const c = pose.target;
+    const T = Math.round(state.time);
+    const startRot = rotVectorAt('c:' + cam.id, T);
+    const rotSpace = cam.rotSpace === 'world' ? 'world' : 'local';
+    modal = { type: 'camera-view-rotate', camId: cam.id, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot, rotSpace, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
+    controls.enabled = false;
+    return;
+  }
   const fx = getFunction(state.selectedFunction);
   if (fx) {
     pushUndo();
@@ -387,8 +435,8 @@ export function enterViewRotate(clientX, clientY) {
     const T = Math.round(state.time);
     const startRot = groupRotationValueAt(gname, T);
     const startSpin = spinVectorAt('g:' + gname, T);
-    const spinSpace = state.rotMode === 'spin' ? ((state.groupSpinSpace && state.groupSpinSpace[gname] === 'local') ? 'local' : 'world') : 'world';
-    const rotSpace = state.rotMode === 'orbit' ? ((state.groupRotSpace && state.groupRotSpace[gname] === 'local') ? 'local' : 'world') : 'world';
+    const spinSpace = state.rotMode === 'spin' ? ((state.groupSpinSpace && state.groupSpinSpace[gname] === 'world') ? 'world' : 'local') : 'world';
+    const rotSpace = state.rotMode === 'orbit' ? ((state.groupRotSpace && state.groupRotSpace[gname] === 'world') ? 'world' : 'local') : 'world';
     modal = { type: 'group-view-rotate', gname, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot, startSpin, rotMode: state.rotMode, spinSpace, rotSpace, origins, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
   } else {
     const startRots = new Map();
@@ -412,6 +460,21 @@ export function updateViewRotate(clientX, clientY) {
   if (shiftHeld) angle = Math.round(angle * RAD2DEG / ROT_SNAP) * ROT_SNAP * DEG2RAD;
   const a = m.lookAxis;
   const prop = (m.rotMode === 'spin' && m.type !== 'view-rotate') ? 'spin' : 'rot';
+  if (m.type === 'camera-view-rotate') {
+    const t = state.captureKeyframes ? Math.round(state.time) : 0;
+    let newRot;
+    if (m.rotSpace === 'local') {
+      const q = camOrientationQuaternion(m.camId, state.time) || new THREE.Quaternion();
+      const localAxis = new THREE.Vector3(a[0], a[1], a[2]).applyQuaternion(q.clone().conjugate());
+      newRot = applyLocalOrbitRotationVec(m.startRot, [localAxis.x, localAxis.y, localAxis.z], angle);
+    } else {
+      newRot = applyWorldRotation(m.startRot, a, angle);
+    }
+    ['x', 'y', 'z'].forEach((comp, i) => setComponentKeyframe('c:' + m.camId, 'rot', comp, t, newRot[i], 'set'));
+    rebuildPoints();
+    refreshTimelineTree();
+    return;
+  }
   if (m.type === 'fx-view-rotate') {
     const base = prop === 'spin' ? m.startSpin : m.startRot;
     const t = state.captureKeyframes ? Math.round(state.time) : 0;
@@ -421,7 +484,7 @@ export function updateViewRotate(clientX, clientY) {
       setFunctionTrackValue(m.fxId, 'spin', 'set', t, applyLocalSpinRotationVec(base, [localAxis.x, localAxis.y, localAxis.z], angle));
     } else if (prop === 'rot' && m.rotSpace === 'local') {
       const spinBase = m.startSpin;
-      const q = spinQuaternion(spinBase, m.spinSpace || 'world');
+      const q = spinQuaternion(spinBase, m.spinSpace || 'local');
       const localAxis = new THREE.Vector3(a[0], a[1], a[2]).applyQuaternion(q.clone().conjugate());
       setFunctionTrackValue(m.fxId, 'rot', 'set', t, applyLocalOrbitRotationVec(base, [localAxis.x, localAxis.y, localAxis.z], angle));
     } else {
@@ -437,7 +500,7 @@ export function updateViewRotate(clientX, clientY) {
       setGroupTrackValue(m.gname, 'spin', 'set', Math.round(state.time), applyLocalSpinRotationVec(base, [localAxis.x, localAxis.y, localAxis.z], angle));
     } else if (prop === 'rot' && m.rotSpace === 'local') {
       const spinBase = m.startSpin;
-      const q = spinQuaternion(spinBase, m.spinSpace || 'world');
+      const q = spinQuaternion(spinBase, m.spinSpace || 'local');
       const localAxis = new THREE.Vector3(a[0], a[1], a[2]).applyQuaternion(q.clone().conjugate());
       setGroupTrackValue(m.gname, 'rot', 'set', Math.round(state.time), applyLocalOrbitRotationVec(base, [localAxis.x, localAxis.y, localAxis.z], angle));
     } else {
@@ -570,12 +633,23 @@ export function updateScale(clientX) {
 
 export function updateRotate(clientX, clientY) {
   const m = modal;
-  if (!m || (m.type !== 'rotate' && m.type !== 'group-rotate' && m.type !== 'fx-rotate')) return;
+  if (!m || (m.type !== 'rotate' && m.type !== 'group-rotate' && m.type !== 'fx-rotate' && m.type !== 'camera-rotate')) return;
   const p1 = rayOnAxisPlane(clientX, clientY, m.axis, m.centroid);
   if (!p1) return;
   let angle = angleInBasis(p1, m.centroid, m.u, m.v) - m.startAngle;
   if (shiftHeld) angle = Math.round(angle * RAD2DEG / ROT_SNAP) * ROT_SNAP * DEG2RAD;
   const prop = (m.rotMode === 'spin' && m.type !== 'rotate') ? 'spin' : 'rot'; // 普通粒子只有公转
+  if (m.type === 'camera-rotate') {
+    // 摄像机公转：写 rot 轨道（局部=绕自身朝向轴合成；世界=对应分量累加）
+    const t = state.captureKeyframes ? Math.round(state.time) : 0;
+    const newRot = m.rotSpace === 'local'
+      ? applyLocalOrbitRotation(m.startRot, m.axisKey, angle)
+      : (() => { const r = m.startRot.slice(); r[m.axisIndex] += angle * RAD2DEG; return r; })();
+    ['x', 'y', 'z'].forEach((comp, i) => setComponentKeyframe('c:' + m.camId, 'rot', comp, t, newRot[i], 'set'));
+    rebuildPoints();
+    refreshTimelineTree();
+    return;
+  }
   if (m.type === 'fx-rotate') {
     const base = prop === 'spin' ? m.startSpin : m.startRot;
     const t = state.captureKeyframes ? Math.round(state.time) : 0;

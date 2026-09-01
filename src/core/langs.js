@@ -19,13 +19,13 @@ export var LANGS = {
     'tool.select': '选择（框选）', 'tool.move': '移动', 'tool.rotate': '旋转',
     'tool.rotateSpin': '旋转（自转模式，按 R 切换）', 'tool.rotateOrbit': '旋转（公转模式，按 R 切换）',
     'rotMode.spin': '自', 'rotMode.orbit': '公',
-    'spinSpace.world': '世界', 'spinSpace.local': '局部', 'spinSpace.hint': '切换自转空间：世界 / 局部',
-    'rotSpace.world': '世界', 'rotSpace.local': '局部', 'rotSpace.hint': '切换公转空间：世界 / 局部',
+    'spinSpace.world': 'W', 'spinSpace.local': 'L', 'spinSpace.hint': 'W：世界坐标系\nL：局部坐标系',
+    'rotSpace.world': 'W', 'rotSpace.local': 'L', 'rotSpace.hint': 'W：世界坐标系\nL：局部坐标系',
     'tool.pencil': '铅笔（点按放置）', 'tool.line': '直线', 'tool.circle': '圆', 'tool.rect': '矩形', 'tool.freehand': '手绘',
     // —— 属性面板 ——
     'props.opacity': '透明度', 'props.scale': '缩放', 'props.glow': '发光', 'props.light': '光照等级',
     'props.life': '寿命(tick)', 'props.lifeHint': '-1 或留空 = 无限（活到动画结束）',
-    'prop.pos': '位置', 'prop.target': '目标', 'prop.rot': '公转', 'prop.spin': '自转', 'prop.center': '公转中心', 'prop.vel': '速度', 'prop.col': '颜色', 'prop.scl': '缩放', 'prop.fov': 'FOV',
+    'prop.pos': '位置', 'prop.target': '目标', 'prop.rot': '公转', 'prop.rotCam': '旋转', 'prop.spin': '自转', 'prop.center': '公转中心', 'prop.vel': '速度', 'prop.col': '颜色', 'prop.scl': '缩放', 'prop.fov': 'FOV',
     // —— 函数对象 ——
     'fx.addPresetTitle': '按预设新建函数对象', 'fx.noSelection': '选中一个函数对象以编辑属性',
     'fx.exprError': '表达式错误', 'fx.sampleCount': '采样数 ', 'fx.center': '中心点 ',
@@ -218,13 +218,13 @@ export var LANGS = {
     'tool.select': 'Select (Box)', 'tool.move': 'Move', 'tool.rotate': 'Rotate',
     'tool.rotateSpin': 'Rotate (Spin mode, press R to toggle)', 'tool.rotateOrbit': 'Rotate (Orbit mode, press R to toggle)',
     'rotMode.spin': 'S', 'rotMode.orbit': 'O',
-    'spinSpace.world': 'World', 'spinSpace.local': 'Local', 'spinSpace.hint': 'Toggle spin space: world / local',
-    'rotSpace.world': 'World', 'rotSpace.local': 'Local', 'rotSpace.hint': 'Toggle orbit space: world / local',
+    'spinSpace.world': 'W', 'spinSpace.local': 'L', 'spinSpace.hint': 'W: World coordinate system\nL: Local coordinate system',
+    'rotSpace.world': 'W', 'rotSpace.local': 'L', 'rotSpace.hint': 'W: World coordinate system\nL: Local coordinate system',
     'tool.pencil': 'Pencil (Click to Place)', 'tool.line': 'Line', 'tool.circle': 'Circle', 'tool.rect': 'Rectangle', 'tool.freehand': 'Freehand',
     // —— 属性面板 ——
     'props.opacity': 'Opacity', 'props.scale': 'Scale', 'props.glow': 'Glow', 'props.light': 'Light Level',
     'props.life': 'Life (tick)', 'props.lifeHint': '-1 or empty = infinite (lives until animation ends)',
-    'prop.pos': 'Position', 'prop.target': 'Target', 'prop.rot': 'Orbit', 'prop.spin': 'Spin', 'prop.center': 'Orbit Center', 'prop.vel': 'Velocity', 'prop.col': 'Color', 'prop.scl': 'Scale', 'prop.fov': 'FOV',
+    'prop.pos': 'Position', 'prop.target': 'Target', 'prop.rot': 'Orbit', 'prop.rotCam': 'Rotate', 'prop.spin': 'Spin', 'prop.center': 'Orbit Center', 'prop.vel': 'Velocity', 'prop.col': 'Color', 'prop.scl': 'Scale', 'prop.fov': 'FOV',
     // —— 函数对象 ——
     'fx.addPresetTitle': 'Create function object from preset', 'fx.noSelection': 'Select a function object to edit its properties',
     'fx.exprError': 'Expression Error', 'fx.sampleCount': 'Sample Count ', 'fx.center': 'Center ',

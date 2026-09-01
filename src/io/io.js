@@ -232,6 +232,8 @@ export function exportProject() {
     result.cam = state.cameras.map(c => ({
       id: c.id, name: c.name,
       pos: c.pos.map(r3), target: (c.target || [0, 0, 0]).map(r3), roll: r3(c.roll || 0), fov: r3(c.fov),
+      // 旋转（公转）空间：缺省 local；world 时显式写 1（与 fx 的 ss/rs 同款约定）
+      ...(c.rotSpace === 'world' ? { rsw: 1 } : {}),
     }));
   }
   if (state.key) result.key = { alg: KEY_ALG, private: state.key.private, public: state.key.public };
@@ -290,6 +292,8 @@ export function parseParticlesTracks(obj) {
       target: (target || [0, 0, 0]).map(Number).slice(0, 3),
       roll,
       fov: Number.isFinite(Number(c.fov)) ? Number(c.fov) : 50,
+      // 旋转（公转）空间：缺省 local；rsw=1 表示 world
+      rotSpace: c.rsw === 1 ? 'world' : 'local',
     };
   }).filter(c => c.id);
 }

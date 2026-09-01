@@ -21,6 +21,7 @@ import { rebuildPoints } from '../core/animation.js';
 import { refreshFunctionPanel, commitFunctionRebuild } from './panels.js';
 import { camTrackId } from '../core/cameras.js';
 import { refreshCameraTabs } from '../main.js';
+import { updateGizmo } from '../interaction/gizmo.js';
 
 export const TL_TREE_ROW_H = 22;
 export const tlTreeState = { expanded: new Set() };
@@ -84,13 +85,13 @@ function toggleSpinSpace(id) {
     if (fx) fx.spinSpace = fx.spinSpace === 'local' ? 'world' : 'local';
   } else if (id.startsWith('g:')) {
     const gname = id.slice(2);
-    state.groupSpinSpace[gname] = state.groupSpinSpace[gname] === 'local' ? 'world' : 'local';
+    state.groupSpinSpace[gname] = state.groupSpinSpace[gname] === 'world' ? 'local' : 'world';
   }
   rebuildPoints();
   refreshTimelineTree(true);
 }
 
-// 切换公转空间（world/local）。id 为 'g:组名' 或 'f:fxId'。
+// 切换公转空间（world/local）。id 为 'g:组名' | 'f:fxId' | 'c:camId'。
 function toggleRotSpace(id) {
   pushUndo();
   if (id.startsWith('f:')) {
@@ -98,7 +99,10 @@ function toggleRotSpace(id) {
     if (fx) fx.rotSpace = fx.rotSpace === 'local' ? 'world' : 'local';
   } else if (id.startsWith('g:')) {
     const gname = id.slice(2);
-    state.groupRotSpace[gname] = state.groupRotSpace[gname] === 'local' ? 'world' : 'local';
+    state.groupRotSpace[gname] = state.groupRotSpace[gname] === 'world' ? 'local' : 'world';
+  } else if (id.startsWith('c:')) {
+    const cam = getCamera(id.slice(2));
+    if (cam) cam.rotSpace = cam.rotSpace === 'world' ? 'local' : 'world';
   }
   rebuildPoints();
   refreshTimelineTree(true);
@@ -127,8 +131,8 @@ function structureSignature() {
       for (const id of members) h = hashStr(id, h);
     }
     parts.push('G:' + name + ':' + h);
-    parts.push('GS:' + name + ':' + ((state.groupSpinSpace && state.groupSpinSpace[name]) || 'world'));
-    parts.push('GR:' + name + ':' + ((state.groupRotSpace && state.groupRotSpace[name]) || 'world'));
+    parts.push('GS:' + name + ':' + ((state.groupSpinSpace && state.groupSpinSpace[name] === 'world') ? 'world' : 'local'));
+    parts.push('GR:' + name + ':' + ((state.groupRotSpace && state.groupRotSpace[name] === 'world') ? 'world' : 'local'));
   }
   for (const fx of state.functions) {
     const names = Object.keys(fx.vars || {});
@@ -137,10 +141,11 @@ function structureSignature() {
       for (const n of names) h = hashStr(n, h);
     }
     parts.push('F:' + fx.id + ':' + hashStr(fx.name || '', 0) + ':' + fx.count + ':' + h);
-    parts.push('FS:' + fx.id + ':' + (fx.spinSpace || 'world') + ':' + (fx.rotSpace || 'world'));
+    parts.push('FS:' + fx.id + ':' + (fx.spinSpace === 'world' ? 'world' : 'local') + ':' + (fx.rotSpace === 'world' ? 'world' : 'local'));
   }
   for (const cam of state.cameras) {
     parts.push('C:' + cam.id + ':' + hashStr(cam.name || '', 0));
+    parts.push('CR:' + cam.id + ':' + (cam.rotSpace === 'world' ? 'world' : 'local'));
   }
   parts.push('X:' + [...tlTreeState.expanded].sort().join('|'));
   return parts.join(';');
@@ -322,7 +327,8 @@ function renderFlatRow(row) {
     case 'prop': {
       div.appendChild(makeArrow(row.key, expanded));
       const label = el('span', 'tt-plabel');
-      label.textContent = t('prop.' + row.prop);
+      // 摄像机的 rot 行语义是「围绕看向目标点公转」，标签用「旋转」；其余对象沿用「公转」
+      label.textContent = t((row.prop === 'rot' && row.id.startsWith('c:')) ? 'prop.rotCam' : 'prop.' + row.prop);
       div.appendChild(label);
 
       // FOV 标量行：单输入框 + 加帧按钮（无 XYZ 三段、无展开分量）
@@ -345,31 +351,6 @@ function renderFlatRow(row) {
         break;
       }
 
-      // 自转行：组/函数对象显示 世界/局部 切换按钮
-      if (row.prop === 'spin' && (row.id.startsWith('g:') || row.id.startsWith('f:'))) {
-        const spaceBtn = el('button', 'tt-spin-space');
-        spaceBtn.type = 'button';
-        const cur = row.id.startsWith('f:')
-          ? ((getFunction(row.id.slice(2)) || {}).spinSpace === 'local')
-          : (state.groupSpinSpace && state.groupSpinSpace[row.id.slice(2)] === 'local');
-        spaceBtn.textContent = t(cur ? 'spinSpace.local' : 'spinSpace.world');
-        spaceBtn.title = t('spinSpace.hint');
-        spaceBtn.dataset.id = row.id;
-        div.appendChild(spaceBtn);
-      }
-      // 公转行：组/函数对象显示 世界/局部 切换按钮
-      if (row.prop === 'rot' && (row.id.startsWith('g:') || row.id.startsWith('f:'))) {
-        const spaceBtn = el('button', 'tt-rot-space');
-        spaceBtn.type = 'button';
-        const cur = row.id.startsWith('f:')
-          ? ((getFunction(row.id.slice(2)) || {}).rotSpace === 'local')
-          : (state.groupRotSpace && state.groupRotSpace[row.id.slice(2)] === 'local');
-        spaceBtn.textContent = t(cur ? 'rotSpace.local' : 'rotSpace.world');
-        spaceBtn.title = t('rotSpace.hint');
-        spaceBtn.dataset.id = row.id;
-        div.appendChild(spaceBtn);
-      }
-
       // XYZ 行：合并为组合输入框（不显示 XYZ 字样，靠分隔线区分三个属性）
       const vec = el('div', 'vec3');
       propComps(row.id, row.prop).forEach((comp) => {
@@ -386,6 +367,38 @@ function renderFlatRow(row) {
         vec.appendChild(seg);
       });
       div.appendChild(vec);
+
+      // 空间切换按钮（W/L）放在 XYZ 之后：
+      // 自转行 → 组/函数对象；公转行 → 组/函数对象 + 摄像机（旋转空间，缺省 L=local）
+      if (row.prop === 'spin' && (row.id.startsWith('g:') || row.id.startsWith('f:'))) {
+        const spaceBtn = el('button', 'tt-spin-space');
+        spaceBtn.type = 'button';
+        const cur = row.id.startsWith('f:')
+          ? !((getFunction(row.id.slice(2)) || {}).spinSpace === 'world')
+          : !(state.groupSpinSpace && state.groupSpinSpace[row.id.slice(2)] === 'world');
+        spaceBtn.textContent = t(cur ? 'spinSpace.local' : 'spinSpace.world');
+        spaceBtn.title = t('spinSpace.hint');
+        spaceBtn.dataset.id = row.id;
+        div.appendChild(spaceBtn);
+      } else if (row.prop === 'rot' && (row.id.startsWith('g:') || row.id.startsWith('f:'))) {
+        const spaceBtn = el('button', 'tt-rot-space');
+        spaceBtn.type = 'button';
+        const cur = row.id.startsWith('f:')
+          ? !((getFunction(row.id.slice(2)) || {}).rotSpace === 'world')
+          : !(state.groupRotSpace && state.groupRotSpace[row.id.slice(2)] === 'world');
+        spaceBtn.textContent = t(cur ? 'rotSpace.local' : 'rotSpace.world');
+        spaceBtn.title = t('rotSpace.hint');
+        spaceBtn.dataset.id = row.id;
+        div.appendChild(spaceBtn);
+      } else if (row.prop === 'rot' && row.id.startsWith('c:')) {
+        const cam = getCamera(row.id.slice(2));
+        const spaceBtn = el('button', 'tt-rot-space');
+        spaceBtn.type = 'button';
+        spaceBtn.textContent = t((cam && cam.rotSpace === 'world') ? 'rotSpace.world' : 'rotSpace.local');
+        spaceBtn.title = t('rotSpace.hint');
+        spaceBtn.dataset.id = row.id;
+        div.appendChild(spaceBtn);
+      }
       break;
     }
     case 'comp': {
@@ -617,6 +630,8 @@ function onTreeClick(ev) {
     tlTreeState.expanded.add('c:' + camid);
     refreshTimelineTree(true);
     syncSelectionClasses();
+    // 选中摄像机后立即刷新 gizmo（旋转工具下在看向目标点显示旋转环）
+    updateGizmo();
   }
 }
 

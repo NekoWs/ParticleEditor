@@ -10,9 +10,10 @@ import * as THREE from 'three';
 import { state, PLANES, SNAP_STEP, getFunction } from '../core/constants.js';
 import { shiftHeld } from './input-state.js';
 import { camera, renderer, raycaster, pointer, points, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, gizmoAxisHint, AXIS_RING_COLORS, RING_NORMALS, GIZMO_FACE_DEFS, setWorldAxisVisible, setWorldAxisGlow, resetWorldAxisState } from '../scene/scene.js';
-import { AXIS_COLORS, AXIS_VECTORS, modal, setGizmoHover, selectedGroupName, selectionHasDerived, derivedFxIdFromSelection, fxCurrentPos, hoverColor, currentSpinTarget, currentRotTarget, spinQuaternion } from './interaction.js';
+import { AXIS_COLORS, AXIS_VECTORS, modal, setGizmoHover, selectedGroupName, selectedCameraForRotate, selectionHasDerived, derivedFxIdFromSelection, fxCurrentPos, hoverColor, currentSpinTarget, currentRotTarget, spinQuaternion } from './interaction.js';
 import { currentVisual, orbitCenterAt, spinVectorAt } from '../core/animation.js';
 import { groupCurrentCentroid } from '../ui/tree.js';
+import { cameraPoseAt, camOrientationQuaternion } from '../core/cameras.js';
 export function snapValue(v) {
   return Math.round(v / SNAP_STEP) * SNAP_STEP;
 }
@@ -35,8 +36,16 @@ export function selectionCentroid() {
 
 // 公转模式下 gizmo 应定位到公转中心，并根据对象中心到公转中心的距离缩放。
 // 仅当能唯一确定目标时返回；多选粒子无法唯一显示公转中心时回退普通 gizmo。
+// 摄像机：旋转工具下 gizmo 定位到「看向目标点」、环半径 = 摄像机到目标的距离（与公转一致）。
 export function orbitGizmoTarget() {
-  if (state.tool !== 'rotate' || state.rotMode !== 'orbit') return null;
+  if (state.tool !== 'rotate') return null;
+  const cam = selectedCameraForRotate();
+  if (cam) {
+    const pose = cameraPoseAt(cam.id, state.time);
+    if (!pose) return null;
+    return { objectCenter: pose.pos, orbitCenter: pose.target };
+  }
+  if (state.rotMode !== 'orbit') return null;
   const fx = getFunction(state.selectedFunction);
   if (fx) {
     const objectCenter = fxCurrentPos(fx.id, state.time);
@@ -70,8 +79,14 @@ export function gizmoHl(c) { return hoverColor(c); }
 
 
 // 局部自转/局部公转模式下，旋转 gizmo 的轴向应跟随对象当前自转姿态。
+// 摄像机旋转空间为局部时，环跟随摄像机「看向目标后」的朝向（lookAt + roll）。
 export function spinGizmoQuaternion() {
   if (state.tool !== 'rotate') return null;
+  const cam = selectedCameraForRotate();
+  if (cam) {
+    if (cam.rotSpace === 'world') return null;
+    return camOrientationQuaternion(cam.id, state.time);
+  }
   if (state.rotMode === 'orbit') {
     const t = currentRotTarget();
     if (!t || t.space !== 'local') return null;
@@ -94,18 +109,25 @@ export function updateGizmo() {
     return;
   }
   let c = null;
-  const fx = getFunction(state.selectedFunction);
-  if (fx) {
-    // 函数对象：gizmo 跟随整体位置（center + 当前 pos 增量），随拖动/时间轴移动
-    c = fxCurrentPos(fx.id, state.time);
+  const cam = selectedCameraForRotate();
+  if (cam && state.tool === 'rotate') {
+    // 摄像机：旋转 gizmo 定位到看向目标点（仅旋转工具；移动工具仍隐藏）
+    const pose = cameraPoseAt(cam.id, state.time);
+    if (pose) c = pose.target;
   } else {
-    const gname = selectedGroupName();
-    if (gname) c = groupCurrentCentroid(gname, 'pos');
-    else if (selectionHasDerived()) {
-      // 派生粒子选中：gizmo 显示在所属函数对象中心
-      const fxId = derivedFxIdFromSelection();
-      if (fxId) c = fxCurrentPos(fxId, state.time);
-    } else c = selectionCentroid();
+    const fx = getFunction(state.selectedFunction);
+    if (fx) {
+      // 函数对象：gizmo 跟随整体位置（center + 当前 pos 增量），随拖动/时间轴移动
+      c = fxCurrentPos(fx.id, state.time);
+    } else {
+      const gname = selectedGroupName();
+      if (gname) c = groupCurrentCentroid(gname, 'pos');
+      else if (selectionHasDerived()) {
+        // 派生粒子选中：gizmo 显示在所属函数对象中心
+        const fxId = derivedFxIdFromSelection();
+        if (fxId) c = fxCurrentPos(fxId, state.time);
+      } else c = selectionCentroid();
+    }
   }
   if (!c) { gizmoGroup.visible = false; return; }
   gizmoGroup.visible = true;
@@ -153,8 +175,10 @@ export function updateGizmoFrame() {
   const m = modal;
   const isGrab = m && (m.type === 'grab' || m.type === 'fx-grab');
   const rotDragging = m && (m.type === 'rotate' || m.type === 'group-rotate' || m.type === 'fx-rotate'
-    || m.type === 'view-rotate' || m.type === 'group-view-rotate' || m.type === 'fx-view-rotate');
-  const viewDragging = rotDragging && (m.type === 'view-rotate' || m.type === 'group-view-rotate' || m.type === 'fx-view-rotate');
+    || m.type === 'view-rotate' || m.type === 'group-view-rotate' || m.type === 'fx-view-rotate'
+    || m.type === 'camera-rotate' || m.type === 'camera-view-rotate');
+  const viewDragging = rotDragging && (m.type === 'view-rotate' || m.type === 'group-view-rotate'
+    || m.type === 'fx-view-rotate' || m.type === 'camera-view-rotate');
   const camDir = toGizmo.clone().negate().normalize(); // gizmo -> 相机方向（环可见性判据）
 
   // 面移动器 / 箭头显隐（按工具）

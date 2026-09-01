@@ -98,8 +98,8 @@ export function updatePropPanel() {
     document.getElementById('prop-posz').value = c[2].toFixed(2);
     setScaleInputs(null);
     const gpre = 'g:' + gname;
-    if (spinSpaceBtn) spinSpaceBtn.textContent = t((state.groupSpinSpace && state.groupSpinSpace[gname] === 'local') ? 'spinSpace.local' : 'spinSpace.world');
-    if (rotSpaceBtn) rotSpaceBtn.textContent = t((state.groupRotSpace && state.groupRotSpace[gname] === 'local') ? 'rotSpace.local' : 'rotSpace.world');
+    if (spinSpaceBtn) spinSpaceBtn.textContent = t((state.groupSpinSpace && state.groupSpinSpace[gname] === 'world') ? 'spinSpace.world' : 'spinSpace.local');
+    if (rotSpaceBtn) rotSpaceBtn.textContent = t((state.groupRotSpace && state.groupRotSpace[gname] === 'world') ? 'rotSpace.world' : 'rotSpace.local');
     setRotTriple(['prop-spin-x', 'prop-spin-y', 'prop-spin-z'], spinVectorAt(gpre, state.time));
     setRotTriple(['prop-rot-x', 'prop-rot-y', 'prop-rot-z'], rotVectorAt(gpre, state.time));
     setRotTriple(['prop-center-x', 'prop-center-y', 'prop-center-z'], orbitCenterAt(gpre, state.time));
