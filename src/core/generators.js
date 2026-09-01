@@ -20,6 +20,11 @@ import { parseProgram, createObjectState, runSetup, createStatics, evalProcess, 
 const TICKS_PER_SEC = 20;
 const DT_PER_TICK = 1 / TICKS_PER_SEC;
 
+// 新建一个 process 输出对象（默认值：位置原点、颜色/alpha=1、速度 0、缩放 1、不发光）。
+function newOut() {
+  return { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0 };
+}
+
 /* -------------------------------------------------------------------------
  * 脚本编译缓存
  * ---------------------------------------------------------------------- */
@@ -122,7 +127,7 @@ function getEvalContext(fx, objState, n, t, dt) {
     i: 0, n, t: t || 0, dt: dt || 0,
     life, uv_x: 0, uv_y: 0,
     vars: varsObj, fastMath: !!fx.fastMath,
-    out: { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0 },
+    out: newOut(),
   };
   const uniforms = runUniformPrelude(program, objState, null, preCtx, compiled);
   const runner = createProcessRunner(compiled, objState, preCtx, uniforms);
@@ -141,7 +146,7 @@ function evalParticleFor(fx, objState, statics, i, n, t, dt) {
     vars: evalCtx.varsObj,
     fastMath: !!fx.fastMath,
     uniforms: evalCtx.uniforms,
-    out: { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0 },
+    out: newOut(),
   };
   if (evalCtx.native) {
     runNativeProcess(evalCtx.native, objState, statics, ctx, ctx.out, !!fx.fastMath);
@@ -208,6 +213,10 @@ export function evalFxParticleInto(frame, statics, i, out) {
     return o;
   }
   frame.runner.resetForRun(statics, ctx, frame.uniforms);
+  // VM 路径：runner 通过 ensureOut(ctx) 写入 ctx.out。当调用方显式传入复用 out 时，
+  // 必须让 ctx.out 指向该对象，否则 runner 写入的是 frame.ctx 里的旧 out，而返回值读取的是传入的 o，
+  // 导致所有粒子被写成默认值（位置归原点、颜色/alpha 为 1）。
+  ctx.out = o;
   frame.runner.run();
   const center = frame.fx.center || [0, 0, 0];
   o.pos[0] += center[0]; o.pos[1] += center[1]; o.pos[2] += center[2];
@@ -252,7 +261,7 @@ export function validateFunctionScript(fx, setupOverride, processOverride, funcs
     vars: varsAt(fx, t),
     fastMath: !!fx.fastMath,
     uniforms: null,
-    out: { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0 },
+    out: newOut(),
   };
   evalProcess(program, objState, statics, ctx);
   return null;
