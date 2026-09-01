@@ -466,13 +466,14 @@ export async function newFile() {
   clearObjectState();
   state.name = name.trim() || 'my_animation';
   state.fileHandle = null;
-  state.loop = true;
+  state.loop = false;
   state.key = null;
   try {
     const pair = await generateKeyPair();
     state.key = { alg: KEY_ALG, private: pair.private, public: pair.public };
   } catch (_) { /* 浏览器不支持：导出时再提示 */ }
-  document.getElementById('tl-loop').checked = true;
+  document.getElementById('tl-loop').checked = false;
+  updateLoopIndicator();
   updateTimeUI(); rebuildPoints();
   if (typeof refreshTexturePanel === 'function') refreshTexturePanel();
   if (typeof refreshFunctionPanel === 'function') refreshFunctionPanel();
