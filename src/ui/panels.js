@@ -20,13 +20,7 @@ import { pushUndo } from '../state/undo.js';
 import { r3 } from '../io/io.js';
 // 设置缩放 XYZ 三输入（vals 为 [x,y,z]；null 元素表示混合值显示空）
 export function setScaleInputs(vals) {
-  ['prop-scale-x', 'prop-scale-y', 'prop-scale-z'].forEach((id, i) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    const v = vals == null ? null : vals[i];
-    if (v == null) { el.value = ''; el.placeholder = '-'; }
-    else { el.value = (typeof v === 'number' ? Math.round(v * 100) / 100 : v); el.placeholder = ''; }
-  });
+  setRotTriple(['prop-scale-x', 'prop-scale-y', 'prop-scale-z'], vals);
 }
 
 // 旋转类 XYZ 三输入（vals 为 [x,y,z]；null 元素显示空占位）
@@ -327,6 +321,23 @@ export function commitFunctionRebuild(fx, opts) {
   }
 }
 
+// 函数面板的代码块（setup/process/funcs）：标题 + textarea，onchange 写回 fx[field] 并重建。
+function buildCodeBlock(fx, codeBody, field, labelKey, rows) {
+  const group = document.createElement('label');
+  group.className = 'fx-code-group';
+  const label = document.createElement('span');
+  label.className = 'fx-code-headline';
+  label.textContent = t(labelKey);
+  group.appendChild(label);
+  const area = document.createElement('textarea');
+  area.className = 'fx-code';
+  area.rows = rows;
+  area.value = fx[field] || '';
+  area.onchange = () => { pushUndo(); fx[field] = area.value; commitFunctionRebuild(fx); };
+  group.appendChild(area);
+  codeBody.appendChild(group);
+}
+
 export function buildFunctionPanel(fx) {
   const wrap = document.createElement('div');
   wrap.className = 'fx-panel';
@@ -454,50 +465,10 @@ export function buildFunctionPanel(fx) {
   };
   codeWrap.appendChild(codeBody);
 
-  // Setup（对象初始化一次）：标题与输入框合并在同一组内
-  const setupGroup = document.createElement('label');
-  setupGroup.className = 'fx-code-group';
-  const setupLabel = document.createElement('span');
-  setupLabel.className = 'fx-code-headline';
-  setupLabel.textContent = t('fx.setupBlock');
-  setupGroup.appendChild(setupLabel);
-  const setupArea = document.createElement('textarea');
-  setupArea.className = 'fx-code';
-  setupArea.rows = 4;
-  setupArea.value = fx.setup || '';
-  setupArea.onchange = () => { pushUndo(); fx.setup = setupArea.value; commitFunctionRebuild(fx); };
-  setupGroup.appendChild(setupArea);
-  codeBody.appendChild(setupGroup);
-
-  // Process（粒子每帧）：标题与输入框合并在同一组内
-  const processGroup = document.createElement('label');
-  processGroup.className = 'fx-code-group';
-  const processLabel = document.createElement('span');
-  processLabel.className = 'fx-code-headline';
-  processLabel.textContent = t('fx.processBlock');
-  processGroup.appendChild(processLabel);
-  const processArea = document.createElement('textarea');
-  processArea.className = 'fx-code';
-  processArea.rows = 7;
-  processArea.value = fx.process || '';
-  processArea.onchange = () => { pushUndo(); fx.process = processArea.value; commitFunctionRebuild(fx); };
-  processGroup.appendChild(processArea);
-  codeBody.appendChild(processGroup);
-
-  // 顶层函数（文本代码块同样显示/编辑函数定义）
-  const funcsGroup = document.createElement('label');
-  funcsGroup.className = 'fx-code-group';
-  const funcsLabel = document.createElement('span');
-  funcsLabel.className = 'fx-code-headline';
-  funcsLabel.textContent = t('fx.funcsBlock');
-  funcsGroup.appendChild(funcsLabel);
-  const funcsArea = document.createElement('textarea');
-  funcsArea.className = 'fx-code';
-  funcsArea.rows = 4;
-  funcsArea.value = fx.funcs || '';
-  funcsArea.onchange = () => { pushUndo(); fx.funcs = funcsArea.value; commitFunctionRebuild(fx); };
-  funcsGroup.appendChild(funcsArea);
-  codeBody.appendChild(funcsGroup);
+  // Setup / Process / 顶层函数：标题与输入框合并在同一组内
+  buildCodeBlock(fx, codeBody, 'setup', 'fx.setupBlock', 4);
+  buildCodeBlock(fx, codeBody, 'process', 'fx.processBlock', 7);
+  buildCodeBlock(fx, codeBody, 'funcs', 'fx.funcsBlock', 4);
 
   // 快速数学近似（放在文本代码下方）：左侧 label，右侧勾选框
   const fmRow = document.createElement('label');
