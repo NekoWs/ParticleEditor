@@ -983,14 +983,14 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
   if (modal) {
     if (modal.type === 'grab' || modal.type === 'fx-grab') updateGrab(ev.clientX, ev.clientY);
     else if (modal.type === 'scale' || modal.type === 'fx-scale') updateScale(ev.clientX);
-    else if (modal.type === 'rotate' || modal.type === 'group-rotate' || modal.type === 'fx-rotate') updateRotate(ev.clientX, ev.clientY);
-    else if (modal.type === 'view-rotate' || modal.type === 'group-view-rotate' || modal.type === 'fx-view-rotate') updateViewRotate(ev.clientX, ev.clientY);
+    else if (modal.type === 'rotate' || modal.type === 'group-rotate' || modal.type === 'fx-rotate' || modal.type === 'camera-rotate') updateRotate(ev.clientX, ev.clientY);
+    else if (modal.type === 'view-rotate' || modal.type === 'group-view-rotate' || modal.type === 'fx-view-rotate' || modal.type === 'camera-view-rotate') updateViewRotate(ev.clientX, ev.clientY);
     return;
   }
   if (boxSel) { boxSel.x1 = ev.clientX; boxSel.y1 = ev.clientY; updateBoxOverlay(); return; }
   if (!drag) {
-    // 悬停高亮：移动控制器（轴/面）与旋转控制器（环/视图环）
-    if ((state.tool === 'move' || state.tool === 'rotate') && hasSelection()) {
+    // 悬停高亮：移动控制器（轴/面）与旋转控制器（环/视图环）；仅选中摄像机也算有目标
+    if ((state.tool === 'move' || state.tool === 'rotate') && (hasSelection() || !!getCamera(state.selectedCamera))) {
       let ah = null, fh = null, rh = null, vh = false;
       if (state.tool === 'move') {
         ah = hitGizmoAxis(ev.clientX, ev.clientY);

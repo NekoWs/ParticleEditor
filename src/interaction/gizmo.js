@@ -36,15 +36,10 @@ export function selectionCentroid() {
 
 // 公转模式下 gizmo 应定位到公转中心，并根据对象中心到公转中心的距离缩放。
 // 仅当能唯一确定目标时返回；多选粒子无法唯一显示公转中心时回退普通 gizmo。
-// 摄像机：旋转工具下 gizmo 定位到「看向目标点」、环半径 = 摄像机到目标的距离（与公转一致）。
+// 摄像机不参与此处：其旋转 gizmo 定位在看向目标点，但保持与其他对象一致的
+// 恒定屏幕尺寸（环半径不随相机到目标的距离放大，避免环巨大且管径过粗）。
 export function orbitGizmoTarget() {
   if (state.tool !== 'rotate') return null;
-  const cam = selectedCameraForRotate();
-  if (cam) {
-    const pose = cameraPoseAt(cam.id, state.time);
-    if (!pose) return null;
-    return { objectCenter: pose.pos, orbitCenter: pose.target };
-  }
   if (state.rotMode !== 'orbit') return null;
   const fx = getFunction(state.selectedFunction);
   if (fx) {
