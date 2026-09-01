@@ -4,7 +4,7 @@
  * ======================================================================= */
 
 import { t } from '../core/i18n.js';
-import { state, setDirty, DEFAULT_EASING, UV_MODES, PROP_LABELS, splitCompPr, nextId } from '../core/constants.js';
+import { state, setDirty, DEFAULT_EASING, UV_MODES, PROP_LABELS, splitCompPr, nextId, clearObjectState } from '../core/constants.js';
 import { pushUndo } from '../state/undo.js';
 import { rebuildPoints } from '../core/animation.js';
 import { updateLoopIndicator, refreshFunctionPanel } from '../ui/panels.js';
@@ -449,12 +449,7 @@ export async function newFile() {
   const name = await modalPrompt(t('newProject.title'), 'my_animation', t('newProject.name'));
   if (!name || !name.trim()) return;
   pushUndo();
-  state.particles = []; state.tracks = []; state.groups = {}; state.functions = [];
-  state.textures = {}; state.currentTexture = null; state.groupUV = {}; state.groupSpinSpace = {}; state.groupRotSpace = {};
-  state.cameras = []; state.activeCamera = null;
-  state.selected.clear(); state.selectedGroup = null; state.selectedFunction = null;
-  state.expandedParticles.clear(); state.expandedProps.clear();
-  state.time = 0;
+  clearObjectState();
   state.name = name.trim() || 'my_animation';
   state.fileHandle = null;
   state.loop = true;

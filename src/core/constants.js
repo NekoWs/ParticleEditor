@@ -194,6 +194,17 @@ export function setDirty(v) {
   updateTopbarTitle();
 }
 
+// 清空所有对象数据（粒子/轨道/组/函数/贴图/摄像机/选中/展开状态/时间），
+// 保留工程级字段（name/key/loop/fileHandle/dirty 等）。newFile / clearAll 共用。
+export function clearObjectState() {
+  state.particles = []; state.tracks = []; state.groups = {}; state.functions = [];
+  state.textures = {}; state.currentTexture = null; state.groupUV = {}; state.groupSpinSpace = {}; state.groupRotSpace = {};
+  state.cameras = []; state.activeCamera = null;
+  state.selected.clear(); state.selectedGroup = null; state.selectedFunction = null;
+  state.expandedParticles.clear(); state.expandedProps.clear();
+  state.time = 0;
+}
+
 // 顶栏标题：工程名 + 未保存标记（setDirty / 打开 / 保存后调用）。
 export function updateTopbarTitle() {
   const el = document.getElementById('topbar-title');

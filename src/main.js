@@ -6,7 +6,7 @@
  * ======================================================================= */
 
 import { t, applyI18nDom, setLanguage } from './core/i18n.js';
-import { state, FUNCTION_PRESETS, getParticle, getFunction, isDerivedParticle, updateTopbarTitle } from './core/constants.js';
+import { state, FUNCTION_PRESETS, getParticle, getFunction, isDerivedParticle, updateTopbarTitle, clearObjectState } from './core/constants.js';
 import { setShiftHeld } from './interaction/input-state.js';
 import { showAboutModal } from './ui/ui.js';
 import { easeInOut } from './core/easing.js';
@@ -399,13 +399,8 @@ export function initUI() {
 
 export function clearAll() {
   pushUndo();
-  state.particles = []; state.tracks = []; state.groups = {}; state.functions = [];
-  state.textures = {}; state.currentTexture = null; state.groupUV = {}; state.groupSpinSpace = {}; state.groupRotSpace = {};
-  state.cameras = []; state.activeCamera = null;
-  state.selected.clear(); state.selectedGroup = null; state.selectedFunction = null;
-  state.expandedParticles.clear(); state.expandedProps.clear();
+  clearObjectState();
   if (tlTreeState && tlTreeState.expanded) tlTreeState.expanded.clear();
-  state.time = 0;
   updateTimeUI(); rebuildPoints(); refreshTimelineTree(); refreshFunctionPanel();
   refreshCameraTabs();
 }
