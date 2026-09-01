@@ -211,13 +211,7 @@ export function angleInBasis(point, centroid, u, v) {
 
 export function groupRotationValueAt(gname, T) { return rotVectorAt('g:' + gname, T); }
 
-// 某 id 的自转向量（spin.x/y/z，度）
-export function spinRotationValueAt(id, T) {
-  return ['x', 'y', 'z'].map(c => {
-    const tr = findTrackByPr('spin.' + c, id);
-    return tr ? trackValueAt(tr, T, 0) : 0;
-  });
-}
+// 某 id 的自转向量（spin.x/y/z，度）—— 见 animation.js 的 spinVectorAt。
 
 function posDeltaAt(prefix, T) {
   return ['x', 'y', 'z'].map(c => {
@@ -266,7 +260,7 @@ export function enterRotate(clientX, clientY, axis) {
     pushUndo();
     const T = Math.round(state.time);
     const startRot = fxRotationValueAt(fx.id, T);
-    const startSpin = spinRotationValueAt('f:' + fx.id, T);
+    const startSpin = spinVectorAt('f:' + fx.id, T);
     const spinSpace = state.rotMode === 'spin' ? (fx.spinSpace === 'local' ? 'local' : 'world') : 'world';
     const rotSpace = state.rotMode === 'orbit' ? (fx.rotSpace === 'local' ? 'local' : 'world') : 'world';
     const c = state.rotMode === 'orbit'
@@ -288,7 +282,7 @@ export function enterRotate(clientX, clientY, axis) {
   if (gname === undefined) return;
   const selParticles = state.particles.filter(p => state.selected.has(p.id));
   const T = Math.round(state.time);
-  const startSpin = gname ? spinRotationValueAt('g:' + gname, T) : [0, 0, 0];
+  const startSpin = gname ? spinVectorAt('g:' + gname, T) : [0, 0, 0];
   const spinSpace = (gname && state.rotMode === 'spin')
     ? ((state.groupSpinSpace && state.groupSpinSpace[gname] === 'local') ? 'local' : 'world')
     : 'world';
@@ -375,7 +369,7 @@ export function enterViewRotate(clientX, clientY) {
       : fxCurrentPos(fx.id, Math.round(state.time));
     const T = Math.round(state.time);
     const startRot = fxRotationValueAt(fx.id, T);
-    const startSpin = spinRotationValueAt('f:' + fx.id, T);
+    const startSpin = spinVectorAt('f:' + fx.id, T);
     const spinSpace = state.rotMode === 'spin' ? (fx.spinSpace === 'local' ? 'local' : 'world') : 'world';
     const rotSpace = state.rotMode === 'orbit' ? (fx.rotSpace === 'local' ? 'local' : 'world') : 'world';
     modal = { type: 'fx-view-rotate', fxId: fx.id, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot, startSpin, rotMode: state.rotMode, spinSpace, rotSpace, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
@@ -392,7 +386,7 @@ export function enterViewRotate(clientX, clientY) {
   if (gname) {
     const T = Math.round(state.time);
     const startRot = groupRotationValueAt(gname, T);
-    const startSpin = spinRotationValueAt('g:' + gname, T);
+    const startSpin = spinVectorAt('g:' + gname, T);
     const spinSpace = state.rotMode === 'spin' ? ((state.groupSpinSpace && state.groupSpinSpace[gname] === 'local') ? 'local' : 'world') : 'world';
     const rotSpace = state.rotMode === 'orbit' ? ((state.groupRotSpace && state.groupRotSpace[gname] === 'local') ? 'local' : 'world') : 'world';
     modal = { type: 'group-view-rotate', gname, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot, startSpin, rotMode: state.rotMode, spinSpace, rotSpace, origins, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };

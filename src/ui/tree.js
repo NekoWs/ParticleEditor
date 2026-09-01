@@ -192,82 +192,20 @@ export function openKeyframeEditor(canvas, id, pr, tick, clientX, clientY) {
   const [prop, comp] = splitCompPr(pr);
   closeContextMenu();
   closeKeyframeEditor(true);
-
-  const orig = [kf[0], kf[1], kf[2]];
-
-  const box = document.createElement('div');
-  box.id = 'kf-editor-pop';
-  box.className = 'kf-editor';
-  const title = document.createElement('div');
-  title.className = 'ke-title';
-  title.textContent = tf('tree.editKf', t('prop.' + prop), COMP_LABELS[comp]);
-  box.appendChild(title);
-
-  const mkLabel = (text) => { const s = document.createElement('span'); s.className = 'ke-label'; s.textContent = text; return s; };
-
-  const tRow = document.createElement('div');
-  tRow.className = 'row';
-  tRow.appendChild(mkLabel(t('tree.time')));
-  const tIn = document.createElement('input');
-  tIn.type = 'number'; tIn.min = '0'; tIn.value = kf[0];
-  tRow.appendChild(tIn);
-  box.appendChild(tRow);
-
-  const vRow = document.createElement('div');
-  vRow.className = 'row';
-  vRow.appendChild(mkLabel(t('tree.value')));
-  const vIn = document.createElement('input');
-  vIn.type = 'number'; vIn.step = '0.01'; vIn.value = r3(kf[1]);
-  vRow.appendChild(vIn);
-  box.appendChild(vRow);
-
-  const eRow = document.createElement('div');
-  eRow.className = 'row';
-  eRow.appendChild(mkLabel(t('tree.easingLabel')));
-  const easeBtn = makeEasingBtn(kf[2], (nv) => { kf[2] = nv; easeBtn.innerHTML = easingCurveSVG(nv); });
-  eRow.appendChild(easeBtn);
-  box.appendChild(eRow);
-
-  const btnRow = document.createElement('div');
-  btnRow.className = 'ke-btns';
-  const okBtn = document.createElement('button');
-  okBtn.textContent = t('common.ok');
-  okBtn.onclick = () => {
-    pushUndo();
-    kf[0] = Math.max(0, parseInt(tIn.value) || 0);
-    kf[1] = parseFloat(vIn.value) || 0;
-    tr.kf.sort((a, b) => a[0] - b[0]);
-    closeKeyframeEditor();
-    rebuildPoints();
-  };
-  const cancelBtn = document.createElement('button');
-  cancelBtn.textContent = t('common.cancel');
-  cancelBtn.onclick = () => {
-    kf[0] = orig[0]; kf[1] = orig[1]; kf[2] = orig[2];
-    closeKeyframeEditor();
-    rebuildPoints();
-  };
-  btnRow.appendChild(okBtn); btnRow.appendChild(cancelBtn);
-  box.appendChild(btnRow);
-
-  document.body.appendChild(box);
-
-  if (clientX != null && clientY != null) {
-    // 在鼠标右下弹出，避免与关键帧/播放头重叠
-    box.style.left = Math.min(Math.max(8, clientX + 8), window.innerWidth - box.offsetWidth - 8) + 'px';
-    box.style.top = Math.min(Math.max(8, clientY + 8), window.innerHeight - box.offsetHeight - 8) + 'px';
-  } else {
-    // 悬浮定位：水平对准关键帧菱形，垂直在其下方
-    const rect = canvas.getBoundingClientRect();
-    const kfX = rect.left + (tick - compTimelineViewStart) * TL_PX_PER_TICK;
-    box.style.left = Math.min(Math.max(8, kfX), window.innerWidth - box.offsetWidth - 8) + 'px';
-    const top = rect.bottom + 6;
-    box.style.top = (top + box.offsetHeight > window.innerHeight - 8 ? Math.max(8, rect.top - box.offsetHeight - 6) : top) + 'px';
-  }
-
-  keyframeEditorInputs = { tIn, vIn, kf };
-  keyframeEditorBox = box;
-  setTimeout(() => document.addEventListener('pointerdown', onKfDocPointerDown), 0);
+  openKeyframeEditorCommon({
+    title: tf('tree.editKf', t('prop.' + prop), COMP_LABELS[comp]),
+    kfArr: tr.kf, kf, clientX, clientY,
+    onCommit: () => rebuildPoints(),
+    onCancel: () => rebuildPoints(),
+    positionFallback: (box) => {
+      // 悬浮定位：水平对准关键帧菱形，垂直在其下方
+      const rect = canvas.getBoundingClientRect();
+      const kfX = rect.left + (tick - compTimelineViewStart) * TL_PX_PER_TICK;
+      box.style.left = Math.min(Math.max(8, kfX), window.innerWidth - box.offsetWidth - 8) + 'px';
+      const top = rect.bottom + 6;
+      box.style.top = (top + box.offsetHeight > window.innerHeight - 8 ? Math.max(8, rect.top - box.offsetHeight - 6) : top) + 'px';
+    },
+  });
 }
 
 /** 函数对象变量的关键帧编辑弹窗（变量关键帧存储在 fx.vars[name].kf，不走粒子轨道）。 */
@@ -278,16 +216,26 @@ export function openVarKeyframeEditor(canvas, fx, name, tick, clientX, clientY) 
   if (!kf) return;
   closeContextMenu();
   closeKeyframeEditor(true);
+  openKeyframeEditorCommon({
+    title: tf('tree.editVarKf', name),
+    kfArr, kf, clientX, clientY,
+    onCommit: () => commitFunctionRebuild(fx),
+    onCancel: () => commitFunctionRebuild(fx),
+  });
+}
 
+// 关键帧编辑弹窗的共用 DOM 构建（openKeyframeEditor / openVarKeyframeEditor 复用）。
+// 差异点：标题、提交/取消后的动作、无 clientX/clientY 时的悬浮定位（positionFallback，可省略）。
+function openKeyframeEditorCommon({ title, kfArr, kf, clientX, clientY, onCommit, onCancel, positionFallback }) {
   const orig = [kf[0], kf[1], kf[2]];
 
   const box = document.createElement('div');
   box.id = 'kf-editor-pop';
   box.className = 'kf-editor';
-  const title = document.createElement('div');
-  title.className = 'ke-title';
-  title.textContent = tf('tree.editVarKf', name);
-  box.appendChild(title);
+  const titleEl = document.createElement('div');
+  titleEl.className = 'ke-title';
+  titleEl.textContent = title;
+  box.appendChild(titleEl);
 
   const mkLabel = (text) => { const s = document.createElement('span'); s.className = 'ke-label'; s.textContent = text; return s; };
 
@@ -323,15 +271,15 @@ export function openVarKeyframeEditor(canvas, fx, name, tick, clientX, clientY) 
     kf[0] = Math.max(0, parseInt(tIn.value) || 0);
     kf[1] = parseFloat(vIn.value) || 0;
     kfArr.sort((a, b) => a[0] - b[0]);
-    commitFunctionRebuild(fx);
     closeKeyframeEditor();
+    onCommit();
   };
   const cancelBtn = document.createElement('button');
   cancelBtn.textContent = t('common.cancel');
   cancelBtn.onclick = () => {
     kf[0] = orig[0]; kf[1] = orig[1]; kf[2] = orig[2];
     closeKeyframeEditor();
-    commitFunctionRebuild(fx);
+    onCancel();
   };
   btnRow.appendChild(okBtn); btnRow.appendChild(cancelBtn);
   box.appendChild(btnRow);
@@ -339,8 +287,11 @@ export function openVarKeyframeEditor(canvas, fx, name, tick, clientX, clientY) 
   document.body.appendChild(box);
 
   if (clientX != null && clientY != null) {
+    // 在鼠标右下弹出，避免与关键帧/播放头重叠
     box.style.left = Math.min(Math.max(8, clientX + 8), window.innerWidth - box.offsetWidth - 8) + 'px';
     box.style.top = Math.min(Math.max(8, clientY + 8), window.innerHeight - box.offsetHeight - 8) + 'px';
+  } else if (positionFallback) {
+    positionFallback(box);
   }
 
   keyframeEditorInputs = { tIn, vIn, kf };

@@ -9,14 +9,7 @@ import { easeVal, FUNC_IMPL, matMat, vec3 } from './easing.js';
 import { evaluateParticleAt } from './generators.js';
 export { getFxFrameAuto, evalFxParticleInto } from './generators.js';
 import { groupCentroidValue } from '../ui/tree.js';
-import { rotateVector } from '../interaction/interaction.js';/* =========================================================================
- * 动画状态查询与渲染缓冲区组装
- * 数据模型：分量级轨道（pr：pos.x / pos.y / ... / col.a / scl），kf 值为标量。
- * 职责：
- *   1) 分量级求值（trackValueAt / particleValueAt / currentVisual）
- *   2) 索引缓存（粒子 / 轨道 / 组 / 函数对象，rebuildPoints 时重建）
- *   3) 渲染缓冲组装（setPointsGeometry / rebuildPoints / setPreview）
- * ======================================================================= */
+import { rotateVector } from '../interaction/interaction.js';
 
 
 // 粒子基础分量值（无轨道）
@@ -385,29 +378,22 @@ export function compFxOpDelta(p, prop, comp, T) {
   return delta;
 }
 
-// 某 id（'g:name' 或 'f:fxId'）的 rot 向量（三个分量，度）
-export function rotVectorAt(id, T) {
+// 某 id（'g:name' | 'f:fxId' | 'c:camId'）某三分量属性在 T 时刻的向量（无轨道分量取 0）。
+function trackVec3At(prop, id, T) {
   return ['x', 'y', 'z'].map(c => {
-    const tr = findTrackByPr('rot.' + c, id);
+    const tr = findTrackByPr(prop + '.' + c, id);
     return tr ? trackValueAt(tr, T, 0) : 0;
   });
 }
 
-// 某 id（'g:name' 或 'f:fxId'）的自转向量（三个分量，度）
-export function spinVectorAt(id, T) {
-  return ['x', 'y', 'z'].map(c => {
-    const tr = findTrackByPr('spin.' + c, id);
-    return tr ? trackValueAt(tr, T, 0) : 0;
-  });
-}
+// 某 id 的 rot（公转）向量（三个分量，度）
+export function rotVectorAt(id, T) { return trackVec3At('rot', id, T); }
+
+// 某 id 的自转向量（三个分量，度）
+export function spinVectorAt(id, T) { return trackVec3At('spin', id, T); }
 
 // 某 id 的公转中心（世界坐标；无 center 轨道时默认世界原点）
-export function orbitCenterAt(id, T) {
-  return ['x', 'y', 'z'].map(c => {
-    const tr = findTrackByPr('center.' + c, id);
-    return tr ? trackValueAt(tr, T, 0) : 0;
-  });
-}
+export function orbitCenterAt(id, T) { return trackVec3At('center', id, T); }
 
 // 绕 pivot 按欧拉角 XYZ（度）旋转一个点。
 export function rotatePointAround(value, pivot, rotDeg) {

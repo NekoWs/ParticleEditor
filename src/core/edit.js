@@ -13,6 +13,10 @@ import { groupCentroidValue, targetComponentValue } from '../ui/tree.js';
 import { pushUndo } from '../state/undo.js';
 import { commitFunctionRebuild } from '../ui/panels.js';
 import { selectedGroupName } from '../interaction/interaction.js';
+
+// 普通粒子某属性的可编辑分量列表（粒子 scl 仅 X/Y，无 Z）。
+function particleComps(prop) { return prop === 'scl' ? PARTICLE_SCALE_COMPS : TRACK_COMPS[prop]; }
+
 // 修改基础值（完整向量）
 export function applyBaseValue(p, prop, values) {
   if (prop === 'pos') p.pos = values.slice(0, 3);
@@ -80,7 +84,7 @@ export function setComponentKeyframe(id, prop, comp, time, value, mode) {
 // 为多个粒子在同一时间写统一值（每分量独立轨道）
 export function setValueAtTime(ids, prop, values) {
   const t = Math.round(state.time);
-  const comps = prop === 'scl' ? PARTICLE_SCALE_COMPS : TRACK_COMPS[prop];
+  const comps = particleComps(prop);
   for (const id of ids) {
     const p = getParticle(id);
     if (!p) continue;
@@ -93,7 +97,7 @@ export function setValueAtTime(ids, prop, values) {
 
 // 直接修改基础值（不创建关键帧），并同步 t=0 关键帧（若存在）
 export function editBaseValue(ids, prop, values) {
-  const comps = prop === 'scl' ? PARTICLE_SCALE_COMPS : TRACK_COMPS[prop];
+  const comps = particleComps(prop);
   for (const id of ids) {
     const p = getParticle(id);
     if (!p) continue;
@@ -114,7 +118,7 @@ export function editBaseValue(ids, prop, values) {
 // 供拖动 5w 粒子等热点路径使用。语义与 setComponentKeyframe 完全一致。
 export function setValuesAtTime(entries, prop) {
   const t = Math.round(state.time);
-  const comps = prop === 'scl' ? PARTICLE_SCALE_COMPS : TRACK_COMPS[prop];
+  const comps = particleComps(prop);
   const prs = comps.map(c => prop + '.' + c);
   const idxs = prs.map(pr => PR_TO_IDX[pr]);
   for (const [id, values] of entries) {
