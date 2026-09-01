@@ -446,18 +446,47 @@ export function eulerFromSpinMatrix(M) {
   return [a * RAD2DEG, b * RAD2DEG, c * RAD2DEG];
 }
 
+// 从一组欧拉角候选（同构旋转的等价表示）中选出与 prev 最近的一个（度）。
+// Tait-Bryan（intrinsic XYZ / extrinsic ZYX）的等价族：(x±π, π−y, z±π) 与 ±2π 回卷；
+// 距离 = 各分量原始角度差的平方和（不用回卷距离，避免 ±360 等价体平分导致选出
+// 观感奇怪的 -360 等值）。用于拖拽时保持数值连续，避免 y 越过 ±90° 时
+// x/z 突然翻转 ±180（矩阵表示同一旋转，但数值跳变）。
+export function eulerNearPrevDeg(deg, prevDeg) {
+  const [x, y, z] = deg;
+  const [px, py, pz] = prevDeg;
+  let best = deg;
+  let bestD = Infinity;
+  const consider = (cand) => {
+    const d = (cand[0] - px) * (cand[0] - px) + (cand[1] - py) * (cand[1] - py) + (cand[2] - pz) * (cand[2] - pz);
+    if (d < bestD) { bestD = d; best = cand; }
+  };
+  for (const m of [-1, 0, 1]) for (const n of [-1, 0, 1]) for (const k of [-1, 0, 1]) {
+    consider([x + m * 360, y + n * 360, z + k * 360]);
+    for (const s of [1, -1]) {
+      consider([x + s * 180 + m * 360, 180 - y + n * 360, z + s * 180 + k * 360]);
+    }
+  }
+  return best;
+}
+
+// 同 eulerFromSpinMatrix，但选择与 prevDeg 数值连续的等价表示（拖拽不跳变）。
+export function eulerFromSpinMatrixNear(M, prevDeg) {
+  return eulerNearPrevDeg(eulerFromSpinMatrix(M), prevDeg);
+}
+
 // 在现有局部自转基础上绕局部轴 axis（'X'|'Y'|'Z'）旋转 angle（弧度），返回新欧拉（度）。
+// 数值取与 baseDeg 连续的等价表示：越过 ±90° 时不再翻转其它分量 ±180。
 export function applyLocalSpinRotation(baseDeg, axis, angle) {
   const M = spinMatrix(baseDeg, 'local');
   const R = axis === 'X' ? FUNC_IMPL.rotX(angle) : axis === 'Y' ? FUNC_IMPL.rotY(angle) : FUNC_IMPL.rotZ(angle);
-  return eulerFromSpinMatrix(matMat(M, R));
+  return eulerFromSpinMatrixNear(matMat(M, R), baseDeg);
 }
 
-// 绕任意局部轴（数组单位向量）旋转 angle（弧度）的局部自转合成。
+// 绕任意局部轴（数组单位向量）旋转 angle（弧度）的局部自转合成（数值连续）。
 export function applyLocalSpinRotationVec(baseDeg, axisVec, angle) {
   const M = spinMatrix(baseDeg, 'local');
   const R = FUNC_IMPL.rotAxis(vec3(axisVec[0], axisVec[1], axisVec[2]), angle);
-  return eulerFromSpinMatrix(matMat(M, R));
+  return eulerFromSpinMatrixNear(matMat(M, R), baseDeg);
 }
 
 // 3x3 矩阵转置。
@@ -480,16 +509,17 @@ export function orbitLocalMatrix(rotDeg, spinDeg, spinSpace) {
 
 // 局部公转合成：在现有局部公转基础上绕局部轴 axis 旋转 angle（弧度）。
 // 与自转不同，公转拖拽是在局部帧左乘增量（等价世界轴旋转后写回局部公转欧拉）。
+// 数值取与 baseRot 连续的等价表示：越过 ±90° 时不再翻转其它分量 ±180。
 export function applyLocalOrbitRotation(baseRot, axis, angle) {
   const M = spinMatrix(baseRot, 'local');
   const R = axis === 'X' ? FUNC_IMPL.rotX(angle) : axis === 'Y' ? FUNC_IMPL.rotY(angle) : FUNC_IMPL.rotZ(angle);
-  return eulerFromSpinMatrix(matMat(R, M));
+  return eulerFromSpinMatrixNear(matMat(R, M), baseRot);
 }
 
 export function applyLocalOrbitRotationVec(baseRot, axisVec, angle) {
   const M = spinMatrix(baseRot, 'local');
   const R = FUNC_IMPL.rotAxis(vec3(axisVec[0], axisVec[1], axisVec[2]), angle);
-  return eulerFromSpinMatrix(matMat(R, M));
+  return eulerFromSpinMatrixNear(matMat(R, M), baseRot);
 }
 
 // 组变换 pivot（优先索引缓存，回退到质心重算）

@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { state, PLANES, SNAP_STEP, getFunction } from '../core/constants.js';
 import { shiftHeld } from './input-state.js';
-import { camera, renderer, raycaster, pointer, points, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, gizmoAxisHint, AXIS_RING_COLORS, RING_NORMALS, GIZMO_FACE_DEFS, setWorldAxisVisible, setWorldAxisGlow, resetWorldAxisState } from '../scene/scene.js';
+import { camera, renderer, raycaster, pointer, points, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, gizmoAxisHint, AXIS_RING_COLORS, RING_NORMALS, RING_SEGMENTS, RING_SEG_ARC, GIZMO_FACE_DEFS, setWorldAxisVisible, setWorldAxisGlow, resetWorldAxisState } from '../scene/scene.js';
 import { AXIS_COLORS, AXIS_VECTORS, modal, setGizmoHover, selectedGroupName, selectedCameraForRotate, selectionHasDerived, derivedFxIdFromSelection, fxCurrentPos, hoverColor, currentSpinTarget, currentRotTarget, spinQuaternion } from './interaction.js';
 import { currentVisual, orbitCenterAt, spinVectorAt } from '../core/animation.js';
 import { groupCurrentCentroid } from '../ui/tree.js';
@@ -36,10 +36,16 @@ export function selectionCentroid() {
 
 // 公转模式下 gizmo 应定位到公转中心，并根据对象中心到公转中心的距离缩放。
 // 仅当能唯一确定目标时返回；多选粒子无法唯一显示公转中心时回退普通 gizmo。
-// 摄像机不参与此处：其旋转 gizmo 定位在看向目标点，但保持与其他对象一致的
-// 恒定屏幕尺寸（环半径不随相机到目标的距离放大，避免环巨大且管径过粗）。
+// 摄像机（camera: true）：定位到看向目标点、环半径 = 相机到目标距离（环经过摄像机），
+// 但环管径动态收细，保持与其他 gizmo 一致的屏显线宽。
 export function orbitGizmoTarget() {
   if (state.tool !== 'rotate') return null;
+  const cam = selectedCameraForRotate();
+  if (cam) {
+    const pose = cameraPoseAt(cam.id, state.time);
+    if (!pose) return null;
+    return { objectCenter: pose.pos, orbitCenter: pose.target, camera: true };
+  }
   if (state.rotMode !== 'orbit') return null;
   const fx = getFunction(state.selectedFunction);
   if (fx) {
@@ -74,11 +80,15 @@ export function gizmoHl(c) { return hoverColor(c); }
 
 
 // 局部自转/局部公转模式下，旋转 gizmo 的轴向应跟随对象当前自转姿态。
-// 摄像机旋转空间为局部时，环跟随摄像机「看向目标后」的朝向（lookAt + roll）。
+// 摄像机旋转空间为局部时，环跟随摄像机「看向目标后」的朝向（lookAt + roll）；
+// 拖动期间轴冻结（使用按下瞬间记录的 startQ），松开后随新朝向更新。
 export function spinGizmoQuaternion() {
   if (state.tool !== 'rotate') return null;
   const cam = selectedCameraForRotate();
   if (cam) {
+    if (modal && (modal.type === 'camera-rotate' || modal.type === 'camera-view-rotate') && modal.startQ) {
+      return modal.startQ;
+    }
     if (cam.rotSpace === 'world') return null;
     return camOrientationQuaternion(cam.id, state.time);
   }
@@ -137,6 +147,35 @@ export function updateGizmo() {
   setGizmoHover(null, null, null, false);
 }
 
+// 环管径：默认值（与场景构建一致）；摄像机模式按屏显线宽恒定动态收细。
+const RING_TUBE_BASE = 0.006;
+const VIEW_TUBE_BASE = 0.008;
+const _lastRingTube = { ring: RING_TUBE_BASE, view: VIEW_TUBE_BASE };
+// 动态重设环管径（重建 torus 几何；相对变化 <3% 时不重建）。摄像机环半径随「相机到
+// 目标距离」放大，管径同步收细，使屏幕上的线宽与其他 gizmo 一致；退出摄像机模式时
+// 恢复默认管径。
+function setRingTubeWidths(ringTube, viewTube) {
+  const last = _lastRingTube;
+  const rel = (a, b) => Math.abs(a - b) / Math.max(b, 1e-9);
+  if (rel(ringTube, last.ring) < 0.03 && rel(viewTube, last.view) < 0.03) return;
+  last.ring = ringTube;
+  last.view = viewTube;
+  const zAxis = new THREE.Vector3(0, 0, 1);
+  for (const ax of ['X', 'Y', 'Z']) {
+    const align = new THREE.Quaternion().setFromUnitVectors(zAxis, new THREE.Vector3(...RING_NORMALS[ax]));
+    gizmoRingSegs[ax].forEach((m, i) => {
+      const geo = new THREE.TorusGeometry(0.5, ringTube, 6, 6, RING_SEG_ARC);
+      geo.rotateZ(i * RING_SEG_ARC);
+      geo.applyQuaternion(align);
+      m.geometry.dispose();
+      m.geometry = geo;
+    });
+  }
+  const vGeo = new THREE.TorusGeometry(0.62, viewTube, 10, 96);
+  gizmoViewRing.geometry.dispose();
+  gizmoViewRing.geometry = vGeo;
+}
+
 // 每帧调用：恒定屏幕大小 + 白环正对相机 + 轴环半圆环可见性（alpha 渐变防突变）
 // 拖拽某个环时：隐藏其他圆环与视图环，选中环整环显示
 export function updateGizmoFrame() {
@@ -152,15 +191,30 @@ export function updateGizmoFrame() {
   const depth = Math.max(0.5, toGizmo.dot(viewDir));
   const orbitT = orbitGizmoTarget();
   if (orbitT) {
-    // 公转模式：环半径 = 对象中心到公转中心的距离（环局部半径 0.5 → 缩放 2×距离）
-    const dist = Math.hypot(
+    // 公转模式：环半径 = 对象中心到公转中心的距离（环局部半径 0.5 → 缩放 2×距离）。
+    // 摄像机拖动期间用按下瞬间的距离（轴/环半径冻结，避免拖动中环体再变化）。
+    let dist = Math.hypot(
       orbitT.objectCenter[0] - orbitT.orbitCenter[0],
       orbitT.objectCenter[1] - orbitT.orbitCenter[1],
       orbitT.objectCenter[2] - orbitT.orbitCenter[2],
     );
+    if (orbitT.camera && modal && (modal.type === 'camera-rotate' || modal.type === 'camera-view-rotate')
+      && modal.startDist != null) {
+      dist = modal.startDist;
+    }
     gizmoGroup.scale.setScalar(Math.max(dist * 2, depth * GIZMO_SCREEN_SCALE));
   } else {
     gizmoGroup.scale.setScalar(depth * GIZMO_SCREEN_SCALE);
+  }
+  // 摄像机环随距离放大后，管径按屏显线宽恒定收细；其余模式恢复默认管径。
+  if (orbitT && orbitT.camera) {
+    const s = Math.max(gizmoGroup.scale.x, 1e-6);
+    setRingTubeWidths(
+      Math.max(0.0008, RING_TUBE_BASE * depth * GIZMO_SCREEN_SCALE / s),
+      Math.max(0.0008, VIEW_TUBE_BASE * depth * GIZMO_SCREEN_SCALE / s),
+    );
+  } else {
+    setRingTubeWidths(RING_TUBE_BASE, VIEW_TUBE_BASE);
   }
   gizmoRotateGroup.scale.setScalar(1);
   // 外部白色视图环：始终正对摄像头（环面垂直于视线）

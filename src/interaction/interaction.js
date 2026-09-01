@@ -7,8 +7,8 @@ import * as THREE from 'three';
 import { t } from '../core/i18n.js';
 import { state, getParticle, getFunction, getCamera, isDerivedParticle, RAD2DEG, ROT_SNAP, PLANES, DEG2RAD, nextGroupName } from '../core/constants.js';
 import { shiftHeld } from './input-state.js';
-import { camera, renderer, controls, raycaster, pointer, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, AXIS_RING_COLORS, GIZMO_FACE_DEFS, resetWorldAxisState, focalLengthPx } from '../scene/scene.js';
-import { currentVisual, rebuildPoints, setPreview, clearPreview, rotVectorAt, spinVectorAt, orbitCenterAt, trackValueAt, findTrackByPr, groupScaleAt, spinMatrix, mat3VecArray, applyLocalSpinRotation, applyLocalSpinRotationVec, applyLocalOrbitRotation, applyLocalOrbitRotationVec } from '../core/animation.js';
+import { camera, renderer, controls, raycaster, pointer, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, AXIS_RING_COLORS, GIZMO_FACE_DEFS, RING_NORMALS, RING_SEGMENTS, RING_SEG_ARC, resetWorldAxisState, focalLengthPx } from '../scene/scene.js';
+import { currentVisual, rebuildPoints, setPreview, clearPreview, rotVectorAt, spinVectorAt, orbitCenterAt, trackValueAt, findTrackByPr, groupScaleAt, spinMatrix, mat3VecArray, applyLocalSpinRotation, applyLocalSpinRotationVec, applyLocalOrbitRotation, applyLocalOrbitRotationVec, eulerNearPrevDeg } from '../core/animation.js';
 import { screenToNdc, planePointAt, worldToUV, computeShapePositions, snapGrid, snapValue, pickParticleAt, particleAt, projectToScreen, distToSegment, planeInfo, selectionCentroid, updateGizmo, updateGizmoFrame } from './gizmo.js';
 import { groupCurrentCentroid, groupCentroidValue, deleteGroup, createGroup } from '../ui/tree.js';
 import { refreshFunctionPanel } from '../ui/panels.js';
@@ -275,16 +275,18 @@ export function enterRotate(clientX, clientY, axis) {
     const pivot = pose.target;
     const startRot = rotVectorAt('c:' + cam.id, T);
     const rotSpace = cam.rotSpace === 'world' ? 'world' : 'local';
+    // 拖动期间冻结朝向与环半径：记录按下瞬间的朝向四元数与「相机到目标」距离
+    const startQ = camOrientationQuaternion(cam.id, T) || new THREE.Quaternion();
+    const startDist = Math.hypot(pose.pos[0] - pivot[0], pose.pos[1] - pivot[1], pose.pos[2] - pivot[2]);
     let axisWorld = AXIS_VECTORS[axis];
     if (rotSpace === 'local') {
-      const q = camOrientationQuaternion(cam.id, T) || new THREE.Quaternion();
-      const v = new THREE.Vector3(axisWorld[0], axisWorld[1], axisWorld[2]).applyQuaternion(q);
+      const v = new THREE.Vector3(axisWorld[0], axisWorld[1], axisWorld[2]).applyQuaternion(startQ);
       axisWorld = [v.x, v.y, v.z];
     }
     const { axArr, u, v } = rotationBasis(axis, axisWorld);
     const p0 = rayOnAxisPlane(clientX, clientY, axArr, pivot);
     const startAngle = p0 ? angleInBasis(p0, pivot, u, v) : 0;
-    modal = { type: 'camera-rotate', camId: cam.id, centroid: pivot, axis: axArr, axisKey: axis, axisIndex: AXIS_INDEX[axis] ?? 1, startRot, rotSpace, u, v, startAngle };
+    modal = { type: 'camera-rotate', camId: cam.id, centroid: pivot, axis: axArr, axisKey: axis, axisIndex: AXIS_INDEX[axis] ?? 1, startRot, rotSpace, startQ, startDist, u, v, startAngle };
     setDragAxisHighlight(modal);
     controls.enabled = false;
     return;
@@ -372,6 +374,7 @@ export function screenAngleAt(clientX, clientY, centroid) {
 // 绕世界轴 axis（单位向量）旋转 angle（弧度），复合到 startRot（度）。
 // 使用四元数增量累积，避免欧拉 gimbal lock 导致 Y=90° 附近值跳变。
 // rot 轨道为 extrinsic XYZ（先绕 X、再绕 Y、再绕 Z，等价 THREE.Euler 'ZYX'）。
+// 提取欧拉后选与 startRot 数值连续的等价表示：越过 ±90° 时其它分量不再翻转 ±180。
 export function applyWorldRotation(startRot, axis, angle) {
   const qBase = new THREE.Quaternion().setFromEuler(
     new THREE.Euler(startRot[0] * DEG2RAD, startRot[1] * DEG2RAD, startRot[2] * DEG2RAD, 'ZYX'));
@@ -379,7 +382,7 @@ export function applyWorldRotation(startRot, axis, angle) {
     new THREE.Vector3(axis[0], axis[1], axis[2]), angle);
   const qNew = qDelta.multiply(qBase); // 世界轴旋转在左侧乘
   const eNew = new THREE.Euler().setFromQuaternion(qNew, 'ZYX');
-  return [eNew.x * RAD2DEG, eNew.y * RAD2DEG, eNew.z * RAD2DEG];
+  return eulerNearPrevDeg([eNew.x * RAD2DEG, eNew.y * RAD2DEG, eNew.z * RAD2DEG], startRot);
 }
 
 // 自转欧拉角（度）→ THREE.Quaternion（space: 'world' | 'local'）。
@@ -405,7 +408,10 @@ export function enterViewRotate(clientX, clientY) {
     const T = Math.round(state.time);
     const startRot = rotVectorAt('c:' + cam.id, T);
     const rotSpace = cam.rotSpace === 'world' ? 'world' : 'local';
-    modal = { type: 'camera-view-rotate', camId: cam.id, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot, rotSpace, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
+    // 拖动期间冻结朝向与环半径（与轴环拖拽一致）
+    const startQ = camOrientationQuaternion(cam.id, state.time) || new THREE.Quaternion();
+    const startDist = Math.hypot(pose.pos[0] - c[0], pose.pos[1] - c[1], pose.pos[2] - c[2]);
+    modal = { type: 'camera-view-rotate', camId: cam.id, centroid: c, view: true, lookAxis: viewAxisOf(c), startRot, rotSpace, startQ, startDist, angle: 0, lastAngle: screenAngleAt(clientX, clientY, c) };
     controls.enabled = false;
     return;
   }
@@ -464,7 +470,8 @@ export function updateViewRotate(clientX, clientY) {
     const t = state.captureKeyframes ? Math.round(state.time) : 0;
     let newRot;
     if (m.rotSpace === 'local') {
-      const q = camOrientationQuaternion(m.camId, state.time) || new THREE.Quaternion();
+      // 拖动期间轴冻结：视线轴变换用按下瞬间的朝向（m.startQ）
+      const q = m.startQ || camOrientationQuaternion(m.camId, state.time) || new THREE.Quaternion();
       const localAxis = new THREE.Vector3(a[0], a[1], a[2]).applyQuaternion(q.clone().conjugate());
       newRot = applyLocalOrbitRotationVec(m.startRot, [localAxis.x, localAxis.y, localAxis.z], angle);
     } else {
@@ -807,24 +814,43 @@ export function hitGizmoAxis(clientX, clientY) {
   return null;
 }
 
-// 鼠标到轴环的最小距离 + 命中的轴（null 表示未命中）
+// 鼠标到轴环的最小距离 + 命中的轴（null 表示未命中）。
+// 解析法：把鼠标射线与「过中心、法线为轴」的平面求交，取交点到中心距离与环半径的差，
+// 换算成屏幕像素；命中须落在当前可见的环段上。比「逐段取中点」更精确，
+// 摄像机公转的大半径环（段中点屏幕间距远大于命中阈值）也能稳定命中。
 export function ringHitInfo(clientX, clientY) {
   if (!gizmoGroup.visible) return null;
-  const c = [gizmoGroup.position.x, gizmoGroup.position.y, gizmoGroup.position.z];
-  const rect = renderer.domElement.getBoundingClientRect();
-  const px = clientX - rect.left, py = clientY - rect.top;
+  screenToNdc(clientX, clientY);
+  raycaster.setFromCamera(pointer, camera);
+  const c = gizmoGroup.position;
   const scale = gizmoGroup.scale.x || 1;
+  const radius = 0.5 * scale;
   const rotQ = gizmoRotateGroup.quaternion;
+  const invQ = new THREE.Quaternion().copy(rotQ).invert();
+  const viewDir = camera.getWorldDirection(new THREE.Vector3());
   let bestAxis = null, bestDist = Infinity;
   for (const ax of ['X', 'Y', 'Z']) {
-    const segs = gizmoRingSegs[ax], dirs = gizmoRingSegDirs[ax];
-    for (let i = 0; i < segs.length; i++) {
-      if (!segs[i].visible) continue;
-      const d = dirs[i].clone().applyQuaternion(rotQ); // 本地 -> 世界
-      const p = projectToScreen(c[0] + d.x * 0.5 * scale, c[1] + d.y * 0.5 * scale, c[2] + d.z * 0.5 * scale);
-      const dist = Math.hypot(px - p.x, py - p.y);
-      if (dist < bestDist) { bestDist = dist; bestAxis = ax; }
-    }
+    const n = new THREE.Vector3(...RING_NORMALS[ax]).applyQuaternion(rotQ);
+    const plane = new THREE.Plane(n, -n.dot(c));
+    const hit = new THREE.Vector3();
+    if (!raycaster.ray.intersectPlane(plane, hit)) continue;
+    const d = hit.sub(c);
+    const worldDist = Math.abs(d.length() - radius);
+    const hitDepth = Math.max(0.5, hit.clone().sub(camera.position).dot(viewDir));
+    const screenDist = worldDist * focalLengthPx() / hitDepth;
+    if (screenDist >= bestDist) continue;
+    // 最近环段方向（环局部坐标）：用段 0 中点方向 + 轴法线构造平面内正交基
+    const dLocal = d.clone().applyQuaternion(invQ).normalize();
+    const nLocal = new THREE.Vector3(...RING_NORMALS[ax]);
+    const e1 = gizmoRingSegDirs[ax][0];
+    const e2 = new THREE.Vector3().crossVectors(nLocal, e1);
+    let ang = Math.atan2(dLocal.dot(e2), dLocal.dot(e1));
+    if (ang < 0) ang += Math.PI * 2;
+    const idx = Math.floor(ang / RING_SEG_ARC) % RING_SEGMENTS;
+    const seg = gizmoRingSegs[ax][idx];
+    if (!seg || !seg.visible) continue;
+    bestDist = screenDist;
+    bestAxis = ax;
   }
   return bestAxis ? { axis: bestAxis, dist: bestDist } : null;
 }
