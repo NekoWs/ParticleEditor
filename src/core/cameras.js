@@ -19,6 +19,10 @@ const DEG2RAD = Math.PI / 180;
 // 摄像机对象默认 FOV
 export const DEFAULT_FOV = 50;
 
+// 从自由视角切到摄像机前的自由视角快照（切回默认时恢复）。
+// 仅当当前不在摄像机锁定态（activeCamera 为 null）时在 lockCamera 内保存。
+let savedFreePose = null;
+
 // 摄像机 id 前缀（轨道 ids 用 'c:cam1'）
 export function camTrackId(id) { return 'c:' + id; }
 
@@ -130,12 +134,19 @@ export function lockCamera(id) {
   }
   const cam = getCamera(id);
   if (!cam) return;
+  // 从自由视角切入时保存自由视角，切回默认（unlockCamera）时恢复
+  if (!state.activeCamera) savedFreePose = snapshotCamera();
   state.activeCamera = id;
   applyCameraPose(id, state.time);
 }
 
 export function unlockCamera() {
   state.activeCamera = null;
+  // 恢复切走前的自由视角（若曾从自由视角切入摄像机）
+  if (savedFreePose) {
+    applyPose(savedFreePose);
+    savedFreePose = null;
+  }
 }
 
 // 默认摄像机实时镜像：直接返回当前相机快照（无需存储）

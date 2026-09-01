@@ -286,12 +286,12 @@ function renderFlatRow(row) {
       div.dataset.camid = row.cam.id;
       if (state.activeCamera === row.cam.id) div.classList.add('selected');
       div.appendChild(makeArrow(row.key, expanded));
+      const icon = el('span', 'tt-cam-icon');
+      icon.textContent = '🎥';
+      div.appendChild(icon);
       const label = el('span', 'tt-label');
       label.textContent = row.cam.name;
       label.title = row.cam.name;
-      const icon = el('span', 'tt-cam-icon');
-      icon.textContent = '🎥';
-      div.insertBefore(icon, label);
       div.appendChild(label);
       break;
     }

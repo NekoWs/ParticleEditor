@@ -140,7 +140,8 @@ function handleCameraTabClick(ev) {
     const idx = state.cameras.indexOf(cam);
     if (idx >= 0) state.cameras.splice(idx, 1);
     state.tracks = state.tracks.filter(tr => !(tr.ids && tr.ids.includes('c:' + id)));
-    unlockCamera();
+    // 仅删除当前锁定的摄像机时才解锁回默认；删除其它摄像机不改变当前视角
+    if (state.activeCamera === id) unlockCamera();
     refreshCameraTabs();
     refreshTimelineTree();
     return;
