@@ -8,7 +8,7 @@ import { base64ToBytes, bytesToBase64, signData, verifyData } from './crypto.js'
 import { EASING_NONE } from './easing-constants.js';
 
 export const PDRAWC_MAGIC = new Uint8Array([0x50, 0x44, 0x43, 0x31]); // "PDC1"
-export const PDRAWC_VERSION = 6;
+export const PDRAWC_VERSION = 7;
 export const PDRAWC_SIG_LEN = 64;
 export const PDRAWC_PUB_LEN = 32;
 
@@ -22,6 +22,7 @@ export const PR_ENUM = {
   'spin.x': 16, 'spin.y': 17, 'spin.z': 18,
   'center.x': 19, 'center.y': 20, 'center.z': 21,
   'fov': 22,
+  'target.x': 23, 'target.y': 24, 'target.z': 25,
 };
 export const PR_BY_ENUM = Object.fromEntries(Object.entries(PR_ENUM).map(([k, v]) => [v, k]));
 
@@ -272,7 +273,7 @@ function encodeBody(state, texPngOf) {
     }
   }
 
-  // 摄像机对象（v6 新增；供播放端按 id 查询位置/旋转/FOV 关键帧）
+  // 摄像机对象（v6 新增；v7 起朝向改为 target 目标点 + roll 翻滚角）
   const cameras = state.cameras || [];
   const cameraIndex = new Map(cameras.map((c, i) => [c.id, i]));
   w.varint(cameras.length);
@@ -280,7 +281,9 @@ function encodeBody(state, texPngOf) {
     w.str(c.id || '');
     w.str(c.name || '');
     w.f32(c.pos[0]); w.f32(c.pos[1]); w.f32(c.pos[2]);
-    w.f32(c.rot[0]); w.f32(c.rot[1]); w.f32(c.rot[2]);
+    const t = c.target || [0, 0, 0];
+    w.f32(t[0]); w.f32(t[1]); w.f32(t[2]);
+    w.f32(c.roll != null ? c.roll : 0);
     w.f32(c.fov != null ? c.fov : 50);
   }
 
@@ -495,9 +498,10 @@ export async function decodePdrawc(bytes) {
     const id = br.str();
     const name = br.str();
     const pos = [br.f32(), br.f32(), br.f32()];
-    const rot = [br.f32(), br.f32(), br.f32()];
+    const target = [br.f32(), br.f32(), br.f32()];
+    const roll = br.f32();
     const fov = br.f32();
-    cameras.push({ id, name, pos, rot, fov });
+    cameras.push({ id, name, pos, target, roll, fov });
   }
 
   const trackCount = br.varint();

@@ -5,7 +5,7 @@
  * ======================================================================= */
 
 import {PARTICLE_SIZE_FACTOR, state, functionIndexCache, effMaxFrame, autoFramesFor} from '../core/constants.js';
-import { points, selectedPoints, previewPoints, texAtlasMap, camera, cameraWidgetMap, buildCameraWidget, removeCameraWidget, CAM_WIDGET_COLOR, CAM_WIDGET_ACTIVE_COLOR } from './scene.js';
+import { points, selectedPoints, previewPoints, texAtlasMap, camera, cameraWidgetMap, buildCameraWidget, removeCameraWidget } from './scene.js';
 import { cameraPoseAt } from '../core/cameras.js';
 import { resolveUV, refreshUVPanel } from '../ui/texture-editor.js';
 import { updateGizmo } from '../interaction/gizmo.js';
@@ -496,13 +496,13 @@ export function updateCameraWidgets(T) {
     const pose = cameraPoseAt(cam.id, T);
     if (pose) {
       w.group.position.set(pose.pos[0], pose.pos[1], pose.pos[2]);
-      w.group.quaternion.setFromEuler(
-        new THREE.Euler(pose.rot[0] * CAM_DEG2RAD, pose.rot[1] * CAM_DEG2RAD, pose.rot[2] * CAM_DEG2RAD, 'XYZ')
-      );
+      w.group.up.set(0, 1, 0);
+      w.group.lookAt(pose.target[0], pose.target[1], pose.target[2]);
+      if (pose.roll) w.group.rotateZ(pose.roll * CAM_DEG2RAD);
       setFrustumVertices(w, pose.fov, camera.aspect);
     }
-    const color = state.activeCamera === cam.id ? CAM_WIDGET_ACTIVE_COLOR : CAM_WIDGET_COLOR;
-    if (w.mat.color.getHex() !== color) w.mat.color.set(color);
+    // 切换到某摄像机（activeCamera）时完全隐藏该摄像机的 widget，避免视角中出现橙色方框
+    w.group.visible = state.activeCamera !== cam.id;
   }
   for (const id in cameraWidgetMap) {
     if (!seen.has(id)) {

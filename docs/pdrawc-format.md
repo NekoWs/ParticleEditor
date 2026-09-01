@@ -29,7 +29,8 @@
 ```
 
 **版本**：
-- `v6`（当前）：新增摄像机对象（`cameras` section + 摄像机轨道引用 kind=3 + `fov` pr）。
+- `v7`（当前）：摄像机朝向改为「看向目标点」`target` + 翻滚角 `roll`（pitch/yaw 由 lookAt 自动计算），新增 `target.x/y/z` pr 枚举。
+- `v6`（旧版）：新增摄像机对象（`cameras` section + 摄像机轨道引用 kind=3 + `fov` pr）；读取端**拒绝**。
 - `v5`（旧版）：`body` 为 **raw DEFLATE**（RFC 1951，无 zlib/gzip 头尾）压缩后的字节；新增组级/函数对象级**自转空间**（world/local）。
 - `v4`（旧版）：新增 `spin`/`center` 轨道；读取端**拒绝**。
 - `v3`（旧版）：`body` 为 raw DEFLATE，函数对象使用 `setup/process/seed`；读取端**拒绝**。
@@ -155,13 +156,15 @@ count × {
   nameLen                   varint
   name                      nameLen 字节 UTF-8（编辑器用户可见名称）
   pos                       3 × float32：[x,y,z]（世界坐标）
-  rot                       3 × float32：[pitch,yaw,roll]（欧拉角，度，XYZ 顺序）
+  target                    3 × float32：[x,y,z]（看向目标点，世界坐标；v7 起替代 rot）
+  roll                      float32：翻滚角（度，绕视线方向，静态基础值；v7 起）
   fov                       float32：视场角（度）
 }
 ```
 
-摄像机的位置/旋转/FOV 关键帧走 §2.7 tracks（轨道 id 为 `c:<id>`，pr 为 `pos.x`/`rot.y`/`fov` 等）。
-播放端**不自动改变玩家相机**，仅按 id 查询姿态数据（见 §7 运行时合成 id）。
+摄像机的位置/目标/FOV 关键帧走 §2.7 tracks（轨道 id 为 `c:<id>`，pr 为 `pos.x`/`target.y`/`fov` 等；
+`roll` 无轨道）。播放端**不自动改变玩家相机**，仅按 id 查询姿态数据（见 §7 运行时合成 id）。
+姿态 = `lookAt(pos, target)`（up=(0,1,0)）+ 绕视线方向翻滚 `roll`。
 
 ### 2.7 tracks
 
@@ -233,7 +236,8 @@ tag                        1 byte：
 | 4 | vel.y | 12 | scl.z | 20 | center.y |
 | 5 | vel.z | 13 | rot.x | 21 | center.z |
 | 6 | col.r | 14 | rot.y | 22 | fov |
-| 7 | col.g | 15 | rot.z | | |
+| 7 | col.g | 15 | rot.z | 23 | target.x |
+| 24 | target.y | 25 | target.z | | |
 
 ---
 

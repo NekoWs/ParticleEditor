@@ -43,7 +43,7 @@ export function baseValueFor(id, prop, comp) {
     if (!cam) return 0;
     if (prop === 'fov') return cam.fov;
     if (prop === 'pos') return cam.pos[COMP_INDEX[comp]];
-    if (prop === 'rot') return cam.rot[COMP_INDEX[comp]];
+    if (prop === 'target') return (cam.target || [0, 0, 0])[COMP_INDEX[comp]];
     return 0;
   }
   const p = getParticle(id);
@@ -250,7 +250,7 @@ export function editComponentValue(id, prop, comp, time, value) {
     const cam = getCamera(id.slice(2));
     if (cam) {
       if (prop === 'pos') cam.pos[COMP_INDEX[comp]] = value;
-      else if (prop === 'rot') cam.rot[COMP_INDEX[comp]] = value;
+      else if (prop === 'target') (cam.target || (cam.target = [0, 0, 0]))[COMP_INDEX[comp]] = value;
       else if (prop === 'fov') cam.fov = value;
     }
   }

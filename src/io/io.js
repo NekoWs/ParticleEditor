@@ -10,6 +10,7 @@ import { rebuildPoints } from '../core/animation.js';
 import { updateLoopIndicator, refreshFunctionPanel } from '../ui/panels.js';
 import { updateTimeUI, refreshCameraTabs } from '../main.js';
 import { rebuildFunctionObject } from '../core/generators.js';
+import { rotToTarget } from '../core/cam-math.js';
 import { markTextureChanged, refreshTexturePanel } from '../ui/texture-editor.js';
 import { buildModal, modalPrompt, modalAlert } from '../ui/ui.js';
 import { generateKeyPair, KEY_ALG, base64ToBytes, bytesToBase64 } from '../core/crypto.js';
@@ -222,14 +223,15 @@ export function exportProject() {
   for (const [name, space] of Object.entries(state.groupSpinSpace || {})) if (space === 'local') gss[name] = 1;
   const grs = {};
   for (const [name, space] of Object.entries(state.groupRotSpace || {})) if (space === 'local') grs[name] = 1;
-  const result = { v: 8, loop: state.loop, g, p, t, f, tex, guv };
+  const result = { v: 9, loop: state.loop, g, p, t, f, tex, guv };
   if (Object.keys(gss).length > 0) result.gss = gss;
   if (Object.keys(grs).length > 0) result.grs = grs;
   // 摄像机对象（v8 新增；默认摄像机不持久化，仅存用户新建的摄像机）
+  // v9 起：朝向改为 target 目标点 + roll 翻滚角（pitch/yaw 由 lookAt 自动计算）
   if (state.cameras.length > 0) {
     result.cam = state.cameras.map(c => ({
       id: c.id, name: c.name,
-      pos: c.pos.map(r3), rot: c.rot.map(r3), fov: r3(c.fov),
+      pos: c.pos.map(r3), target: (c.target || [0, 0, 0]).map(r3), roll: r3(c.roll || 0), fov: r3(c.fov),
     }));
   }
   if (state.key) result.key = { alg: KEY_ALG, private: state.key.private, public: state.key.public };
@@ -271,13 +273,25 @@ export function parseParticlesTracks(obj) {
     };
   });
   state.loop = !!obj.loop;
-  state.cameras = (obj.cam || []).map(c => ({
-    id: String(c.id || ''),
-    name: c.name || '',
-    pos: (c.pos || [0, 0, 0]).map(Number).slice(0, 3),
-    rot: (c.rot || [0, 0, 0]).map(Number).slice(0, 3),
-    fov: Number.isFinite(Number(c.fov)) ? Number(c.fov) : 50,
-  })).filter(c => c.id);
+  state.cameras = (obj.cam || []).map(c => {
+    const pos = (c.pos || [0, 0, 0]).map(Number).slice(0, 3);
+    // v9 起存 target + roll；旧 v8 存 rot 欧拉角时反推 target（roll = 旧 rot[2]）
+    let target = (c.target || null);
+    let roll = Number.isFinite(Number(c.roll)) ? Number(c.roll) : 0;
+    if (!target && Array.isArray(c.rot)) {
+      const rot = c.rot.map(Number).slice(0, 3);
+      target = rotToTarget(pos, rot);
+      roll = rot[2];
+    }
+    return {
+      id: String(c.id || ''),
+      name: c.name || '',
+      pos,
+      target: (target || [0, 0, 0]).map(Number).slice(0, 3),
+      roll,
+      fov: Number.isFinite(Number(c.fov)) ? Number(c.fov) : 50,
+    };
+  }).filter(c => c.id);
 }
 
 export async function importProject(obj) {
@@ -331,7 +345,7 @@ export async function loadFile(file) {
   const text = await file.text();
   const obj = JSON.parse(text);
   if (file.name.toLowerCase().endsWith('.pdraw') || obj.f || obj.v >= 2) {
-    if (obj.v !== 7 && obj.v !== 8) {
+    if (obj.v !== 7 && obj.v !== 8 && obj.v !== 9) {
       modalAlert(t('filePicker.oldVersionTitle'), t('filePicker.oldVersionMsg'));
       return;
     }

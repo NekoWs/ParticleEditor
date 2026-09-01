@@ -19,7 +19,7 @@ import { varKfValue, ATTR_NAMES, FUNCS } from '../core/easing.js';
 import { modalAlert } from './ui.js';
 import { rebuildPoints } from '../core/animation.js';
 import { refreshFunctionPanel, commitFunctionRebuild } from './panels.js';
-import { camTrackId, lockCamera } from '../core/cameras.js';
+import { camTrackId } from '../core/cameras.js';
 
 export const TL_TREE_ROW_H = 22;
 export const tlTreeState = { expanded: new Set() };
@@ -284,7 +284,7 @@ function renderFlatRow(row) {
     case 'camera': {
       div.dataset.selkind = 'camera';
       div.dataset.camid = row.cam.id;
-      if (state.activeCamera === row.cam.id) div.classList.add('selected');
+      if (state.selectedCamera === row.cam.id) div.classList.add('selected');
       div.appendChild(makeArrow(row.key, expanded));
       const icon = el('span', 'tt-cam-icon');
       icon.textContent = '🎥';
@@ -310,8 +310,7 @@ function renderFlatRow(row) {
     case 'prop': {
       div.appendChild(makeArrow(row.key, expanded));
       const label = el('span', 'tt-plabel');
-      // 摄像机旋转是欧拉角，标签用「旋转」；其余用通用属性标签
-      label.textContent = (row.id.startsWith('c:') && row.prop === 'rot') ? t('cam.rotation') : t('prop.' + row.prop);
+      label.textContent = t('prop.' + row.prop);
       div.appendChild(label);
 
       // FOV 标量行：单输入框 + 加帧按钮（无 XYZ 三段、无展开分量）
@@ -596,16 +595,16 @@ function onTreeClick(ev) {
   if (selkind === 'camera') {
     const camid = rowEl.dataset.camid;
     if (!camid) return;
+    // 点击摄像机行仅选中并展开属性，不切换视角（视角切换走顶部选项卡）
     state.selected.clear();
     state.selectedGroup = null;
     state.selectedFunction = null;
-    lockCamera(camid);
+    state.selectedCamera = camid;
     tlTreeAnchor = { kind: 'camera', id: camid };
+    // 展开该摄像机属性行，便于直接编辑
+    tlTreeState.expanded.add('c:' + camid);
+    refreshTimelineTree(true);
     syncSelectionClasses();
-    // 同步顶部摄像机选项卡高亮（不引入 main.js 依赖）
-    document.querySelectorAll('#camera-tabs .cam-tab').forEach(t => {
-      t.classList.toggle('active', t.dataset.camId === camid);
-    });
   }
 }
 
@@ -632,7 +631,7 @@ function syncSelectionClasses() {
     r.classList.toggle('selected', state.selectedFunction === r.dataset.fxid);
   });
   root.querySelectorAll('.tt-camera').forEach(r => {
-    r.classList.toggle('selected', state.activeCamera === r.dataset.camid);
+    r.classList.toggle('selected', state.selectedCamera === r.dataset.camid);
   });
 }
 

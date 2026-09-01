@@ -52,6 +52,7 @@ export const TRACK_COMPS = {
   rot: ['x', 'y', 'z'],     // 公转（绕 center）
   spin: ['x', 'y', 'z'],    // 自转（绕自身中心）
   center: ['x', 'y', 'z'],  // 公转中心（世界坐标）
+  target: ['x', 'y', 'z'],  // 摄像机看向目标点（世界坐标）
   vel: ['x', 'y', 'z'],
   col: ['r', 'g', 'b', 'a'],
   scl: ['x', 'y', 'z'],
@@ -71,15 +72,15 @@ export function propComps(id, prop) {
 }
 
 // 属性 / 分量 显示标签
-export const PROP_LABELS = { pos: '位置', rot: '公转', spin: '自转', center: '公转中心', vel: '速度', col: '颜色', scl: '缩放', fov: 'FOV' };
+export const PROP_LABELS = { pos: '位置', rot: '公转', spin: '自转', center: '公转中心', vel: '速度', col: '颜色', scl: '缩放', fov: 'FOV', target: '目标' };
 export const COMP_LABELS = { x: 'X', y: 'Y', z: 'Z', r: 'R', g: 'G', b: 'B', a: 'A' };
 
 // 各对象类型可动画的属性（普通粒子无自转，仅有公转与公转中心）
 export const PARTICLE_TRACK_DEFS = ['pos', 'rot', 'center', 'vel', 'col', 'scl'];
 export const GROUP_PROP_DEFS = ['pos', 'rot', 'spin', 'center', 'vel', 'col', 'scl'];
 export const FUNCTION_PROP_DEFS = ['pos', 'rot', 'spin', 'center', 'scl'];
-// 摄像机可动画属性：位置/旋转(欧拉角)/FOV
-export const CAMERA_PROP_DEFS = ['pos', 'rot', 'fov'];
+// 摄像机可动画属性：位置/看向目标点/FOV（朝向由 lookAt(target) 自动计算，roll 为静态基值）
+export const CAMERA_PROP_DEFS = ['pos', 'target', 'fov'];
 
 // 分量轨道 pr 拼接 / 解析
 export function compPr(prop, comp) { return comp ? prop + '.' + comp : prop; }
@@ -185,8 +186,9 @@ export const state = {
   groupUV: {},           // 组级 UV/贴图设置（继承 f > g > p）
   groupSpinSpace: {},    // 组级自转空间（'world' | 'local'；缺省 world）
   groupRotSpace: {},     // 组级公转空间（'world' | 'local'；缺省 world）
-  cameras: [],           // 摄像机对象数组：{ id,name,pos:[x,y,z],rot:[pitch,yaw,roll](度),fov }
+  cameras: [],           // 摄像机对象数组：{ id,name,pos:[x,y,z],target:[x,y,z],roll(度),fov }
   activeCamera: null,    // 当前锁定的摄像机 id（null = 默认/自由视角）
+  selectedCamera: null,  // 在底部时间轴树选中的摄像机 id（与 activeCamera 视角切换分离）
 };
 
 export function setDirty(v) {
@@ -199,7 +201,7 @@ export function setDirty(v) {
 export function clearObjectState() {
   state.particles = []; state.tracks = []; state.groups = {}; state.functions = [];
   state.textures = {}; state.currentTexture = null; state.groupUV = {}; state.groupSpinSpace = {}; state.groupRotSpace = {};
-  state.cameras = []; state.activeCamera = null;
+  state.cameras = []; state.activeCamera = null; state.selectedCamera = null;
   state.selected.clear(); state.selectedGroup = null; state.selectedFunction = null;
   state.expandedParticles.clear(); state.expandedProps.clear();
   state.time = 0;

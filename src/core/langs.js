@@ -25,7 +25,7 @@ export var LANGS = {
     // —— 属性面板 ——
     'props.opacity': '透明度', 'props.scale': '缩放', 'props.glow': '发光', 'props.light': '光照等级',
     'props.life': '寿命(tick)', 'props.lifeHint': '-1 或留空 = 无限（活到动画结束）',
-    'prop.pos': '位置', 'prop.rot': '公转', 'prop.spin': '自转', 'prop.center': '公转中心', 'prop.vel': '速度', 'prop.col': '颜色', 'prop.scl': '缩放', 'prop.fov': 'FOV',
+    'prop.pos': '位置', 'prop.target': '目标', 'prop.rot': '公转', 'prop.spin': '自转', 'prop.center': '公转中心', 'prop.vel': '速度', 'prop.col': '颜色', 'prop.scl': '缩放', 'prop.fov': 'FOV',
     // —— 函数对象 ——
     'fx.addPresetTitle': '按预设新建函数对象', 'fx.noSelection': '选中一个函数对象以编辑属性',
     'fx.exprError': '表达式错误', 'fx.name': '名称 ', 'fx.sampleCount': '采样数 ', 'fx.center': '中心点 ',
@@ -105,7 +105,7 @@ export var LANGS = {
     'default.particleName': '粒子', 'default.groupName': '组', 'default.cameraName': '摄像机',
     // —— 摄像机 ——
     'tool.camera': '新建摄像机（点按放置）',
-    'cam.default': '默认', 'cam.rotation': '旋转',
+    'cam.default': '默认',
     // —— 贴图提示 ——
     'alert.uploadFailed': '上传失败', 'alert.texTooBig': '贴图超过 5MB 上限', 'alert.pngOnly': '仅支持 PNG 格式',
     'alert.pngParseFail': '无法解析该 PNG 文件', 'alert.exportFailed': '导出失败',
@@ -224,7 +224,7 @@ export var LANGS = {
     // —— 属性面板 ——
     'props.opacity': 'Opacity', 'props.scale': 'Scale', 'props.glow': 'Glow', 'props.light': 'Light Level',
     'props.life': 'Life (tick)', 'props.lifeHint': '-1 or empty = infinite (lives until animation ends)',
-    'prop.pos': 'Position', 'prop.rot': 'Orbit', 'prop.spin': 'Spin', 'prop.center': 'Orbit Center', 'prop.vel': 'Velocity', 'prop.col': 'Color', 'prop.scl': 'Scale', 'prop.fov': 'FOV',
+    'prop.pos': 'Position', 'prop.target': 'Target', 'prop.rot': 'Orbit', 'prop.spin': 'Spin', 'prop.center': 'Orbit Center', 'prop.vel': 'Velocity', 'prop.col': 'Color', 'prop.scl': 'Scale', 'prop.fov': 'FOV',
     // —— 函数对象 ——
     'fx.addPresetTitle': 'Create function object from preset', 'fx.noSelection': 'Select a function object to edit its properties',
     'fx.exprError': 'Expression Error', 'fx.name': 'Name ', 'fx.sampleCount': 'Sample Count ', 'fx.center': 'Center ',
@@ -307,7 +307,7 @@ export var LANGS = {
     'default.particleName': 'Particle', 'default.groupName': 'Group', 'default.cameraName': 'Camera',
     // —— 摄像机 ——
     'tool.camera': 'New camera (click to place)',
-    'cam.default': 'Default', 'cam.rotation': 'Rotation',
+    'cam.default': 'Default',
     // —— 贴图提示 ——
     'alert.uploadFailed': 'Upload Failed', 'alert.texTooBig': 'Texture exceeds the 5MB limit', 'alert.pngOnly': 'Only PNG format is supported',
     'alert.pngParseFail': 'Unable to parse this PNG file', 'alert.exportFailed': 'Export Failed',
