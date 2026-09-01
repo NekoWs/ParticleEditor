@@ -39,6 +39,9 @@ export function snapshot() {
     particles: cloneParticles(state.particles),
     tracks: cloneTracks(state.tracks),
     groups: JSON.parse(JSON.stringify(state.groups)),
+    groupUV: { ...state.groupUV },
+    groupSpinSpace: { ...state.groupSpinSpace },
+    groupRotSpace: { ...state.groupRotSpace },
     functions: cloneFunctions(state.functions),
     name: state.name,
     loop: state.loop,
@@ -54,6 +57,9 @@ export function restore(s) {
   state.particles = cloneParticles(s.particles);
   state.tracks = cloneTracks(s.tracks);
   state.groups = JSON.parse(JSON.stringify(s.groups));
+  state.groupUV = { ...(s.groupUV || {}) };
+  state.groupSpinSpace = { ...(s.groupSpinSpace || {}) };
+  state.groupRotSpace = { ...(s.groupRotSpace || {}) };
   state.functions = cloneFunctions(s.functions);
   state.name = s.name;
   state.loop = s.loop;

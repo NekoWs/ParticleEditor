@@ -10,9 +10,9 @@
 import { t, tf, LANG } from '../core/i18n.js';
 import {
   state, propComps, COMP_LABELS, GROUP_PROP_DEFS, PARTICLE_TRACK_DEFS, FUNCTION_PROP_DEFS, CAMERA_PROP_DEFS,
-  getParticle, getFunction, isDerivedParticle, plainParticleCache,
+  getParticle, getFunction, getCamera, isDerivedParticle, plainParticleCache,
 } from '../core/constants.js';
-import { editComponentValue } from '../core/edit.js';
+import { editComponentValue, renameGroup, renameParticle } from '../core/edit.js';
 import { targetComponentValue, startRename } from './tree.js';
 import { pushUndo } from '../state/undo.js';
 import { varKfValue, ATTR_NAMES, FUNCS } from '../core/easing.js';
@@ -20,6 +20,7 @@ import { modalAlert } from './ui.js';
 import { rebuildPoints } from '../core/animation.js';
 import { refreshFunctionPanel, commitFunctionRebuild } from './panels.js';
 import { camTrackId } from '../core/cameras.js';
+import { refreshCameraTabs } from '../main.js';
 
 export const TL_TREE_ROW_H = 22;
 export const tlTreeState = { expanded: new Set() };
@@ -56,6 +57,17 @@ function makeArrow(key, expanded) {
 
 function makeSpacer() {
   return el('span', 'tt-arrow tt-arrow-spacer');
+}
+
+// 重命名后迁移展开状态键（'g:old'、'g:old|@members'、'p:old|pos|x' 等 → 新键）。
+function migrateExpandedKeys(oldKey, newKey) {
+  const next = new Set();
+  for (const k of tlTreeState.expanded) {
+    if (k === oldKey) next.add(newKey);
+    else if (k.startsWith(oldKey + '|')) next.add(newKey + k.slice(oldKey.length));
+    else next.add(k);
+  }
+  tlTreeState.expanded = next;
 }
 
 function toggleKey(key) {
@@ -242,7 +254,7 @@ function renderFlatRow(row) {
       div.appendChild(makeArrow(row.key, expanded));
       const label = el('span', 'tt-label');
       label.textContent = row.name;
-      label.title = row.name;
+      label.title = row.name + ' · ' + t('tree.dblclickRename');
       const count = el('span', 'tt-count');
       count.textContent = tf('tree.memberCount', row.members.length);
       div.appendChild(label);
@@ -256,7 +268,7 @@ function renderFlatRow(row) {
       div.appendChild(makeArrow(row.key, expanded));
       const label = el('span', 'tt-label');
       label.textContent = row.p.id;
-      label.title = row.p.id;
+      label.title = isDerivedParticle(row.p) ? row.p.id : row.p.id + ' · ' + t('tree.dblclickRename');
       div.appendChild(label);
       break;
     }
@@ -267,7 +279,7 @@ function renderFlatRow(row) {
       div.appendChild(makeArrow(row.key, expanded));
       const label = el('span', 'tt-label');
       label.textContent = row.fx.name;
-      label.title = row.fx.name;
+      label.title = row.fx.name + ' · ' + t('tree.dblclickRename');
       const count = el('span', 'tt-count');
       count.textContent = tf('tree.fxParticleCount', row.fx.count);
       div.appendChild(label);
@@ -291,7 +303,7 @@ function renderFlatRow(row) {
       div.appendChild(icon);
       const label = el('span', 'tt-label');
       label.textContent = row.cam.name;
-      label.title = row.cam.name;
+      label.title = row.cam.name + ' · ' + t('tree.dblclickRename');
       div.appendChild(label);
       break;
     }
@@ -608,10 +620,42 @@ function onTreeClick(ev) {
   }
 }
 
-// 双击整行展开/折叠（三角形点击仍即时切换）；输入框/按钮双击不触发。
+// 双击名字标签 → 行内重命名（输入框替换标签，回车确认 / Esc 取消 / 失焦提交）；
+// 双击行的其余部分 → 展开/折叠整行（三角形点击仍即时切换）。输入框/按钮双击不触发。
 function onTreeDblClick(ev) {
   const rowEl = ev.target.closest('.tt-row');
   if (!rowEl) return;
+  // 名字标签双击重命名（事件委托：行 DOM 可能在两次点击之间被重建，委托不受影响）
+  const nameLabel = ev.target.closest('.tt-label');
+  if (nameLabel) {
+    const selkind = rowEl.dataset.selkind;
+    if (selkind === 'group' && rowEl.dataset.gname) {
+      startRename(nameLabel, (v) => renameGroupUI(rowEl.dataset.gname, v), () => refreshTimelineTree(true));
+      return;
+    }
+    if (selkind === 'particle' && rowEl.dataset.pid) {
+      const p = getParticle(rowEl.dataset.pid);
+      if (p && !isDerivedParticle(p)) {
+        startRename(nameLabel, (v) => renameParticleUI(p, v), () => refreshTimelineTree(true));
+        return;
+      }
+    }
+    if (selkind === 'fx' && rowEl.dataset.fxid) {
+      const fx = getFunction(rowEl.dataset.fxid);
+      if (fx) {
+        startRename(nameLabel, (v) => renameFunctionUI(fx, v), () => refreshTimelineTree(true));
+        return;
+      }
+    }
+    if (selkind === 'camera' && rowEl.dataset.camid) {
+      const cam = getCamera(rowEl.dataset.camid);
+      if (cam) {
+        startRename(nameLabel, (v) => renameCameraUI(cam, v), () => refreshTimelineTree(true));
+        return;
+      }
+    }
+    // 未命中的标签双击按普通行处理：继续走展开/折叠
+  }
   const tlkey = rowEl.dataset.tlkey;
   if (!tlkey) return;
   if (ev.target.closest('input') || ev.target.closest('button') || ev.target.closest('.tt-arrow')) return;
@@ -667,6 +711,64 @@ function onTreeChange(ev) {
     commitFunctionRebuild(fx);
     refreshTimelineTree();
   }
+}
+
+// 重命名组（名字即组键，需同步轨道/选中/展开状态/组级贴图与空间设置）
+function renameGroupUI(oldName, raw) {
+  const nn = (raw || '').trim();
+  if (!nn || nn === oldName) { refreshTimelineTree(true); return; }
+  if (nn in state.groups) {
+    modalAlert(t('tree.hint'), tf('alert.nameTaken', nn));
+    refreshTimelineTree(true);
+    return;
+  }
+  if (!renameGroup(oldName, nn)) {
+    modalAlert(t('alert.renameFailed'), t('alert.nameEmpty'));
+    refreshTimelineTree(true);
+    return;
+  }
+  migrateExpandedKeys('g:' + oldName, 'g:' + nn);
+  refreshTimelineTree(true);
+}
+
+// 重命名普通粒子（派生粒子 id 是函数对象结构的一部分，不允许改名）
+function renameParticleUI(p, raw) {
+  if (isDerivedParticle(p)) { refreshTimelineTree(true); return; }
+  const nn = (raw || '').trim();
+  if (!nn || nn === p.id) { refreshTimelineTree(true); return; }
+  if (getParticle(nn)) {
+    modalAlert(t('tree.hint'), tf('alert.nameTaken', nn));
+    refreshTimelineTree(true);
+    return;
+  }
+  if (!renameParticle(p.id, nn)) {
+    modalAlert(t('alert.renameFailed'), t('alert.nameEmpty'));
+    refreshTimelineTree(true);
+    return;
+  }
+  if (tlTreeAnchor && tlTreeAnchor.kind === 'particle' && tlTreeAnchor.id === p.id) tlTreeAnchor.id = nn;
+  migrateExpandedKeys('p:' + p.id, 'p:' + nn);
+  refreshTimelineTree(true);
+}
+
+// 重命名函数对象（id 不变，仅改显示名）
+function renameFunctionUI(fx, raw) {
+  const nn = (raw || '').trim();
+  if (!nn || nn === fx.name) { refreshTimelineTree(true); return; }
+  pushUndo();
+  fx.name = nn;
+  refreshTimelineTree(true);
+  refreshFunctionPanel();
+}
+
+// 重命名摄像机（id 不变，仅改显示名；视口顶部选项卡同步刷新）
+function renameCameraUI(cam, raw) {
+  const nn = (raw || '').trim();
+  if (!nn || nn === cam.name) { refreshTimelineTree(true); return; }
+  pushUndo();
+  cam.name = nn;
+  refreshTimelineTree(true);
+  refreshCameraTabs();
 }
 
 function renameVariable(fx, oldName, raw) {

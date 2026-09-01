@@ -28,7 +28,7 @@ export var LANGS = {
     'prop.pos': '位置', 'prop.target': '目标', 'prop.rot': '公转', 'prop.spin': '自转', 'prop.center': '公转中心', 'prop.vel': '速度', 'prop.col': '颜色', 'prop.scl': '缩放', 'prop.fov': 'FOV',
     // —— 函数对象 ——
     'fx.addPresetTitle': '按预设新建函数对象', 'fx.noSelection': '选中一个函数对象以编辑属性',
-    'fx.exprError': '表达式错误', 'fx.name': '名称 ', 'fx.sampleCount': '采样数 ', 'fx.center': '中心点 ',
+    'fx.exprError': '表达式错误', 'fx.sampleCount': '采样数 ', 'fx.center': '中心点 ',
     'fx.noVars': '暂无变量',
     'fx.duration': '时长 ', 'fx.interval': ' 间隔 ', 'fx.codeBlock': '公式代码块', 'fx.puzzle': '🧩 拼图',
     'fx.setupBlock': '初始化', 'fx.processBlock': '粒子每帧', 'fx.funcsBlock': '顶层函数', 'fx.seed': '随机种子 ',
@@ -110,7 +110,7 @@ export var LANGS = {
     'alert.uploadFailed': '上传失败', 'alert.texTooBig': '贴图超过 5MB 上限', 'alert.pngOnly': '仅支持 PNG 格式',
     'alert.pngParseFail': '无法解析该 PNG 文件', 'alert.exportFailed': '导出失败',
     'alert.noTexture': '当前无贴图，请先新建或上传', 'alert.pngGenFail': '无法生成 PNG',
-    'alert.renameFailed': '重命名失败', 'alert.nameEmpty': '名称不能为空',
+    'alert.renameFailed': '重命名失败', 'alert.nameEmpty': '名称不能为空', 'alert.nameTaken': '已存在同名对象「{0}」',
     'alert.texExists': '已存在同名贴图「{0}」',
     'alert.deleteTexConfirm': '确定删除「{0}」吗？\n引用它的对象将恢复为无贴图。',
     // —— 表达式错误 ——
@@ -227,7 +227,7 @@ export var LANGS = {
     'prop.pos': 'Position', 'prop.target': 'Target', 'prop.rot': 'Orbit', 'prop.spin': 'Spin', 'prop.center': 'Orbit Center', 'prop.vel': 'Velocity', 'prop.col': 'Color', 'prop.scl': 'Scale', 'prop.fov': 'FOV',
     // —— 函数对象 ——
     'fx.addPresetTitle': 'Create function object from preset', 'fx.noSelection': 'Select a function object to edit its properties',
-    'fx.exprError': 'Expression Error', 'fx.name': 'Name ', 'fx.sampleCount': 'Sample Count ', 'fx.center': 'Center ',
+    'fx.exprError': 'Expression Error', 'fx.sampleCount': 'Sample Count ', 'fx.center': 'Center ',
     'fx.noVars': 'No variables',
     'fx.duration': 'Duration ', 'fx.interval': ' Interval ', 'fx.codeBlock': 'Code Block', 'fx.puzzle': '🧩 Puzzle',
     'fx.setupBlock': 'Init', 'fx.processBlock': 'Per Particle', 'fx.funcsBlock': 'Top-level Functions', 'fx.seed': 'Seed ',
@@ -312,7 +312,7 @@ export var LANGS = {
     'alert.uploadFailed': 'Upload Failed', 'alert.texTooBig': 'Texture exceeds the 5MB limit', 'alert.pngOnly': 'Only PNG format is supported',
     'alert.pngParseFail': 'Unable to parse this PNG file', 'alert.exportFailed': 'Export Failed',
     'alert.noTexture': 'No texture available. Create or upload one first.', 'alert.pngGenFail': 'Unable to generate PNG',
-    'alert.renameFailed': 'Rename Failed', 'alert.nameEmpty': 'Name cannot be empty',
+    'alert.renameFailed': 'Rename Failed', 'alert.nameEmpty': 'Name cannot be empty', 'alert.nameTaken': 'An object named "{0}" already exists',
     'alert.texExists': 'A texture named "{0}" already exists',
     'alert.deleteTexConfirm': 'Delete "{0}"?\nObjects referencing it will revert to no texture.',
     // —— 表达式错误 ——

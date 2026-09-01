@@ -342,16 +342,9 @@ export function buildFunctionPanel(fx) {
   const wrap = document.createElement('div');
   wrap.className = 'fx-panel';
 
-  const nameRow = document.createElement('label');
-  nameRow.className = 'row';
-  nameRow.textContent = t('fx.name');
-  const nameIn = document.createElement('input');
-  nameIn.type = 'text'; nameIn.value = fx.name;
-  nameIn.onchange = () => { pushUndo(); fx.name = nameIn.value.trim() || fx.name; };
-  nameRow.appendChild(nameIn);
-  wrap.appendChild(nameRow);
+  // 「名称」不再在此编辑：函数对象重命名走底部时间轴列表的名字行双击（行内编辑框）。
 
-  // 采样数（紧跟在名称下方）
+  // 采样数（面板首行）
   const countRow = document.createElement('label');
   countRow.className = 'row';
   countRow.textContent = t('fx.sampleCount');

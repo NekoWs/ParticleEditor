@@ -357,7 +357,11 @@ export function renameGroup(oldName, newName) {
   }
   if (state.selectedGroup === oldName) state.selectedGroup = newName;
   if (state.expandedParticles.has('g:' + oldName)) { state.expandedParticles.delete('g:' + oldName); state.expandedParticles.add('g:' + newName); }
-
+  // 组名键控的附属状态一并迁移（组级贴图/自转空间/公转空间）
+  if (oldName in state.groupUV) { state.groupUV[newName] = state.groupUV[oldName]; delete state.groupUV[oldName]; }
+  if (oldName in state.groupSpinSpace) { state.groupSpinSpace[newName] = state.groupSpinSpace[oldName]; delete state.groupSpinSpace[oldName]; }
+  if (oldName in state.groupRotSpace) { state.groupRotSpace[newName] = state.groupRotSpace[oldName]; delete state.groupRotSpace[oldName]; }
+  rebuildPoints();
   return true;
 }
 
