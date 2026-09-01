@@ -291,6 +291,7 @@ function finishImport(ids, cols, rows) {
   state.selected.clear();
   state.selectedGroup = groupName;
   state.selectedFunction = null;
+  state.selectedCamera = null; // 导入后选中新组，取消摄像机选中
   rebuildPoints();
   refreshTimelineTree();
   refreshAllPanelsLight();

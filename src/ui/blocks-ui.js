@@ -740,6 +740,7 @@ export function openBlockDrawer(fx) {
   state.selected.clear();
   state.selectedGroup = null;
   state.selectedFunction = null;
+  state.selectedCamera = null;
   if (typeof gizmoGroup !== 'undefined') gizmoGroup.visible = false;
 
   renderPalette();
@@ -812,6 +813,7 @@ export function closeBlockDrawer(commit) {
     state.selectedFunction = fx.id;
     state.selected.clear();
     state.selectedGroup = null;
+    state.selectedCamera = null; // 拼图编辑后选中函数对象，取消摄像机选中
     if (typeof rebuildPoints === 'function') rebuildPoints();
   }
   bctx = null;

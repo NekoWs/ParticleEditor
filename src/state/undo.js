@@ -48,6 +48,7 @@ export function snapshot() {
     selected: [...state.selected],
     selectedGroup: state.selectedGroup,
     selectedFunction: state.selectedFunction,
+    selectedCamera: state.selectedCamera,
     cameras: state.cameras.map(c => ({ id: c.id, name: c.name, pos: c.pos.slice(), target: (c.target || [0, 0, 0]).slice(), roll: c.roll || 0, fov: c.fov, rotSpace: c.rotSpace || 'local' })),
     activeCamera: state.activeCamera,
   };
@@ -66,6 +67,7 @@ export function restore(s) {
   state.selected = new Set(s.selected);
   state.selectedGroup = s.selectedGroup;
   state.selectedFunction = s.selectedFunction;
+  state.selectedCamera = s.selectedCamera || null;
   state.cameras = (s.cameras || []).map(c => ({ id: c.id, name: c.name, pos: c.pos.slice(), target: (c.target || [0, 0, 0]).slice(), roll: c.roll || 0, fov: c.fov, rotSpace: c.rotSpace || 'local' }));
   state.activeCamera = s.activeCamera || null;
   document.getElementById('tl-loop').checked = state.loop;

@@ -462,6 +462,7 @@ export function createFunctionObject(presetId) {
   state.selectedFunction = fx.id;
   state.selected = new Set();
   state.selectedGroup = null;
+  state.selectedCamera = null; // 新建函数对象即选中它，取消摄像机选中
   try {
     rebuildFunctionObject(fx);
   } catch (e) {

@@ -32,6 +32,7 @@ export function createGroup() {
   }
   state.groups[name] = [...idSet];
   state.selectedGroup = name;
+  state.selectedCamera = null; // 建组后选中组，取消摄像机选中
 }
 
 export function deleteGroup(name) {

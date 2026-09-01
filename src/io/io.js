@@ -308,7 +308,7 @@ export async function importProject(obj) {
   state.selectedFunction = null;
   document.getElementById('tl-loop').checked = state.loop;
   updateLoopIndicator();
-  state.selected.clear(); state.selectedGroup = null; state.time = 0;
+  state.selected.clear(); state.selectedGroup = null; state.selectedCamera = null; state.time = 0;
   state.expandedParticles.clear(); state.expandedProps.clear();
   state.activeCamera = null;
   for (const fx of state.functions) {

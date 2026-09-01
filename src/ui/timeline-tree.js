@@ -589,6 +589,7 @@ function onTreeClick(ev) {
     }
     state.selectedGroup = null;
     state.selectedFunction = null;
+    state.selectedCamera = null; // 选中其他对象即取消摄像机选中
     tlTreeAnchor = { kind: 'particle', id: pid };
     rebuildPoints();
     syncSelectionClasses();
@@ -600,6 +601,7 @@ function onTreeClick(ev) {
     state.selected.clear();
     state.selectedGroup = gname;
     state.selectedFunction = null;
+    state.selectedCamera = null; // 选中其他对象即取消摄像机选中
     tlTreeAnchor = { kind: 'group', id: gname };
     rebuildPoints();
     syncSelectionClasses();
@@ -611,6 +613,7 @@ function onTreeClick(ev) {
     state.selected.clear();
     state.selectedGroup = null;
     state.selectedFunction = fxid;
+    state.selectedCamera = null; // 选中其他对象即取消摄像机选中
     tlTreeAnchor = { kind: 'fx', id: fxid };
     rebuildPoints();
     refreshFunctionPanel();
@@ -677,7 +680,8 @@ function onTreeDblClick(ev) {
   toggleKey(tlkey);
 }
 
-function syncSelectionClasses() {
+// 轻量同步树的选中高亮（供视口选区变化等跨模块路径调用）。
+export function syncSelectionClasses() {
   const root = document.getElementById('tl-tree');
   if (!root) return;
   root.querySelectorAll('.tt-particle').forEach(r => {

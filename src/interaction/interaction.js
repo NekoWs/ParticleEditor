@@ -12,7 +12,7 @@ import { currentVisual, rebuildPoints, setPreview, clearPreview, rotVectorAt, sp
 import { screenToNdc, planePointAt, worldToUV, computeShapePositions, snapGrid, snapValue, pickParticleAt, particleAt, projectToScreen, distToSegment, planeInfo, selectionCentroid, updateGizmo, updateGizmoFrame } from './gizmo.js';
 import { groupCurrentCentroid, groupCentroidValue, deleteGroup, createGroup } from '../ui/tree.js';
 import { refreshFunctionPanel } from '../ui/panels.js';
-import { refreshTimelineTree } from '../ui/timeline-tree.js';
+import { refreshTimelineTree, syncSelectionClasses } from '../ui/timeline-tree.js';
 import { setFunctionTrackValue, setGroupTrackValue, setComponentKeyframe, editParticles, addParticle, autoGroup, removeGroupAndTracks } from '../core/edit.js';
 import { pushUndo, restore, undoStack, undo, redo } from '../state/undo.js';
 import { deleteFunctionObject } from '../core/generators.js';
@@ -115,6 +115,7 @@ function promoteDerivedToFunction() {
   if (!fxId || !getFunction(fxId)) return null;
   state.selectedFunction = fxId;
   state.selectedGroup = null;
+  state.selectedCamera = null;
   state.selected.clear();
   return fxId;
 }
@@ -728,7 +729,9 @@ export function selectAll() {
   else state.selected = new Set(state.particles.map(p => p.id));
   state.selectedGroup = null;
   state.selectedFunction = null;
+  state.selectedCamera = null; // 选中其他对象即取消摄像机选中
   rebuildPoints();
+  syncSelectionClasses();
 }
 
 export let clipboard = null;
@@ -783,12 +786,15 @@ export function pasteClipboard() {
     }
     state.selectedGroup = newGroupName;
     state.selectedFunction = null;
+    state.selectedCamera = null; // 粘贴后选中新对象，取消摄像机选中
   } else {
     state.selectedGroup = null;
     state.selectedFunction = null;
+    state.selectedCamera = null;
   }
   state.selected = new Set(newIds);
   rebuildPoints();
+  syncSelectionClasses();
 }
 
 export function raycastGizmoMeshes(clientX, clientY, meshes) {
@@ -944,8 +950,10 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
           if (ev.shiftKey) { state.selected.has(p.id) ? state.selected.delete(p.id) : state.selected.add(p.id); }
           else if (!state.selected.has(p.id)) { state.selected.clear(); state.selected.add(p.id); }
           state.selectedFunction = null;
+          state.selectedCamera = null; // 视口选中粒子即取消摄像机选中
           promoteGroupSelection();
           rebuildPoints();
+          syncSelectionClasses();
           // 选择工具：点选后立即进入拖动；移动/旋转工具仅选中
           if (state.tool === 'select') enterGrab(ev.clientX, ev.clientY);
           handled = true;
@@ -1127,7 +1135,7 @@ window.addEventListener('keydown', (ev) => {
   if (ev.ctrlKey && k === 'o') { ev.preventDefault(); openFile(); return; }
   if (ev.ctrlKey && k === 'g') { ev.preventDefault(); createGroup(); return; }
   if (ev.ctrlKey && k === 'a') { ev.preventDefault(); selectAll(); return; }
-  if (ev.ctrlKey && k === 'd') { ev.preventDefault(); state.selected.clear(); state.selectedGroup = null; state.selectedFunction = null; rebuildPoints(); return; }
+  if (ev.ctrlKey && k === 'd') { ev.preventDefault(); state.selected.clear(); state.selectedGroup = null; state.selectedFunction = null; state.selectedCamera = null; rebuildPoints(); syncSelectionClasses(); return; }
   if (ev.ctrlKey && k === 'c') { ev.preventDefault(); copySelected(); return; }
   if (ev.ctrlKey && k === 'v') { ev.preventDefault(); pasteClipboard(); return; }
   if (k === ' ') { ev.preventDefault(); togglePlay(); return; }
@@ -1148,7 +1156,7 @@ window.addEventListener('keydown', (ev) => {
   }
   if (k === 's') enterScale(lastMouse.x);
   else if (k === 'delete') deleteSelected();
-  else if (k === 'escape') { state.selected.clear(); state.selectedGroup = null; state.selectedFunction = null; rebuildPoints(); }
+  else if (k === 'escape') { state.selected.clear(); state.selectedGroup = null; state.selectedFunction = null; state.selectedCamera = null; rebuildPoints(); syncSelectionClasses(); }
 });
 
 window.addEventListener('keyup', (ev) => {
@@ -1223,6 +1231,8 @@ export function applyBoxSelection() {
     else state.selected = sel;
     resolveSelectionPriority();
   }
+  state.selectedCamera = null; // 框选其他对象即取消摄像机选中
+  syncSelectionClasses();
   if (state.selectedFunction) refreshFunctionPanel(); // 选中函数对象时刷新其属性面板
 }
 
