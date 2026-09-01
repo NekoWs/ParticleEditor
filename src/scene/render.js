@@ -5,7 +5,8 @@
  * ======================================================================= */
 
 import {PARTICLE_SIZE_FACTOR, state, functionIndexCache, effMaxFrame, autoFramesFor} from '../core/constants.js';
-import { points, selectedPoints, previewPoints, texAtlasMap } from './scene.js';
+import { points, selectedPoints, previewPoints, texAtlasMap, cameraWidgetMap, buildCameraWidget, removeCameraWidget, CAM_WIDGET_COLOR, CAM_WIDGET_ACTIVE_COLOR } from './scene.js';
+import { cameraPoseAt } from '../core/cameras.js';
 import { resolveUV, refreshUVPanel } from '../ui/texture-editor.js';
 import { updateGizmo } from '../interaction/gizmo.js';
 import { drawTimeline, updatePropPanel } from '../ui/panels.js';
@@ -446,3 +447,67 @@ export function setPreview(positions) {
 }
 
 export function clearPreview() { setPointsGeometry(previewPoints, new Float32Array(0), new Float32Array(0), new Float32Array(0)); }
+
+/* =========================================================================
+ * 摄像机可视化更新（每帧）
+ * - 同步 widget 增删（新增摄像机建 widget，删除的摄像机销毁 widget），
+ *   因此新建/删除/导入/清空无需在各自调用点显式重建，主循环每帧自动对齐。
+ * - 按 cameraPoseAt(id, T) 写入姿态（position + 四元数），并随 fov 更新视锥张角。
+ * - 当前激活摄像机橙色高亮，其余青色。
+ * ======================================================================= */
+const CAM_WIDGET_FRUSTUM_LEN = 2;   // 视锥从机身前端向前延伸的世界单位
+const CAM_WIDGET_NEAR_Z = -0.2;     // 机身前端（视锥近端）z
+const CAM_WIDGET_NEAR_HW = 0.12;    // 视锥近端半宽
+const CAM_WIDGET_NEAR_HH = 0.08;    // 视锥近端半高
+const CAM_DEG2RAD = Math.PI / 180;
+
+function setFrustumVertices(w, fovDeg, aspect) {
+  const L = CAM_WIDGET_FRUSTUM_LEN;
+  const fh = L * Math.tan(Math.max(1, Math.min(179, fovDeg)) * CAM_DEG2RAD * 0.5);
+  const fw = fh * Math.max(aspect || 1, 0.1);
+  const nearZ = CAM_WIDGET_NEAR_Z;
+  const farZ = nearZ - L;
+  const nw = CAM_WIDGET_NEAR_HW, nh = CAM_WIDGET_NEAR_HH;
+  // 8 线段（4 侧棱 + 远端取景框），每线段 2 顶点
+  const arr = w.frustumGeo.getAttribute('position').array;
+  arr.set([
+    -nw,  nh, nearZ,  -fw,  fh, farZ,   // 侧棱 n0->f0
+     nw,  nh, nearZ,   fw,  fh, farZ,   // 侧棱 n1->f1
+     nw, -nh, nearZ,   fw, -fh, farZ,   // 侧棱 n2->f2
+    -nw, -nh, nearZ,  -fw, -fh, farZ,   // 侧棱 n3->f3
+    -fw,  fh, farZ,    fw,  fh, farZ,   // 远端框 f0->f1
+     fw,  fh, farZ,    fw, -fh, farZ,   // 远端框 f1->f2
+     fw, -fh, farZ,   -fw, -fh, farZ,   // 远端框 f2->f3
+    -fw, -fh, farZ,   -fw,  fh, farZ,   // 远端框 f3->f0
+  ]);
+  w.frustumGeo.getAttribute('position').needsUpdate = true;
+}
+
+export function updateCameraWidgets(T) {
+  // 同步增删
+  const seen = new Set();
+  for (const cam of state.cameras) {
+    seen.add(cam.id);
+    let w = cameraWidgetMap[cam.id];
+    if (!w) {
+      w = buildCameraWidget();
+      cameraWidgetMap[cam.id] = w;
+    }
+    const pose = cameraPoseAt(cam.id, T);
+    if (pose) {
+      w.group.position.set(pose.pos[0], pose.pos[1], pose.pos[2]);
+      w.group.quaternion.setFromEuler(
+        new THREE.Euler(pose.rot[0] * CAM_DEG2RAD, pose.rot[1] * CAM_DEG2RAD, pose.rot[2] * CAM_DEG2RAD, 'XYZ')
+      );
+      setFrustumVertices(w, pose.fov, camera.aspect);
+    }
+    const color = state.activeCamera === cam.id ? CAM_WIDGET_ACTIVE_COLOR : CAM_WIDGET_COLOR;
+    if (w.mat.color.getHex() !== color) w.mat.color.set(color);
+  }
+  for (const id in cameraWidgetMap) {
+    if (!seen.has(id)) {
+      removeCameraWidget(cameraWidgetMap[id]);
+      delete cameraWidgetMap[id];
+    }
+  }
+}

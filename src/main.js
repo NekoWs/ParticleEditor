@@ -12,7 +12,7 @@ import { showAboutModal } from './ui/ui.js';
 import { easeInOut } from './core/easing.js';
 import { openEasingEditor, easingCurveSVG } from './ui/easing-editor.js';
 import { viewport, renderer, camera, controls, scene, pointsMaterial, selectedMaterial, focalLengthPx, camTransition, setCamTransition, planePulse, setPlanePulse, updateRenderScale } from './scene/scene.js';
-import { rebuildPoints, rebuildPointsTime, maxTick, updateAnimatedUV } from './core/animation.js';
+import { rebuildPoints, rebuildPointsTime, maxTick, updateAnimatedUV, updateCameraWidgets } from './core/animation.js';
 import { editSelectionUniform, editSelectionRotationUniform } from './core/edit.js';
 import { pushUndo, undo, redo, beginContinuous, endContinuous } from './state/undo.js';
 import { currentSelected, selectedGroupName, deleteSelected, selectAll } from './interaction/interaction.js';
@@ -567,6 +567,8 @@ export function animate(now) {
     applyCameraPose(state.activeCamera, state.time);
   }
   pointsMaterial.uniforms.uTime.value = performance.now() / 1000;
+  // 摄像机可视化：每帧按当前 time 求姿态并更新线框（位置/朝向/视锥张角/高亮）
+  updateCameraWidgets(state.time);
   renderer.render(scene, camera);
   drawAxisGizmo();
   // 选中粒子/函数对象/组变化时，贴图编辑器自动切换到其贴图（内部按目标签名去重）

@@ -444,3 +444,56 @@ export let planePulse = null; // 绘制平面切换时的轴线发光动画 { ax
 // 跨模块写入状态（axis-gizmo / main 的相机过渡与绘制平面脉冲动画）。
 export function setCamTransition(v) { camTransition = v; }
 export function setPlanePulse(v) { planePulse = v; }
+
+/* =========================================================================
+ * 摄像机可视化（Blender 风格线框：机身 + 顶部把手 + 视锥线）
+ * - 每个用户新建的摄像机一个 widget，局部坐标「前向 = -Z」（与 THREE 相机一致），
+ *   姿态由 render.js 的 updateCameraWidgets 按 cameraPoseAt 每帧写入（position + 四元数）。
+ * - 视锥张角随 fov 变化，远端取景框宽高随 fov / 视口宽高比变化（见 render.js）。
+ * - 普通青色（与时间轴树 .tt-camera 一致）；当前激活的摄像机橙色高亮。
+ * ======================================================================= */
+export const CAM_WIDGET_COLOR = 0x63c9a1;        // 普通摄像机线框
+export const CAM_WIDGET_ACTIVE_COLOR = 0xff9940; // 激活摄像机高亮（与选中粒子描边橙一致）
+
+export const cameraWidgets = new THREE.Group();
+scene.add(cameraWidgets);
+
+// id -> { group, mat, bodyGeo, handleGeo, frustumGeo }
+export const cameraWidgetMap = {};
+
+// 构建单个摄像机 widget（只建静态几何体，不设姿态；姿态由 updateCameraWidgets 每帧写入）。
+export function buildCameraWidget() {
+  const group = new THREE.Group();
+  const mat = new THREE.LineBasicMaterial({ color: CAM_WIDGET_COLOR });
+
+  // 机身：小长方体线框（前向 -Z 略突出）
+  const bodyGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(0.34, 0.24, 0.44));
+  const body = new THREE.LineSegments(bodyGeo, mat);
+  body.position.z = 0.02;
+  group.add(body);
+
+  // 顶部把手（取景器）：机身顶部的扁横条
+  const handleGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(0.26, 0.06, 0.16));
+  const handle = new THREE.LineSegments(handleGeo, mat);
+  handle.position.set(0, 0.15, -0.04);
+  group.add(handle);
+
+  // 视锥：4 条侧棱 + 远端取景框（8 线段 = 16 顶点），远端角随 fov/aspect 动态更新
+  const frustumGeo = new THREE.BufferGeometry();
+  frustumGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(16 * 3), 3));
+  const frustum = new THREE.LineSegments(frustumGeo, mat);
+  frustum.frustumCulled = false;
+  group.add(frustum);
+
+  cameraWidgets.add(group);
+  return { group, mat, bodyGeo, handleGeo, frustumGeo };
+}
+
+// 移除并释放单个 widget。
+export function removeCameraWidget(w) {
+  cameraWidgets.remove(w.group);
+  w.bodyGeo.dispose();
+  w.handleGeo.dispose();
+  w.frustumGeo.dispose();
+  w.mat.dispose();
+}
