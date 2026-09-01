@@ -10,11 +10,10 @@
  * ======================================================================= */
 
 import { t } from '../core/i18n.js';
-import { state, TRACK_COMPS, propComps, compPr, getFunction, getParticle } from '../core/constants.js';
+import { state, propComps, compPr, getParticle } from '../core/constants.js';
 import { TL_PX_PER_TICK, timelineViewStart, setTimelineViewStart, drawTimeline, scrubAutoPan, tlNiceStep, commitFunctionRebuild } from './panels.js';
 import { rebuildPoints, maxTick, invalidateMaxTickCache } from '../core/animation.js';
 import { findTrackByPr } from '../core/animation-eval.js';
-import { varKfValue } from '../core/easing.js';
 import { baseValueFor, removeKeyframe } from '../core/edit.js';
 import { saveWorkspaceState } from './blocks-ui.js';
 import { resize, applyTimeChange } from '../main.js';

@@ -900,7 +900,6 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
       addParticle({ pos: [x, y, z] });
       rebuildPoints();
     }
-    return;
   }
 });
 

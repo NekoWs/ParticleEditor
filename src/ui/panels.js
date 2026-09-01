@@ -7,7 +7,7 @@
  * ======================================================================= */
 
 
-import { t, tf } from '../core/i18n.js';
+import { t } from '../core/i18n.js';
 import { state, FUNCTION_PRESETS, getFunction, isDerivedParticle } from '../core/constants.js';
 import { currentVisual, rotVectorAt, spinVectorAt, orbitCenterAt } from '../core/animation.js';
 import { currentSelected, selectedGroupName, fxPosDeltaAt, fxScaleValuesAt } from '../interaction/interaction.js';

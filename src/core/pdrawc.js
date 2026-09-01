@@ -433,9 +433,9 @@ export async function decodePdrawc(bytes) {
     const pos = [br.f32(), br.f32(), br.f32()];
     const vel = [br.f32(), br.f32(), br.f32()];
     const st = br.varint();
-    const life = (flags & 8) ? br.varint() : -1;
-    const ent = (flags & 4) ? readEnt(br) : null;
-    const uv = (flags & 2) ? readUV(br) : null;
+    const life = (flags & 8) !== 0 ? br.varint() : -1;
+    const ent = (flags & 4) !== 0 ? readEnt(br) : null;
+    const uv = (flags & 2) !== 0 ? readUV(br) : null;
     particles.push({ color, scale, glow: !!(flags & 1), lightLevel, pos, vel, st, life, ent, uv });
   }
 
@@ -472,12 +472,12 @@ export async function decodePdrawc(bytes) {
     const duration = br.varint();
     const st = br.varint();
     const flags = br.u8();
-    const ent = (flags & 1) ? readEnt(br) : null;
-    const uv = (flags & 2) ? readUV(br) : null;
+    const ent = (flags & 1) !== 0 ? readEnt(br) : null;
+    const uv = (flags & 2) !== 0 ? readUV(br) : null;
     const fastMath = !!(flags & 4);
     const spinLocal = !!(flags & 16);
     const rotLocal = !!(flags & 32);
-    const funcs = (flags & 8) ? br.str() : '';
+    const funcs = (flags & 8) !== 0 ? br.str() : '';
     const varCount = br.varint();
     const vars = [];
     for (let j = 0; j < varCount; j++) {

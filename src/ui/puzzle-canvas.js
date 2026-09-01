@@ -7,16 +7,29 @@
  * 注入数据访问与变更回调；本模块只负责布局、绘制、命中与输入。
  * ======================================================================= */
 
-import { t, tf } from '../core/i18n.js';
-import { getFunction } from '../core/constants.js';
-import { ATTR_NAMES } from '../core/easing.js';
-import { rgbToHex, hexToRgb } from './ui.js';
+import {t, tf} from '../core/i18n.js';
+import {getFunction} from '../core/constants.js';
+import {ATTR_NAMES} from '../core/easing.js';
+import {hexToRgb, rgbToHex} from './ui.js';
 import {
-  T_SCALAR, T_VEC, T_MAT, T_ANY,
-  FUNC_BLOCKS, STMT_BLOCKS, PALETTE_GROUPS,
-  fmtNum, statementsToCode,
-  STMT_SLOTS, BIG_BLOCKS, BUILTIN_VAR_NAMES, GROUP_COLOR,
-  isBoolOp, opSlotType, slotRef, N0, OP_LABELS,
+  BIG_BLOCKS,
+  BUILTIN_VAR_NAMES,
+  fmtNum,
+  FUNC_BLOCKS,
+  GROUP_COLOR,
+  isBoolOp,
+  N0,
+  OP_LABELS,
+  opSlotType,
+  PALETTE_GROUPS,
+  slotRef,
+  statementsToCode,
+  STMT_BLOCKS,
+  STMT_SLOTS,
+  T_ANY,
+  T_MAT,
+  T_SCALAR,
+  T_VEC,
 } from '../core/blocks.js';
 
 /* ============================ host 注入 ============================ */
@@ -204,8 +217,8 @@ function hexPath(c, x, y, w, h) {
 /** 普通语句块：顶部凹口（凹入）+ 底部凸起（凸出）；noBump 时顶部平直（起始块下方第一块）。
  *  凹口/凸起采用浅梯形（斜边均为钝角），避免垂直边的锐利感。 */
 function stmtPath(c, x, y, w, h, noBump) {
-  const T = BUMP_H, sx = BUMP_SLANT, bx = BUMP_X, bw = BUMP_W;
-  const bxl = x + bx, bxr = bxl + bw;
+  const T = BUMP_H, sx = BUMP_SLANT;
+  const bxl = x + BUMP_X, bxr = bxl + BUMP_W;
   const r = Math.min(10, w / 2, h / 2);
   const top = y, bot = y + h;
   c.beginPath();
@@ -236,8 +249,8 @@ function stmtPath(c, x, y, w, h, noBump) {
 }
 /** hat 起点块：Scratch 式圆顶（左侧向上拱起），底部凸起与下方第一块的顶部凹口咬合。 */
 function hatPath(c, x, y, w, h) {
-  const T = BUMP_H, sx = BUMP_SLANT, bx = BUMP_X, bw = BUMP_W;
-  const bxl = x + bx, bxr = bxl + bw;
+  const T = BUMP_H, sx = BUMP_SLANT;
+  const bxl = x + BUMP_X, bxr = bxl + BUMP_W;
   const r = Math.min(12, w / 2, h / 2);
   const top = y, bot = y + h;
   const capW = Math.min(64, w * 0.62);
@@ -1162,8 +1175,7 @@ function drawErrorTooltip(ctx, msg) {
   if (!c || !H || !H.getBctx()) return;
   const cRect = c.getBoundingClientRect ? c.getBoundingClientRect() : { left: 0, top: 0 };
   const r = worldToScreenRect(S.hover);
-  const font = FONT;
-  ctx.font = font;
+  ctx.font = FONT;
   const maxW = 260;
   const words = String(msg).split(/\s+/);
   const lines = [];
@@ -1215,8 +1227,7 @@ function drawExprRegion(ctx, r) {
     ctx.restore();
     return;
   }
-  const color = blockColor(r.cls);
-  ctx.fillStyle = color;
+  ctx.fillStyle = blockColor(r.cls);
   if (r.shape === 'bool') hexPath(ctx, r.x, r.y, r.w, r.h);
   else capsulePath(ctx, r.x, r.y, r.w, r.h);
   ctx.fill();
@@ -1303,8 +1314,7 @@ function drawParamAddRegion(ctx, r) {
 
 function drawInlineEditContent(ctx, r, text, prefix) {
   const p = prefix || '';
-  const font = (r.segments && r.segments[0] && r.segments[0].font) || FONT;
-  ctx.font = font;
+  ctx.font = (r.segments && r.segments[0] && r.segments[0].font) || FONT;
   ctx.fillStyle = '#fff';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
@@ -1377,8 +1387,7 @@ function drawToggleRegion(ctx, r) {
 
 function drawColorRegion(ctx, r) {
   ctx.save();
-  const hex = r.color && r.color.hex ? r.color.hex() : '#808080';
-  ctx.fillStyle = hex;
+  ctx.fillStyle = r.color && r.color.hex ? r.color.hex() : '#808080';
   rrPath(ctx, r.x, r.y, r.w, r.h, 4);
   ctx.fill();
   ctx.strokeStyle = 'rgba(255,255,255,0.4)';
@@ -1710,8 +1719,7 @@ function renderEchoCanvas() {
   clearCanvas(ctx, c, th.panel);
   if (!H || !H.getBctx()) return;
   const code = echoCodeText() || '';
-  const font = FONT_MONO;
-  ctx.font = font;
+  ctx.font = FONT_MONO;
   const lh = 16;
   const maxW = cw - 20;
   const lines = [];
@@ -2526,7 +2534,6 @@ function computeDropTarget(e) {
       d.target = { kind: 'blank', x: gx, y: gy };
       d.valid = true;
     }
-    return;
   }
 }
 
@@ -2984,7 +2991,7 @@ function onWorkDown(e) {
     startStmtGroupPending(hit, e);
     return;
   }
-  if (hit.kind === 'blank') { e.preventDefault(); startPan(e); return; }
+  if (hit.kind === 'blank') { e.preventDefault(); startPan(e); }
 }
 
 function onEchoWheel(e) {
@@ -3076,7 +3083,6 @@ function onWindowUp(e) {
       return;
     }
     endDrag(e);
-    return;
   }
 }
 

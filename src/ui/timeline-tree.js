@@ -9,8 +9,8 @@
 
 import { t, tf, LANG } from '../core/i18n.js';
 import {
-  state, TRACK_COMPS, propComps, COMP_LABELS, GROUP_PROP_DEFS, PARTICLE_TRACK_DEFS, FUNCTION_PROP_DEFS, CAMERA_PROP_DEFS,
-  getParticle, getFunction, getCamera, isDerivedParticle, plainParticleCache, DEFAULT_CAMERA_ID,
+  state, propComps, COMP_LABELS, GROUP_PROP_DEFS, PARTICLE_TRACK_DEFS, FUNCTION_PROP_DEFS, CAMERA_PROP_DEFS,
+  getParticle, getFunction, isDerivedParticle, plainParticleCache,
 } from '../core/constants.js';
 import { editComponentValue } from '../core/edit.js';
 import { targetComponentValue, startRename } from './tree.js';
@@ -19,7 +19,7 @@ import { varKfValue, ATTR_NAMES, FUNCS } from '../core/easing.js';
 import { modalAlert } from './ui.js';
 import { rebuildPoints } from '../core/animation.js';
 import { refreshFunctionPanel, commitFunctionRebuild } from './panels.js';
-import { cameraValueAt, camTrackId, lockCamera } from '../core/cameras.js';
+import { camTrackId, lockCamera } from '../core/cameras.js';
 
 export const TL_TREE_ROW_H = 22;
 export const tlTreeState = { expanded: new Set() };

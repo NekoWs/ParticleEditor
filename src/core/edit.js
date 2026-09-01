@@ -8,8 +8,8 @@
 
 
 import { TRACK_COMPS, PARTICLE_SCALE_COMPS, COMP_INDEX, compPr, state, getParticle, getFunction, getCamera, isDerivedParticle, nextId, nextGroupName, indexParticle } from './constants.js';
-import { baseComponent, componentValueAt, findTrackByPr, PR_TO_IDX, trVersion, rebuildPoints } from './animation.js';
-import { groupCentroidValue, targetComponentValue } from '../ui/tree.js';
+import { baseComponent, findTrackByPr, PR_TO_IDX, trVersion, rebuildPoints } from './animation.js';
+import { groupCentroidValue } from '../ui/tree.js';
 import { pushUndo } from '../state/undo.js';
 import { commitFunctionRebuild } from '../ui/panels.js';
 import { selectedGroupName } from '../interaction/interaction.js';

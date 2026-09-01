@@ -5,15 +5,26 @@
  * ======================================================================= */
 
 
-import { t, tf } from '../core/i18n.js';
-import { state, UV_MODES, autoFramesFor, effMaxFrame, defaultUV, getParticle, getFunction, isDerivedParticle, setDirty } from '../core/constants.js';
-import { rebuildPoints, groupMemberIndexCache } from '../core/animation.js';
-import { rebuildAtlas } from '../scene/scene.js';
-import { selectedGroupName } from '../interaction/interaction.js';
-import { pushUndo } from '../state/undo.js';
-import { showContextMenu } from './tree.js';
-import { refreshTexBase64Cache } from '../io/io.js';
-import { modalAlert, modalPrompt, modalConfirm } from './ui.js';
+import {t, tf} from '../core/i18n.js';
+import {
+  autoFramesFor,
+  defaultUV,
+  effMaxFrame,
+  getFunction,
+  getParticle,
+  isDerivedParticle,
+  setDirty,
+  state,
+  UV_MODES
+} from '../core/constants.js';
+import {groupMemberIndexCache, rebuildPoints} from '../core/animation.js';
+import {rebuildAtlas} from '../scene/scene.js';
+import {selectedGroupName} from '../interaction/interaction.js';
+import {pushUndo} from '../state/undo.js';
+import {showContextMenu} from './tree.js';
+import {refreshTexBase64Cache} from '../io/io.js';
+import {modalAlert, modalConfirm, modalPrompt} from './ui.js';
+
 export const TEX_UV_COLOR = '#5b9dff'; // UV 预览描边（实线，与选中态 --accent 一致）
 export const TEX_SEL_COLOR = '#5b9dff'; // 选区描边（虚线，固定显示）
 export const TEX_CELL_COLOR = '#20242c'; // 动画帧范围线框（比像素网格更深的颜色）
@@ -1233,8 +1244,8 @@ export function uvFrameField(uv) {
   const group = document.createElement('span'); group.className = 'uv-field';
   const inp = document.createElement('input');
   inp.type = 'number'; inp.min = '0'; inp.title = t('tex.maxFramesHint');
-  const shown = (uv.maxFrame != null && uv.maxFrame > 1) ? uv.maxFrame : 1; // 1 表示自动
-  inp.value = shown;
+   // 1 表示自动
+  inp.value = (uv.maxFrame != null && uv.maxFrame > 1) ? uv.maxFrame : 1;
   const t = getTexture(uv.texture);
   const autoFrames = autoFramesFor(uv, t ? t.width : 16, t ? t.height : 16);
   const suffix = document.createElement('span'); suffix.className = 'uv-suffix';

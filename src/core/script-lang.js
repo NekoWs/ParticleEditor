@@ -2768,7 +2768,7 @@ function collectStaticNames(processStmts) {
     if (node.type === 'if') { walk(node.then); if (node.els) walk(node.els); return; }
     if (node.type === 'while') { walk(node.body); return; }
     if (node.type === 'do') { walk(node.body); return; }
-    if (node.type === 'for') { if (node.init) walk(node.init); if (node.inc) walk(node.inc); walk(node.body); return; }
+    if (node.type === 'for') { if (node.init) walk(node.init); if (node.inc) walk(node.inc); walk(node.body); }
   }
   processStmts.forEach(walk);
   return [...out];
@@ -2808,7 +2808,7 @@ function findHoistedAssignments(processStmts, varNames, globalNames, staticNames
     if (node.type === 'if') { countWrites(node.then); if (node.els) countWrites(node.els); return; }
     if (node.type === 'while') { countWrites(node.body); return; }
     if (node.type === 'do') { countWrites(node.body); return; }
-    if (node.type === 'for') { if (node.init) countWrites(node.init); if (node.inc) countWrites(node.inc); countWrites(node.body); return; }
+    if (node.type === 'for') { if (node.init) countWrites(node.init); if (node.inc) countWrites(node.inc); countWrites(node.body); }
   }
   for (const st of processStmts) countWrites(st);
 

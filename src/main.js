@@ -590,7 +590,7 @@ requestAnimationFrame(animate);
 window.addEventListener('beforeunload', (ev) => {
   if (state.dirty) {
     ev.preventDefault();
-    ev.returnValue = '';
+    ev.preventDefault();
   }
 });
 

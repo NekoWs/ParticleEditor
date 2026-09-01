@@ -347,8 +347,7 @@ function stmtNeedsSemi(code) {
   const t = (code || '').trim();
   if (!t) return false;
   if (t.endsWith('}') || t.endsWith(';') || t.endsWith('*/')) return false;
-  if (t.startsWith('//')) return false;
-  return true;
+  return !t.startsWith('//');
 }
 
 function emitComment(s, pad) {

@@ -8,19 +8,45 @@
  * 依赖 blocks.js、float-window.js、easing.js、constants.js、undo.js、panels.js、generators.js
  * ======================================================================= */
 
-import { t, tf, _etf } from '../core/i18n.js';
-import { state, getFunction } from '../core/constants.js';
-import { ATTR_NAMES } from '../core/easing.js';
-import { modalAlert } from './ui.js';
-import { T_SCALAR, T_VEC, T_MAT, T_ANY, FUNC_BLOCKS, STMT_BLOCKS, PALETTE_GROUPS, OP_SYMBOLS, OP_LABELS, collectTemps, walkStatements, codeToStatements, statementsToCode, statementsToCodeSpans, exprType, typeAccepts, fmtNum, STMT_SLOTS, BIG_BLOCKS, BUILTIN_VAR_INFO, BUILTIN_VAR_NAMES, GROUP_COLOR, isBoolOp, opSlotType, slotRef, N0, METHOD_ARITY } from '../core/blocks.js';
-import { validateFunctionScript } from '../core/generators.js';
-import { makeFloatWindow } from './float-window.js';
-import { pushUndo, cloneVars } from '../state/undo.js';
-import { commitFunctionRebuild, refreshFunctionPanel, drawTimeline } from './panels.js';
-import { rebuildPoints } from '../core/animation.js';
-import { gizmoGroup } from '../scene/scene.js';
-import { resize } from '../main.js';
-import { setPuzzleHost, initPuzzleCanvas, puzzleCanvasRender, puzzleCanvasResize, puzzleCanvasCancelEdit } from './puzzle-canvas.js';
+import {_etf, t, tf} from '../core/i18n.js';
+import {getFunction, state} from '../core/constants.js';
+import {ATTR_NAMES} from '../core/easing.js';
+import {modalAlert} from './ui.js';
+import {
+  BUILTIN_VAR_INFO,
+  codeToStatements,
+  collectTemps,
+  exprType,
+  FUNC_BLOCKS,
+  METHOD_ARITY,
+  N0,
+  OP_LABELS,
+  OP_SYMBOLS,
+  opSlotType,
+  slotRef,
+  statementsToCode,
+  statementsToCodeSpans,
+  STMT_BLOCKS,
+  T_ANY,
+  T_SCALAR,
+  T_VEC,
+  typeAccepts,
+  walkStatements
+} from '../core/blocks.js';
+import {validateFunctionScript} from '../core/generators.js';
+import {makeFloatWindow} from './float-window.js';
+import {cloneVars, pushUndo} from '../state/undo.js';
+import {commitFunctionRebuild, drawTimeline, refreshFunctionPanel} from './panels.js';
+import {rebuildPoints} from '../core/animation.js';
+import {gizmoGroup} from '../scene/scene.js';
+import {resize} from '../main.js';
+import {
+  initPuzzleCanvas,
+  puzzleCanvasCancelEdit,
+  puzzleCanvasRender,
+  puzzleCanvasResize,
+  setPuzzleHost
+} from './puzzle-canvas.js';
 
 export const TYPE_LABEL = { scalar: 'blk.type.scalar', vec: 'blk.type.vec', mat: 'blk.type.mat', any: 'blk.type.any' };
 
@@ -174,8 +200,7 @@ export function findSlotRefByNode(stmts, node) {
     if (result) return;
     if (s.slots) {
       for (let i = 0; i < s.slots.length; i++) {
-        const slotType = T_ANY;
-        if (s.slots[i] === node) { result = slotRef(() => s.slots[i], v => { s.slots[i] = v; }, slotType); return; }
+        if (s.slots[i] === node) { result = slotRef(() => s.slots[i], v => { s.slots[i] = v; }, T_ANY); return; }
         if (s.slots[i] != null) walkExpr(s.slots[i], () => s.slots[i], v => { s.slots[i] = v; });
       }
     }
