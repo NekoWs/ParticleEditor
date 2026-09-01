@@ -461,6 +461,18 @@ const CAM_WIDGET_NEAR_HW = 0.12;    // 视锥近端半宽
 const CAM_WIDGET_NEAR_HH = 0.08;    // 视锥近端半高
 const CAM_DEG2RAD = Math.PI / 180;
 
+// widget 朝向计算的复用临时量（避免每帧分配）。
+// Group 不是相机：Object3D.lookAt 对非相机对象把「+Z 指向目标」，而 widget 几何体
+// （机身前端 + 视锥）沿局部 -Z 延伸，直接调用会让指示方向完全相反。因此这里改用
+// 相机分支的矩阵构造 Matrix4.lookAt(eye=pos, target)：+Z = normalize(pos - target)，
+// 即局部 -Z 指向目标，与 PerspectiveCamera.lookAt 完全一致。
+const _camLookM = new THREE.Matrix4();
+const _camRollQ = new THREE.Quaternion();
+const _camEye = new THREE.Vector3();
+const _camTgt = new THREE.Vector3();
+const _camUp = new THREE.Vector3(0, 1, 0);
+const _camZAxis = new THREE.Vector3(0, 0, 1);
+
 function setFrustumVertices(w, fovDeg, aspect) {
   const L = CAM_WIDGET_FRUSTUM_LEN;
   const fh = L * Math.tan(Math.max(1, Math.min(179, fovDeg)) * CAM_DEG2RAD * 0.5);
@@ -496,9 +508,16 @@ export function updateCameraWidgets(T) {
     const pose = cameraPoseAt(cam.id, T);
     if (pose) {
       w.group.position.set(pose.pos[0], pose.pos[1], pose.pos[2]);
-      w.group.up.set(0, 1, 0);
-      w.group.lookAt(pose.target[0], pose.target[1], pose.target[2]);
-      if (pose.roll) w.group.rotateZ(pose.roll * CAM_DEG2RAD);
+      // 让 widget 局部 -Z 指向目标（与相机朝向一致），见 _camLookM 声明处注释。
+      _camEye.set(pose.pos[0], pose.pos[1], pose.pos[2]);
+      _camTgt.set(pose.target[0], pose.target[1], pose.target[2]);
+      _camLookM.lookAt(_camEye, _camTgt, _camUp);
+      w.group.quaternion.setFromRotationMatrix(_camLookM);
+      // roll：与 applyPose 相同——绕局部 Z 轴翻滚（右乘，lookAt 只决定 pitch/yaw）
+      if (pose.roll) {
+        _camRollQ.setFromAxisAngle(_camZAxis, pose.roll * CAM_DEG2RAD);
+        w.group.quaternion.multiply(_camRollQ);
+      }
       setFrustumVertices(w, pose.fov, camera.aspect);
     }
     // 切换到某摄像机（activeCamera）时完全隐藏该摄像机的 widget，避免视角中出现橙色方框
