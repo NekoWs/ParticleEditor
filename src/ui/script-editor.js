@@ -5,9 +5,18 @@ import {
   HighlightStyle,
   syntaxHighlighting,
   bracketMatching,
+  indentOnInput,
+  indentUnit,
 } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
-import { autocompletion, acceptCompletion, completionKeymap } from '@codemirror/autocomplete';
+import {
+  autocompletion,
+  acceptCompletion,
+  completionKeymap,
+  closeBrackets,
+  closeBracketsKeymap,
+} from '@codemirror/autocomplete';
+import { indentWithTab, insertNewlineAndIndent } from '@codemirror/commands';
 import { linter } from '@codemirror/lint';
 import { highlightSelectionMatches } from '@codemirror/search';
 import { parseProgram } from '../core/script-lang.js';
@@ -98,13 +107,15 @@ const scriptLanguage = StreamLanguage.define({
       const word = stream.current();
 
       if (state.afterDot) {
+        const isThisField = state.afterThisDot;
         state.afterDot = false;
-        state.lastWord = word;
         state.afterThisDot = false;
-        return state.afterThisDot ? 'propertyName' : 'function';
+        state.lastWord = word;
+        return isThisField ? 'propertyName' : 'function';
       }
 
       state.lastWord = word;
+      if (word === 'this') return 'keyword';
       if (KEYWORD_SET.has(word)) return 'keyword';
       if (word === 'pi' || word === 'true' || word === 'false') return 'atom';
       if (BUILTIN_SET.has(word)) return 'function';
@@ -219,9 +230,9 @@ export function scriptCompletionSource(fx) {
   return (context) => {
     const before = context.state.sliceDoc(0, context.pos);
 
-    // 换行或语句刚结束时（分号后）不弹补全。
+    // 换行或语句刚结束时（分号/括号后）不弹补全。
     const lastChar = before.slice(-1);
-    if (lastChar === ';' || lastChar === '\n') return null;
+    if (lastChar === ';' || lastChar === '\n' || lastChar === '{' || lastChar === '}' || lastChar === ')') return null;
 
     const word = context.matchBefore(/[\w.]*/);
     const from = word ? word.from : context.pos;
@@ -292,6 +303,9 @@ export function createScriptEditor(parent, opts) {
       syntaxHighlighting(scriptHighlightStyle),
       bracketMatching(),
       highlightSelectionMatches(),
+      indentUnit.of('  '),
+      closeBrackets(),
+      indentOnInput(),
       scriptTheme,
       EditorView.lineWrapping,
       EditorView.updateListener.of((update) => {
@@ -303,6 +317,9 @@ export function createScriptEditor(parent, opts) {
       }),
       keymap.of([
         { key: 'Tab', run: acceptCompletion },
+        indentWithTab,
+        { key: 'Enter', run: insertNewlineAndIndent },
+        ...closeBracketsKeymap,
         ...completionKeymap,
       ]),
       scriptLintSource(fx, field),
