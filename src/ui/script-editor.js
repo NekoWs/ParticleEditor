@@ -1,13 +1,15 @@
-import { EditorView } from '@codemirror/view';
+import { EditorView, keymap } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import {
   StreamLanguage,
   HighlightStyle,
   syntaxHighlighting,
+  bracketMatching,
 } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
-import { autocompletion } from '@codemirror/autocomplete';
+import { autocompletion, acceptCompletion, completionKeymap } from '@codemirror/autocomplete';
 import { linter } from '@codemirror/lint';
+import { highlightSelectionMatches } from '@codemirror/search';
 import { parseProgram } from '../core/script-lang.js';
 
 /**
@@ -39,12 +41,13 @@ export const SCRIPT_BUILTINS = [
 ];
 
 const KEYWORD_SET = new Set(SCRIPT_KEYWORDS);
-const THIS_SET = new Set(SCRIPT_THIS_FIELDS);
 const BUILTIN_SET = new Set(SCRIPT_BUILTINS);
 
 const scriptLanguage = StreamLanguage.define({
   name: 'pdraw-script',
-  startState() { return { inBlockComment: false }; },
+  startState() {
+    return { inBlockComment: false, afterDot: false, afterThisDot: false, lastWord: '' };
+  },
   token(stream, state) {
     if (state.inBlockComment) {
       if (stream.match('*/')) { state.inBlockComment = false; return 'comment'; }
@@ -66,13 +69,42 @@ const scriptLanguage = StreamLanguage.define({
       return 'string';
     }
 
-    if (stream.match(/^-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?/)) return 'number';
+    if (stream.match(/^-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?/)) {
+      state.afterDot = false;
+      state.afterThisDot = false;
+      return 'number';
+    }
 
-    if (stream.match(/^(==|!=|<=|>=|&&|\|\|)/)) return 'operator';
-    if (stream.match(/^[+\-*/%!?:=<>()[\]{},;.]/)) return 'operator';
+    if (stream.match(/^(==|!=|<=|>=|&&|\|\|)/)) {
+      state.afterDot = false;
+      state.afterThisDot = false;
+      return 'operator';
+    }
+
+    if (stream.match(/^[+\-*/%!?:=<>()[\]{},;]/)) {
+      state.afterDot = false;
+      state.afterThisDot = false;
+      return 'operator';
+    }
+
+    // 点运算符：标记下一标识符是字段（this.*）还是方法调用（*.push(...)）。
+    if (stream.match(/^\./)) {
+      state.afterDot = true;
+      state.afterThisDot = state.lastWord === 'this';
+      return 'operator';
+    }
 
     if (stream.match(/^[A-Za-z_][A-Za-z0-9_]*/)) {
       const word = stream.current();
+
+      if (state.afterDot) {
+        state.afterDot = false;
+        state.lastWord = word;
+        state.afterThisDot = false;
+        return state.afterThisDot ? 'propertyName' : 'function';
+      }
+
+      state.lastWord = word;
       if (KEYWORD_SET.has(word)) return 'keyword';
       if (word === 'pi' || word === 'true' || word === 'false') return 'atom';
       if (BUILTIN_SET.has(word)) return 'function';
@@ -96,6 +128,7 @@ const PALETTE = {
   comment: '#7a7e85',
   function: '#56a8f5',
   variable: '#bcbec4',
+  property: '#c77dbb',
   atom: '#cf8e6d',
   operator: '#bcbec4',
   selection: '#373b39',
@@ -116,6 +149,7 @@ const scriptHighlightStyle = HighlightStyle.define([
   { tag: tags.operator, color: PALETTE.operator },
   { tag: tags.function, color: PALETTE.function },
   { tag: tags.variableName, color: PALETTE.variable },
+  { tag: tags.propertyName, color: PALETTE.property },
   { tag: tags.atom, color: PALETTE.atom },
 ]);
 
@@ -125,11 +159,13 @@ const scriptTheme = EditorView.theme({
     color: PALETTE.text,
     fontSize: '12px',
   },
+  '.cm-editor': { cursor: 'text' },
   '.cm-content': {
     fontFamily: '"SFMono-Regular", Consolas, monospace',
     lineHeight: '1.4',
     caretColor: PALETTE.text,
     padding: '5px 7px',
+    cursor: 'text',
   },
   '.cm-cursor, .cm-dropCursor': { borderLeftColor: PALETTE.text },
   '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
@@ -138,6 +174,9 @@ const scriptTheme = EditorView.theme({
   '.cm-gutters': { backgroundColor: PALETTE.gutter, color: PALETTE.gutterText, border: 'none' },
   '.cm-activeLine': { backgroundColor: PALETTE.activeLine },
   '.cm-activeLineGutter': { backgroundColor: PALETTE.activeLine },
+  '.cm-matchingBracket': { backgroundColor: PALETTE.selection, outline: `1px solid ${PALETTE.text}` },
+  '.cm-nonmatchingBracket': { backgroundColor: '#f75464' },
+  '.cm-selectionMatch': { backgroundColor: `${PALETTE.highlight}40` },
   '.cm-tooltip': {
     backgroundColor: PALETTE.tooltipBg,
     color: PALETTE.tooltipText,
@@ -179,6 +218,11 @@ function wrapperLines(field) {
 export function scriptCompletionSource(fx) {
   return (context) => {
     const before = context.state.sliceDoc(0, context.pos);
+
+    // 换行或语句刚结束时（分号后）不弹补全。
+    const lastChar = before.slice(-1);
+    if (lastChar === ';' || lastChar === '\n') return null;
+
     const word = context.matchBefore(/[\w.]*/);
     const from = word ? word.from : context.pos;
 
@@ -246,12 +290,21 @@ export function createScriptEditor(parent, opts) {
     extensions: [
       scriptLanguage,
       syntaxHighlighting(scriptHighlightStyle),
+      bracketMatching(),
+      highlightSelectionMatches(),
       scriptTheme,
       EditorView.lineWrapping,
       EditorView.updateListener.of((update) => {
         if (update.docChanged && onChange) onChange(update.state.doc.toString());
       }),
-      autocompletion({ override: [scriptCompletionSource(fx)] }),
+      autocompletion({
+        override: [scriptCompletionSource(fx)],
+        activateOnTypingDelay: 50,
+      }),
+      keymap.of([
+        { key: 'Tab', run: acceptCompletion },
+        ...completionKeymap,
+      ]),
       scriptLintSource(fx, field),
       EditorView.theme({
         '&': { minHeight: `${rows * 1.4 + 0.7}em` },
@@ -262,9 +315,11 @@ export function createScriptEditor(parent, opts) {
   const view = new EditorView({ state, parent });
 
   // 点击容器空白区域也进入编辑；只有点击正文区才交给 CodeMirror 原生选择逻辑。
+  // preventDefault 阻止浏览器默认焦点跳转，否则 view.focus() 会被随后的默认行为顶掉。
   parent.addEventListener('mousedown', (event) => {
     const target = event.target;
     if (target instanceof Element && target.closest('.cm-content')) return;
+    event.preventDefault();
     view.focus();
   });
 

@@ -364,7 +364,8 @@ function buildCodeBlock(fx, codeBody, field, labelKey, rows) {
   // 点击代码组任意位置（含 .fx-code 下方空白）都进入编辑。
   group.addEventListener('mousedown', (event) => {
     const target = event.target;
-    if (target instanceof Element && target.closest('.cm-editor')) return;
+    if (target instanceof Element && target.closest('.cm-content')) return;
+    event.preventDefault();
     view.focus();
   });
 
