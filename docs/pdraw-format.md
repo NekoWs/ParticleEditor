@@ -182,8 +182,8 @@
   "name": "函数对象",            // 名称
   "center": [0, 0, 0],          // [x,y,z]
   "count": 200,                 // 派生粒子采样数
-  "setup": "arr = []; ...",     // setup 代码块（对象初始化一次；空字符串省略式写 ""）
-  "process": "x = arr[i]; ...", // process 代码块（每粒子每帧）
+  "setup": "arr = []; ...",                          // setup 代码块（对象初始化一次；空字符串省略式写 ""）
+  "process": "Context.position = arr[Context.index]; ...", // process 代码块（每粒子每帧）
   "funcs": "func f(a) { ... }", // 可选，顶层函数定义代码块（script-lang §4；缺省 = ""）
   "seed": 0,                    // 随机种子（整数；rand()/noise 默认使用）
   "vars": {                     // 变量表
