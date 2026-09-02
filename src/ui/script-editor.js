@@ -84,29 +84,33 @@ const scriptLanguage = StreamLanguage.define({
   },
 });
 
-// IDEA Darcula 风格配色
+// Islands Dark 配色（参考 vscode-dark-islands 主题）
 const PALETTE = {
-  bg: '#2b2b2b',
-  gutter: '#313335',
-  text: '#a9b7c6',
-  keyword: '#cc7832',
-  string: '#6a8759',
-  number: '#6897bb',
-  comment: '#808080',
-  function: '#ffc66d',
-  variable: '#a9b7c6',
-  atom: '#9876aa',
-  operator: '#a9b7c6',
-  selection: '#214283',
-  activeLine: '#323232',
-  tooltipBg: '#3c3f41',
-  tooltipText: '#a9b7c6',
-  tooltipSelected: '#2d5f9e',
+  bg: '#181a1d',
+  gutter: '#181a1d',
+  gutterText: '#4e5157',
+  text: '#bcbec4',
+  keyword: '#cf8e6d',
+  string: '#6aab73',
+  number: '#2aacb8',
+  comment: '#7a7e85',
+  function: '#56a8f5',
+  variable: '#bcbec4',
+  atom: '#cf8e6d',
+  operator: '#bcbec4',
+  selection: '#373b39',
+  activeLine: '#252629',
+  tooltipBg: '#2b2d30',
+  tooltipText: '#bcbec4',
+  tooltipBorder: '#3c3f41',
+  tooltipSelected: '#25324d',
+  tooltipSelectedText: '#bcbec4',
+  highlight: '#548af7',
 };
 
 const scriptHighlightStyle = HighlightStyle.define([
   { tag: tags.keyword, color: PALETTE.keyword },
-  { tag: tags.comment, color: PALETTE.comment },
+  { tag: tags.comment, color: PALETTE.comment, fontStyle: 'italic' },
   { tag: tags.string, color: PALETTE.string },
   { tag: tags.number, color: PALETTE.number },
   { tag: tags.operator, color: PALETTE.operator },
@@ -131,13 +135,13 @@ const scriptTheme = EditorView.theme({
   '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
     backgroundColor: PALETTE.selection,
   },
-  '.cm-gutters': { backgroundColor: PALETTE.gutter, color: PALETTE.comment, border: 'none' },
+  '.cm-gutters': { backgroundColor: PALETTE.gutter, color: PALETTE.gutterText, border: 'none' },
   '.cm-activeLine': { backgroundColor: PALETTE.activeLine },
   '.cm-activeLineGutter': { backgroundColor: PALETTE.activeLine },
   '.cm-tooltip': {
     backgroundColor: PALETTE.tooltipBg,
     color: PALETTE.tooltipText,
-    border: '1px solid #4b4e50',
+    border: `1px solid ${PALETTE.tooltipBorder}`,
   },
   '.cm-tooltip.cm-tooltip-autocomplete': {
     backgroundColor: PALETTE.tooltipBg,
@@ -145,9 +149,9 @@ const scriptTheme = EditorView.theme({
   },
   '.cm-tooltip.cm-tooltip-autocomplete ul li[aria-selected]': {
     backgroundColor: PALETTE.tooltipSelected,
-    color: '#ffffff',
+    color: PALETTE.tooltipSelectedText,
   },
-  '.cm-completionMatchedText': { color: PALETTE.function, textDecoration: 'none' },
+  '.cm-completionMatchedText': { color: PALETTE.highlight, textDecoration: 'none' },
   '.cm-completionDetail': { color: PALETTE.comment, fontStyle: 'normal' },
 });
 
@@ -257,10 +261,10 @@ export function createScriptEditor(parent, opts) {
 
   const view = new EditorView({ state, parent });
 
-  // 点击 .fx-code 容器任意空白区域也进入编辑（否则只有内容区可点）。
+  // 点击容器空白区域也进入编辑；只有点击正文区才交给 CodeMirror 原生选择逻辑。
   parent.addEventListener('mousedown', (event) => {
     const target = event.target;
-    if (target instanceof Element && target.closest('.cm-editor')) return;
+    if (target instanceof Element && target.closest('.cm-content')) return;
     view.focus();
   });
 
