@@ -16,6 +16,7 @@ import { modalAlert, rgbToHex, hexToRgb, rgbaToHex, hexToRgba } from './ui.js';
 import { varKfValue } from '../core/easing.js';
 import { applyPresetBuild, rebuildFunctionObject } from '../core/generators.js';
 import { openBlockDrawer } from './blocks-ui.js';
+import { createScriptEditor } from './script-editor.js';
 import { pushUndo } from '../state/undo.js';
 import { r3 } from '../io/io.js';
 // 设置缩放 XYZ 三输入（vals 为 [x,y,z]；null 元素表示混合值显示空）
@@ -335,7 +336,8 @@ export function commitFunctionRebuild(fx, opts) {
   }
 }
 
-// 函数面板的代码块（setup/process/funcs）：标题 + textarea，onchange 写回 fx[field] 并重建。
+// 函数面板的代码块（setup/process/funcs）：标题 + CodeMirror 编辑器，
+// 首次编辑推撤销、实时写回 fx[field]、失焦时重建函数对象。
 function buildCodeBlock(fx, codeBody, field, labelKey, rows) {
   const group = document.createElement('label');
   group.className = 'fx-code-group';
@@ -343,12 +345,28 @@ function buildCodeBlock(fx, codeBody, field, labelKey, rows) {
   label.className = 'fx-code-headline';
   label.textContent = t(labelKey);
   group.appendChild(label);
-  const area = document.createElement('textarea');
-  area.className = 'fx-code';
-  area.rows = rows;
-  area.value = fx[field] || '';
-  area.onchange = () => { pushUndo(); fx[field] = area.value; commitFunctionRebuild(fx); };
-  group.appendChild(area);
+
+  const container = document.createElement('div');
+  container.className = 'fx-code';
+  group.appendChild(container);
+
+  let editing = false;
+  createScriptEditor(container, {
+    fx,
+    field,
+    rows,
+    onChange: (value) => {
+      if (!editing) { editing = true; pushUndo(); }
+      fx[field] = value;
+    },
+  });
+
+  container.addEventListener('focusout', () => {
+    if (!editing) return;
+    editing = false;
+    commitFunctionRebuild(fx);
+  });
+
   codeBody.appendChild(group);
 }
 

@@ -313,3 +313,57 @@ process 中读写以下字段即读写当前粒子输出：
    - 若为连续播放：`delta = 距上次求值秒数`；若为 seek/循环回绕/首次：`delta = 0`。
    - 以该粒子独立 static 状态执行 `process`。
 4. 编辑器通过按 tick 采样 `process` 生成派生轨道用于预览与导出；采样步长 `delta` 取采样间隔（秒）。
+
+## 16. EBNF 语法摘要
+
+> 本节是 §3–§5 的机器可读摘要，供编辑器/IDE 各端实现语法高亮与补全时对齐。以正文为准。
+
+```ebnf
+program        = { funcDecl } , { block } ;
+block          = setupBlock | processBlock ;
+setupBlock     = "setup" , "{" , { statement } , "}" ;
+processBlock   = "process" , "{" , { statement } , "}" ;
+funcDecl       = "func" , IDENT , "(" , [ IDENT , { "," , IDENT } ] , ")" , "{" , { statement } , "}" ;
+
+statement      = varDecl
+               | ifStmt | whileStmt | doStmt | forStmt
+               | "break" , ";" | "continue" , ";"
+               | "return" , expr , ";"
+               | assignment , ";"
+               | expr , ";" ;
+
+varDecl        = ( "global" | "static" ) , IDENT , [ "=" , expr ] , ";" ;
+ifStmt         = "if" , "(" , expr , ")" , block , { "else" , "if" , "(" , expr , ")" , block } , [ "else" , block ] ;
+whileStmt      = "while" , "(" , expr , ")" , block ;
+doStmt         = "do" , block , "while" , "(" , expr , ")" , ";" ;
+forStmt        = "for" , "(" , [ expr ] , ";" , [ expr ] , ";" , [ expr ] , ")" , block ;
+block          = "{" , { statement } , "}" ;
+
+assignment     = lvalue , "=" , expr ;
+lvalue         = IDENT
+               | expr , "[" , expr , "]"
+               | expr , "." , IDENT
+               | "[" , IDENT , { "," , IDENT } , "]" ;
+
+expr           = ternary ;
+ternary        = logicOr , [ "?" , expr , ":" , expr ] ;
+logicOr        = logicAnd , { "||" , logicAnd } ;
+logicAnd       = equality , { "&&" , equality } ;
+equality       = comparison , { ( "==" | "!=" ) , comparison } ;
+comparison     = additive , { ( "<" | "<=" | ">" | ">=" ) , additive } ;
+additive       = multiplicative , { ( "+" | "-" ) , multiplicative } ;
+multiplicative = power , { ( "*" | "/" | "%" ) , power } ;
+power          = unary , [ "^" , power ] ;
+unary          = { ( "-" | "!" ) } , postfix ;
+postfix        = primary , { call | index | member } ;
+call           = "(" , [ expr , { "," , expr } ] , ")" ;
+index          = "[" , expr , "]" ;
+member         = "." , ( IDENT | "x" | "y" | "z" | "w" | "r" | "g" | "b" | "a" ) ;
+primary        = NUMBER | STRING | "true" | "false" | "this"
+               | IDENT | arrayLiteral | "(" , expr , ")" ;
+arrayLiteral   = "[" , [ expr , { "," , expr } ] , "]" ;
+
+IDENT          = ? [A-Za-z_][A-Za-z0-9_]* ? ;
+NUMBER         = ? 123 | 1.5 | .5 | 1e3 ? ;
+STRING         = ? "\"" ... "\"" ? ;
+```

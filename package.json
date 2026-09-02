@@ -12,6 +12,13 @@
     "deploy": "deno -Ar https://host.retiehe.com/cli deploy"
   },
   "dependencies": {
+    "@codemirror/autocomplete": "^6.20.3",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/lint": "^6.9.7",
+    "@codemirror/state": "^6.7.2",
+    "@codemirror/view": "^6.43.10",
+    "@lezer/highlight": "^1.2.3",
+    "codemirror": "^6.0.2",
     "three": "^0.185.1"
   },
   "devDependencies": {
