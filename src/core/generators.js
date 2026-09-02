@@ -12,7 +12,7 @@ import { FUNCTION_PRESETS, state, nextFunctionId, setDirty, compPr, getParticle 
 import { varKfValue, evaluate } from './easing.js';
 import { modalAlert } from '../ui/ui.js';
 import { pushUndo } from '../state/undo.js';
-import { rebuildPoints } from './animation.js';
+import { rebuildPoints, maxTick } from './animation.js';
 import { refreshFunctionPanel } from '../ui/panels.js';
 import { parseProgram, createObjectState, runSetup, createStatics, evalProcess, runUniformPrelude, prepareProcess, createProcessRunner, runNativeProcess } from './script-lang.js';
 
@@ -117,20 +117,22 @@ function lifeAt(fx, t) {
 }
 
 function getObjectState(fx) {
-  if (fx._objState !== undefined) return fx._objState;
+  const duration = maxTick();
+  if (fx._objState !== undefined && fx._objStateDuration === duration) return fx._objState;
   const program = getProgram(fx);
   const n = Math.max(1, Math.round(fx.count) || 1);
   const st = fx.st || 0;
   const objState = createObjectState(fx.seed | 0);
-  runSetup(program, objState, { n, t: st, vars: varsAt(fx, st) });
+  runSetup(program, objState, { n, t: st, duration, vars: varsAt(fx, st) });
   fx._objState = objState;
+  fx._objStateDuration = duration;
   return objState;
 }
 
 // 每 (fx, n, t, dt) 求值上下文：vars 对象与 uniform 值只算一次，同帧所有粒子广播。
 // 同时预编译字节码并创建可复用 process 执行器，避免每粒子重复解析/分配。
 function getEvalContext(fx, objState, n, t, dt) {
-  const key = (t || 0) + '|' + n + '|' + (dt || 0);
+  const key = (t || 0) + '|' + n + '|' + (dt || 0) + '|' + maxTick();
   if (fx._evalCtx && fx._evalCtx.key === key) return fx._evalCtx;
   const varsObj = varsAt(fx, t || 0);
   const life = lifeAt(fx, t || 0);
@@ -140,7 +142,7 @@ function getEvalContext(fx, objState, n, t, dt) {
   const compiled = prepareProcess(program, varNames, globalNames);
   const preCtx = {
     i: 0, n, t: t || 0, dt: dt || 0,
-    life, uv_x: 0, uv_y: 0,
+    duration: maxTick(), life, uv_x: 0, uv_y: 0,
     vars: varsObj, fastMath: !!fx.fastMath,
     out: newOut(),
   };
@@ -156,6 +158,7 @@ function evalParticleFor(fx, objState, statics, i, n, t, dt) {
   const uv = uvFor(fx, n, i);
   const ctx = {
     i, n, t: t || 0, dt: dt || 0,
+    duration: maxTick(),
     life: evalCtx.life,
     uv_x: uv.uv_x, uv_y: uv.uv_y,
     vars: evalCtx.varsObj,
@@ -384,6 +387,7 @@ export function rebuildFunctionObject(fx) {
   fx._programSrcSetup = undefined;
   fx._programSrcProcess = undefined;
   fx._objState = undefined;
+  fx._objStateDuration = undefined;
   fx._evalCtx = undefined;
 
   const n = Math.max(1, Math.round(fx.count) || 1);

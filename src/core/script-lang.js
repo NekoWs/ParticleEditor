@@ -48,20 +48,20 @@ const KEYWORDS = new Set([
   'break', 'continue', 'global', 'static', 'true', 'false',
 ]);
 
-// Context 对象：唯一保留的上下文访问名。i/n/t/dt/uv_x/uv_y/life 与单字母
+// this 对象：唯一保留的上下文访问名。i/n/t/dt/uv_x/uv_y/life 与单字母
 // 粒子属性名（x/y/z/r/g/b/a/vx/vy/vz/sc/glow/light）不再保留，均可作普通变量。
-const CTX_NAME = 'Context';
+const CTX_NAME = 'this';
 
-// Context 只读字段。setup 仅 count/time；process 只读 index/count/time/delta/uv（life 为输出字段）。
-const CTX_SETUP_READ = new Set(['count', 'time']);
-const CTX_PROCESS_READ = new Set(['index', 'count', 'time', 'delta', 'uv']);
+// this 只读字段。setup 仅 count/time/duration；process 只读 index/count/time/delta/duration/uv（life 为输出字段）。
+const CTX_SETUP_READ = new Set(['count', 'time', 'duration']);
+const CTX_PROCESS_READ = new Set(['index', 'count', 'time', 'delta', 'duration', 'uv']);
 
-// Context 输出字段（process 内可读可写）。
+// this 输出字段（process 内可读可写）。
 const CTX_OUT_FIELDS = new Set(['position', 'color', 'velocity', 'scale', 'glow', 'light', 'life']);
 const CTX_VEC_FIELDS = new Set(['position', 'color', 'velocity']);
 
-// Context 字段 → 字节码编号（只读 + 输出共用）。
-const CTX_FIELD_NAMES = ['index', 'count', 'time', 'delta', 'uv', 'life', 'position', 'color', 'velocity', 'scale', 'glow', 'light'];
+// this 字段 → 字节码编号（只读 + 输出共用）。
+const CTX_FIELD_NAMES = ['index', 'count', 'time', 'delta', 'duration', 'uv', 'life', 'position', 'color', 'velocity', 'scale', 'glow', 'light'];
 const CTX_FIELD_CODE = {};
 CTX_FIELD_NAMES.forEach((n, i) => { CTX_FIELD_CODE[n] = i; });
 const CTX_FIELD_BY_CODE = CTX_FIELD_NAMES;
@@ -873,7 +873,7 @@ class Parser {
           expr = { type: 'comp', target: expr, comp: nameTok.value, line: expr.line, col: expr.col };
         } else {
           if (expr.type !== 'var' || expr.name !== CTX_NAME) {
-            this.errorAt(nameTok, `only Context has fields '.${nameTok.value}'`);
+            this.errorAt(nameTok, `only this has fields '.${nameTok.value}'`);
           }
           expr = { type: 'member', object: expr, field: nameTok.value, line: nameTok.line, col: nameTok.col };
         }
@@ -1081,9 +1081,9 @@ class Runtime {
   /* -- 名称查找 -- */
 
   lookupName(name, node) {
-    // Context 不是值，只能通过 Context.field 访问。
+    // this 不是值，只能通过 this.field 访问。
     if (name === CTX_NAME) {
-      throw runtimeError(`'Context' is not a value; use Context.<field>`, node);
+      throw runtimeError(`'this' is not a value; use this.<field>`, node);
     }
     // 1) 块级 / 函数局部作用域（由内向外）
     for (let i = this.scopes.length - 1; i >= 0; i--) {
@@ -1107,7 +1107,7 @@ class Runtime {
 
   assignName(name, value, node) {
     if (name === CTX_NAME) {
-      throw runtimeError(`cannot assign to 'Context'; use Context.<field> = ...`, node);
+      throw runtimeError(`cannot assign to 'this'; use this.<field> = ...`, node);
     }
 
     // 局部作用域
@@ -1142,7 +1142,7 @@ class Runtime {
 
   assignCtxField(target, value, node) {
     if (target.object.type !== 'var' || target.object.name !== CTX_NAME) {
-      throw runtimeError(`only Context has fields '.${target.field}'`, node);
+      throw runtimeError(`only this has fields '.${target.field}'`, node);
     }
     ctxWrite(target.field, value, this, node);
   }
@@ -1412,7 +1412,7 @@ class Runtime {
   evalMember(node) {
     const field = node.field;
     if (node.object.type !== 'var' || node.object.name !== CTX_NAME) {
-      throw runtimeError(`only Context has fields '.${field}'`, node);
+      throw runtimeError(`only this has fields '.${field}'`, node);
     }
     return ctxRead(field, this, node);
   }
@@ -1489,13 +1489,14 @@ function ensureOut(ctx) {
   return out;
 }
 
-/* -- Context 字段读取/写入（§8/§9） -- */
+/* -- this 字段读取/写入（§8/§9） -- */
 
 function ctxRead(field, rt, node) {
   if (rt.phase === 'setup') {
     if (field === 'count') return rt.env && rt.env.n != null ? rt.env.n : 0;
     if (field === 'time') return rt.env && rt.env.t != null ? rt.env.t : 0;
-    throw runtimeError(`Context.${field} is not available in setup`, node);
+    if (field === 'duration') return rt.env && rt.env.duration != null ? rt.env.duration : 0;
+    throw runtimeError(`this.${field} is not available in setup`, node);
   }
 
   // process
@@ -1503,6 +1504,7 @@ function ctxRead(field, rt, node) {
   if (field === 'count') return rt.ctx && rt.ctx.n != null ? rt.ctx.n : 0;
   if (field === 'time') return rt.ctx && rt.ctx.t != null ? rt.ctx.t : 0;
   if (field === 'delta') return rt.ctx && rt.ctx.dt != null ? rt.ctx.dt : 0;
+  if (field === 'duration') return rt.ctx && rt.ctx.duration != null ? rt.ctx.duration : 0;
   if (field === 'uv') return vec2(
     rt.ctx && rt.ctx.uv_x != null ? rt.ctx.uv_x : 0,
     rt.ctx && rt.ctx.uv_y != null ? rt.ctx.uv_y : 0,
@@ -1517,32 +1519,32 @@ function ctxRead(field, rt, node) {
     case 'glow': return out.glow;
     case 'light': return out.light;
     case 'life': return out.life;
-    default: throw runtimeError(`unknown Context field '.${field}'`, node);
+    default: throw runtimeError(`unknown this field '.${field}'`, node);
   }
 }
 
 function ctxVecValues(value, len, field, node) {
   if (isVec(value)) {
     if (vecDim(value) !== len) {
-      throw runtimeError(`Context.${field} requires a vec${len}, got ${typeName(value)}`, node);
+      throw runtimeError(`this.${field} requires a vec${len}, got ${typeName(value)}`, node);
     }
     return vecComps(value);
   }
   if (Array.isArray(value)) {
     if (value.length !== len) {
-      throw runtimeError(`Context.${field} requires an array of ${len} numbers, got length ${value.length}`, node);
+      throw runtimeError(`this.${field} requires an array of ${len} numbers, got length ${value.length}`, node);
     }
-    return value.map((x, i) => expectNum(x, `Context.${field}[${i}]`, node));
+    return value.map((x, i) => expectNum(x, `this.${field}[${i}]`, node));
   }
-  throw runtimeError(`Context.${field} requires a vec${len} or array of ${len} numbers, got ${typeName(value)}`, node);
+  throw runtimeError(`this.${field} requires a vec${len} or array of ${len} numbers, got ${typeName(value)}`, node);
 }
 
 function ctxWrite(field, value, rt, node) {
   if (rt.phase !== 'process') {
-    throw runtimeError(`Context.${field} is read-only here`, node);
+    throw runtimeError(`this.${field} is read-only here`, node);
   }
   if (!CTX_OUT_FIELDS.has(field)) {
-    throw runtimeError(`Context.${field} is read-only`, node);
+    throw runtimeError(`this.${field} is read-only`, node);
   }
   const out = ensureOut(rt.ctx);
   switch (field) {
@@ -1573,35 +1575,35 @@ function ctxWrite(field, value, rt, node) {
         }
       } else if (Array.isArray(value)) {
         if (value.length === 3) {
-          out.color[0] = clamp01(expectNum(value[0], 'Context.color[0]', node));
-          out.color[1] = clamp01(expectNum(value[1], 'Context.color[1]', node));
-          out.color[2] = clamp01(expectNum(value[2], 'Context.color[2]', node));
+          out.color[0] = clamp01(expectNum(value[0], 'this.color[0]', node));
+          out.color[1] = clamp01(expectNum(value[1], 'this.color[1]', node));
+          out.color[2] = clamp01(expectNum(value[2], 'this.color[2]', node));
           return;
         }
         if (value.length === 4) {
-          out.color[0] = clamp01(expectNum(value[0], 'Context.color[0]', node));
-          out.color[1] = clamp01(expectNum(value[1], 'Context.color[1]', node));
-          out.color[2] = clamp01(expectNum(value[2], 'Context.color[2]', node));
-          out.color[3] = clamp01(expectNum(value[3], 'Context.color[3]', node));
+          out.color[0] = clamp01(expectNum(value[0], 'this.color[0]', node));
+          out.color[1] = clamp01(expectNum(value[1], 'this.color[1]', node));
+          out.color[2] = clamp01(expectNum(value[2], 'this.color[2]', node));
+          out.color[3] = clamp01(expectNum(value[3], 'this.color[3]', node));
           return;
         }
       }
-      throw runtimeError(`Context.color requires a vec3, vec4, [r,g,b] or [r,g,b,a], got ${typeName(value)}`, node);
+      throw runtimeError(`this.color requires a vec3, vec4, [r,g,b] or [r,g,b,a], got ${typeName(value)}`, node);
     }
-    case 'scale': out.scale = expectNum(value, 'Context.scale', node); return;
+    case 'scale': out.scale = expectNum(value, 'this.scale', node); return;
     case 'glow':
       if (!isNum(value) && !isBool(value)) {
-        throw runtimeError(`Context.glow requires a num/bool, got ${typeName(value)}`, node);
+        throw runtimeError(`this.glow requires a num/bool, got ${typeName(value)}`, node);
       }
       out.glow = value > 0.5;
       return;
-    case 'light': out.light = Math.max(0, Math.min(15, Math.round(expectNum(value, 'Context.light', node)))); return;
+    case 'light': out.light = Math.max(0, Math.min(15, Math.round(expectNum(value, 'this.light', node)))); return;
     case 'life': {
-      const v = Math.round(expectNum(value, 'Context.life', node));
+      const v = Math.round(expectNum(value, 'this.life', node));
       out.life = Number.isFinite(v) ? (v < 0 ? -1 : v) : -1;
       return;
     }
-    default: throw runtimeError(`Context.${field} is read-only`, node);
+    default: throw runtimeError(`this.${field} is read-only`, node);
   }
 }
 
@@ -2523,7 +2525,7 @@ class Compiler {
       case 'var': {
         const name = node.name;
         if (name === CTX_NAME) {
-          throw parseError(`'Context' is not a value; use Context.<field>`, node.line, node.col);
+          throw parseError(`'this' is not a value; use this.<field>`, node.line, node.col);
         }
         if (this.hoisted.has(name)) {
           this.emit2(OP.LOAD_UNIFORM, this.hoisted.get(name), node);
@@ -2536,10 +2538,10 @@ class Compiler {
       }
       case 'member': {
         if (node.object.type !== 'var' || node.object.name !== CTX_NAME) {
-          throw parseError(`only Context has fields '.${node.field}'`, node.line, node.col);
+          throw parseError(`only this has fields '.${node.field}'`, node.line, node.col);
         }
         if (!CTX_FIELD_CODE.hasOwnProperty(node.field)) {
-          throw parseError(`unknown Context field '.${node.field}'`, node.line, node.col);
+          throw parseError(`unknown this field '.${node.field}'`, node.line, node.col);
         }
         this.emit2(OP.LOAD_CTX_FIELD, CTX_FIELD_CODE[node.field], node);
         return;
@@ -2640,16 +2642,16 @@ class Compiler {
     switch (target.type) {
       case 'var':
         if (target.name === CTX_NAME) {
-          throw parseError(`cannot assign to 'Context'; use Context.<field> = ...`, target.line, target.col);
+          throw parseError(`cannot assign to 'this'; use this.<field> = ...`, target.line, target.col);
         }
         this.emit2(OP.STORE, this.internName(target.name), target);
         return;
       case 'member': {
         if (target.object.type !== 'var' || target.object.name !== CTX_NAME) {
-          throw parseError(`only Context has fields '.${target.field}'`, target.line, target.col);
+          throw parseError(`only this has fields '.${target.field}'`, target.line, target.col);
         }
         if (!CTX_FIELD_CODE.hasOwnProperty(target.field)) {
-          throw parseError(`unknown Context field '.${target.field}'`, target.line, target.col);
+          throw parseError(`unknown this field '.${target.field}'`, target.line, target.col);
         }
         this.emit2(OP.STORE_CTX_FIELD, CTX_FIELD_CODE[target.field], target);
         return;
@@ -2667,10 +2669,10 @@ class Compiler {
           this.emit2(OP.STORE, this.internName(inner.name), target);
         } else if (inner.type === 'member') {
           if (inner.object.type !== 'var' || inner.object.name !== CTX_NAME) {
-            throw parseError(`only Context has fields '.${inner.field}'`, inner.line, inner.col);
+            throw parseError(`only this has fields '.${inner.field}'`, inner.line, inner.col);
           }
           if (!CTX_FIELD_CODE.hasOwnProperty(inner.field)) {
-            throw parseError(`unknown Context field '.${inner.field}'`, inner.line, inner.col);
+            throw parseError(`unknown this field '.${inner.field}'`, inner.line, inner.col);
           }
           this.emit2(OP.LOAD_CTX_FIELD, CTX_FIELD_CODE[inner.field], inner);
           this.emit2(OP.COMP_STORE, COMP_CODE[COMP_ALIAS[target.comp]], target);
@@ -2872,7 +2874,7 @@ function isInvariantExpr(node, invariant, varNames) {
     case 'var': return invariant.has(node.name);
     case 'member': {
       if (node.object.type !== 'var' || node.object.name !== CTX_NAME) return false;
-      return node.field === 'count' || node.field === 'time' || node.field === 'delta';
+      return node.field === 'count' || node.field === 'time' || node.field === 'delta' || node.field === 'duration';
     }
     case 'unary': return isInvariantExpr(node.operand, invariant, varNames);
     case 'binary': return isInvariantExpr(node.left, invariant, varNames) && isInvariantExpr(node.right, invariant, varNames);
@@ -3097,6 +3099,7 @@ function compileNativeProcess(program, varNames, globalNames) {
       case 'count': return 'ctx.n';
       case 'time': return 'ctx.t';
       case 'delta': return 'ctx.dt';
+      case 'duration': return 'ctx.duration';
       case 'life': return 'out.life';
       case 'scale': return 'out.scale';
       case 'glow': return '(out.glow?1:0)';

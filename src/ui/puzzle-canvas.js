@@ -34,9 +34,9 @@ import {
 const CTX_ATTR_FIELDS = ['position.x', 'position.y', 'position.z', 'velocity.x', 'velocity.y', 'velocity.z', 'color.r', 'color.g', 'color.b', 'color.a'];
 
 function ctxExprForKey(key) {
-  const field = key.slice('Context.'.length);
-  if (field.startsWith('uv.')) return { kind: 'member', obj: { kind: 'member', obj: { kind: 'var', name: 'Context' }, field: 'uv' }, field: field.slice(3) };
-  return { kind: 'member', obj: { kind: 'var', name: 'Context' }, field };
+  const field = key.slice('this.'.length);
+  if (field.startsWith('uv.')) return { kind: 'member', obj: { kind: 'member', obj: { kind: 'var', name: 'this' }, field: 'uv' }, field: field.slice(3) };
+  return { kind: 'member', obj: { kind: 'var', name: 'this' }, field };
 }
 
 /* ============================ host 注入 ============================ */
@@ -482,7 +482,7 @@ function stmtParts(s) {
     return [
       { edit: { kind: 'text', key: 'name', ident: true, value: s.name, commit: (v) => {
         const nn = String(v).trim();
-        if (!nn || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(nn) || nn === 'Context' || nn === s.name) return false;
+        if (!nn || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(nn) || nn === 'this' || nn === s.name) return false;
         H.pushUndo();
         H.renameRefsInAll(s.name, nn);
         s.name = nn;
@@ -1044,7 +1044,7 @@ function layoutVars(cw) {
       kind: 'edit', shape: 'edit', space: 'var', editKey: nameKey,
       edit: { kind: 'text', ident: true, value: name, commit: (v) => {
         const nn = String(v).trim();
-        if (!nn || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(nn) || nn === 'Context' || nn === name) return false;
+        if (!nn || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(nn) || nn === 'this' || nn === name) return false;
         if (nn in bctx.varExprs) return false;
         H.pushUndo();
         H.renameVarGlobal(name, nn);
@@ -1066,9 +1066,9 @@ function layoutVars(cw) {
     out.push(nameEdit, valEdit);
   }
 
-  // Context 只读字段标签（可拖入表达式槽作为上下文引用）
+  // this 只读字段标签（可拖入表达式槽作为上下文引用）
   for (const field of CTX_VAR_FIELDS) {
-    const label = 'Context.' + field;
+    const label = 'this.' + field;
     const tw = textW(ctx, label, FONT) + 14;
     const tag = {
       kind: 'attr-var', shape: 'tag', attrVar: label, x, y: y, _dy: (VARS_ROW_H - ATTR_H) / 2, w: tw, h: ATTR_H,
@@ -2931,7 +2931,7 @@ function onWorkDown(e) {
     if (hit && hit.kind === 'attr-var') {
       e.preventDefault();
       const r = hit;
-      const template = r.attrVar.startsWith('Context.') ? ctxExprForKey(r.attrVar) : { kind: 'var', name: r.attrVar };
+      const template = r.attrVar.startsWith('this.') ? ctxExprForKey(r.attrVar) : { kind: 'var', name: r.attrVar };
       startGhostDrag({ type: 'palette', stmt: false, template }, e, e.clientX - (rect.left + r.x), e.clientY - (rect.top + ch - VARS_H + r.y - S.varsScroll), H.getBctx().layout.view.scale);
       renderGhost();
       return;

@@ -29,7 +29,7 @@
 ```
 
 **版本**：
-- `v9`（当前）：脚本语言改为 `Context` 对象模型（`Context.position` 等；旧 `i/n/[x,y,z]=...` 语法移除）；读取端**拒绝**旧版。
+- `v9`（当前）：脚本语言改为 `this` 对象模型（`this.position` 等；旧 `i/n/[x,y,z]=...` 语法移除）；读取端**拒绝**旧版。
 - `v8`（旧版）：新增摄像机「旋转」空间 flags（bit0=rotLocal；局部=摄像机 lookAt+roll 自身朝向，世界=世界轴）；组级自转/公转空间**缺省改为 local**（flags 位语义不变，编辑器总是写入显式值）；读取端**拒绝**。
 - `v7`（旧版）：摄像机朝向改为「看向目标点」`target` + 翻滚角 `roll`（pitch/yaw 由 lookAt 自动计算），新增 `target.x/y/z` pr 枚举；读取端**拒绝**。
 - `v6`（旧版）：新增摄像机对象（`cameras` section + 摄像机轨道引用 kind=3 + `fov` pr）；读取端**拒绝**。

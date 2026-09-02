@@ -32,7 +32,7 @@ let eventsBound = false;
 
 // 变量名约束：必须能作为公式标识符，且不能与属性保留字、内置变量/常量、函数名冲突
 const VAR_IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const VAR_RESERVED = new Set(['Context', 'cx', 'cy', 'cz', 'out', 'pi', 'e', ...Object.keys(FUNCS)]);
+const VAR_RESERVED = new Set(['this', 'cx', 'cy', 'cz', 'out', 'pi', 'e', ...Object.keys(FUNCS)]);
 
 /* =========================================================================
  * 小工具

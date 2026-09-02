@@ -274,7 +274,7 @@ function encodeBody(state, texPngOf) {
     }
   }
 
-  // 摄像机对象（v6 新增；v7 起朝向改为 target 目标点 + roll 翻滚角；v8 起新增旋转空间 flags；v9 起脚本改为 Context 语法）
+  // 摄像机对象（v6 新增；v7 起朝向改为 target 目标点 + roll 翻滚角；v8 起新增旋转空间 flags；v9 起脚本改为 this 语法）
   const cameras = state.cameras || [];
   const cameraIndex = new Map(cameras.map((c, i) => [c.id, i]));
   w.varint(cameras.length);

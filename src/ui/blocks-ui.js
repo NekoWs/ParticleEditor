@@ -107,8 +107,8 @@ export function availableVars() {
   return out;
 }
 export function ctxVarTemplate(field) {
-  if (field.startsWith('uv.')) return { kind: 'member', obj: { kind: 'member', obj: { kind: 'var', name: 'Context' }, field: 'uv' }, field: field.slice(3) };
-  return { kind: 'member', obj: { kind: 'var', name: 'Context' }, field };
+  if (field.startsWith('uv.')) return { kind: 'member', obj: { kind: 'member', obj: { kind: 'var', name: 'this' }, field: 'uv' }, field: field.slice(3) };
+  return { kind: 'member', obj: { kind: 'var', name: 'this' }, field };
 }
 
 /* =========================================================================
@@ -322,7 +322,7 @@ export function nodeInfo(n) {
     case 'bool': return t('blk.constNum');
     case 'var': return (BUILTIN_VAR_INFO[n.name] && t(BUILTIN_VAR_INFO[n.name])) || t('blk.var');
     case 'member': {
-      const key = 'Context.' + n.field;
+      const key = 'this.' + n.field;
       return (BUILTIN_VAR_INFO[key] && t(BUILTIN_VAR_INFO[key])) || t('blk.var');
     }
     case 'func': return funcInfo(n.name);
@@ -366,7 +366,7 @@ export function buildPaletteGroup(g) {
   } else if (g.id === 'var') {
     items.push({ key: 'stmt:set', type: 'stmt', kind: 'set', label: t(STMT_BLOCKS.set.label), info: t(STMT_BLOCKS.set.desc) });
     for (const field of CTX_VAR_FIELDS) {
-      const key = 'Context.' + field;
+      const key = 'this.' + field;
       items.push({ key: 'var:' + key, type: 'expr', template: ctxVarTemplate(field), label: key, info: (BUILTIN_VAR_INFO[key] && t(BUILTIN_VAR_INFO[key])) || t('blk.var') });
     }
     for (const name of availableVars()) items.push({ key: 'var:' + name, type: 'expr', template: { kind: 'var', name }, label: name, info: t('blk.var') });

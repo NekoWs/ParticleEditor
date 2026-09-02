@@ -14,26 +14,28 @@
 旧 `fx.code` 不再存在。工程格式为 `.pdraw v10`、`.pdrawc v9`；旧版本一律拒绝打开。
 
 ### setup 环境（对象级）
-Context 只读字段：
+this 只读字段：
 
-- `Context.count`：粒子总数（`fx.count`，最小 1）。
-- `Context.time`：当前时间（tick）。
+- `this.count`：粒子总数（`fx.count`，最小 1）。
+- `this.time`：当前时间（tick）。
+- `this.duration`：动画总时长（tick）。
 - `fx.vars` 中的变量：只读注入（按变量名）。
 
-不可访问：`Context.index`、`Context.delta`、`Context.uv`、`Context.life`，以及所有输出字段（见 §8）。
+不可访问：`this.index`、`this.delta`、`this.uv`、`this.life`，以及所有输出字段（见 §8）。
 
 ### process 环境（粒子级）
-Context 只读字段：
+this 只读字段：
 
-- `Context.index`：粒子序号（`0 .. count-1`）。
-- `Context.count`：粒子总数。
-- `Context.time`：当前时间（tick）。
-- `Context.delta`：距上次求值经过的秒数。连续播放时由帧/步进间隔提供；`seek`、循环回绕、加载后首次求值为 `0`。
-- `Context.uv`：`vec2(uv_x, uv_y)`，见 §9。
-- `Context` 输出字段读写：`position / color / velocity / scale / glow / light / life`（见 §8）。
+- `this.index`：粒子序号（`0 .. count-1`）。
+- `this.count`：粒子总数。
+- `this.time`：当前时间（tick）。
+- `this.delta`：距上次求值经过的秒数。连续播放时由帧/步进间隔提供；`seek`、循环回绕、加载后首次求值为 `0`。
+- `this.duration`：动画总时长（tick）。
+- `this.uv`：`vec2(uv_x, uv_y)`，见 §9。
+- `this` 输出字段读写：`position / color / velocity / scale / glow / light / life`（见 §8）。
 - `fx.vars` 中的变量：只读注入。
 
-`Context` 本身不是值；单独使用 `Context`（例如 `x = Context;`）抛错。
+`this` 本身不是值；单独使用 `this`（例如 `x = this;`）抛错。
 
 ## 2. 值类型
 
@@ -56,7 +58,7 @@ Context 只读字段：
 - 字符串字面量：`"..."`（用于 `print` / `assert` 消息）。
 - 注释：`// 行注释`、`/* 块注释 */`。
 - 关键字：`setup` `process` `func` `return` `if` `else` `while` `do` `for` `break` `continue` `global` `static` `true` `false`。
-- 唯一保留上下文标识符：`Context`（不能作为变量/函数名/参数/global/static 名）。
+- 唯一保留上下文标识符：`this`（不能作为变量/函数名/参数/global/static 名）。
 - 运算符与分隔符：`+ - * / % ^ == != < <= > >= && || ! ? : = ( ) [ ] { } , ; .`
 - 分号：语句以 `;` 结束（`{}` 块后无分号）。
 
@@ -82,15 +84,15 @@ arr[idx] = expr;
 [a,b,c] = [e1,e2,e3];           // 打包赋值（逐项求值）
 vec.x = expr;                   // 向量分量写入（分量必须为左值）
 
-// Context 输出字段（仅 process）
-Context.position = vec3 | [x,y,z];
-Context.velocity = vec3 | [vx,vy,vz];
-Context.color    = vec3 | vec4 | [r,g,b] | [r,g,b,a];
-Context.scale    = num;
-Context.glow     = num | bool;
-Context.light    = num;
-Context.life     = num;                     // 寿命（tick；<0 视为 -1=无限）
-Context.position.x = num;       // 分量写入（velocity/color 同理）
+// this 输出字段（仅 process）
+this.position = vec3 | [x,y,z];
+this.velocity = vec3 | [vx,vy,vz];
+this.color    = vec3 | vec4 | [r,g,b] | [r,g,b,a];
+this.scale    = num;
+this.glow     = num | bool;
+this.light    = num;
+this.life     = num;                     // 寿命（tick；<0 视为 -1=无限）
+this.position.x = num;       // 分量写入（velocity/color 同理）
 
 // 声明（作用域见 §6）
 global name = expr;             // setup 中；对象级共享，process 只读
@@ -120,7 +122,7 @@ assert(cond, "msg");            // 仅 setup；cond 为 false 时抛错
 8. 乘/除/模 `*` `/` `%`
 9. 幂 `^`
 10. 一元 `-` `!`
-11. 后缀：`f(args)`、`arr[idx]`、`.x` `.y` `.z` `.w` `.r` `.g` `.b` `.a`、`Context.<field>`
+11. 后缀：`f(args)`、`arr[idx]`、`.x` `.y` `.z` `.w` `.r` `.g` `.b` `.a`、`this.<field>`
 12. 主：字面量、标识符、数组字面量、`(...)`
 
 数组字面量：`[e1, e2, ...]`、`[]`。
@@ -135,19 +137,19 @@ assert(cond, "msg");            // 仅 setup；cond 为 false 时抛错
 - `static`：仅在 `process` 内声明；每个粒子独立一份；首次执行时初始化，此后跨帧保持；仅在函数对象加载/重建时重置（`seek`/循环回绕不重置，此时 `delta=0`）。
 - 普通变量：`setup`/`process` 内为块级作用域；函数参数与函数内普通变量为函数局部作用域；内部块可读外层变量。
 - `fx.vars`：只读注入，脚本不能对其赋值。
-- 函数可读外层 `global` 与调用点可见的 Context 字段；函数不捕获普通局部变量（按值传参）。
+- 函数可读外层 `global` 与调用点可见的 this 字段；函数不捕获普通局部变量（按值传参）。
 
 ### 6.1 名称遮蔽与保留字
 
-- **函数名可作为普通变量名**（含内建函数名与用户函数名）：`sin = 3; Context.position.x = sin;` 合法，
+- **函数名可作为普通变量名**（含内建函数名与用户函数名）：`sin = 3; this.position.x = sin;` 合法，
   值位置按普通变量查找（局部 → global → static → vars → 常量 → 函数值）。
   只有 `name(...)` 调用位置才把该名字解析为函数调用（内建函数优先于用户函数），
   即调用位置不受同名变量遮蔽。
-- **`Context` 是唯一保留上下文标识符**：不能作为变量/函数名/参数/global/static 名。
+- **`this` 是唯一保留上下文标识符**：不能作为变量/函数名/参数/global/static 名。
   旧的 `i/idx/n/t/dt/uv_x/uv_y/life` 与 `x/y/z/r/g/b/a/vx/vy/vz/sc/glow/light`
   不再是保留字，均可作为普通变量名。
-- `Context` 字段不受同名 global/变量遮蔽：`Context.count` 始终读粒子总数，
-  `Context.position` 始终读写当前粒子输出。
+- `this` 字段不受同名 global/变量遮蔽：`this.count` 始终读粒子总数，
+  `this.position` 始终读写当前粒子输出。
 - 关键字与常量名（`TAU`、`HALF_PI` 等）仍不可作为变量名。
 
 ## 7. 类型与运算
@@ -171,33 +173,34 @@ assert(cond, "msg");            // 仅 setup；cond 为 false 时抛错
 - 数组 `==/!=`：长度相同且逐元素按各自类型相等规则比较。
 - `&&` / `||` / `!`：仅接受标量/布尔；短路求值。
 
-## 8. Context 输出字段（粒子属性）
+## 8. this 输出字段（粒子属性）
 
 process 中读写以下字段即读写当前粒子输出：
 
-- `Context.position`：位置（世界坐标，随后叠加对象中心 `fx.center`）。vec3。
-- `Context.color`：颜色，各分量钳制到 `[0,1]`。vec4；`Context.color = vec3(r,g,b)` 只改 RGB、alpha 保留，`vec4(r,g,b,a)` 改 RGBA。
-- `Context.velocity`：速度。vec3。
-- `Context.scale`：缩放。标量。
-- `Context.glow`：读为 bool；写接受 num/bool，`>0.5` 视为 true。
-- `Context.light`：整数，钳制到 `[0,15]`。
-- `Context.life`：寿命（tick）。读为当前粒子寿命（默认 `-1` = 无限）；写接受 num，`Math.round` 取整，负值与非有限值视为 `-1`（无限）。`T - fx.st >= life` 时粒子隐藏。
+- `this.position`：位置（世界坐标，随后叠加对象中心 `fx.center`）。vec3。
+- `this.color`：颜色，各分量钳制到 `[0,1]`。vec4；`this.color = vec3(r,g,b)` 只改 RGB、alpha 保留，`vec4(r,g,b,a)` 改 RGBA。
+- `this.velocity`：速度。vec3。
+- `this.scale`：缩放。标量。
+- `this.glow`：读为 bool；写接受 num/bool，`>0.5` 视为 true。
+- `this.light`：整数，钳制到 `[0,15]`。
+- `this.life`：寿命（tick）。读为当前粒子寿命（默认 `-1` = 无限）；写接受 num，`Math.round` 取整，负值与非有限值视为 `-1`（无限）。`T - fx.st >= life` 时粒子隐藏。
 
 输出字段仅在 `process` 可写；`setup` 中访问任何输出字段报错。
 
-## 9. Context 只读字段
+## 9. this 只读字段
 
-- `Context.index`：粒子序号（`0 .. count-1`）。
-- `Context.count`：粒子总数。
-- `Context.time`：tick。
-- `Context.delta`：秒。
-- `Context.uv`：把 `count` 个粒子按列优先平铺到近正方形网格，返回 `vec2(uv_x, uv_y)`。
+- `this.index`：粒子序号（`0 .. count-1`）。
+- `this.count`：粒子总数。
+- `this.time`：tick。
+- `this.delta`：秒。
+- `this.duration`：动画总时长（tick）。编辑器取时间轴总长（`maxTick`）；播放器取 `timelineLength()`。
+- `this.uv`：把 `count` 个粒子按列优先平铺到近正方形网格，返回 `vec2(uv_x, uv_y)`。
   - `C = grid_cols`；若 `fx.vars` 中存在名为 `grid_cols` 的变量，用其 `base`，否则 `C = ceil(sqrt(count))`。
   - `R = ceil(count / C)`；`col = index % C`；`row = floor(index / C)`。
   - `uv.x = (C == 1) ? 0 : col / (C - 1)`。
   - `uv.y = (R == 1) ? 0 : row / (R - 1)`。
 
-`setup` 中仅 `Context.count` / `Context.time` 可用；其余字段报错。
+`setup` 中仅 `this.count` / `this.time` / `this.duration` 可用；其余字段报错。
 
 ## 10. 数组
 

@@ -50,16 +50,17 @@ export const METHOD_ARITY = {
   find: 1, includes: 1, sort: 0, unique: 0, reverse: 0,
 };
 
-// Context 只读字段（拼图内作为可直接拖入表达式的上下文变量）。
-export const CTX_VAR_FIELDS = ['index', 'count', 'time', 'delta', 'life', 'uv.x', 'uv.y'];
+// this 只读字段（拼图内作为可直接拖入表达式的上下文变量）。
+export const CTX_VAR_FIELDS = ['index', 'count', 'time', 'delta', 'duration', 'life', 'uv.x', 'uv.y'];
 export const BUILTIN_VAR_INFO = {
-  'Context.index': 'blk.var.index',
-  'Context.count': 'blk.var.count',
-  'Context.time': 'blk.var.time',
-  'Context.delta': 'blk.var.delta',
-  'Context.life': 'blk.var.life',
-  'Context.uv.x': 'blk.var.uv',
-  'Context.uv.y': 'blk.var.uv',
+  'this.index': 'blk.var.index',
+  'this.count': 'blk.var.count',
+  'this.time': 'blk.var.time',
+  'this.delta': 'blk.var.delta',
+  'this.duration': 'blk.var.duration',
+  'this.life': 'blk.var.life',
+  'this.uv.x': 'blk.var.uv',
+  'this.uv.y': 'blk.var.uv',
 };
 export const BUILTIN_VAR_NAMES = Object.keys(BUILTIN_VAR_INFO);
 
@@ -371,15 +372,15 @@ function emitStmt(s, level, spans, lineStart) {
   const pad = indentPad(level);
   const start = lineStart || 1;
   switch (s.kind) {
-    case 'pos': return pad + 'Context.position = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
-    case 'pos_vec': return pad + 'Context.position = ' + exprToCode(s.expr, 0);
-    case 'vel': return pad + 'Context.velocity = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
-    case 'vel_vec': return pad + 'Context.velocity = ' + exprToCode(s.expr, 0);
-    case 'col': return pad + 'Context.color = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
-    case 'scl': return pad + 'Context.scale = ' + exprToCode(s.expr, 0);
-    case 'glow': return pad + 'Context.glow = ' + (s.on ? '1' : '0');
-    case 'light': return pad + 'Context.light = ' + exprToCode(s.expr, 0);
-    case 'attr': return pad + 'Context.' + s.name + ' = ' + exprToCode(s.expr, 0);
+    case 'pos': return pad + 'this.position = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
+    case 'pos_vec': return pad + 'this.position = ' + exprToCode(s.expr, 0);
+    case 'vel': return pad + 'this.velocity = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
+    case 'vel_vec': return pad + 'this.velocity = ' + exprToCode(s.expr, 0);
+    case 'col': return pad + 'this.color = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
+    case 'scl': return pad + 'this.scale = ' + exprToCode(s.expr, 0);
+    case 'glow': return pad + 'this.glow = ' + (s.on ? '1' : '0');
+    case 'light': return pad + 'this.light = ' + exprToCode(s.expr, 0);
+    case 'attr': return pad + 'this.' + s.name + ' = ' + exprToCode(s.expr, 0);
     case 'set': return pad + s.name + ' = ' + exprToCode(s.expr, 0);
     case 'expr': return pad + exprToCode(s.expr, 0) + ';';
     case 'raw': return s.text || '';
@@ -876,7 +877,7 @@ export function stmtToNode(stmt) {
     // 旧 [x,y,z]=... 属性打包语法已移除；作为 raw 保留。
     throw new Error(_etf('err.unknownPack', stmt));
   }
-  if (lhs === 'Context.position') {
+  if (lhs === 'this.position') {
     if (rhs.startsWith('[')) {
       const exprs = parseExprList(rhs).map(e => parseExpr(e));
       if (exprs.length !== 3) throw new Error(_etf('err.assignCount2', stmt));
@@ -884,7 +885,7 @@ export function stmtToNode(stmt) {
     }
     return { kind: 'pos_vec', expr: parseExpr(rhs) };
   }
-  if (lhs === 'Context.velocity') {
+  if (lhs === 'this.velocity') {
     if (rhs.startsWith('[')) {
       const exprs = parseExprList(rhs).map(e => parseExpr(e));
       if (exprs.length !== 3) throw new Error(_etf('err.assignCount2', stmt));
@@ -892,7 +893,7 @@ export function stmtToNode(stmt) {
     }
     return { kind: 'vel_vec', expr: parseExpr(rhs) };
   }
-  if (lhs === 'Context.color') {
+  if (lhs === 'this.color') {
     if (rhs.startsWith('[')) {
       const exprs = parseExprList(rhs).map(e => parseExpr(e));
       if (exprs.length !== 4) throw new Error(_etf('err.assignCount2', stmt));
@@ -900,15 +901,15 @@ export function stmtToNode(stmt) {
     }
     throw new Error(_etf('err.unknownUnpack', stmt));
   }
-  if (lhs === 'Context.scale') return { kind: 'scl', expr: parseExpr(rhs) };
-  if (lhs === 'Context.glow') {
+  if (lhs === 'this.scale') return { kind: 'scl', expr: parseExpr(rhs) };
+  if (lhs === 'this.glow') {
     const e = parseExpr(rhs);
     if (e.kind === 'num' && (e.value === 1 || e.value === 0)) return { kind: 'glow', on: e.value === 1 };
     throw new Error(_etf('err.glowBinary', stmt));
   }
-  if (lhs === 'Context.light') return { kind: 'light', expr: parseExpr(rhs) };
-  if (/^Context\.(position|velocity|color)\.(x|y|z|r|g|b|a|w)$/.test(lhs)) {
-    return { kind: 'attr', name: lhs.slice('Context.'.length), expr: parseExpr(rhs) };
+  if (lhs === 'this.light') return { kind: 'light', expr: parseExpr(rhs) };
+  if (/^this\.(position|velocity|color)\.(x|y|z|r|g|b|a|w)$/.test(lhs)) {
+    return { kind: 'attr', name: lhs.slice('this.'.length), expr: parseExpr(rhs) };
   }
   return { kind: 'set', name: lhs, expr: parseExpr(rhs) };
 }

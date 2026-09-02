@@ -18,7 +18,7 @@
 | `v:7` | 上一版本：新增组级自转/公转空间 `gss`/`grs` |
 | `v:8` | 旧版工程：摄像机对象 `cam` 存旋转欧拉角 `rot`（本版本已移除，读取时自动换算） |
 | `v:9` | 旧版工程：摄像机朝向改为看向目标点 `target` + 翻滚角 `roll`（pitch/yaw 由 lookAt 自动计算） |
-| `v:10` | 当前版本：脚本语言改为 `Context` 对象模型（`Context.position` 等；旧 `i/n/[x,y,z]=...` 语法移除） |
+| `v:10` | 当前版本：脚本语言改为 `this` 对象模型（`this.position` 等；旧 `i/n/[x,y,z]=...` 语法移除） |
 
 当前编辑器**仅接受 `v:10`**；更旧版本（≤ v9）会提示「工程版本过旧」并拒绝打开。
 
@@ -183,7 +183,7 @@
   "center": [0, 0, 0],          // [x,y,z]
   "count": 200,                 // 派生粒子采样数
   "setup": "arr = []; ...",                          // setup 代码块（对象初始化一次；空字符串省略式写 ""）
-  "process": "Context.position = arr[Context.index]; ...", // process 代码块（每粒子每帧）
+  "process": "this.position = arr[this.index]; ...", // process 代码块（每粒子每帧）
   "funcs": "func f(a) { ... }", // 可选，顶层函数定义代码块（script-lang §4；缺省 = ""）
   "seed": 0,                    // 随机种子（整数；rand()/noise 默认使用）
   "vars": {                     // 变量表
