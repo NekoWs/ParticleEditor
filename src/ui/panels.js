@@ -12,7 +12,7 @@ import { state, FUNCTION_PRESETS, getFunction, isDerivedParticle } from '../core
 import { currentVisual, rotVectorAt, spinVectorAt, orbitCenterAt } from '../core/animation.js';
 import { currentSelected, selectedGroupName, fxPosDeltaAt, fxScaleValuesAt } from '../interaction/interaction.js';
 import { groupCurrentCentroid } from './tree.js';
-import { modalAlert, rgbToHex, hexToRgb } from './ui.js';
+import { modalAlert, rgbToHex, hexToRgb, rgbaToHex, hexToRgba } from './ui.js';
 import { varKfValue } from '../core/easing.js';
 import { applyPresetBuild, rebuildFunctionObject } from '../core/generators.js';
 import { openBlockDrawer } from './blocks-ui.js';
@@ -51,10 +51,12 @@ export function updatePropPanel() {
   if (scaleZ) scaleZ.style.display = isFx ? '' : 'none';
   // 派生粒子基础属性只读；函数对象 pos/scl 可编辑（写整体轨道）
   const readOnly = !isFx && !gname && sel.some(isDerivedParticle);
-  ['prop-color', 'prop-alpha', 'prop-glow', 'prop-light'].forEach(id => {
+  ['prop-color', 'prop-glow', 'prop-light'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = readOnly || isFx || gname;
   });
+  const colorBtn = document.getElementById('prop-color-btn');
+  if (colorBtn) colorBtn.disabled = readOnly || isFx || gname;
   // 寿命：组也可统一设置（应用到全体成员），函数对象无寿命属性保持禁用
   const lifeEl0 = document.getElementById('prop-life');
   if (lifeEl0) lifeEl0.disabled = readOnly || isFx;
@@ -111,12 +113,24 @@ export function updatePropPanel() {
   const same = (fn) => sel.every(q => fn(q) === fn(first));
 
   const colorSame = same(q => q.color[0] + ',' + q.color[1] + ',' + q.color[2]);
-  document.getElementById('prop-color').value = colorSame ? rgbToHex(first.color[0], first.color[1], first.color[2]) : '#808080';
-
   const aSame = same(q => q.color[3]);
-  const aInput = document.getElementById('prop-alpha');
-  if (aSame) { aInput.value = first.color[3]; document.getElementById('alpha-val').textContent = first.color[3].toFixed(2); }
-  else { aInput.value = 0.5; document.getElementById('alpha-val').textContent = '-'; }
+  const cInput = document.getElementById('prop-color');
+  if (colorSame && aSame) {
+    cInput.value = rgbaToHex(first.color[0], first.color[1], first.color[2], first.color[3]);
+    cInput.placeholder = '';
+  } else {
+    cInput.value = '';
+    cInput.placeholder = '-';
+  }
+  const swatchBtn = document.getElementById('prop-color-btn');
+  if (swatchBtn) {
+    const bg = colorSame && aSame
+      ? rgbaToHex(first.color[0], first.color[1], first.color[2], first.color[3])
+      : null;
+    swatchBtn.style.background = bg
+      ? 'linear-gradient(' + bg + ', ' + bg + '), repeating-conic-gradient(#777 0 25%, #bbb 0 50%) 0 0 / 10px 10px'
+      : 'repeating-conic-gradient(#777 0 25%, #bbb 0 50%) 0 0 / 10px 10px';
+  }
 
   const sxSame = same(q => q.scale && q.scale[0]);
   const sySame = same(q => q.scale && q.scale[1]);

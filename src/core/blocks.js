@@ -52,7 +52,19 @@ export const METHOD_ARITY = {
 
 // this 只读字段（拼图内作为可直接拖入表达式的上下文变量）。
 export const CTX_VAR_FIELDS = ['index', 'count', 'time', 'delta', 'duration', 'life', 'uv.x', 'uv.y'];
+// 上下文变量的短显示名（工作台积木与下拉列表使用）。
 export const BUILTIN_VAR_INFO = {
+  'this.index': 'blk.ctx.index',
+  'this.count': 'blk.ctx.count',
+  'this.time': 'blk.ctx.time',
+  'this.delta': 'blk.ctx.delta',
+  'this.duration': 'blk.ctx.duration',
+  'this.life': 'blk.ctx.life',
+  'this.uv.x': 'blk.ctx.uvx',
+  'this.uv.y': 'blk.ctx.uvy',
+};
+// 上下文变量的帮助文本（Alt 悬停/下拉提示使用，较完整）。
+export const CTX_VAR_INFO = {
   'this.index': 'blk.var.index',
   'this.count': 'blk.var.count',
   'this.time': 'blk.var.time',
@@ -63,6 +75,33 @@ export const BUILTIN_VAR_INFO = {
   'this.uv.y': 'blk.var.uv',
 };
 export const BUILTIN_VAR_NAMES = Object.keys(BUILTIN_VAR_INFO);
+
+// 返回 member 节点对应的 this.* 上下文键（如 'this.index' / 'this.uv.x'），非上下文返回 null。
+export function memberCtxKey(n) {
+  if (!n || n.kind !== 'member') return null;
+  if (n.obj && n.obj.kind === 'var' && n.obj.name === 'this') return 'this.' + n.field;
+  if ((n.field === 'x' || n.field === 'y') && n.obj && n.obj.kind === 'member' &&
+      n.obj.obj && n.obj.obj.kind === 'var' && n.obj.obj.name === 'this' && n.obj.field === 'uv') {
+    return 'this.uv.' + n.field;
+  }
+  return null;
+}
+
+/* —— 合并块下拉定义（三角函数/数值操作/限制/数组操作/上下文） —— */
+// 函数合并组：组内函数共用一个拼图，通过下拉切换实际函数名。
+export const FUNC_DROPDOWNS = {
+  trig: { label: 'blk.dd.trig', desc: 'blk.dd.trig.desc', funcs: ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'atan2'] },
+  numeric: { label: 'blk.dd.numeric', desc: 'blk.dd.numeric.desc', funcs: ['sqrt', 'abs', 'sign', 'exp', 'log', 'ln', 'floor', 'ceil', 'round', 'fract'] },
+  clamp: { label: 'blk.dd.clamp', desc: 'blk.dd.clamp.desc', funcs: ['min', 'max', 'clamp'] },
+};
+export function funcDropdownGroup(name) {
+  for (const g in FUNC_DROPDOWNS) if (FUNC_DROPDOWNS[g].funcs.includes(name)) return g;
+  return null;
+}
+// 数组操作合并块：全部走 method 节点，下拉切换方法名。
+export const ARRAY_METHODS = ['push', 'insert', 'remove', 'slice', 'size', 'find', 'includes', 'sort', 'unique', 'reverse'];
+// 运算符下拉：算术 + 比较 + 逻辑（替代被移除的独立运算符块）。
+export const ALL_OPERATORS = ['+', '-', '*', '/', '%', '^', '==', '!=', '<', '<=', '>', '>=', '&&', '||'];
 
 /* —— 积木类别 → CSS 类名（渲染层与数据层共用） —— */
 export const GROUP_COLOR = {
@@ -149,13 +188,12 @@ export const STMT_BLOCKS = {
 export const PALETTE_GROUPS = [
   { id: 'start', label: 'blk.pal.start' },
   { id: 'funcs', label: 'blk.pal.funcs' },
-  { id: 'pos', label: 'blk.pal.pos' },
-  { id: 'color', label: 'blk.pal.color' },
-  { id: 'appearance', label: 'blk.pal.appearance' },
+  { id: 'props', label: 'blk.pal.props' },
   { id: 'logic', label: 'blk.pal.logic' },
   { id: 'math', label: 'blk.pal.math' },
   { id: 'vec', label: 'blk.pal.vec' },
   { id: 'mat', label: 'blk.pal.mat' },
+  { id: 'array', label: 'blk.pal.array' },
   { id: 'var', label: 'blk.pal.var' },
   { id: 'const', label: 'blk.pal.const' },
 ];

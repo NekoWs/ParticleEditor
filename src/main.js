@@ -8,7 +8,8 @@
 import { t, applyI18nDom, setLanguage } from './core/i18n.js';
 import { state, FUNCTION_PRESETS, getParticle, getFunction, isDerivedParticle, updateTopbarTitle, clearObjectState } from './core/constants.js';
 import { setShiftHeld } from './interaction/input-state.js';
-import { showAboutModal } from './ui/ui.js';
+import { showAboutModal, hexToRgba, rgbaToHex } from './ui/ui.js';
+import { openColorPicker } from './ui/color-picker.js';
 import { easeInOut } from './core/easing.js';
 import { openEasingEditor, easingCurveSVG } from './ui/easing-editor.js';
 import { viewport, renderer, camera, controls, scene, pointsMaterial, selectedMaterial, focalLengthPx, camTransition, setCamTransition, planePulse, setPlanePulse, updateRenderScale } from './scene/scene.js';
@@ -18,7 +19,7 @@ import { pushUndo, undo, redo, beginContinuous, endContinuous } from './state/un
 import { currentSelected, selectedGroupName, deleteSelected, selectAll } from './interaction/interaction.js';
 import { createGroup } from './ui/tree.js';
 import { createFunctionObject } from './core/generators.js';
-import { syncFunctionVarValues, drawTimeline, updateLoopIndicator, hexToRgb, TL_PX_PER_TICK, setTLPxPerTick, timelineViewStart, setTimelineViewStart, scrubAutoPan, timelineXToTick, refreshFunctionPanel } from './ui/panels.js';
+import { syncFunctionVarValues, drawTimeline, updateLoopIndicator, TL_PX_PER_TICK, setTLPxPerTick, timelineViewStart, setTimelineViewStart, scrubAutoPan, timelineXToTick, refreshFunctionPanel } from './ui/panels.js';
 import { drawTimelineLayers, tlInitLayerEvents, refreshAllPanelsLight } from './ui/timeline-layers.js';
 import { initTimelineTree, refreshTimelineTree, tlTreeState } from './ui/timeline-tree.js';
 import { initTextureEditor, syncTextureSelection, updateTexOverlay, texAnimOverlayActive, refreshTexturePanel } from './ui/texture-editor.js';
@@ -282,10 +283,22 @@ export function initUI() {
   });
   document.getElementById('prop-light').addEventListener('input', (ev) => { beginContinuous(); document.getElementById('light-val').textContent = ev.target.value; currentSelected().forEach(p => { p.lightLevel = parseInt(ev.target.value); }); rebuildPoints(); });
   document.getElementById('prop-light').addEventListener('change', endContinuous);
-  document.getElementById('prop-alpha').addEventListener('input', (ev) => { beginContinuous(); document.getElementById('alpha-val').textContent = parseFloat(ev.target.value).toFixed(2); applyColorFromInputs(); });
-  document.getElementById('prop-alpha').addEventListener('change', endContinuous);
-  document.getElementById('prop-color').addEventListener('input', (ev) => { beginContinuous(); applyColorFromInputs(); });
-  document.getElementById('prop-color').addEventListener('change', endContinuous);
+  document.getElementById('prop-color').addEventListener('input', (ev) => { beginContinuous(); applyColorFromInputs(); updatePropColorSwatch(); });
+  document.getElementById('prop-color').addEventListener('change', (ev) => { endContinuous(); applyColorFromInputs(); updatePropColorSwatch(); });
+  document.getElementById('prop-color-btn').addEventListener('click', (ev) => {
+    const rgba = hexToRgba(document.getElementById('prop-color').value) || [1, 1, 1, 1];
+    const rect = ev.currentTarget.getBoundingClientRect();
+    pushUndo();
+    openColorPicker({
+      x: rect.left, y: rect.top,
+      rgba,
+      onInput: (out) => {
+        document.getElementById('prop-color').value = rgbaToHex(out[0], out[1], out[2], out[3]);
+        applyColorFromInputs();
+        updatePropColorSwatch();
+      },
+    });
+  });
   bindVec3Inputs(['prop-scale-x', 'prop-scale-y', 'prop-scale-z'], applyScaleFromInputs);
   bindVec3Inputs(['prop-posx', 'prop-posy', 'prop-posz'], applyPositionFromInputs);
   bindVec3Inputs(['prop-spin-x', 'prop-spin-y', 'prop-spin-z'], applySpinFromInputs);
@@ -420,9 +433,18 @@ export function bindVec3Inputs(ids, apply) {
 }
 
 export function applyColorFromInputs() {
-  const rgb = hexToRgb(document.getElementById('prop-color').value);
-  const a = parseFloat(document.getElementById('prop-alpha').value);
-  editSelectionUniform('col', [rgb[0], rgb[1], rgb[2], a]);
+  const rgba = hexToRgba(document.getElementById('prop-color').value);
+  if (!rgba) return;
+  editSelectionUniform('col', rgba);
+}
+
+export function updatePropColorSwatch() {
+  const rgba = hexToRgba(document.getElementById('prop-color').value);
+  if (rgba) {
+    document.getElementById('prop-color-btn').style.background =
+      'linear-gradient(rgba(' + Math.round(rgba[0] * 255) + ',' + Math.round(rgba[1] * 255) + ',' + Math.round(rgba[2] * 255) + ',' + rgba[3] + '), rgba(' +
+      Math.round(rgba[0] * 255) + ',' + Math.round(rgba[1] * 255) + ',' + Math.round(rgba[2] * 255) + ',' + rgba[3] + ')), repeating-conic-gradient(#777 0 25%, #bbb 0 50%) 0 0 / 10px 10px';
+  }
 }
 
 export function applyPositionFromInputs() {

@@ -12,8 +12,11 @@ import {_etf, t, tf} from '../core/i18n.js';
 import {getFunction, state} from '../core/constants.js';
 import {modalAlert} from './ui.js';
 import {
+  ARRAY_METHODS,
   BUILTIN_VAR_INFO,
   CTX_VAR_FIELDS,
+  CTX_VAR_INFO,
+  FUNC_DROPDOWNS,
   codeToStatements,
   collectTemps,
   exprType,
@@ -21,7 +24,7 @@ import {
   METHOD_ARITY,
   N0,
   OP_LABELS,
-  OP_SYMBOLS,
+  memberCtxKey,
   opSlotType,
   slotRef,
   statementsToCode,
@@ -109,6 +112,69 @@ export function availableVars() {
 export function ctxVarTemplate(field) {
   if (field.startsWith('uv.')) return { kind: 'member', obj: { kind: 'member', obj: { kind: 'var', name: 'this' }, field: 'uv' }, field: field.slice(3) };
   return { kind: 'member', obj: { kind: 'var', name: 'this' }, field };
+}
+
+/** 数组方法短显示名（中文等按语言显示）。 */
+export function methodLabel(name) {
+  const k = 'blk.method.' + name + '.label';
+  const s = t(k);
+  return s === k ? name : s;
+}
+
+/** 上下文值短显示名（索引/总数/…）。 */
+export function ctxLabel(field) {
+  const key = 'this.' + field;
+  return (BUILTIN_VAR_INFO[key] && t(BUILTIN_VAR_INFO[key])) || key;
+}
+export function ctxInfo(field) {
+  const key = 'this.' + field;
+  return (CTX_VAR_INFO[key] && t(CTX_VAR_INFO[key])) || '';
+}
+
+/** 供 puzzle-canvas 构建下拉列表的条目（value / label / info）。 */
+export function funcDropdownItems(group) {
+  const spec = FUNC_DROPDOWNS[group];
+  if (!spec) return [];
+  return spec.funcs.map(name => ({ value: name, label: name, info: funcInfo(name) }));
+}
+export function arrayDropdownItems() {
+  return ARRAY_METHODS.map(m => ({ value: m, label: methodLabel(m), info: methodInfo(m) }));
+}
+export function ctxDropdownItems() {
+  return CTX_VAR_FIELDS.map(f => {
+    const value = 'this.' + f;
+    return { value, label: ctxLabel(f), info: ctxInfo(f) || ctxLabel(f) };
+  });
+}
+
+/** 合并函数块：把 func 节点切换为同组内另一个函数，参数多退少补。 */
+export function applyFuncSelection(node, name) {
+  if (!node || node.kind !== 'func') return false;
+  const spec = FUNC_BLOCKS[name];
+  const n = spec ? spec.args.length : customFuncParams(name).length;
+  const args = (node.args || []).slice(0, n);
+  while (args.length < n) args.push(null);
+  node.name = name;
+  node.args = args;
+  return true;
+}
+
+/** 数组操作块：把 method 节点切换为另一个数组方法，参数多退少补。 */
+export function applyMethodSelection(node, method) {
+  if (!node || node.kind !== 'method') return false;
+  const n = METHOD_ARITY[method] ?? 0;
+  const args = (node.args || []).slice(0, n);
+  while (args.length < n) args.push(null);
+  node.method = method;
+  node.args = args;
+  return true;
+}
+
+/** 用新节点替换表达式树中的旧节点（供上下文等下拉切换使用）。 */
+export function replaceExprNode(oldNode, newNode) {
+  const ref = findSlotRefByNode(findAllStmts(), oldNode);
+  if (ref) { ref.set(newNode); return true; }
+  return false;
 }
 
 /* =========================================================================
@@ -322,8 +388,8 @@ export function nodeInfo(n) {
     case 'bool': return t('blk.constNum');
     case 'var': return (BUILTIN_VAR_INFO[n.name] && t(BUILTIN_VAR_INFO[n.name])) || t('blk.var');
     case 'member': {
-      const key = 'this.' + n.field;
-      return (BUILTIN_VAR_INFO[key] && t(BUILTIN_VAR_INFO[key])) || t('blk.var');
+      const key = memberCtxKey(n);
+      return (CTX_VAR_INFO[key] && t(CTX_VAR_INFO[key])) || t('blk.var');
     }
     case 'func': return funcInfo(n.name);
     case 'op': return (OP_LABELS[n.op] && t(OP_LABELS[n.op])) || t('blk.op');
@@ -356,24 +422,11 @@ export function buildPaletteGroup(g) {
         items.push({ key: 'func-param:' + name + ':' + param, type: 'expr', template: { kind: 'var', name: param }, label: param, info: tf('blk.funcParam', param) });
       }
     }
-  } else if (g.id === 'pos') {
-    ['pos', 'pos_vec', 'vel', 'vel_vec'].forEach(k => items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: t(STMT_BLOCKS[k].label), info: t(STMT_BLOCKS[k].desc) }));
-    items.push({ key: 'stmt:attr', type: 'stmt', kind: 'attr', label: t(STMT_BLOCKS.attr.label), info: t(STMT_BLOCKS.attr.desc) });
-  } else if (g.id === 'color') {
+  } else if (g.id === 'props') {
+    ['pos_vec', 'vel_vec'].forEach(k => items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: t(STMT_BLOCKS[k].label), info: t(STMT_BLOCKS[k].desc) }));
     items.push({ key: 'stmt:col', type: 'stmt', kind: 'col', label: t(STMT_BLOCKS.col.label), info: t(STMT_BLOCKS.col.desc) });
-  } else if (g.id === 'appearance') {
     ['scl', 'glow', 'light'].forEach(k => items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: t(STMT_BLOCKS[k].label), info: t(STMT_BLOCKS[k].desc) }));
-  } else if (g.id === 'var') {
-    items.push({ key: 'stmt:set', type: 'stmt', kind: 'set', label: t(STMT_BLOCKS.set.label), info: t(STMT_BLOCKS.set.desc) });
-    for (const field of CTX_VAR_FIELDS) {
-      const key = 'this.' + field;
-      items.push({ key: 'var:' + key, type: 'expr', template: ctxVarTemplate(field), label: key, info: (BUILTIN_VAR_INFO[key] && t(BUILTIN_VAR_INFO[key])) || t('blk.var') });
-    }
-    for (const name of availableVars()) items.push({ key: 'var:' + name, type: 'expr', template: { kind: 'var', name }, label: name, info: t('blk.var') });
-  } else if (g.id === 'const') {
-    items.push({ key: 'expr:num', type: 'expr', template: { kind: 'num', value: 1 }, label: t('blk.type.scalar'), info: t('blk.constNum') });
-    items.push({ key: 'expr:pi', type: 'expr', template: { kind: 'var', name: 'pi' }, label: 'pi', info: t('blk.piInfo') });
-    items.push({ key: 'expr:e', type: 'expr', template: { kind: 'var', name: 'e' }, label: 'e', info: t('blk.eInfo') });
+    items.push({ key: 'stmt:attr', type: 'stmt', kind: 'attr', label: t(STMT_BLOCKS.attr.label), info: t(STMT_BLOCKS.attr.desc) });
   } else if (g.id === 'logic') {
     ['if', 'repeat_n', 'repeat', 'repeat_until', 'while', 'do', 'break', 'continue', 'return', 'global', 'static'].forEach(k => {
       items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: t(STMT_BLOCKS[k] ? STMT_BLOCKS[k].label : 'blk.stmt.' + k), info: t(STMT_BLOCKS[k] ? STMT_BLOCKS[k].desc : 'blk.stmt.' + k) });
@@ -383,30 +436,35 @@ export function buildPaletteGroup(g) {
     items.push({ key: 'stmt:comment', type: 'stmt', kind: 'comment', label: t('blk.stmt.comment.label'), info: t('blk.stmt.comment.desc') });
     items.push({ key: 'expr:ternary', type: 'expr', template: { kind: 'ternary' }, label: '?:', info: t('blk.ternaryDesc') });
     items.push({ key: 'expr:not', type: 'expr', template: { kind: 'not' }, label: '!', info: t('blk.notDesc') });
-    items.push({ key: 'expr:bool:true', type: 'expr', template: { kind: 'bool', value: true }, label: 'true', info: t('blk.constNum') });
-    items.push({ key: 'expr:bool:false', type: 'expr', template: { kind: 'bool', value: false }, label: 'false', info: t('blk.constNum') });
-    for (const op of ['==', '!=', '<', '<=', '>', '>=', '&&', '||']) {
-      items.push({ key: 'expr:op:' + op, type: 'expr', template: { kind: 'op', op }, label: op, info: (OP_LABELS[op] && t(OP_LABELS[op])) || op });
-    }
+    items.push({ key: 'expr:bool:true', type: 'expr', template: { kind: 'bool', value: true }, label: t('blk.bool.true'), info: t('blk.constNum') });
+    items.push({ key: 'expr:bool:false', type: 'expr', template: { kind: 'bool', value: false }, label: t('blk.bool.false'), info: t('blk.constNum') });
   } else if (g.id === 'math') {
     items.push({ key: 'expr:chain', type: 'expr', template: { kind: 'chain', terms: [{ kind: 'num', value: 0 }, { kind: 'num', value: 0 }], ops: ['+'] }, label: t('blk.chain'), info: t('blk.chainDesc') });
-    for (const op of OP_SYMBOLS) items.push({ key: 'opval:' + op, type: 'opval', op, label: op, info: (OP_LABELS[op] && t(OP_LABELS[op])) || op });
-    for (const name in FUNC_BLOCKS) {
-      const r = FUNC_BLOCKS[name].ret;
-      if (r === T_SCALAR && !['vec', 'dot', 'cross', 'len', 'norm'].includes(name)) items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name, info: funcInfo(name) });
+    items.push({ key: 'dd:trig', type: 'func-dd', group: 'trig', selection: 'sin', label: t(FUNC_DROPDOWNS.trig.label), info: t(FUNC_DROPDOWNS.trig.desc) });
+    items.push({ key: 'dd:numeric', type: 'func-dd', group: 'numeric', selection: 'sqrt', label: t(FUNC_DROPDOWNS.numeric.label), info: t(FUNC_DROPDOWNS.numeric.desc) });
+    items.push({ key: 'dd:clamp', type: 'func-dd', group: 'clamp', selection: 'min', label: t(FUNC_DROPDOWNS.clamp.label), info: t(FUNC_DROPDOWNS.clamp.desc) });
+    for (const name of ['pow', 'lerp', 'step', 'smoothstep', 'mod', 'random', 'rand']) {
+      if (FUNC_BLOCKS[name]) items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name, info: funcInfo(name) });
     }
   } else if (g.id === 'vec') {
     ['vec', 'cross', 'norm', 'polar', 'sphere', 'torus', 'dot', 'len'].forEach(name => {
       if (FUNC_BLOCKS[name]) items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name, info: funcInfo(name) });
     });
     items.push({ key: 'expr:comp', type: 'expr', template: { kind: 'comp', axis: 'x', target: null }, label: t('blk.comp'), info: t('blk.compDesc') });
-    items.push({ key: 'expr:array', type: 'expr', template: { kind: 'array' }, label: '[]', info: t('blk.arrayDesc') });
-    items.push({ key: 'expr:index', type: 'expr', template: { kind: 'index' }, label: '[ ]', info: t('blk.indexDesc') });
-    for (const method of Object.keys(METHOD_ARITY)) {
-      items.push({ key: 'method:' + method, type: 'method', method, template: { kind: 'method', method }, label: '.' + method + '()', info: methodInfo(method) });
-    }
   } else if (g.id === 'mat') {
     ['rotX', 'rotY', 'rotZ', 'rotAxis'].forEach(name => items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name, info: funcInfo(name) }));
+  } else if (g.id === 'array') {
+    items.push({ key: 'expr:array', type: 'expr', template: { kind: 'array' }, label: '[]', info: t('blk.arrayDesc') });
+    items.push({ key: 'expr:index', type: 'expr', template: { kind: 'index' }, label: '[ ]', info: t('blk.indexDesc') });
+    items.push({ key: 'dd:array', type: 'method-dd', selection: 'push', label: t('blk.dd.array'), info: t('blk.dd.array.desc') });
+  } else if (g.id === 'var') {
+    items.push({ key: 'stmt:set', type: 'stmt', kind: 'set', label: t(STMT_BLOCKS.set.label), info: t(STMT_BLOCKS.set.desc) });
+    items.push({ key: 'dd:context', type: 'ctx-dd', selection: 'this.index', label: t('blk.dd.context'), info: t('blk.dd.context.desc') });
+    for (const name of availableVars()) items.push({ key: 'var:' + name, type: 'expr', template: { kind: 'var', name }, label: name, info: t('blk.var') });
+  } else if (g.id === 'const') {
+    items.push({ key: 'expr:num', type: 'expr', template: { kind: 'num', value: 1 }, label: t('blk.type.scalar'), info: t('blk.constNum') });
+    items.push({ key: 'expr:pi', type: 'expr', template: { kind: 'var', name: 'pi' }, label: 'pi', info: t('blk.piInfo') });
+    items.push({ key: 'expr:e', type: 'expr', template: { kind: 'var', name: 'e' }, label: 'e', info: t('blk.eInfo') });
   }
   return items;
 }
@@ -565,6 +623,14 @@ function makePuzzleHost() {
     nodeInfo: (n) => nodeInfo(n),
     blockVarTypeOf: (name) => blockVarTypeOf(name),
     customFuncParams: (name) => customFuncParams(name),
+    funcDropdownItems: (group) => funcDropdownItems(group),
+    arrayDropdownItems: () => arrayDropdownItems(),
+    ctxDropdownItems: () => ctxDropdownItems(),
+    methodLabel: (name) => methodLabel(name),
+    ctxLabel: (field) => ctxLabel(field),
+    applyFuncSelection: (node, name) => applyFuncSelection(node, name),
+    applyMethodSelection: (node, method) => applyMethodSelection(node, method),
+    replaceExprNode: (oldNode, newNode) => replaceExprNode(oldNode, newNode),
     findExprDetach: (node) => findExprDetach(node),
     removeChainOp: (chain, index) => removeChainOp(chain, index),
     stmtGroupLocation: (s) => stmtGroupLocation(s),
@@ -611,11 +677,6 @@ export function ensurePuzzleDom() {
   const ghostCanvas = document.createElement('canvas');
   ghostCanvas.id = 'puzzle-ghost-canvas';
   document.body.appendChild(ghostCanvas);
-
-  // 取色器（canvas 浮层）
-  const colorCanvas = document.createElement('canvas');
-  colorCanvas.id = 'puzzle-color-canvas';
-  document.body.appendChild(colorCanvas);
 
   // 顶部工具栏
   const toolbar = document.createElement('div');

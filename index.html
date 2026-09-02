@@ -89,8 +89,7 @@
         </div>
 
       <div class="tab-pane active" id="pane-props">
-        <label class="row"><span data-i18n="common.color">颜色</span> <input id="prop-color" type="color" value="#ffffff" /></label>
-        <label class="row"><span data-i18n="props.opacity">透明度</span> <input id="prop-alpha" type="range" min="0" max="1" step="0.01" value="1" /><span id="alpha-val">1.00</span></label>
+        <label class="row"><span data-i18n="common.color">颜色</span> <input id="prop-color" type="text" maxlength="9" spellcheck="false" value="#ffffffff" /><button id="prop-color-btn" class="color-swatch" data-i18n-title="blk.colorPicker" title="取色器"></button></label>
         <div class="row"><span data-i18n="props.scale">缩放</span>
           <input id="prop-scale-x" type="number" min="0.05" step="0.05" value="1" title="X" />
           <input id="prop-scale-y" type="number" min="0.05" step="0.05" value="1" title="Y" />

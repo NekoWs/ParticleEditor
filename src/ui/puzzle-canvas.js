@@ -9,14 +9,17 @@
 
 import {t, tf} from '../core/i18n.js';
 import {getFunction} from '../core/constants.js';
-import {hexToRgb, rgbToHex} from './ui.js';
+import {openColorPicker, closeColorPicker} from './color-picker.js';
 import {
+  ALL_OPERATORS,
+  ARRAY_METHODS,
   BIG_BLOCKS,
-  CTX_VAR_FIELDS,
   fmtNum,
+  funcDropdownGroup,
   FUNC_BLOCKS,
   GROUP_COLOR,
   isBoolOp,
+  memberCtxKey,
   N0,
   OP_LABELS,
   opSlotType,
@@ -102,6 +105,11 @@ const S = {
   palScroll: 0,
   palScrollDrag: null,
   palContentPx: 0,
+  catCollapsed: {},
+  palSelections: {},
+  dropdown: null,
+  dropdownEl: null,
+  dropdownHelp: null,
   varsScroll: 0,
   echoScroll: 0,
   wsRegions: [],
@@ -195,6 +203,182 @@ function exprShape(node) {
   if (node.kind === 'op' && isBoolOp(node.op)) return 'bool';
   if (node.kind === 'ternary') return 'bool';
   return 'capsule';
+}
+
+function ddLabel(dd) {
+  if (dd.kind === 'func-dd') return dd.node.name;
+  if (dd.kind === 'method-dd') return (H && H.methodLabel ? H.methodLabel(dd.node.method) : dd.node.method);
+  if (dd.kind === 'op-dd') return dd.node.op;
+  if (dd.kind === 'ctx-dd') return (H && H.ctxLabel ? H.ctxLabel(dd.key.slice('this.'.length)) : dd.key);
+  return '?';
+}
+
+function isMergedPaletteItem(item) {
+  return !!item && (item.type === 'func-dd' || item.type === 'method-dd' || item.type === 'ctx-dd');
+}
+function ddItemLabel(item) {
+  if (item.type === 'func-dd') return item.selection;
+  if (item.type === 'method-dd') return (H && H.methodLabel ? H.methodLabel(item.selection) : item.selection);
+  if (item.type === 'ctx-dd') return (H && H.ctxLabel ? H.ctxLabel(item.selection.slice('this.'.length)) : item.selection);
+  return item.selection || '';
+}
+
+/* ============================ 下拉列表（DOM 浮层） ============================ */
+
+const CAT_STATE_KEY = 'particledrawing.puzzle-categories';
+
+function ensureDropdownDom() {
+  if (S.dropdownEl) return;
+  const el = document.createElement('div');
+  el.id = 'puzzle-dropdown';
+  el.style.position = 'fixed';
+  el.style.zIndex = '12010';
+  el.style.display = 'none';
+  document.body.appendChild(el);
+  const help = document.createElement('div');
+  help.id = 'puzzle-dd-help';
+  help.style.position = 'fixed';
+  help.style.zIndex = '12011';
+  help.style.display = 'none';
+  document.body.appendChild(help);
+  S.dropdownEl = el;
+  S.dropdownHelp = help;
+  document.addEventListener('pointerdown', onDropdownOutside, true);
+  window.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && S.dropdown) closeDropdown();
+  });
+  window.addEventListener('keyup', (ev) => {
+    if (ev.key === 'Alt' && S.dropdownHelp) S.dropdownHelp.style.display = 'none';
+  });
+}
+
+function openDropdown(anchor, items, selectedValue, onSelect) {
+  closeDropdown();
+  ensureDropdownDom();
+  S.dropdown = { onSelect };
+  const el = S.dropdownEl;
+  el.innerHTML = '';
+  for (const it of items) {
+    const row = document.createElement('div');
+    row.className = 'puzzle-dd-item' + (it.value === selectedValue ? ' selected' : '');
+    row.textContent = it.label;
+    row.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); });
+    row.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeDropdown();
+      if (typeof onSelect === 'function') onSelect(it.value);
+    });
+    row.addEventListener('mousemove', (e) => updateDropdownHelp(e, it));
+    row.addEventListener('mouseleave', () => { if (S.dropdownHelp) S.dropdownHelp.style.display = 'none'; });
+    el.appendChild(row);
+  }
+  el.style.display = 'block';
+  positionDropdown(anchor);
+}
+
+function positionDropdown(anchor) {
+  const el = S.dropdownEl;
+  if (!el) return;
+  const vw = window.innerWidth || 1200;
+  const vh = window.innerHeight || 800;
+  const width = Math.max(150, Math.min(220, anchor.width || 160));
+  el.style.width = width + 'px';
+  el.style.left = Math.max(8, Math.min(anchor.left, vw - width - 8)) + 'px';
+  const top = anchor.top + (anchor.height || 0) + 4;
+  el.style.top = Math.min(top, Math.max(8, vh - 240)) + 'px';
+}
+
+function updateDropdownHelp(e, item) {
+  if (!S.dropdownHelp) return;
+  if (e.altKey && item && item.info) {
+    S.dropdownHelp.textContent = item.info;
+    S.dropdownHelp.style.display = 'block';
+    const vw = window.innerWidth || 1200;
+    const vh = window.innerHeight || 800;
+    let x = e.clientX + 14, y = e.clientY + 14;
+    if (x + 280 > vw - 8) x = Math.max(8, e.clientX - 292);
+    if (y + 60 > vh - 8) y = Math.max(8, vh - 68);
+    S.dropdownHelp.style.left = x + 'px';
+    S.dropdownHelp.style.top = y + 'px';
+  } else {
+    S.dropdownHelp.style.display = 'none';
+  }
+}
+
+function closeDropdown() {
+  if (S.dropdownEl) S.dropdownEl.style.display = 'none';
+  if (S.dropdownHelp) S.dropdownHelp.style.display = 'none';
+  S.dropdown = null;
+}
+
+function onDropdownOutside(e) {
+  if (!S.dropdown || !S.dropdownEl) return;
+  if (e.target === S.dropdownEl || S.dropdownEl.contains(e.target)) return;
+  closeDropdown();
+}
+
+function operatorDropdownItems() {
+  return ALL_OPERATORS.map(op => ({ value: op, label: op, info: (OP_LABELS[op] && t(OP_LABELS[op])) || op }));
+}
+
+function openDdForRegion(r) {
+  if (!r || !r.dd || !H) return;
+  const dd = r.dd;
+  const rect = worldToScreenRect(r);
+  let items = [], selected = null, onSelect = null;
+  if (dd.kind === 'func-dd') {
+    items = H.funcDropdownItems(dd.group);
+    selected = dd.node.name;
+    onSelect = (v) => { H.pushUndo(); H.applyFuncSelection(dd.node, v); H.refreshPreview(); puzzleCanvasRender(); };
+  } else if (dd.kind === 'method-dd') {
+    items = H.arrayDropdownItems();
+    selected = dd.node.method;
+    onSelect = (v) => { H.pushUndo(); H.applyMethodSelection(dd.node, v); H.refreshPreview(); puzzleCanvasRender(); };
+  } else if (dd.kind === 'ctx-dd') {
+    items = H.ctxDropdownItems();
+    selected = dd.key;
+    onSelect = (v) => { H.pushUndo(); H.replaceExprNode(dd.node, ctxExprForKey(v)); H.refreshPreview(); puzzleCanvasRender(); };
+  } else if (dd.kind === 'op-dd') {
+    items = operatorDropdownItems();
+    selected = dd.node.op;
+    onSelect = (v) => { H.pushUndo(); dd.node.op = v; H.refreshPreview(); puzzleCanvasRender(); };
+  }
+  if (items.length) openDropdown({ left: rect.left, top: rect.top, width: rect.width, height: rect.height }, items, selected, onSelect);
+}
+
+function openPaletteDd(item) {
+  if (!item || !H) return;
+  const sel = item.selection;
+  let items = [], onSelect = null;
+  if (item.type === 'func-dd') {
+    items = H.funcDropdownItems(item.group);
+    onSelect = (v) => { S.palSelections[item.key] = v; puzzleCanvasRender(); };
+  } else if (item.type === 'method-dd') {
+    items = H.arrayDropdownItems();
+    onSelect = (v) => { S.palSelections[item.key] = v; puzzleCanvasRender(); };
+  } else if (item.type === 'ctx-dd') {
+    items = H.ctxDropdownItems();
+    onSelect = (v) => { S.palSelections[item.key] = v; puzzleCanvasRender(); };
+  }
+  const rect = S.palCanvas.getBoundingClientRect();
+  const sx = rect.left + (item.x + (item.ddRect ? item.ddRect.x : 0)) * PAL_SCALE + PAL_LEFT;
+  const sy = rect.top + (item.y + (item.ddRect ? item.ddRect.y : 0)) * PAL_SCALE + PAL_TOP - S.palScroll;
+  const sw = (item.ddRect ? item.ddRect.w : 0) * PAL_SCALE;
+  const sh = (item.ddRect ? item.ddRect.h : 0) * PAL_SCALE;
+  openDropdown({ left: sx, top: sy, width: sw, height: sh }, items, sel, onSelect);
+}
+
+function loadCatState() {
+  try {
+    const s = JSON.parse(localStorage.getItem(CAT_STATE_KEY) || '{}');
+    if (s && typeof s === 'object') S.catCollapsed = s;
+  } catch (e) {}
+}
+function toggleCategory(id) {
+  S.catCollapsed[id] = !S.catCollapsed[id];
+  try { localStorage.setItem(CAT_STATE_KEY, JSON.stringify(S.catCollapsed)); } catch (e) {}
+  S.palScroll = clampPalScroll(S.palScroll);
+  puzzleCanvasRender();
 }
 function isExprNode(node) { return node && typeof node === 'object' && node.kind; }
 
@@ -356,6 +540,11 @@ function inlineFlow(parts, x, y, out, seg, ctx, owner) {
     } else if (p.color) {
       children.push({ kind: 'color', shape: 'color', color: p.color, x: cx, y, w: COLOR_W, h: COLOR_H, segments: [] });
       cx += COLOR_W; partH = COLOR_H;
+    } else if (p.dd) {
+      const label = ddLabel(p.dd);
+      const tw = textW(ctx, label, FONT) + 16;
+      children.push({ kind: 'dd', shape: 'dd', dd: p.dd, x: cx, y, w: tw, h: EXPR_H, segments: [{ text: label, x: cx + 5, y: y + EXPR_H / 2, font: FONT }] });
+      cx += tw; partH = EXPR_H;
     }
     spans.push({ start, end: children.length, h: partH });
   }
@@ -378,16 +567,25 @@ function exprParts(node) {
   const P = [];
   switch (node.kind) {
     case 'num': P.push({ text: (S.edit && S.edit.node === node) ? S.edit.buffer : fmtNum(node.value) }); break;
-    case 'bool': P.push({ text: node.value ? 'true' : 'false' }); break;
+    case 'bool': P.push({ text: node.value ? t('blk.bool.true') : t('blk.bool.false') }); break;
     case 'var': P.push({ text: node.name }); break;
-    case 'member':
+    case 'member': {
+      const ck = memberCtxKey(node);
+      if (ck && H && H.ctxLabel) {
+        P.push({ dd: { kind: 'ctx-dd', node, key: ck } });
+        break;
+      }
       P.push({ slot: { ref: slotRef(() => node.obj, v => { node.obj = v; }, T_ANY), type: T_ANY, label: '' } });
       P.push({ text: '.' + node.field });
       break;
+    }
     case 'func': {
       const spec = FUNC_BLOCKS[node.name];
       const customParams = spec ? null : (H && H.customFuncParams ? H.customFuncParams(node.name) : []);
-      P.push({ text: node.name + '(' });
+      const group = funcDropdownGroup(node.name);
+      if (group) P.push({ dd: { kind: 'func-dd', node, group } });
+      else P.push({ text: node.name });
+      P.push({ text: '(' });
       (spec ? spec.args : node.args).forEach((arg, i) => {
         if (i > 0) P.push({ text: ', ' });
         const argType = spec ? spec.args[i][1] : T_ANY;
@@ -399,7 +597,9 @@ function exprParts(node) {
     }
     case 'op':
       P.push({ slot: { ref: slotRef(() => node.a, v => { node.a = v; }, opSlotType(node.op, 'l')), type: opSlotType(node.op, 'l'), label: '' } });
-      P.push({ text: ' ' + (isBoolOp(node.op) ? t(OP_LABELS[node.op]) : node.op) + ' ' });
+      P.push({ text: ' ' });
+      P.push({ dd: { kind: 'op-dd', node } });
+      P.push({ text: ' ' });
       P.push({ slot: { ref: slotRef(() => node.b, v => { node.b = v; }, opSlotType(node.op, 'r')), type: opSlotType(node.op, 'r'), label: '' } });
       break;
     case 'chain': {
@@ -438,7 +638,13 @@ function exprParts(node) {
       break;
     case 'method':
       P.push({ slot: { ref: slotRef(() => node.obj, v => { node.obj = v; }, T_ANY), type: T_ANY, label: '' } });
-      P.push({ text: '.' + node.method + '(' });
+      if (ARRAY_METHODS.includes(node.method)) {
+        P.push({ text: '.' });
+        P.push({ dd: { kind: 'method-dd', node } });
+        P.push({ text: '(' });
+      } else {
+        P.push({ text: '.' + node.method + '(' });
+      }
       node.args.forEach((_, i) => {
         if (i > 0) P.push({ text: ', ' });
         P.push({ slot: { ref: slotRef(() => node.args[i], v => { node.args[i] = v; }, T_ANY), type: T_ANY, label: '' } });
@@ -518,15 +724,11 @@ function stmtParts(s) {
     const v = (n) => (n && n.kind === 'num') ? Math.min(1, Math.max(0, n.value)) : 1;
     return [
       { text: t(STMT_BLOCKS.col.label) + ' ' },
-      { color: { stmt: s, hex: () => rgbToHex(v(s.slots[0]), v(s.slots[1]), v(s.slots[2])), commit: (hex) => {
-        const [r, g, b] = hexToRgb(hex);
+      { color: { stmt: s, rgba: () => [v(s.slots[0]), v(s.slots[1]), v(s.slots[2]), v(s.slots[3])], commit: (rgba) => {
         const setSlot = (i, val) => { if (s.slots[i] && s.slots[i].kind === 'num') s.slots[i].value = val; else s.slots[i] = { kind: 'num', value: val }; };
-        setSlot(0, r); setSlot(1, g); setSlot(2, b);
-        H.pushUndo();
+        setSlot(0, rgba[0]); setSlot(1, rgba[1]); setSlot(2, rgba[2]); setSlot(3, rgba[3]);
         return true;
       } } },
-      { text: ' ' + t('props.opacity') + ' ' },
-      { slot: { ref: slotRef(() => s.slots[3], v => { s.slots[3] = v; }, T_SCALAR), type: T_SCALAR, label: '' } },
     ];
   }
   const label = t(STMT_BLOCKS[s.kind].label) + ' ';
@@ -1014,6 +1216,17 @@ function layoutVars(cw) {
     });
   }
 
+  // 外部变量标题
+  {
+    const lab = t('blk.externalVars');
+    const tw = textW(ctx, lab, FONT);
+    const title = { kind: 'var-title', shape: 'title', x: VARS_PAD, y: y + 2, w: tw + 8, h: 18, segments: [{ text: lab, x: VARS_PAD + 4, y: y + 11, font: FONT }] };
+    y += 24;
+    x = VARS_PAD;
+    rowH = 0;
+    out.push(title);
+  }
+
   // 变量行
   for (const name of bctx.varOrder) {
     if (!(name in bctx.varExprs)) continue;
@@ -1066,17 +1279,6 @@ function layoutVars(cw) {
     out.push(nameEdit, valEdit);
   }
 
-  // this 只读字段标签（可拖入表达式槽作为上下文引用）
-  for (const field of CTX_VAR_FIELDS) {
-    const label = 'this.' + field;
-    const tw = textW(ctx, label, FONT) + 14;
-    const tag = {
-      kind: 'attr-var', shape: 'tag', attrVar: label, x, y: y, _dy: (VARS_ROW_H - ATTR_H) / 2, w: tw, h: ATTR_H,
-      segments: [{ text: label, x: x + 7, y: y + VARS_ROW_H / 2, font: FONT }],
-    };
-    place(tag, tw);
-  }
-
   S.varRegions = out;
   S.varsContentH = y + rowH + VARS_PAD;
 }
@@ -1087,6 +1289,11 @@ function paletteItemSize(item, ctx) {
   const tmp = [];
   if (item.type === 'opval') {
     return { w: textW(ctx, item.op, FONT) + 16, h: EXPR_H };
+  }
+  if (isMergedPaletteItem(item)) {
+    const sel = ddItemLabel(item);
+    const w = 16 + textW(ctx, item.label, FONT) + 10 + textW(ctx, sel, FONT) + 22 + 16;
+    return { w, h: EXPR_H + 8 };
   }
   if (item.type === 'hat') {
     return { w: textW(ctx, item.label, FONT) + 30, h: HAT_H };
@@ -1114,17 +1321,17 @@ function layoutPalette(contentW) {
   for (const g of PALETTE_GROUPS) {
     const items = H.buildPaletteGroup(g);
     if (!items.length) continue;
-    out.push({ kind: 'pal-title', shape: 'title', x: PAL_LEFT, y: cy, w: 0, h: 20, segments: [{ text: t(g.label), x: PAL_LEFT, y: cy + 10, font: FONT }] });
+    const collapsed = !!S.catCollapsed[g.id];
+    out.push({ kind: 'pal-title', shape: 'title', catId: g.id, collapsed, x: PAL_LEFT, y: cy, w: innerW, h: 20, segments: [{ text: (collapsed ? '▸ ' : '▾ ') + t(g.label), x: PAL_LEFT + 2, y: cy + 10, font: FONT }] });
     cy += 24;
-    let rx = PAL_LEFT, rowH = 0;
+    if (collapsed) continue;
     for (const item of items) {
+      if (isMergedPaletteItem(item)) item.selection = S.palSelections[item.key] || item.selection;
       const d = paletteItemSize(item, ctx);
-      if (rx + d.w > PAL_LEFT + innerW && rx > PAL_LEFT) { cy += rowH + PAL_GAP; rx = PAL_LEFT; rowH = 0; }
-      out.push({ kind: 'pal-item', shape: 'pal-item', item, x: rx, y: cy, w: d.w, h: d.h, segments: [] });
-      rx += d.w + PAL_GAP;
-      rowH = Math.max(rowH, d.h);
+      out.push({ kind: 'pal-item', shape: 'pal-item', item, x: PAL_LEFT, y: cy, w: d.w, h: d.h, segments: [] });
+      cy += d.h + PAL_GAP;
     }
-    cy += rowH + 10;
+    cy += 6;
   }
   S.palRegions = out;
   S.palContentPx = PAL_SCALE * (cy + 10) + PAL_TOP;
@@ -1296,6 +1503,25 @@ function drawOpRegion(ctx, r) {
   ctx.restore();
 }
 
+function drawDdRegion(ctx, r) {
+  ctx.save();
+  // 函数名/运算符/数组方法/上下文：背景稍微加深，右侧带下三角，表示可下拉切换。
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  rrPath(ctx, r.x, r.y, r.w, r.h, 5);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+  ctx.lineWidth = 1;
+  rrPath(ctx, r.x, r.y, r.w, r.h, 5);
+  ctx.stroke();
+  drawSegments(ctx, r.segments, '#fff');
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = FONT;
+  ctx.fillText('▾', r.x + r.w - 9, r.y + r.h / 2 + 1);
+  ctx.restore();
+}
+
 function drawAppendRegion(ctx, r) {
   ctx.save();
   ctx.fillStyle = 'rgba(255,255,255,0.12)';
@@ -1398,14 +1624,29 @@ function drawToggleRegion(ctx, r) {
 }
 
 function drawColorRegion(ctx, r) {
+  const rgba = (r.color && r.color.rgba ? r.color.rgba() : [0.5, 0.5, 0.5, 1]);
   ctx.save();
-  ctx.fillStyle = r.color && r.color.hex ? r.color.hex() : '#808080';
+  // 半透明色块下铺棋盘格，便于识别透明度。
+  ctx.beginPath();
   rrPath(ctx, r.x, r.y, r.w, r.h, 4);
-  ctx.fill();
+  ctx.clip();
+  ctx.fillStyle = '#e8ecf4';
+  ctx.fillRect(r.x, r.y, r.w, r.h);
+  ctx.fillStyle = '#9aa3b5';
+  const s = 5;
+  for (let gy = r.y; gy < r.y + r.h; gy += s) {
+    for (let gx = r.x; gx < r.x + r.w; gx += s) {
+      if (((gx - r.x) / s + (gy - r.y) / s) % 2 < 1) continue;
+      ctx.fillRect(gx, gy, Math.min(s, r.x + r.w - gx), Math.min(s, r.y + r.h - gy));
+    }
+  }
+  ctx.fillStyle = 'rgba(' + Math.round(rgba[0] * 255) + ',' + Math.round(rgba[1] * 255) + ',' + Math.round(rgba[2] * 255) + ',' + rgba[3] + ')';
+  ctx.fillRect(r.x, r.y, r.w, r.h);
+  ctx.restore();
   ctx.strokeStyle = 'rgba(255,255,255,0.4)';
   ctx.lineWidth = 1;
+  rrPath(ctx, r.x, r.y, r.w, r.h, 4);
   ctx.stroke();
-  ctx.restore();
 }
 
 function drawCompRegion(ctx, r) {
@@ -1477,10 +1718,12 @@ function drawRegion(ctx, r, th) {
     case 'attr': drawAttrRegion(ctx, r); break;
     case 'toggle': drawToggleRegion(ctx, r); break;
     case 'color': drawColorRegion(ctx, r); break;
+    case 'dd': drawDdRegion(ctx, r); break;
     case 'comp': drawCompRegion(ctx, r); break;
     case 'drop': drawDropRegion(ctx, r, th); break;
     case 'placeholder': drawPlaceholderRegion(ctx, r); break;
     case 'var-row': drawVarRowRegion(ctx, r); break;
+    case 'var-title': drawTitleRegion(ctx, r); break;
     case 'attr-var': drawAttrRegion(ctx, r); break;
     case 'pal-title': drawTitleRegion(ctx, r); break;
     case 'pal-item': drawPalItemRegion(ctx, r); break;
@@ -1488,9 +1731,42 @@ function drawRegion(ctx, r, th) {
   }
 }
 
+function drawPalDropdownItem(ctx, r) {
+  const item = r.item;
+  const cls = item.type === 'func-dd' ? 'blk-math' : item.type === 'method-dd' ? 'blk-array' : 'blk-var';
+  const sel = ddItemLabel(item);
+  ctx.save();
+  ctx.fillStyle = blockColor(cls);
+  rrPath(ctx, r.x, r.y, r.w, r.h, 6);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.font = FONT;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#fff';
+  const labX = r.x + 10;
+  ctx.fillText(item.label, labX, r.y + r.h / 2);
+  const labW = ctx.measureText(item.label).width;
+  const selW = ctx.measureText(sel).width;
+  const ddX = labX + labW + 10;
+  const ddW = selW + 24;
+  const ddY = r.y + (r.h - EXPR_H) / 2;
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  rrPath(ctx, ddX, ddY, ddW, EXPR_H, 5);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.fillText(sel, ddX + 7, ddY + EXPR_H / 2);
+  ctx.fillText('▾', ddX + ddW - 12, ddY + EXPR_H / 2 + 1);
+  item.ddRect = { x: ddX - r.x, y: ddY - r.y, w: ddW, h: EXPR_H };
+  ctx.restore();
+}
+
 function drawPalItemRegion(ctx, r) {
   const tmp = [];
   const item = r.item;
+  if (isMergedPaletteItem(item)) { drawPalDropdownItem(ctx, r); return; }
   if (item.type === 'opval') {
     ctx.save();
     ctx.fillStyle = blockColor('blk-math');
@@ -1654,7 +1930,6 @@ function renderWorkCanvas() {
   // 编辑态也重新布局：布局会读取 S.edit.buffer 实时扩展编辑框，之后重新定位编辑区域。
   layoutWorkspace();
   relocateEditRegion();
-  if (S.colorPicker) positionColorPicker();
   ctx.setTransform(S.dpr * scale, 0, 0, S.dpr * scale, S.dpr * v.x, S.dpr * v.y);
   for (const r of S.wsRegions) if (r.kind === 'head') drawRegion(ctx, r, null);
   for (const r of S.wsRegions) if (r.kind !== 'drop' && r.kind !== 'head') drawRegion(ctx, r, null);
@@ -1870,17 +2145,17 @@ function hitPalette(mx, my) {
   if (!S.palCanvas) return null;
   const cx = (mx - PAL_LEFT) / PAL_SCALE;
   const cy = (my - PAL_TOP + S.palScroll) / PAL_SCALE;
-  let item = null;
+  let hit = null;
   for (const r of S.palRegions) {
-    if (r.kind === 'pal-item' && contains(r, cx, cy)) item = r;
+    if ((r.kind === 'pal-item' || r.kind === 'pal-title') && contains(r, cx, cy)) hit = r;
   }
-  if (!item) return null;
+  if (!hit) return null;
   const rect = S.palCanvas.getBoundingClientRect();
-  item.sx = rect.left + (item.x * PAL_SCALE + PAL_LEFT);
-  item.sy = rect.top + (item.y * PAL_SCALE + PAL_TOP - S.palScroll);
-  item.sw = item.w * PAL_SCALE;
-  item.sh = item.h * PAL_SCALE;
-  return item;
+  hit.sx = rect.left + (hit.x * PAL_SCALE + PAL_LEFT);
+  hit.sy = rect.top + (hit.y * PAL_SCALE + PAL_TOP - S.palScroll);
+  hit.sw = hit.w * PAL_SCALE;
+  hit.sh = hit.h * PAL_SCALE;
+  return hit;
 }
 
 function hitVars(mx, my) {
@@ -2137,227 +2412,28 @@ async function pasteText() {
   } catch (e) { /* 剪贴板不可用时忽略 */ }
 }
 
-/* —— 取色器（canvas） —— */
-const CP_W = 180, CP_H = 174;
-const CP_SV_X = 8, CP_SV_Y = 8, CP_SV_W = 118, CP_SV_H = 118;
-const CP_HUE_X = 134, CP_HUE_Y = 8, CP_HUE_W = 12, CP_HUE_H = 118;
-const CP_SWATCH_X = 8, CP_SWATCH_Y = 136, CP_SWATCH_W = 34, CP_SWATCH_H = 26;
-const CP_HEX_X = 50, CP_HEX_Y = 136, CP_HEX_W = 122, CP_HEX_H = 26;
+/* —— 取色器（共享 canvas 取色器） —— */
 
-function rgbToHsvLocal(rgb) {
-  const r = rgb[0], g = rgb[1], b = rgb[2]; // 0..1
-  const max = Math.max(r, g, b), min = Math.min(r, g, b);
-  const d = max - min;
-  let h = 0;
-  if (d !== 0) {
-    if (max === r) h = ((g - b) / d) % 6;
-    else if (max === g) h = (b - r) / d + 2;
-    else h = (r - g) / d + 4;
-    h *= 60; if (h < 0) h += 360;
-  }
-  return [h, max === 0 ? 0 : d / max, max];
-}
-function hsvToRgbLocal(h, s, v) {
-  const c = v * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = v - c;
-  let r = 0, g = 0, b = 0;
-  if (h < 60) { r = c; g = x; } else if (h < 120) { r = x; g = c; } else if (h < 180) { g = c; b = x; }
-  else if (h < 240) { g = x; b = c; } else if (h < 300) { r = x; b = c; } else { r = c; b = x; }
-  return [r + m, g + m, b + m];
-}
-function cpHex() {
-  return rgbToHex(...hsvToRgbLocal(S.colorPicker.h, S.colorPicker.s, S.colorPicker.v));
-}
-function drawColorPicker() {
-  const ctx = S.colorCtx, c = S.colorCanvas;
-  if (!ctx || !c || !S.colorPicker) return;
-  const dpr = S.dpr;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, CP_W, CP_H);
-  ctx.fillStyle = theme().panel2;
-  ctx.fillRect(0, 0, CP_W, CP_H);
-
-  // SV
-  const hueCss = 'hsl(' + S.colorPicker.h + ',100%,50%)';
-  const g1 = ctx.createLinearGradient(CP_SV_X, CP_SV_Y, CP_SV_X + CP_SV_W, CP_SV_Y);
-  g1.addColorStop(0, '#ffffff'); g1.addColorStop(1, hueCss);
-  ctx.fillStyle = g1;
-  ctx.fillRect(CP_SV_X, CP_SV_Y, CP_SV_W, CP_SV_H);
-  const g2 = ctx.createLinearGradient(CP_SV_X, CP_SV_Y, CP_SV_X, CP_SV_Y + CP_SV_H);
-  g2.addColorStop(0, 'rgba(0,0,0,0)'); g2.addColorStop(1, '#000000');
-  ctx.fillStyle = g2;
-  ctx.fillRect(CP_SV_X, CP_SV_Y, CP_SV_W, CP_SV_H);
-  const sx = CP_SV_X + S.colorPicker.s * CP_SV_W;
-  const sy = CP_SV_Y + (1 - S.colorPicker.v) * CP_SV_H;
-  ctx.beginPath(); ctx.arc(sx, sy, 5, 0, Math.PI * 2);
-  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
-  ctx.beginPath(); ctx.arc(sx, sy, 2.5, 0, Math.PI * 2);
-  ctx.strokeStyle = '#111'; ctx.lineWidth = 1; ctx.stroke();
-
-  // Hue
-  const hg = ctx.createLinearGradient(CP_HUE_X, CP_HUE_Y, CP_HUE_X, CP_HUE_Y + CP_HUE_H);
-  hg.addColorStop(0, '#f00'); hg.addColorStop(0.17, '#ff0'); hg.addColorStop(0.34, '#0f0');
-  hg.addColorStop(0.5, '#0ff'); hg.addColorStop(0.67, '#00f'); hg.addColorStop(0.84, '#f0f'); hg.addColorStop(1, '#f00');
-  ctx.fillStyle = hg;
-  ctx.fillRect(CP_HUE_X, CP_HUE_Y, CP_HUE_W, CP_HUE_H);
-  const hy = CP_HUE_Y + (S.colorPicker.h / 360) * CP_HUE_H;
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(CP_HUE_X - 2, hy - 1, CP_HUE_W + 4, 3);
-  ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(CP_HUE_X - 2, hy - 1, CP_HUE_W + 4, 3);
-
-  // 色块 / hex 输入框背景
-  ctx.fillStyle = cpHex();
-  ctx.fillRect(CP_SWATCH_X, CP_SWATCH_Y, CP_SWATCH_W, CP_SWATCH_H);
-  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(CP_SWATCH_X, CP_SWATCH_Y, CP_SWATCH_W, CP_SWATCH_H);
-  ctx.fillStyle = 'rgba(0,0,0,0.18)';
-  rrPath(ctx, CP_HEX_X, CP_HEX_Y, CP_HEX_W, CP_HEX_H, 4);
-  ctx.fill();
-
-  // 外框（CSS 不设 border，避免 hit-test 偏移）
-  ctx.strokeStyle = theme().border;
-  ctx.lineWidth = 1;
-  rrPath(ctx, 0.5, 0.5, CP_W - 1, CP_H - 1, 8);
-  ctx.stroke();
-}
-function ensureColorHexInput() {
-  if (S.colorHexInput) return S.colorHexInput;
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.className = 'pc-color-hex';
-  input.maxLength = 7;
-  input.spellcheck = false;
-  input.setAttribute('autocomplete', 'off');
-  input.addEventListener('input', () => {
-    if (!S.colorPicker) return;
-    let v = input.value.trim().replace(/^#/, '');
-    if (/^[0-9a-fA-F]{3}$/.test(v)) v = v.split('').map(c => c + c).join('');
-    if (!/^[0-9a-fA-F]{6}$/.test(v)) return;
-    const rgb = hexToRgb('#' + v.toLowerCase());
-    const hsv = rgbToHsvLocal(rgb);
-    S.colorPicker.h = hsv[0];
-    S.colorPicker.s = hsv[1];
-    S.colorPicker.v = hsv[2];
-    commitColorEdit(false);
-    input.value = cpHex();
-  });
-  input.addEventListener('blur', () => { if (S.colorPicker) input.value = cpHex(); });
-  input.addEventListener('keydown', (ev) => {
-    ev.stopPropagation();
-    if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); }
-    else if (ev.key === 'Escape') { ev.preventDefault(); closeColorEdit(); }
-  });
-  input.addEventListener('focus', () => { S.colorDrag = null; });
-  if (document.body && document.body.appendChild) document.body.appendChild(input);
-  S.colorHexInput = input;
-  return input;
-}
-function positionColorHexInput() {
-  if (!S.colorHexInput || !S.colorPicker) return;
-  S.colorHexInput.style.display = 'block';
-  S.colorHexInput.style.left = (S.colorPicker.left + CP_HEX_X) + 'px';
-  S.colorHexInput.style.top = (S.colorPicker.top + CP_HEX_Y) + 'px';
-  S.colorHexInput.style.width = CP_HEX_W + 'px';
-  S.colorHexInput.style.height = CP_HEX_H + 'px';
-}
-function positionColorPicker() {
-  if (!S.colorPicker || !S.colorCanvas || !H || !H.getBctx()) return;
-  let region = S.colorPicker.region;
-  if (S.colorPicker.stmt) {
-    const cur = S.wsRegions.find(r => r.kind === 'color' && r.stmt === S.colorPicker.stmt);
-    if (!cur) { closeColorEdit(); return; }
-    region = cur;
-  }
-  const rect = worldToScreenRect(region);
-  const left = Math.max(8, Math.min(rect.left, (window.innerWidth || 1200) - CP_W - 8));
-  const top = Math.max(8, Math.min(rect.top, (window.innerHeight || 800) - CP_H - 8));
-  S.colorPicker.left = left;
-  S.colorPicker.top = top;
-  S.colorCanvas.style.left = left + 'px';
-  S.colorCanvas.style.top = top + 'px';
-  positionColorHexInput();
-}
 function openColorEdit(region) {
-  if (!region || !region.color || !S.colorCanvas) return;
-  if (typeof window !== 'undefined') S.dpr = window.devicePixelRatio || 1;
-  const hex = region.color.hex ? region.color.hex() : '#808080';
-  const rgb = hexToRgb(hex);
-  const hsv = rgbToHsvLocal(rgb);
-  S.colorPicker = { region, stmt: region.stmt || null, h: hsv[0], s: hsv[1], v: hsv[2], left: 0, top: 0 };
-  S.colorDrag = null;
-  S.colorCanvas.style.width = CP_W + 'px';
-  S.colorCanvas.style.height = CP_H + 'px';
-  S.colorCanvas.width = Math.max(1, Math.round(CP_W * S.dpr));
-  S.colorCanvas.height = Math.max(1, Math.round(CP_H * S.dpr));
-  S.colorCanvas.style.display = 'block';
-  ensureColorHexInput();
-  positionColorPicker();
-  if (S.colorHexInput) S.colorHexInput.value = cpHex();
-  drawColorPicker();
-}
-function commitColorEdit(close) {
-  if (!S.colorPicker) return;
-  const region = S.colorPicker.region;
-  const hex = cpHex();
-  if (region.color.commit) {
-    const ok = region.color.commit(hex) !== false;
-    if (ok) { H.refreshPreview(); puzzleCanvasRender(); }
-  }
-  if (S.colorHexInput) S.colorHexInput.value = hex;
-  if (close) closeColorEdit();
-  else drawColorPicker();
+  if (!region || !region.color || !H || !H.getBctx()) return;
+  const rect = worldToScreenRect(region);
+  const rgba = region.color.rgba ? region.color.rgba() : [0.5, 0.5, 0.5, 1];
+  // 拖动取色器期间合并为一次撤销；共享取色器每次 onInput 只改值不再重复 pushUndo。
+  H.pushUndo();
+  S.colorPicker = { region, stmt: region.stmt || null };
+  openColorPicker({
+    x: rect.left, y: rect.top,
+    rgba,
+    onInput: (out) => {
+      if (region.color.commit) region.color.commit(out);
+      H.refreshPreview();
+      puzzleCanvasRender();
+    },
+    onClose: () => { S.colorPicker = null; },
+  });
 }
 function closeColorEdit() {
-  S.colorPicker = null;
-  S.colorDrag = null;
-  if (S.colorCanvas) S.colorCanvas.style.display = 'none';
-  if (S.colorHexInput) S.colorHexInput.style.display = 'none';
-}
-function colorLocalPoint(e) {
-  const rect = S.colorCanvas.getBoundingClientRect();
-  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-}
-function onColorDown(e) {
-  if (!S.colorPicker) return;
-  e.preventDefault();
-  e.stopPropagation();
-  const p = colorLocalPoint(e);
-  if (p.x >= CP_SV_X && p.x <= CP_SV_X + CP_SV_W && p.y >= CP_SV_Y && p.y <= CP_SV_Y + CP_SV_H) {
-    S.colorDrag = 'sv';
-    updateColorDrag(e);
-    return;
-  }
-  if (p.x >= CP_HUE_X - 3 && p.x <= CP_HUE_X + CP_HUE_W + 3 && p.y >= CP_HUE_Y && p.y <= CP_HUE_Y + CP_HUE_H) {
-    S.colorDrag = 'hue';
-    updateColorDrag(e);
-    return;
-  }
-  closeColorEdit();
-}
-function onColorMove(e) {
-  if (!S.colorPicker) return;
-  if (S.colorDrag) { e.preventDefault(); updateColorDrag(e); }
-}
-function onColorUp(e) { if (S.colorDrag) endColorDrag(e); }
-function endColorDrag(e) { S.colorDrag = null; if (S.colorPicker) drawColorPicker(); }
-function updateColorDrag(e) {
-  if (!S.colorPicker || !S.colorDrag) return;
-  const p = colorLocalPoint(e);
-  if (S.colorDrag === 'sv') {
-    S.colorPicker.s = Math.max(0, Math.min(1, (p.x - CP_SV_X) / CP_SV_W));
-    S.colorPicker.v = 1 - Math.max(0, Math.min(1, (p.y - CP_SV_Y) / CP_SV_H));
-  } else if (S.colorDrag === 'hue') {
-    S.colorPicker.h = Math.max(0, Math.min(360, (p.y - CP_HUE_Y) / CP_HUE_H * 360));
-  }
-  commitColorEdit(false);
-}
-function onColorOutside(e) {
-  if (!S.colorPicker) return;
-  if (S.colorCanvas && (e.target === S.colorCanvas || S.colorCanvas.contains(e.target))) return;
-  if (S.colorHexInput && (e.target === S.colorHexInput || S.colorHexInput.contains(e.target))) return;
-  closeColorEdit();
+  if (S.colorPicker) { S.colorPicker = null; closeColorPicker(); }
 }
 
 /* ============================ 拖拽 ============================ */
@@ -2383,6 +2459,12 @@ function startPaletteDrag(item, e) {
     source = { type: 'if-branch', branch: p.branch };
   } else if (p.type === 'method') {
     source = { type: 'method', method: p.method, template: p.template };
+  } else if (p.type === 'func-dd') {
+    source = { type: 'palette', stmt: false, template: { kind: 'func', name: p.selection || 'sin' } };
+  } else if (p.type === 'method-dd') {
+    source = { type: 'palette', stmt: false, template: { kind: 'method', method: p.selection || 'push' } };
+  } else if (p.type === 'ctx-dd') {
+    source = { type: 'palette', stmt: false, template: ctxExprForKey(p.selection || 'this.index') };
   } else {
     source = { type: 'palette', stmt: p.type === 'stmt', stmtKind: p.kind, template: p.template };
   }
@@ -2400,6 +2482,17 @@ function startOpRemove(r, e) {
   const rect = worldToScreenRect(r);
   startGhostDrag({ type: 'op-remove', chain: r.opSlot.chain, index: r.opSlot.index }, e, e.clientX - rect.left, e.clientY - rect.top, H.getBctx().layout.view.scale);
   renderGhost();
+}
+
+function startOpPending(r, e) {
+  const rect = worldToScreenRect(r);
+  S.drag = {
+    mode: 'op-pending',
+    region: r,
+    startX: e.clientX, startY: e.clientY,
+    grabDx: e.clientX - rect.left, grabDy: e.clientY - rect.top,
+    ghostScale: H.getBctx().layout.view.scale,
+  };
 }
 
 function startStmtGroupPending(r, e) {
@@ -2902,8 +2995,23 @@ function onPalDown(e) {
     return;
   }
   const hit = hitPalette(mx, my);
+  if (hit && hit.kind === 'pal-title') {
+    e.preventDefault();
+    toggleCategory(hit.catId);
+    return;
+  }
   if (hit && hit.kind === 'pal-item') {
     e.preventDefault();
+    const item = hit.item;
+    if (isMergedPaletteItem(item) && item.ddRect) {
+      const cx = (mx - PAL_LEFT) / PAL_SCALE;
+      const cy = (my - PAL_TOP + S.palScroll) / PAL_SCALE;
+      const ix = cx - item.x, iy = cy - item.y;
+      if (ix >= item.ddRect.x && ix <= item.ddRect.x + item.ddRect.w && iy >= item.ddRect.y && iy <= item.ddRect.y + item.ddRect.h) {
+        openPaletteDd(item);
+        return;
+      }
+    }
     startPaletteDrag(hit, e);
   }
 }
@@ -2952,7 +3060,8 @@ function onWorkDown(e) {
   if (hit.kind === 'head' && hit.head.key) { e.preventDefault(); startChainMove(hit, e); return; }
   if (hit.kind === 'head' && hit.head.frag) { e.preventDefault(); startFragMove(hit, e); return; }
   if (hit.kind === 'expr') { e.preventDefault(); startExprDrag(hit, e); return; }
-  if (hit.kind === 'op') { e.preventDefault(); startOpRemove(hit, e); return; }
+  if (hit.kind === 'dd') { e.preventDefault(); openDdForRegion(hit); return; }
+  if (hit.kind === 'op') { e.preventDefault(); startOpPending(hit, e); return; }
   if (hit.kind === 'edit') { e.preventDefault(); startEditPending(hit, e); return; }
   if (hit.kind === 'array-append') {
     e.preventDefault();
@@ -3051,7 +3160,16 @@ function onWindowMove(e) {
     puzzleCanvasRender();
     return;
   }
-  if (S.colorDrag) { updateColorDrag(e); return; }
+  if (S.drag && S.drag.mode === 'op-pending') {
+    if (Math.hypot(e.clientX - S.drag.startX, e.clientY - S.drag.startY) > DRAG_THRESHOLD) {
+      const d = S.drag;
+      const chain = d.region.opSlot.chain, index = d.region.opSlot.index;
+      S.drag = null;
+      startGhostDrag({ type: 'op-remove', chain, index }, e, d.grabDx, d.grabDy, d.ghostScale);
+      renderGhost();
+    }
+    return;
+  }
   if (S.edit) {
     if (S.editMouse && S.workCanvas) {
       const rect = S.workCanvas.getBoundingClientRect();
@@ -3069,7 +3187,22 @@ function onWindowMove(e) {
 }
 function onWindowUp(e) {
   if (S.palScrollDrag) { S.palScrollDrag = null; return; }
-  if (S.colorDrag) { endColorDrag(e); return; }
+  if (S.drag && S.drag.mode === 'op-pending') {
+    const d = S.drag;
+    S.drag = null;
+    renderGhost();
+    const op = d.region.opSlot;
+    if (op) {
+      const rect = worldToScreenRect(d.region);
+      openDropdown({ left: rect.left, top: rect.top, width: rect.width, height: rect.height }, operatorDropdownItems(), op.chain.ops[op.index], (v) => {
+        H.pushUndo();
+        op.chain.ops[op.index] = v;
+        H.refreshPreview();
+        puzzleCanvasRender();
+      });
+    }
+    return;
+  }
   if (S.edit) {
     S.editMouse = null;
     return;
@@ -3116,7 +3249,7 @@ function updateHover(e) {
     S.hover = hover;
     const kind = hover && hover.kind;
     const cursor = (kind === 'edit') ? 'text'
-      : (kind === 'attr' || kind === 'toggle' || kind === 'color' || kind === 'array-append' || kind === 'param-add') ? 'pointer'
+      : (kind === 'attr' || kind === 'toggle' || kind === 'color' || kind === 'array-append' || kind === 'param-add' || kind === 'dd' || kind === 'pal-title') ? 'pointer'
       : (kind === 'expr' || kind === 'stmt' || kind === 'head' || kind === 'op' || kind === 'attr-var') ? 'grab'
       : 'default';
     if (S.workCanvas) S.workCanvas.style.cursor = (kind === 'pal-item') ? 'default' : cursor;
@@ -3162,16 +3295,15 @@ export function puzzleCanvasIsEditing() { return !!S.edit; }
 export function puzzleCanvasCancelEdit() { cancelEdit(); closeColorEdit(); }
 
 export function initPuzzleCanvas() {
+  loadCatState();
   S.palCanvas = document.getElementById('puzzle-palette-canvas');
   S.workCanvas = document.getElementById('puzzle-workspace-canvas');
   S.echoCanvas = document.getElementById('puzzle-echo-canvas');
   S.ghostCanvas = document.getElementById('puzzle-ghost-canvas');
-  S.colorCanvas = document.getElementById('puzzle-color-canvas');
   S.palCtx = S.palCanvas && typeof S.palCanvas.getContext === 'function' ? S.palCanvas.getContext('2d') : null;
   S.workCtx = S.workCanvas && typeof S.workCanvas.getContext === 'function' ? S.workCanvas.getContext('2d') : null;
   S.echoCtx = S.echoCanvas && typeof S.echoCanvas.getContext === 'function' ? S.echoCanvas.getContext('2d') : null;
   S.ghostCtx = S.ghostCanvas && typeof S.ghostCanvas.getContext === 'function' ? S.ghostCanvas.getContext('2d') : null;
-  S.colorCtx = S.colorCanvas && typeof S.colorCanvas.getContext === 'function' ? S.colorCanvas.getContext('2d') : null;
 
   if (!S.palCtx || !S.workCtx) return;
 
@@ -3186,10 +3318,6 @@ export function initPuzzleCanvas() {
   if (S.echoCanvas) {
     S.echoCanvas.addEventListener('wheel', onEchoWheel, { passive: false });
   }
-  if (S.colorCanvas) {
-    S.colorCanvas.addEventListener('pointerdown', onColorDown);
-  }
-  if (document.addEventListener) document.addEventListener('pointerdown', onColorOutside, true);
   window.addEventListener('pointermove', onWindowMove);
   window.addEventListener('pointerup', onWindowUp);
   window.addEventListener('resize', puzzleCanvasResize);

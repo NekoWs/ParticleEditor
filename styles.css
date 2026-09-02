@@ -220,6 +220,8 @@ body {
 .row input[type="text"]:focus, .row input[type="number"]:focus, .row select:focus { border-color: var(--accent); outline: none; }
 .row input[type="range"] { flex: 1; accent-color: var(--accent); }
 .row input[type="color"] { width: 42px; height: 30px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: none; cursor: pointer; }
+.row input#prop-color { flex: 1; min-width: 0; text-transform: lowercase; }
+.color-swatch { flex: none; width: 30px; height: 30px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; background: repeating-conic-gradient(#777 0 25%, #bbb 0 50%) 0 0 / 10px 10px; }
 .chk { display: flex; align-items: center; gap: 7px; margin: 9px 0; cursor: pointer; }
 .chk input { accent-color: var(--accent); width: 15px; height: 15px; }
 .hint { color: var(--muted); margin: 5px 0; font-size: 12px; }
@@ -1555,6 +1557,39 @@ body.puzzle-mode #puzzle-ghost-canvas { display: block; }
   outline: none;
 }
 .pc-color-hex:focus { border-color: var(--accent); }
+
+/* ---- 拼图下拉列表（函数/运算符/数组方法/上下文） ---- */
+#puzzle-dropdown {
+  box-sizing: border-box;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.puzzle-dd-item {
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.puzzle-dd-item:hover { background: var(--panel-3); }
+.puzzle-dd-item.selected { background: rgba(91, 157, 255, 0.22); }
+#puzzle-dd-help {
+  box-sizing: border-box;
+  max-width: 280px;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.82);
+  color: #eceff5;
+  font-size: 12px;
+  line-height: 1.4;
+  border-radius: 5px;
+  pointer-events: none;
+}
 
 /* ---- 自定义悬停气泡提示（替代原生 title） ---- */
 .app-tooltip {

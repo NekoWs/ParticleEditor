@@ -14,6 +14,25 @@ export function hexToRgb(hex) {
   return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255];
 }
 
+/** 解析 #rgb/#rrggbb/#rrggbbaa 为 [r,g,b,a]（0..1）；非法返回 null。 */
+export function hexToRgba(hex) {
+  let h = String(hex || '').trim().replace(/^#/, '');
+  if (/^[0-9a-fA-F]{3}$/.test(h)) h = h.split('').map(c => c + c).join('');
+  if (/^[0-9a-fA-F]{6}$/.test(h)) {
+    return [parseInt(h.slice(0, 2), 16) / 255, parseInt(h.slice(2, 4), 16) / 255, parseInt(h.slice(4, 6), 16) / 255, 1];
+  }
+  if (/^[0-9a-fA-F]{8}$/.test(h)) {
+    return [parseInt(h.slice(0, 2), 16) / 255, parseInt(h.slice(2, 4), 16) / 255, parseInt(h.slice(4, 6), 16) / 255, parseInt(h.slice(6, 8), 16) / 255];
+  }
+  return null;
+}
+
+/** rgba（0..1）→ #rrggbbaa。 */
+export function rgbaToHex(r, g, b, a) {
+  const c = v => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, '0');
+  return '#' + c(r) + c(g) + c(b) + c(a == null ? 1 : a);
+}
+
 export let uiModalOverlay = null;
 export let uiModalClosePromise = Promise.resolve();
 
