@@ -1121,7 +1121,11 @@ window.addEventListener('pointerup', () => { renderer.domElement.style.cursor = 
 
 window.addEventListener('keydown', (ev) => {
   const k = ev.key.toLowerCase();
-  const isTextInput = ev.target && ev.target.matches && ev.target.matches('input, textarea, select');
+  const el = ev.target;
+  const isTextInput = el instanceof Element && (
+    el.matches('input, textarea, select') ||
+    !!el.closest('.cm-content, [contenteditable="true"]')
+  );
   // 文本框内：文件级快捷键（保存/打开）依然生效，避免 Ctrl+S 触发浏览器保存对话框
   if (isTextInput) {
     if (ev.ctrlKey && k === 's') { ev.preventDefault(); saveFile(); return; }
