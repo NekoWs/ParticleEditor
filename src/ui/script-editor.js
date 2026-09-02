@@ -84,28 +84,71 @@ const scriptLanguage = StreamLanguage.define({
   },
 });
 
+// IDEA Darcula 风格配色
+const PALETTE = {
+  bg: '#2b2b2b',
+  gutter: '#313335',
+  text: '#a9b7c6',
+  keyword: '#cc7832',
+  string: '#6a8759',
+  number: '#6897bb',
+  comment: '#808080',
+  function: '#ffc66d',
+  variable: '#a9b7c6',
+  atom: '#9876aa',
+  operator: '#a9b7c6',
+  selection: '#214283',
+  activeLine: '#323232',
+  tooltipBg: '#3c3f41',
+  tooltipText: '#a9b7c6',
+  tooltipSelected: '#2d5f9e',
+};
+
 const scriptHighlightStyle = HighlightStyle.define([
-  { tag: tags.keyword, color: '#c586c0' },
-  { tag: tags.comment, color: '#6a9955' },
-  { tag: tags.string, color: '#ce9178' },
-  { tag: tags.number, color: '#b5cea8' },
-  { tag: tags.operator, color: '#d4d4d4' },
-  { tag: tags.function, color: '#dcdcaa' },
-  { tag: tags.variableName, color: '#9cdcfe' },
-  { tag: tags.atom, color: '#569cd6' },
+  { tag: tags.keyword, color: PALETTE.keyword },
+  { tag: tags.comment, color: PALETTE.comment },
+  { tag: tags.string, color: PALETTE.string },
+  { tag: tags.number, color: PALETTE.number },
+  { tag: tags.operator, color: PALETTE.operator },
+  { tag: tags.function, color: PALETTE.function },
+  { tag: tags.variableName, color: PALETTE.variable },
+  { tag: tags.atom, color: PALETTE.atom },
 ]);
 
 const scriptTheme = EditorView.theme({
   '&': {
-    backgroundColor: 'var(--panel-3, #1e1e1e)',
-    color: 'var(--text, #d4d4d4)',
+    backgroundColor: PALETTE.bg,
+    color: PALETTE.text,
     fontSize: '12px',
   },
-  '.cm-content': { fontFamily: '"SFMono-Regular", Consolas, monospace', lineHeight: '1.4' },
-  '.cm-cursor': { borderLeftColor: 'var(--text, #d4d4d4)' },
-  '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: '#264f78' },
-  '.cm-gutters': { backgroundColor: 'var(--panel-3, #1e1e1e)', color: 'var(--muted, #888)' },
-  '.cm-activeLine': { backgroundColor: 'rgba(255,255,255,0.04)' },
+  '.cm-content': {
+    fontFamily: '"SFMono-Regular", Consolas, monospace',
+    lineHeight: '1.4',
+    caretColor: PALETTE.text,
+    padding: '5px 7px',
+  },
+  '.cm-cursor, .cm-dropCursor': { borderLeftColor: PALETTE.text },
+  '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
+    backgroundColor: PALETTE.selection,
+  },
+  '.cm-gutters': { backgroundColor: PALETTE.gutter, color: PALETTE.comment, border: 'none' },
+  '.cm-activeLine': { backgroundColor: PALETTE.activeLine },
+  '.cm-activeLineGutter': { backgroundColor: PALETTE.activeLine },
+  '.cm-tooltip': {
+    backgroundColor: PALETTE.tooltipBg,
+    color: PALETTE.tooltipText,
+    border: '1px solid #4b4e50',
+  },
+  '.cm-tooltip.cm-tooltip-autocomplete': {
+    backgroundColor: PALETTE.tooltipBg,
+    color: PALETTE.tooltipText,
+  },
+  '.cm-tooltip.cm-tooltip-autocomplete ul li[aria-selected]': {
+    backgroundColor: PALETTE.tooltipSelected,
+    color: '#ffffff',
+  },
+  '.cm-completionMatchedText': { color: PALETTE.function, textDecoration: 'none' },
+  '.cm-completionDetail': { color: PALETTE.comment, fontStyle: 'normal' },
 });
 
 /** 把单个代码段包装成可被 parseProgram 解析的完整脚本源。 */
@@ -213,5 +256,13 @@ export function createScriptEditor(parent, opts) {
   });
 
   const view = new EditorView({ state, parent });
+
+  // 点击 .fx-code 容器任意空白区域也进入编辑（否则只有内容区可点）。
+  parent.addEventListener('mousedown', (event) => {
+    const target = event.target;
+    if (target instanceof Element && target.closest('.cm-editor')) return;
+    view.focus();
+  });
+
   return view;
 }

@@ -792,10 +792,12 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .fx-vars .var-row input.var-name { max-width: 70px; flex: none; }
 .fx-code {
   width: 100%; box-sizing: border-box; resize: vertical;
-  background: var(--panel-3); border: 1px solid var(--border);
-  color: var(--text); border-radius: 5px; padding: 5px 7px;
+  background: #2b2b2b; border: 1px solid var(--border);
+  color: var(--text); border-radius: 5px; padding: 0; overflow: hidden;
   font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px; line-height: 1.4;
 }
+.fx-code .cm-editor { width: 100%; }
+.fx-code .cm-scroller { overflow: auto; }
 /* 统一组合 XYZ 输入框：三个输入框分别对应 X/Y/Z；需要显示 XYZ 时标签居左，
    每个属性之间以浅色竖线分隔。 */
 .spin-space-btn {
