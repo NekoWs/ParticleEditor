@@ -100,6 +100,69 @@ export function funcDropdownGroup(name) {
 }
 // 数组操作合并块：全部走 method 节点，下拉切换方法名。
 export const ARRAY_METHODS = ['push', 'insert', 'remove', 'slice', 'size', 'find', 'includes', 'sort', 'unique', 'reverse'];
+
+// 数组方法的自然语言拼图模板（替代代码形式 `[数组].方法(...)`）。
+// parts 中：{text} 文本、{slot:'obj'} 对象槽、{slot:0..} 参数槽、{dd:true} 方法名下拉芯片。
+// phrase 为下拉芯片显示文字（blk.method.<name>.phrase）；zh/en 各自一份保证多语言。
+export const METHOD_PHRASES = {
+  push: {
+    phrase: 'blk.method.push.phrase',
+    zh: [{ text: '给 ' }, { slot: 'obj' }, { text: ' ' }, { dd: true }, { text: ' ' }, { slot: 0 }],
+    en: [{ dd: true }, { text: ' ' }, { slot: 0 }, { text: ' to ' }, { slot: 'obj' }],
+  },
+  insert: {
+    phrase: 'blk.method.insert.phrase',
+    zh: [{ text: '在 ' }, { slot: 'obj' }, { text: ' 的位置 ' }, { slot: 0 }, { text: ' ' }, { dd: true }, { text: ' ' }, { slot: 1 }],
+    en: [{ dd: true }, { text: ' ' }, { slot: 1 }, { text: ' into ' }, { slot: 'obj' }, { text: ' at ' }, { slot: 0 }],
+  },
+  remove: {
+    phrase: 'blk.method.remove.phrase',
+    zh: [{ text: '从 ' }, { slot: 'obj' }, { text: ' ' }, { dd: true }, { text: ' 第 ' }, { slot: 0 }, { text: ' 位' }],
+    en: [{ dd: true }, { text: ' from ' }, { slot: 'obj' }, { text: ' at ' }, { slot: 0 }],
+  },
+  slice: {
+    phrase: 'blk.method.slice.phrase',
+    zh: [{ text: '从 ' }, { slot: 'obj' }, { text: ' ' }, { dd: true }, { text: ' ' }, { slot: 0 }, { text: ' 到 ' }, { slot: 1 }],
+    en: [{ dd: true }, { text: ' ' }, { slot: 'obj' }, { text: ' from ' }, { slot: 0 }, { text: ' to ' }, { slot: 1 }],
+  },
+  size: {
+    phrase: 'blk.method.size.phrase',
+    zh: [{ text: '获取 ' }, { slot: 'obj' }, { text: ' 的 ' }, { dd: true }],
+    en: [{ text: 'Get ' }, { dd: true }, { text: ' of ' }, { slot: 'obj' }],
+  },
+  find: {
+    phrase: 'blk.method.find.phrase',
+    zh: [{ text: '在 ' }, { slot: 'obj' }, { text: ' 中 ' }, { dd: true }, { text: ' ' }, { slot: 0 }],
+    en: [{ dd: true }, { text: ' ' }, { slot: 0 }, { text: ' in ' }, { slot: 'obj' }],
+  },
+  includes: {
+    phrase: 'blk.method.includes.phrase',
+    zh: [{ text: '判断 ' }, { slot: 'obj' }, { text: ' 是否 ' }, { dd: true }, { text: ' ' }, { slot: 0 }],
+    en: [{ text: 'Check if ' }, { slot: 'obj' }, { text: ' ' }, { dd: true }, { text: ' ' }, { slot: 0 }],
+  },
+  sort: {
+    phrase: 'blk.method.sort.phrase',
+    zh: [{ text: '对 ' }, { slot: 'obj' }, { text: ' ' }, { dd: true }],
+    en: [{ dd: true }, { text: ' ' }, { slot: 'obj' }],
+  },
+  unique: {
+    phrase: 'blk.method.unique.phrase',
+    zh: [{ text: '对 ' }, { slot: 'obj' }, { text: ' ' }, { dd: true }],
+    en: [{ dd: true }, { text: ' ' }, { slot: 'obj' }],
+  },
+  reverse: {
+    phrase: 'blk.method.reverse.phrase',
+    zh: [{ dd: true }, { text: ' ' }, { slot: 'obj' }],
+    en: [{ dd: true }, { text: ' ' }, { slot: 'obj' }],
+  },
+};
+
+// 取某数组方法在当前语言下的自然语言 parts。
+export function methodPhraseParts(method, lang) {
+  const p = METHOD_PHRASES[method];
+  if (!p) return null;
+  return (lang === 'en' && p.en) ? p.en : p.zh;
+}
 // 运算符下拉：算术 + 比较 + 逻辑（替代被移除的独立运算符块）。
 export const ALL_OPERATORS = ['+', '-', '*', '/', '%', '^', '==', '!=', '<', '<=', '>', '>=', '&&', '||'];
 

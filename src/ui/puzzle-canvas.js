@@ -7,7 +7,7 @@
  * 注入数据访问与变更回调；本模块只负责布局、绘制、命中与输入。
  * ======================================================================= */
 
-import {t, tf} from '../core/i18n.js';
+import {t, tf, LANG} from '../core/i18n.js';
 import {getFunction} from '../core/constants.js';
 import {openColorPicker, closeColorPicker} from './color-picker.js';
 import {
@@ -20,6 +20,8 @@ import {
   GROUP_COLOR,
   isBoolOp,
   memberCtxKey,
+  METHOD_PHRASES,
+  methodPhraseParts,
   N0,
   OP_LABELS,
   opSlotType,
@@ -207,7 +209,10 @@ function exprShape(node) {
 
 function ddLabel(dd) {
   if (dd.kind === 'func-dd') return dd.node.name;
-  if (dd.kind === 'method-dd') return (H && H.methodLabel ? H.methodLabel(dd.node.method) : dd.node.method);
+  if (dd.kind === 'method-dd') {
+    const p = METHOD_PHRASES[dd.node.method];
+    return (p && t(p.phrase)) || (H && H.methodLabel ? H.methodLabel(dd.node.method) : dd.node.method);
+  }
   if (dd.kind === 'op-dd') return dd.node.op;
   if (dd.kind === 'ctx-dd') return (H && H.ctxLabel ? H.ctxLabel(dd.key.slice('this.'.length)) : dd.key);
   return '?';
@@ -216,11 +221,11 @@ function ddLabel(dd) {
 function isMergedPaletteItem(item) {
   return !!item && (item.type === 'func-dd' || item.type === 'method-dd' || item.type === 'ctx-dd');
 }
-function ddItemLabel(item) {
-  if (item.type === 'func-dd') return item.selection;
-  if (item.type === 'method-dd') return (H && H.methodLabel ? H.methodLabel(item.selection) : item.selection);
-  if (item.type === 'ctx-dd') return (H && H.ctxLabel ? H.ctxLabel(item.selection.slice('this.'.length)) : item.selection);
-  return item.selection || '';
+function paletteItemNode(item) {
+  if (item.type === 'func-dd') return H.newExprNodeFromTemplate({ kind: 'func', name: item.selection || 'sin' });
+  if (item.type === 'method-dd') return H.newExprNodeFromTemplate({ kind: 'method', method: item.selection || 'push' });
+  if (item.type === 'ctx-dd') return ctxExprForKey(item.selection || 'this.index');
+  return null;
 }
 
 /* ============================ 下拉列表（DOM 浮层） ============================ */
@@ -252,10 +257,20 @@ function ensureDropdownDom() {
   });
 }
 
+function dropdownWidth(items) {
+  let maxW = 0;
+  const ctx = S.palCtx;
+  for (const it of items) {
+    const w = ctx ? textW(ctx, String(it.label == null ? '' : it.label), FONT) : String(it.label == null ? '' : it.label).length * 7;
+    if (w > maxW) maxW = w;
+  }
+  return Math.max(120, Math.min(340, maxW + 34));
+}
+
 function openDropdown(anchor, items, selectedValue, onSelect) {
   closeDropdown();
   ensureDropdownDom();
-  S.dropdown = { onSelect };
+  S.dropdown = { onSelect, width: dropdownWidth(items) };
   const el = S.dropdownEl;
   el.innerHTML = '';
   for (const it of items) {
@@ -281,7 +296,7 @@ function positionDropdown(anchor) {
   if (!el) return;
   const vw = window.innerWidth || 1200;
   const vh = window.innerHeight || 800;
-  const width = Math.max(150, Math.min(220, anchor.width || 160));
+  const width = (S.dropdown && S.dropdown.width) || 160;
   el.style.width = width + 'px';
   el.style.left = Math.max(8, Math.min(anchor.left, vw - width - 8)) + 'px';
   const top = anchor.top + (anchor.height || 0) + 4;
@@ -361,10 +376,11 @@ function openPaletteDd(item) {
     onSelect = (v) => { S.palSelections[item.key] = v; puzzleCanvasRender(); };
   }
   const rect = S.palCanvas.getBoundingClientRect();
-  const sx = rect.left + (item.x + (item.ddRect ? item.ddRect.x : 0)) * PAL_SCALE + PAL_LEFT;
-  const sy = rect.top + (item.y + (item.ddRect ? item.ddRect.y : 0)) * PAL_SCALE + PAL_TOP - S.palScroll;
-  const sw = (item.ddRect ? item.ddRect.w : 0) * PAL_SCALE;
-  const sh = (item.ddRect ? item.ddRect.h : 0) * PAL_SCALE;
+  const dr = (item.ddRects && item.ddRects[0]) || { x: 0, y: 0, w: 0, h: 0 };
+  const sx = rect.left + (item.x + dr.x) * PAL_SCALE + PAL_LEFT;
+  const sy = rect.top + (item.y + dr.y) * PAL_SCALE + PAL_TOP - S.palScroll;
+  const sw = dr.w * PAL_SCALE;
+  const sh = dr.h * PAL_SCALE;
   openDropdown({ left: sx, top: sy, width: sw, height: sh }, items, sel, onSelect);
 }
 
@@ -542,8 +558,8 @@ function inlineFlow(parts, x, y, out, seg, ctx, owner) {
       cx += COLOR_W; partH = COLOR_H;
     } else if (p.dd) {
       const label = ddLabel(p.dd);
-      const tw = textW(ctx, label, FONT) + 16;
-      children.push({ kind: 'dd', shape: 'dd', dd: p.dd, x: cx, y, w: tw, h: EXPR_H, segments: [{ text: label, x: cx + 5, y: y + EXPR_H / 2, font: FONT }] });
+      const tw = textW(ctx, label, FONT) + 30;
+      children.push({ kind: 'dd', shape: 'dd', dd: p.dd, x: cx, y, w: tw, h: EXPR_H, segments: [{ text: label, x: cx + 7, y: y + EXPR_H / 2, font: FONT }] });
       cx += tw; partH = EXPR_H;
     }
     spans.push({ start, end: children.length, h: partH });
@@ -636,21 +652,32 @@ function exprParts(node) {
       P.push({ slot: { ref: slotRef(() => node.index, v => { node.index = v; }, T_ANY), type: T_ANY, label: '' } });
       P.push({ text: ']' });
       break;
-    case 'method':
-      P.push({ slot: { ref: slotRef(() => node.obj, v => { node.obj = v; }, T_ANY), type: T_ANY, label: '' } });
-      if (ARRAY_METHODS.includes(node.method)) {
-        P.push({ text: '.' });
-        P.push({ dd: { kind: 'method-dd', node } });
-        P.push({ text: '(' });
-      } else {
-        P.push({ text: '.' + node.method + '(' });
+    case 'method': {
+      const parts = ARRAY_METHODS.includes(node.method) ? methodPhraseParts(node.method, LANG) : null;
+      if (parts) {
+        for (const part of parts) {
+          if (part.text != null) {
+            P.push({ text: part.text });
+          } else if (part.slot === 'obj') {
+            P.push({ slot: { ref: slotRef(() => node.obj, v => { node.obj = v; }, T_ANY), type: T_ANY, label: t('blk.arg.array') } });
+          } else if (part.slot != null) {
+            const i = part.slot;
+            P.push({ slot: { ref: slotRef(() => node.args[i], v => { node.args[i] = v; }, T_ANY), type: T_ANY, label: '' } });
+          } else if (part.dd) {
+            P.push({ dd: { kind: 'method-dd', node } });
+          }
+        }
+        break;
       }
+      P.push({ slot: { ref: slotRef(() => node.obj, v => { node.obj = v; }, T_ANY), type: T_ANY, label: '' } });
+      P.push({ text: '.' + node.method + '(' });
       node.args.forEach((_, i) => {
         if (i > 0) P.push({ text: ', ' });
         P.push({ slot: { ref: slotRef(() => node.args[i], v => { node.args[i] = v; }, T_ANY), type: T_ANY, label: '' } });
       });
       P.push({ text: ')' });
       break;
+    }
     case 'array':
       P.push({ text: '[' });
       node.items.forEach((_, i) => {
@@ -1291,9 +1318,12 @@ function paletteItemSize(item, ctx) {
     return { w: textW(ctx, item.op, FONT) + 16, h: EXPR_H };
   }
   if (isMergedPaletteItem(item)) {
-    const sel = ddItemLabel(item);
-    const w = 16 + textW(ctx, item.label, FONT) + 10 + textW(ctx, sel, FONT) + 22 + 16;
-    return { w, h: EXPR_H + 8 };
+    const node = paletteItemNode(item);
+    if (node) {
+      const d = layoutExpr(node, 0, 0, tmp, ctx);
+      return { w: d.w, h: d.h };
+    }
+    return { w: 120, h: EXPR_H };
   }
   if (item.type === 'hat') {
     return { w: textW(ctx, item.label, FONT) + 30, h: HAT_H };
@@ -1518,7 +1548,7 @@ function drawDdRegion(ctx, r) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font = FONT;
-  ctx.fillText('▾', r.x + r.w - 9, r.y + r.h / 2 + 1);
+  ctx.fillText('▾', r.x + r.w - 15, r.y + r.h / 2 + 1);
   ctx.restore();
 }
 
@@ -1731,42 +1761,18 @@ function drawRegion(ctx, r, th) {
   }
 }
 
-function drawPalDropdownItem(ctx, r) {
-  const item = r.item;
-  const cls = item.type === 'func-dd' ? 'blk-math' : item.type === 'method-dd' ? 'blk-array' : 'blk-var';
-  const sel = ddItemLabel(item);
-  ctx.save();
-  ctx.fillStyle = blockColor(cls);
-  rrPath(ctx, r.x, r.y, r.w, r.h, 6);
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  ctx.font = FONT;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#fff';
-  const labX = r.x + 10;
-  ctx.fillText(item.label, labX, r.y + r.h / 2);
-  const labW = ctx.measureText(item.label).width;
-  const selW = ctx.measureText(sel).width;
-  const ddX = labX + labW + 10;
-  const ddW = selW + 24;
-  const ddY = r.y + (r.h - EXPR_H) / 2;
-  ctx.fillStyle = 'rgba(0,0,0,0.3)';
-  rrPath(ctx, ddX, ddY, ddW, EXPR_H, 5);
-  ctx.fill();
-  ctx.fillStyle = '#fff';
-  ctx.fillText(sel, ddX + 7, ddY + EXPR_H / 2);
-  ctx.fillText('▾', ddX + ddW - 12, ddY + EXPR_H / 2 + 1);
-  item.ddRect = { x: ddX - r.x, y: ddY - r.y, w: ddW, h: EXPR_H };
-  ctx.restore();
-}
-
 function drawPalItemRegion(ctx, r) {
   const tmp = [];
   const item = r.item;
-  if (isMergedPaletteItem(item)) { drawPalDropdownItem(ctx, r); return; }
+  if (isMergedPaletteItem(item)) {
+    const node = paletteItemNode(item);
+    if (node) {
+      layoutExpr(node, r.x, r.y, tmp, ctx);
+      for (const reg of tmp) drawRegion(ctx, reg, null);
+      item.ddRects = tmp.filter(reg => reg.kind === 'dd').map(reg => ({ x: reg.x - r.x, y: reg.y - r.y, w: reg.w, h: reg.h }));
+    }
+    return;
+  }
   if (item.type === 'opval') {
     ctx.save();
     ctx.fillStyle = blockColor('blk-math');
@@ -3003,11 +3009,12 @@ function onPalDown(e) {
   if (hit && hit.kind === 'pal-item') {
     e.preventDefault();
     const item = hit.item;
-    if (isMergedPaletteItem(item) && item.ddRect) {
+    if (isMergedPaletteItem(item) && item.ddRects && item.ddRects.length) {
       const cx = (mx - PAL_LEFT) / PAL_SCALE;
       const cy = (my - PAL_TOP + S.palScroll) / PAL_SCALE;
       const ix = cx - item.x, iy = cy - item.y;
-      if (ix >= item.ddRect.x && ix <= item.ddRect.x + item.ddRect.w && iy >= item.ddRect.y && iy <= item.ddRect.y + item.ddRect.h) {
+      const overDd = item.ddRects.some(dr => ix >= dr.x && ix <= dr.x + dr.w && iy >= dr.y && iy <= dr.y + dr.h);
+      if (overDd) {
         openPaletteDd(item);
         return;
       }
