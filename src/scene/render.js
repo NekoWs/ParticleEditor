@@ -11,7 +11,7 @@ import { resolveUV, refreshUVPanel } from '../ui/texture-editor.js';
 import { updateGizmo } from '../interaction/gizmo.js';
 import { drawTimeline, updatePropPanel } from '../ui/panels.js';
 
-import { buildParticleIndex, buildTrackIndex, buildGroupIndex, buildOpDeltaCache, buildGroupXforms, buildFxSclTrackCache, currentVisual, velOffsetAt, trackValueAt, trackIntegral, trVersion, groupMemberIndexCache, groupXformCache, fxOpDeltaCache, fxSclTrackCache, invalidateMaxTickCache, getFxFrameAuto, evalFxParticleInto, spinVectorAt, rotVectorAt } from '../core/animation-eval.js';
+import { buildParticleIndex, buildTrackIndex, buildGroupIndex, buildOpDeltaCache, buildGroupXforms, buildFxSclTrackCache, currentVisual, velOffsetAt, trackValueAt, trackIntegral, trVersion, groupMemberIndexCache, groupXformCache, fxOpDeltaCache, fxSclTrackCache, invalidateMaxTickCache, getFxFrameAuto, evalFxParticleInto, fxParticleVisible, spinVectorAt, rotVectorAt } from '../core/animation-eval.js';
 import * as THREE from "three";
 /* =========================================================================
  * 渲染
@@ -373,12 +373,17 @@ function writePointBuffers(full) {
         [px, py, pz, cr, cg, cb, ca, ssx, ssy] = readVisualFallback(p, T);
       }
     }
-    if (!p.fx) plife = typeof gate.life === 'number' ? gate.life : -1;
-    // 入场/寿命门控：t < st 隐藏；有限 life 到期后隐藏。fade 预设在出场窗口内做 alpha 渐显
+    // 入场/寿命门控：t < st 隐藏；有限 life 到期后隐藏；函数对象粒子在对象时长结束后隐藏。
+    // fade 预设在出场窗口内做 alpha 渐显
     const gst = gate.st || 0;
-    let vis = T >= gst ? 1 : 0;
-    const glife = plife;
-    if (vis > 0 && glife >= 0 && T - gst >= glife) vis = 0;
+    let vis;
+    if (p.fx) {
+      vis = fxParticleVisible(gate, T, plife) ? 1 : 0;
+    } else {
+      plife = typeof gate.life === 'number' ? gate.life : -1;
+      vis = T >= gst ? 1 : 0;
+      if (vis > 0 && plife >= 0 && T - gst >= plife) vis = 0;
+    }
     if (vis > 0 && gate.ent && gate.ent.p === 'fade') {
       const fd = gate.ent.d || 5;
       if (T - gst < fd) vis *= Math.max(0, (T - gst) / fd);

@@ -697,6 +697,24 @@ export function currentVisualDerived(p, T) {
   return { pos, color: r.color, scale: scaleVec };
 }
 
+/**
+ * 派生粒子可见性门控（编辑器与播放器共用语义）：
+ * - `T < fx.st`：未出场，隐藏；
+ * - 逐粒子寿命 `life`（tick）：`life >= 0` 且 `T - fx.st >= life` 时到期隐藏，`life < 0` = 无限；
+ * - 对象整体时长 `fx.duration`（tick）：`duration > 0` 且 `T - fx.st >= duration` 时隐藏；
+ *   `duration <= 0` 视为无时长上限（兼容旧工程 duration 缺省 0 的解析回退）。
+ */
+export function fxParticleVisible(fx, T, life) {
+  const st = (fx && fx.st) || 0;
+  const local = T - st;
+  if (local < 0) return false;
+  const lf = (typeof life === 'number' && Number.isFinite(life)) ? life : -1;
+  if (lf >= 0 && local >= lf) return false;
+  const dur = (fx && fx.duration) || 0;
+  if (dur > 0 && local >= dur) return false;
+  return true;
+}
+
 // 结构变化（轨道/粒子/函数对象）时由 rebuildIndexes 失效；播放/拖动期间不失效。
 let _maxTickCache = 0;
 let _maxTickValid = false;
