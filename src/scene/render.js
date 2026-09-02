@@ -237,7 +237,7 @@ function writePointBuffers(full) {
       sclTrs: (fxSclTrackCache && fxSclTrackCache.get(fx.id)) || null,
     });
   }
-  const derivedOut = { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0 };
+  const derivedOut = { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0, life: -1 };
   // 脚本求值失败时的回退：使用上次成功重建写入的基础值，避免整帧渲染被未捕获异常打断。
   const storedFx = (p, fr, T) => {
     const sclTrs = fr.sclTrs;
@@ -253,11 +253,13 @@ function writePointBuffers(full) {
     const p = state.particles[i];
     let px, py, pz, cr, cg, cb, ca, ssx, ssy;
     let gate = p;
+    let plife = -1;
     if (p.fx) {
       const fr = fxFrames.get(p.fx);
       if (fr) gate = fr.gate;
       if (fr && fr.failed) {
         [px, py, pz, cr, cg, cb, ca, ssx, ssy] = storedFx(p, fr, T);
+        plife = typeof p.life === 'number' ? p.life : -1;
       } else if (fr && fr.fast && !(hasGroups && memberIdx.has(p.id)) && fr.staticScript) {
         // 确定性静态脚本：直接使用 rebuild 阶段写好的基础值，跳过每帧脚本求值。
         px = p.pos[0]; py = p.pos[1]; pz = p.pos[2];
@@ -266,11 +268,13 @@ function writePointBuffers(full) {
         const baseScale = p.scale[0];
         ssx = sclTrs && sclTrs[0] ? trackValueAt(sclTrs[0], T, baseScale) : baseScale;
         ssy = sclTrs && sclTrs[1] ? trackValueAt(sclTrs[1], T, baseScale) : baseScale;
+        plife = typeof p.life === 'number' ? p.life : -1;
       } else if (fr && fr.fast && !(hasGroups && memberIdx.has(p.id))) {
         const out = evalFxParticleInto(fr.frame, p._statics || (p._statics = new Map()), p._fxIdx, derivedOut);
         if (fr.frame && fr.frame.failed) {
           fr.failed = true;
           [px, py, pz, cr, cg, cb, ca, ssx, ssy] = storedFx(p, fr, T);
+          plife = typeof p.life === 'number' ? p.life : -1;
         } else {
           px = out.pos[0]; py = out.pos[1]; pz = out.pos[2];
           cr = out.color[0]; cg = out.color[1]; cb = out.color[2]; ca = out.color[3];
@@ -278,9 +282,11 @@ function writePointBuffers(full) {
           const baseScale = out.scale;
           ssx = sclTrs && sclTrs[0] ? trackValueAt(sclTrs[0], T, baseScale) : baseScale;
           ssy = sclTrs && sclTrs[1] ? trackValueAt(sclTrs[1], T, baseScale) : baseScale;
+          plife = Number.isFinite(out.life) ? out.life : -1;
         }
       } else {
         [px, py, pz, cr, cg, cb, ca, ssx, ssy] = readVisualFallback(p, T);
+        plife = typeof p.life === 'number' ? p.life : -1;
       }
     } else {
       const inGroup = hasGroups && memberIdx.has(p.id);
@@ -367,10 +373,11 @@ function writePointBuffers(full) {
         [px, py, pz, cr, cg, cb, ca, ssx, ssy] = readVisualFallback(p, T);
       }
     }
+    if (!p.fx) plife = typeof gate.life === 'number' ? gate.life : -1;
     // 入场/寿命门控：t < st 隐藏；有限 life 到期后隐藏。fade 预设在出场窗口内做 alpha 渐显
     const gst = gate.st || 0;
     let vis = T >= gst ? 1 : 0;
-    const glife = typeof gate.life === 'number' ? gate.life : -1;
+    const glife = plife;
     if (vis > 0 && glife >= 0 && T - gst >= glife) vis = 0;
     if (vis > 0 && gate.ent && gate.ent.p === 'fade') {
       const fd = gate.ent.d || 5;

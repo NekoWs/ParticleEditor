@@ -20,9 +20,9 @@ import { parseProgram, createObjectState, runSetup, createStatics, evalProcess, 
 const TICKS_PER_SEC = 20;
 const DT_PER_TICK = 1 / TICKS_PER_SEC;
 
-// 新建一个 process 输出对象（默认值：位置原点、颜色/alpha=1、速度 0、缩放 1、不发光）。
+// 新建一个 process 输出对象（默认值：位置原点、颜色/alpha=1、速度 0、缩放 1、不发光、寿命 -1=无限）。
 function newOut() {
-  return { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0 };
+  return { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0, life: -1 };
 }
 
 // 记录脚本运行时错误（不弹窗；提交/重建路径会另行弹窗提示）。
@@ -39,6 +39,7 @@ function storedVisual(p) {
     scale: (p && p.scale && Number.isFinite(p.scale[0])) ? p.scale[0] : 1,
     glow: !!(p && p.glow),
     light: (p && p.lightLevel != null) ? p.lightLevel : 0,
+    life: (p && typeof p.life === 'number') ? p.life : -1,
   };
 }
 
@@ -177,6 +178,7 @@ function evalParticleFor(fx, objState, statics, i, n, t, dt) {
     scale: Number.isFinite(out.scale) ? out.scale : 1,
     glow: !!out.glow,
     light: Math.max(0, Math.min(15, Math.round(out.light))),
+    life: Number.isFinite(out.life) ? out.life : -1,
   };
 }
 
@@ -227,7 +229,7 @@ export function getFxFrame(fx, objState, n, t, dt) {
   };
 }
 
-// 求值一个派生粒子并把结果写入复用 out（{pos,color,vel,scale,glow,light}）。
+// 求值一个派生粒子并把结果写入复用 out（{pos,color,vel,scale,glow,light,life}）。
 // 返回值即 out；调用方必须立即消费（下一次调用会覆盖）。与 evalParticleFor 语义一致。
 export function evalFxParticleInto(frame, statics, i, out) {
   const ctx = frame.ctx;
@@ -235,7 +237,7 @@ export function evalFxParticleInto(frame, statics, i, out) {
   o.pos[0] = 0; o.pos[1] = 0; o.pos[2] = 0;
   o.color[0] = 1; o.color[1] = 1; o.color[2] = 1; o.color[3] = 1;
   o.vel[0] = 0; o.vel[1] = 0; o.vel[2] = 0;
-  o.scale = 1; o.glow = false; o.light = 0;
+  o.scale = 1; o.glow = false; o.light = 0; o.life = -1;
   if (!ctx || frame.failed) return o;
   ctx.i = i;
   const C = frame.C, R = frame.R;
@@ -246,6 +248,7 @@ export function evalFxParticleInto(frame, statics, i, out) {
       runNativeProcess(frame.native, frame.objState, statics, ctx, o, !!frame.fx.fastMath);
       const center = frame.fx.center || [0, 0, 0];
       o.pos[0] += center[0]; o.pos[1] += center[1]; o.pos[2] += center[2];
+      o.life = Number.isFinite(o.life) ? o.life : -1;
       return o;
     }
     frame.runner.resetForRun(statics, ctx, frame.uniforms);
@@ -268,6 +271,7 @@ export function evalFxParticleInto(frame, statics, i, out) {
   o.scale = Number.isFinite(o.scale) ? o.scale : 1;
   o.glow = !!o.glow;
   o.light = Math.max(0, Math.min(15, Math.round(o.light)));
+  o.life = Number.isFinite(o.life) ? o.life : -1;
   return o;
 }
 
@@ -418,6 +422,7 @@ export function rebuildFunctionObject(fx) {
     p.scale = [base.scale, base.scale, base.scale];
     p.glow = base.glow;
     p.lightLevel = base.light;
+    p.life = base.life;
     p.pos = base.pos.slice();
     p.vel = base.vel.slice();
   }

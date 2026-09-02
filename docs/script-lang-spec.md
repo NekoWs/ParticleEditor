@@ -30,8 +30,7 @@ Context 只读字段：
 - `Context.time`：当前时间（tick）。
 - `Context.delta`：距上次求值经过的秒数。连续播放时由帧/步进间隔提供；`seek`、循环回绕、加载后首次求值为 `0`。
 - `Context.uv`：`vec2(uv_x, uv_y)`，见 §9。
-- `Context.life`：生命周期进度，见 §9。
-- `Context` 输出字段读写：`position / color / velocity / scale / glow / light`（见 §8）。
+- `Context` 输出字段读写：`position / color / velocity / scale / glow / light / life`（见 §8）。
 - `fx.vars` 中的变量：只读注入。
 
 `Context` 本身不是值；单独使用 `Context`（例如 `x = Context;`）抛错。
@@ -90,6 +89,7 @@ Context.color    = vec3 | vec4 | [r,g,b] | [r,g,b,a];
 Context.scale    = num;
 Context.glow     = num | bool;
 Context.light    = num;
+Context.life     = num;                     // 寿命（tick；<0 视为 -1=无限）
 Context.position.x = num;       // 分量写入（velocity/color 同理）
 
 // 声明（作用域见 §6）
@@ -181,6 +181,7 @@ process 中读写以下字段即读写当前粒子输出：
 - `Context.scale`：缩放。标量。
 - `Context.glow`：读为 bool；写接受 num/bool，`>0.5` 视为 true。
 - `Context.light`：整数，钳制到 `[0,15]`。
+- `Context.life`：寿命（tick）。读为当前粒子寿命（默认 `-1` = 无限）；写接受 num，`Math.round` 取整，负值与非有限值视为 `-1`（无限）。`T - fx.st >= life` 时粒子隐藏。
 
 输出字段仅在 `process` 可写；`setup` 中访问任何输出字段报错。
 
@@ -190,7 +191,6 @@ process 中读写以下字段即读写当前粒子输出：
 - `Context.count`：粒子总数。
 - `Context.time`：tick。
 - `Context.delta`：秒。
-- `Context.life`：`clamp((t - fx.st) / fx.duration, 0, 1)`；`fx.duration <= 0` 时为 `0`。
 - `Context.uv`：把 `count` 个粒子按列优先平铺到近正方形网格，返回 `vec2(uv_x, uv_y)`。
   - `C = grid_cols`；若 `fx.vars` 中存在名为 `grid_cols` 的变量，用其 `base`，否则 `C = ceil(sqrt(count))`。
   - `R = ceil(count / C)`；`col = index % C`；`row = floor(index / C)`。

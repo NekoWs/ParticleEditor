@@ -52,12 +52,12 @@ const KEYWORDS = new Set([
 // 粒子属性名（x/y/z/r/g/b/a/vx/vy/vz/sc/glow/light）不再保留，均可作普通变量。
 const CTX_NAME = 'Context';
 
-// Context 只读字段。setup 仅 count/time；process 全部可见。
+// Context 只读字段。setup 仅 count/time；process 只读 index/count/time/delta/uv（life 为输出字段）。
 const CTX_SETUP_READ = new Set(['count', 'time']);
-const CTX_PROCESS_READ = new Set(['index', 'count', 'time', 'delta', 'uv', 'life']);
+const CTX_PROCESS_READ = new Set(['index', 'count', 'time', 'delta', 'uv']);
 
 // Context 输出字段（process 内可读可写）。
-const CTX_OUT_FIELDS = new Set(['position', 'color', 'velocity', 'scale', 'glow', 'light']);
+const CTX_OUT_FIELDS = new Set(['position', 'color', 'velocity', 'scale', 'glow', 'light', 'life']);
 const CTX_VEC_FIELDS = new Set(['position', 'color', 'velocity']);
 
 // Context 字段 → 字节码编号（只读 + 输出共用）。
@@ -1485,6 +1485,7 @@ function ensureOut(ctx) {
   if (!isNum(out.scale)) out.scale = 1;
   if (!isBool(out.glow)) out.glow = false;
   if (!isNum(out.light)) out.light = 0;
+  if (!isNum(out.life)) out.life = -1;
   return out;
 }
 
@@ -1506,7 +1507,6 @@ function ctxRead(field, rt, node) {
     rt.ctx && rt.ctx.uv_x != null ? rt.ctx.uv_x : 0,
     rt.ctx && rt.ctx.uv_y != null ? rt.ctx.uv_y : 0,
   );
-  if (field === 'life') return rt.ctx && rt.ctx.life != null ? rt.ctx.life : 0;
 
   const out = ensureOut(rt.ctx);
   switch (field) {
@@ -1516,6 +1516,7 @@ function ctxRead(field, rt, node) {
     case 'scale': return out.scale;
     case 'glow': return out.glow;
     case 'light': return out.light;
+    case 'life': return out.life;
     default: throw runtimeError(`unknown Context field '.${field}'`, node);
   }
 }
@@ -1595,6 +1596,11 @@ function ctxWrite(field, value, rt, node) {
       out.glow = value > 0.5;
       return;
     case 'light': out.light = Math.max(0, Math.min(15, Math.round(expectNum(value, 'Context.light', node)))); return;
+    case 'life': {
+      const v = Math.round(expectNum(value, 'Context.life', node));
+      out.life = Number.isFinite(v) ? (v < 0 ? -1 : v) : -1;
+      return;
+    }
     default: throw runtimeError(`Context.${field} is read-only`, node);
   }
 }
@@ -2866,7 +2872,7 @@ function isInvariantExpr(node, invariant, varNames) {
     case 'var': return invariant.has(node.name);
     case 'member': {
       if (node.object.type !== 'var' || node.object.name !== CTX_NAME) return false;
-      return node.field === 'count' || node.field === 'time' || node.field === 'delta' || node.field === 'life';
+      return node.field === 'count' || node.field === 'time' || node.field === 'delta';
     }
     case 'unary': return isInvariantExpr(node.operand, invariant, varNames);
     case 'binary': return isInvariantExpr(node.left, invariant, varNames) && isInvariantExpr(node.right, invariant, varNames);
@@ -2977,7 +2983,7 @@ function findHoistedAssignments(processStmts, varNames, globalNames, staticNames
  * 把「仅由标量赋值/拆包组成、无循环/分支/向量/矩阵/用户函数」的 process 编译为
  * `new Function` 原生 JS，每个粒子只执行算术与数组读取，不再经过栈式 VM 的
  * 逐指令分发、Map 作用域查找与值装箱。任何不支持的结构返回 null，调用方回退 VM。
- * 保持与 Runtime 相同的：属性写入钳制、glow 阈值、light 取整、除零/越界报错。
+ * 保持与 Runtime 相同的：属性写入钳制、glow 阈值、light/life 取整、除零/越界报错。
  * ======================================================================= */
 
 // 支持直接映射到 JS 标量运算的内建函数；其余（noise/fbm/rand/random/向量/矩阵/集合）回退 VM。
@@ -3091,7 +3097,7 @@ function compileNativeProcess(program, varNames, globalNames) {
       case 'count': return 'ctx.n';
       case 'time': return 'ctx.t';
       case 'delta': return 'ctx.dt';
-      case 'life': return 'ctx.life';
+      case 'life': return 'out.life';
       case 'scale': return 'out.scale';
       case 'glow': return '(out.glow?1:0)';
       case 'light': return 'out.light';
@@ -3134,6 +3140,7 @@ function compileNativeProcess(program, varNames, globalNames) {
       case 'scale': return `out.scale=${valExpr};`;
       case 'glow': return `out.glow=(${valExpr})>0.5;`;
       case 'light': return `out.light=__clamp15(${valExpr});`;
+      case 'life': return `out.life=__clampLife(${valExpr});`;
       default: return FAIL;
     }
   }
@@ -3294,7 +3301,7 @@ function compileNativeProcess(program, varNames, globalNames) {
           vals.push(v);
         }
         for (let k = 0; k < n; k++) bodyLines.push(`out.color[${k}]=__clamp01(${vals[k]});`);
-      } else if (field === 'scale' || field === 'light') {
+      } else if (field === 'scale' || field === 'light' || field === 'life') {
         if (mayBeBool(st.value, boolTemps)) return null;
         const v = genExpr(st.value);
         if (v === FAIL) return null;
@@ -3329,6 +3336,7 @@ function compileNativeProcess(program, varNames, globalNames) {
   const src = `'use strict';
 const __clamp01=(x)=>x<0?0:(x>1?1:x);
 const __clamp15=(x)=>{x=Math.round(x);return x<0?0:(x>15?15:x);};
+const __clampLife=(x)=>{x=Math.round(x);return Number.isFinite(x)?(x<0?-1:x):-1;};
 const __truthy=(x)=>(typeof x==='number'?x!==0:x);
 const __div=(a,b)=>{if(b===0)throw new Error('division by zero');return a/b;};
 const __idx=(a,i)=>{if(i%1!==0)throw new Error('array index requires an integer');const n=Math.trunc(i);if(n<0||n>=a.length)throw new Error('array index '+n+' out of bounds (size '+a.length+')');return a[n];};
