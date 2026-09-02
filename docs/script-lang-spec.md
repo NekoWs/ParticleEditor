@@ -11,28 +11,30 @@
 - `fx.process`：每个粒子、每个求值时间点执行一次（粒子级）。
 - `fx.seed`：整数，默认 `0`。用于未显式传种子的随机/噪声函数。
 
-旧 `fx.code` 不再存在。工程格式为 `.pdraw v6`、`.pdrawc v4`；旧版本一律拒绝打开。
+旧 `fx.code` 不再存在。工程格式为 `.pdraw v10`、`.pdrawc v9`；旧版本一律拒绝打开。
 
 ### setup 环境（对象级）
-内置只读量：
+Context 只读字段：
 
-- `n`：粒子总数（`fx.count`，最小 1）。
-- `t`：当前时间（tick）。
+- `Context.count`：粒子总数（`fx.count`，最小 1）。
+- `Context.time`：当前时间（tick）。
 - `fx.vars` 中的变量：只读注入（按变量名）。
 
-不可访问：`i`、`idx`、`dt`、`uv_x`、`uv_y`、`life`。
+不可访问：`Context.index`、`Context.delta`、`Context.uv`、`Context.life`，以及所有输出字段（见 §8）。
 
 ### process 环境（粒子级）
-内置只读量：
+Context 只读字段：
 
-- `i`、`idx`：粒子序号（`0 .. n-1`，两者同义）。
-- `n`：粒子总数。
-- `t`：当前时间（tick）。
-- `dt`：距上次求值经过的秒数。连续播放时由帧/步进间隔提供；`seek`、循环回绕、加载后首次求值为 `0`。
-- `uv_x`、`uv_y`：见 §9。
-- `life`：生命周期进度，见 §9。
-- 粒子属性读写：`x,y,z,r,g,b,a,vx,vy,vz,sc,glow,light`（见 §8）。
+- `Context.index`：粒子序号（`0 .. count-1`）。
+- `Context.count`：粒子总数。
+- `Context.time`：当前时间（tick）。
+- `Context.delta`：距上次求值经过的秒数。连续播放时由帧/步进间隔提供；`seek`、循环回绕、加载后首次求值为 `0`。
+- `Context.uv`：`vec2(uv_x, uv_y)`，见 §9。
+- `Context.life`：生命周期进度，见 §9。
+- `Context` 输出字段读写：`position / color / velocity / scale / glow / light`（见 §8）。
 - `fx.vars` 中的变量：只读注入。
+
+`Context` 本身不是值；单独使用 `Context`（例如 `x = Context;`）抛错。
 
 ## 2. 值类型
 
@@ -40,6 +42,7 @@
 - `bool`：`true` / `false`。
 - `vec2`：`(x,y)`。
 - `vec3`：`(x,y,z)`。
+- `vec4`：`(x,y,z,w)`。
 - `mat3`：3×3 行主序。
 - `mat4`：4×4 行主序。
 - `array`：动态数组，元素可为任意类型，可嵌套。
@@ -54,6 +57,7 @@
 - 字符串字面量：`"..."`（用于 `print` / `assert` 消息）。
 - 注释：`// 行注释`、`/* 块注释 */`。
 - 关键字：`setup` `process` `func` `return` `if` `else` `while` `do` `for` `break` `continue` `global` `static` `true` `false`。
+- 唯一保留上下文标识符：`Context`（不能作为变量/函数名/参数/global/static 名）。
 - 运算符与分隔符：`+ - * / % ^ == != < <= > >= && || ! ? : = ( ) [ ] { } , ; .`
 - 分号：语句以 `;` 结束（`{}` 块后无分号）。
 
@@ -73,12 +77,20 @@ break;
 continue;
 
 // 赋值
-name = expr;
-name = expr;                    // 普通变量 / global / static / 属性
+name = expr;                    // 普通变量 / global / static
 arr[idx] = expr;
-[x,y,z] = expr;                 // expr 为 vec3 或长度为 3 的数组时拆包
-[x,y,z] = [e1,e2,e3];           // 打包赋值（逐项求值）
+[a,b,c] = expr;                 // expr 为 vecN 或等长数组时拆包（名称必须为标识符）
+[a,b,c] = [e1,e2,e3];           // 打包赋值（逐项求值）
 vec.x = expr;                   // 向量分量写入（分量必须为左值）
+
+// Context 输出字段（仅 process）
+Context.position = vec3 | [x,y,z];
+Context.velocity = vec3 | [vx,vy,vz];
+Context.color    = vec3 | vec4 | [r,g,b] | [r,g,b,a];
+Context.scale    = num;
+Context.glow     = num | bool;
+Context.light    = num;
+Context.position.x = num;       // 分量写入（velocity/color 同理）
 
 // 声明（作用域见 §6）
 global name = expr;             // setup 中；对象级共享，process 只读
@@ -108,88 +120,84 @@ assert(cond, "msg");            // 仅 setup；cond 为 false 时抛错
 8. 乘/除/模 `*` `/` `%`
 9. 幂 `^`
 10. 一元 `-` `!`
-11. 后缀：`f(args)`、`arr[idx]`、`.x` `.y` `.z` `.r` `.g` `.b`
+11. 后缀：`f(args)`、`arr[idx]`、`.x` `.y` `.z` `.w` `.r` `.g` `.b` `.a`、`Context.<field>`
 12. 主：字面量、标识符、数组字面量、`(...)`
 
 数组字面量：`[e1, e2, ...]`、`[]`。
 
 三元条件规则：`false`、数值 `0` 视为假；`true`、非零数值视为真；其他类型在条件位置报错。
 
+分量别名：`r/g/b` 分别是 `x/y/z` 的别名，`a` 是 `w` 的别名。
+
 ## 6. 作用域与生命周期
 
 - `global`：仅在 `setup` 顶层/块内声明；存入对象级环境；`process` 只读。
-- `static`：仅在 `process` 内声明；每个粒子独立一份；首次执行时初始化，此后跨帧保持；仅在函数对象加载/重建时重置（`seek`/循环回绕不重置，此时 `dt=0`）。
+- `static`：仅在 `process` 内声明；每个粒子独立一份；首次执行时初始化，此后跨帧保持；仅在函数对象加载/重建时重置（`seek`/循环回绕不重置，此时 `delta=0`）。
 - 普通变量：`setup`/`process` 内为块级作用域；函数参数与函数内普通变量为函数局部作用域；内部块可读外层变量。
 - `fx.vars`：只读注入，脚本不能对其赋值。
-- 函数可读外层 `global` 与调用点可见的内置量；函数不捕获普通局部变量（按值传参）。
+- 函数可读外层 `global` 与调用点可见的 Context 字段；函数不捕获普通局部变量（按值传参）。
 
 ### 6.1 名称遮蔽与保留字
 
-- **函数名可作为普通变量名**（含内建函数名与用户函数名）：`sin = 3; x = sin;` 合法，
+- **函数名可作为普通变量名**（含内建函数名与用户函数名）：`sin = 3; Context.position.x = sin;` 合法，
   值位置按普通变量查找（局部 → global → static → vars → 常量 → 函数值）。
   只有 `name(...)` 调用位置才把该名字解析为函数调用（内建函数优先于用户函数），
   即调用位置不受同名变量遮蔽。
-- **粒子属性名（`x y z r g b a vx vy vz sc glow light`）仅在 `process` 中保留**：
-  - `setup` 中它们可作为普通变量 / `global` 名；`global x = 3` 合法。
-  - `setup` 中声明的同名 `global` **不会**在 `process` 中遮蔽粒子属性：
-    `process` 里这些名字始终读写当前粒子属性。
-- **内置只读量**：`n`/`t` 在两个阶段都只读；`i`/`idx`/`dt`/`uv_x`/`uv_y`/`life`
-  在 `process` 只读，在 `setup` 中不作为内置量存在、可作为普通变量/`global` 名
-  （`setup` 中声明的同名 `global` 同样不会在 `process` 中遮蔽对应内置量）。
+- **`Context` 是唯一保留上下文标识符**：不能作为变量/函数名/参数/global/static 名。
+  旧的 `i/idx/n/t/dt/uv_x/uv_y/life` 与 `x/y/z/r/g/b/a/vx/vy/vz/sc/glow/light`
+  不再是保留字，均可作为普通变量名。
+- `Context` 字段不受同名 global/变量遮蔽：`Context.count` 始终读粒子总数，
+  `Context.position` 始终读写当前粒子输出。
 - 关键字与常量名（`TAU`、`HALF_PI` 等）仍不可作为变量名。
 
 ## 7. 类型与运算
 
 ### 算术
 - `num op num`：常规标量运算；`/` 除零报错。
-- `vec2/vec3 + / -`：逐分量。
+- `vec2/vec3/vec4 + / -`：逐分量。
 - `vec * scalar`、`scalar * vec`、`vec / scalar`：逐分量缩放。
 - `vec * vec`：逐分量乘（Hadamard）。
 - `mat + / -`：逐元素。
 - `mat * scalar`、`scalar * mat`、`mat / scalar`：逐元素。
-- `mat * vec`：矩阵乘向量。
+- `mat * vec`：矩阵乘向量；`mat3 * vec3`、`mat4 * vec3`（仿射，w=1）、`mat4 * vec4`（完整 4x4）。
 - `mat3 * mat3`、`mat4 * mat4`：矩阵乘法（维度必须匹配）。
 - `-vec`、`-mat`：取负。
 - `^`：仅标量幂。
 
 ### 比较与逻辑
 - `num` 比较、`bool` 比较。
-- `vec2/vec3 ==/!=`：逐分量比较（无容差）返回 bool。
+- `vec2/vec3/vec4 ==/!=`：逐分量比较（无容差）返回 bool。
 - `mat ==/!=`：逐元素比较。
 - 数组 `==/!=`：长度相同且逐元素按各自类型相等规则比较。
 - `&&` / `||` / `!`：仅接受标量/布尔；短路求值。
 
-## 8. 粒子属性
+## 8. Context 输出字段（粒子属性）
 
-属性保留字：`x y z r g b a vx vy vz sc glow light`。
+process 中读写以下字段即读写当前粒子输出：
 
-process 中对其赋值即写当前粒子输出：
+- `Context.position`：位置（世界坐标，随后叠加对象中心 `fx.center`）。vec3。
+- `Context.color`：颜色，各分量钳制到 `[0,1]`。vec4；`Context.color = vec3(r,g,b)` 只改 RGB、alpha 保留，`vec4(r,g,b,a)` 改 RGBA。
+- `Context.velocity`：速度。vec3。
+- `Context.scale`：缩放。标量。
+- `Context.glow`：读为 bool；写接受 num/bool，`>0.5` 视为 true。
+- `Context.light`：整数，钳制到 `[0,15]`。
 
-- `x,y,z`：位置（世界坐标，随后叠加对象中心 `fx.center`）。
-- `r,g,b,a`：颜色，范围会被钳制到 `[0,1]`。
-- `vx,vy,vz`：速度。
-- `sc`：缩放。
-- `glow`：`>0.5` 视为 true。
-- `light`：整数，钳制到 `[0,15]`。
+输出字段仅在 `process` 可写；`setup` 中访问任何输出字段报错。
 
-这些属性名在 `process` 中不能用于普通变量/函数参数/数组下标名；
-`setup` 中可作为普通变量/`global` 名（见 §6.1，且不会反向遮蔽 `process` 粒子属性）。
+## 9. Context 只读字段
 
-## 9. 内置只读量
+- `Context.index`：粒子序号（`0 .. count-1`）。
+- `Context.count`：粒子总数。
+- `Context.time`：tick。
+- `Context.delta`：秒。
+- `Context.life`：`clamp((t - fx.st) / fx.duration, 0, 1)`；`fx.duration <= 0` 时为 `0`。
+- `Context.uv`：把 `count` 个粒子按列优先平铺到近正方形网格，返回 `vec2(uv_x, uv_y)`。
+  - `C = grid_cols`；若 `fx.vars` 中存在名为 `grid_cols` 的变量，用其 `base`，否则 `C = ceil(sqrt(count))`。
+  - `R = ceil(count / C)`；`col = index % C`；`row = floor(index / C)`。
+  - `uv.x = (C == 1) ? 0 : col / (C - 1)`。
+  - `uv.y = (R == 1) ? 0 : row / (R - 1)`。
 
-- `i` / `idx`：粒子序号。
-- `n`：粒子总数。
-- `t`：tick。
-- `dt`：秒。
-- `life`：`clamp((t - fx.st) / fx.duration, 0, 1)`；`fx.duration <= 0` 时为 `0`。
-- `uv_x` / `uv_y`：把 `n` 个粒子按列优先平铺到近正方形网格。
-  - `C = grid_cols`；若 `fx.vars` 中存在名为 `grid_cols` 的变量，用其 `base`，否则 `C = ceil(sqrt(n))`。
-  - `R = ceil(n / C)`；`col = i % C`；`row = floor(i / C)`。
-  - `uv_x = (C == 1) ? 0 : col / (C - 1)`。
-  - `uv_y = (R == 1) ? 0 : row / (R - 1)`。
-
-> `i`/`idx`/`dt`/`uv_x`/`uv_y`/`life` 仅在 `process` 中作为内置只读量；
-> `setup` 中它们不存在内置含义，可作为普通变量/`global` 名（见 §6.1）。
+`setup` 中仅 `Context.count` / `Context.time` 可用；其余字段报错。
 
 ## 10. 数组
 
@@ -212,7 +220,7 @@ process 中对其赋值即写当前粒子输出：
 ## 11. 排序比较
 
 - 标量：数值/布尔直接升序。
-- `vec2`/`vec3`：按 `x,y,z` 逐级字典序。
+- `vec2`/`vec3`/`vec4`：按分量逐级字典序。
 - `mat3`/`mat4`：按行主序元素逐级字典序。
 - 嵌套数组：逐元素递归字典序。
 - **严格禁止混合类型比较**：一旦检测到两个元素类型不同，直接抛错。
@@ -220,7 +228,7 @@ process 中对其赋值即写当前粒子输出：
 ## 12. 内建函数
 
 ### 向量/矩阵构造与变换
-- `vec2(x,y)`；`vec3(x,y,z)`。
+- `vec2(x,y)`；`vec3(x,y,z)`；`vec4(x,y,z,w)`。
 - `mat3(row0,row1,row2)`：三个 `vec3` 行向量。
 - `translate(v)`：返回 `mat4` 平移矩阵。
 - `scale(s)` / `scale(x,y,z)` / `scale(v)`：返回 `mat4` 缩放矩阵。
@@ -232,7 +240,7 @@ process 中对其赋值即写当前粒子输出：
 - `dot(a,b)`；`cross(a,b)`（仅 vec3）；`len(v)`；`len2(v)`；`norm(v)`。
 - `lerp(a,b,t)` / `mix(a,b,t)`：标量或向量。
 - `distance(a,b)`；`angle_between(a,b)`；`project(a,b)`；`reflect(v,n)`。
-- 上述向量函数对 `vec2` 与 `vec3` 均适用（`cross` 除外）。
+- 上述向量函数对 `vec2`/`vec3`/`vec4` 均适用（`cross` 除外）。
 
 ### 数学与钳制
 - `clamp(v, lo, hi)`：标量或向量逐分量；`lo/hi` 可为标量或同维向量。
@@ -299,6 +307,6 @@ process 中对其赋值即写当前粒子输出：
 1. 解析脚本为 AST。
 2. 对每个函数对象加载/重建：执行 `setup` 一次，得到对象级环境（global、数组等）。
 3. 对每个粒子、每个 tick：
-   - 若为连续播放：`dt = 距上次求值秒数`；若为 seek/循环回绕/首次：`dt = 0`。
+   - 若为连续播放：`delta = 距上次求值秒数`；若为 seek/循环回绕/首次：`delta = 0`。
    - 以该粒子独立 static 状态执行 `process`。
-4. 编辑器通过按 tick 采样 `process` 生成派生轨道用于预览与导出；采样步长 `dt` 取采样间隔（秒）。
+4. 编辑器通过按 tick 采样 `process` 生成派生轨道用于预览与导出；采样步长 `delta` 取采样间隔（秒）。

@@ -8,7 +8,7 @@ import { base64ToBytes, bytesToBase64, signData, verifyData } from './crypto.js'
 import { EASING_NONE } from './easing-constants.js';
 
 export const PDRAWC_MAGIC = new Uint8Array([0x50, 0x44, 0x43, 0x31]); // "PDC1"
-export const PDRAWC_VERSION = 8;
+export const PDRAWC_VERSION = 9;
 export const PDRAWC_SIG_LEN = 64;
 export const PDRAWC_PUB_LEN = 32;
 
@@ -274,7 +274,7 @@ function encodeBody(state, texPngOf) {
     }
   }
 
-  // 摄像机对象（v6 新增；v7 起朝向改为 target 目标点 + roll 翻滚角；v8 起新增旋转空间 flags）
+  // 摄像机对象（v6 新增；v7 起朝向改为 target 目标点 + roll 翻滚角；v8 起新增旋转空间 flags；v9 起脚本改为 Context 语法）
   const cameras = state.cameras || [];
   const cameraIndex = new Map(cameras.map((c, i) => [c.id, i]));
   w.varint(cameras.length);

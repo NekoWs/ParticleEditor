@@ -3,7 +3,6 @@
  * 职责：
  *   1) 贝塞尔缓动求值（cubicBezier / easeVal / easeInOut）
  *   2) 标量/向量/矩阵表达式求值（tokenize / compileExpr / execRpn / evaluate）
- *   3) 公式代码块编译执行（compileFunctionCode / execFunctionCode）
  * ======================================================================= */
 
 
@@ -296,9 +295,6 @@ export function evaluate(expr, vars) {
  * 函数对象：公式代码块求值（分号分隔、顺序执行、打包/单分量赋值、临时变量）
  * ======================================================================= */
 
-// 属性保留字（vars 与临时变量不可同名）
-export const ATTR_NAMES = ['x', 'y', 'z', 'r', 'g', 'b', 'a', 'vx', 'vy', 'vz', 'sc', 'glow', 'light'];
-
 // 变量关键帧插值（kf: [tick, value, easing]，value 为标量）
 export function varKfValue(kf, t) {
   if (!kf || kf.length === 0) return 0;
@@ -338,79 +334,4 @@ export function parseExprList(s) {
   return parts;
 }
 
-// 给属性赋值；返回 true 表示是属性名，false 表示非属性（临时变量）
-export function assignAttr(name, v, out, scope) {
-  const val = (typeof v === 'number') ? v : (() => { throw new Error(_etf('err.propScalar', name)); })();
-  switch (name) {
-    case 'x': out.pos[0] = val; scope.x = val; break;
-    case 'y': out.pos[1] = val; scope.y = val; break;
-    case 'z': out.pos[2] = val; scope.z = val; break;
-    case 'r': out.color[0] = val; scope.r = val; break;
-    case 'g': out.color[1] = val; scope.g = val; break;
-    case 'b': out.color[2] = val; scope.b = val; break;
-    case 'a': out.color[3] = val; scope.a = val; break;
-    case 'vx': out.vel[0] = val; scope.vx = val; break;
-    case 'vy': out.vel[1] = val; scope.vy = val; break;
-    case 'vz': out.vel[2] = val; scope.vz = val; break;
-    case 'sc': out.scale = val; scope.sc = val; break;
-    case 'glow': out.glow = val > 0.5; scope.glow = val; break;
-    case 'light': out.light = val; scope.light = val; break;
-    default: return false;
-  }
-  return true;
-}
 
-// 编译公式代码块 → 语句数组（赋值目标 + RHS 的 RPN 已预编译，供高频求值复用）
-export function compileFunctionCode(code) {
-  const stmts = [];
-  for (const stmt of (code || '').split(';').map(s => s.trim()).filter(Boolean)) {
-    const eq = stmt.indexOf('=');
-    if (eq < 0) throw new Error(_etf('err.missingEq', stmt));
-    const lhs = stmt.slice(0, eq).trim();
-    const rhs = stmt.slice(eq + 1).trim();
-    if (lhs.startsWith('[')) {
-      const names = parseNameList(lhs);
-      if (rhs.startsWith('[')) {
-        const exprs = parseExprList(rhs).map(e => compileExpr(e));
-        if (names.length !== exprs.length) throw new Error(_etf('err.assignCount2', stmt));
-        stmts.push({ kind: 'pack', names, exprs });
-      } else {
-        stmts.push({ kind: 'unpack', names, expr: compileExpr(rhs) });
-      }
-    } else {
-      stmts.push({ kind: 'assign', name: lhs, expr: compileExpr(rhs) });
-    }
-  }
-  return stmts;
-}
-
-// 执行编译后的公式代码块（compileFunctionCode 输出），返回 { pos, color, vel, scale, glow, light }
-export function execFunctionCode(compiled, env) {
-  const out = { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0 };
-  const scope = { ...env };
-  for (let si = 0; si < compiled.length; si++) {
-    const st = compiled[si];
-    if (st.kind === 'assign') {
-      const v = execRpn(st.expr, scope);
-      if (!assignAttr(st.name, v, out, scope)) scope[st.name] = v;
-    } else if (st.kind === 'pack') {
-      for (let i = 0; i < st.names.length; i++) {
-        const v = execRpn(st.exprs[i], scope);
-        if (!assignAttr(st.names[i], v, out, scope)) scope[st.names[i]] = v;
-      }
-    } else { // unpack
-      const v = execRpn(st.expr, scope);
-      if (isVec(v) && st.names.length === 3) {
-        const comps = [v.x, v.y, v.z];
-        for (let i = 0; i < 3; i++) {
-          if (!assignAttr(st.names[i], comps[i], out, scope)) scope[st.names[i]] = comps[i];
-        }
-      } else if (st.names.length === 1) {
-        if (!assignAttr(st.names[0], v, out, scope)) scope[st.names[0]] = v;
-      } else {
-        throw new Error(_et('err.assignCount'));
-      }
-    }
-  }
-  return out;
-}

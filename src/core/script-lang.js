@@ -48,12 +48,23 @@ const KEYWORDS = new Set([
   'break', 'continue', 'global', 'static', 'true', 'false',
 ]);
 
-// 粒子属性保留字（§8）：不能用于普通变量 / 函数参数 / 数组下标名。
-const ATTR_NAMES = ['x', 'y', 'z', 'r', 'g', 'b', 'a', 'vx', 'vy', 'vz', 'sc', 'glow', 'light'];
-const ATTR_SET = new Set(ATTR_NAMES);
+// Context 对象：唯一保留的上下文访问名。i/n/t/dt/uv_x/uv_y/life 与单字母
+// 粒子属性名（x/y/z/r/g/b/a/vx/vy/vz/sc/glow/light）不再保留，均可作普通变量。
+const CTX_NAME = 'Context';
 
-// 内置只读量（§9）。setup 仅 n/t 可见；process 全部可见。
-const BUILTIN_NAMES = new Set(['i', 'idx', 'n', 't', 'dt', 'uv_x', 'uv_y', 'life']);
+// Context 只读字段。setup 仅 count/time；process 全部可见。
+const CTX_SETUP_READ = new Set(['count', 'time']);
+const CTX_PROCESS_READ = new Set(['index', 'count', 'time', 'delta', 'uv', 'life']);
+
+// Context 输出字段（process 内可读可写）。
+const CTX_OUT_FIELDS = new Set(['position', 'color', 'velocity', 'scale', 'glow', 'light']);
+const CTX_VEC_FIELDS = new Set(['position', 'color', 'velocity']);
+
+// Context 字段 → 字节码编号（只读 + 输出共用）。
+const CTX_FIELD_NAMES = ['index', 'count', 'time', 'delta', 'uv', 'life', 'position', 'color', 'velocity', 'scale', 'glow', 'light'];
+const CTX_FIELD_CODE = {};
+CTX_FIELD_NAMES.forEach((n, i) => { CTX_FIELD_CODE[n] = i; });
+const CTX_FIELD_BY_CODE = CTX_FIELD_NAMES;
 
 // 常量（§13）。pi / e 在 tokenizer 中直接变成数值字面量，这里保留以防查表。
 const CONSTANTS = new Map([
@@ -66,9 +77,9 @@ const CONSTANTS = new Map([
   ['e', Math.E],
 ]);
 
-// 向量分量访问名：r/g/b 分别是 x/y/z 的别名（§5 后缀）。
-const COMP_ALIAS = { x: 'x', y: 'y', z: 'z', r: 'x', g: 'y', b: 'z' };
-const COMP_NAMES = new Set(['x', 'y', 'z', 'r', 'g', 'b']);
+// 向量分量访问名：r/g/b 分别是 x/y/z 的别名，a 是 w 的别名（§5 后缀）。
+const COMP_ALIAS = { x: 'x', y: 'y', z: 'z', w: 'w', r: 'x', g: 'y', b: 'z', a: 'w' };
+const COMP_NAMES = new Set(['x', 'y', 'z', 'w', 'r', 'g', 'b', 'a']);
 
 const MAX_LOOP_ITERATIONS = 100000; // §14
 const MAX_RECURSION_DEPTH = 64;     // §14
@@ -80,18 +91,27 @@ const EQ_TOLERANCE = 1e-6;          // 数组 find/includes/unique 相等容差�
 
 const vec2 = (x, y) => ({ t: 'vec2', x, y });
 const vec3 = (x, y, z) => ({ t: 'vec3', x, y, z });
+const vec4 = (x, y, z, w) => ({ t: 'vec4', x, y, z, w });
 const mat3 = (m) => ({ t: 'mat3', m });
 const mat4 = (m) => ({ t: 'mat4', m });
 
 const isNum = (v) => typeof v === 'number';
 const isBool = (v) => typeof v === 'boolean';
-const isVec = (v) => v != null && (v.t === 'vec2' || v.t === 'vec3');
+const isVec = (v) => v != null && (v.t === 'vec2' || v.t === 'vec3' || v.t === 'vec4');
 const isMat = (v) => v != null && (v.t === 'mat3' || v.t === 'mat4');
 const isFunc = (v) => v != null && v.t === 'func';
 
-const vecDim = (v) => (v.t === 'vec2' ? 2 : 3);
-const vecComps = (v) => (v.t === 'vec2' ? [v.x, v.y] : [v.x, v.y, v.z]);
-const mkVec = (dim, comps) => (dim === 2 ? vec2(comps[0], comps[1]) : vec3(comps[0], comps[1], comps[2]));
+const vecDim = (v) => (v.t === 'vec2' ? 2 : v.t === 'vec3' ? 3 : 4);
+const vecComps = (v) => {
+  if (v.t === 'vec2') return [v.x, v.y];
+  if (v.t === 'vec3') return [v.x, v.y, v.z];
+  return [v.x, v.y, v.z, v.w];
+};
+const mkVec = (dim, comps) => {
+  if (dim === 2) return vec2(comps[0], comps[1]);
+  if (dim === 3) return vec3(comps[0], comps[1], comps[2]);
+  return vec4(comps[0], comps[1], comps[2], comps[3]);
+};
 
 function typeName(v) {
   if (typeof v === 'number') return 'num';
@@ -99,7 +119,7 @@ function typeName(v) {
   if (typeof v === 'string') return 'string';
   if (Array.isArray(v)) return 'array';
   if (v == null) return 'null';
-  if (v.t === 'vec2' || v.t === 'vec3' || v.t === 'mat3' || v.t === 'mat4' || v.t === 'func') return v.t;
+  if (v.t === 'vec2' || v.t === 'vec3' || v.t === 'vec4' || v.t === 'mat3' || v.t === 'mat4' || v.t === 'func') return v.t;
   return 'unknown';
 }
 
@@ -128,7 +148,7 @@ function expectInt(v, name, node) {
 }
 
 function expectVec(v, name, node) {
-  if (!isVec(v)) throw runtimeError(`${name} requires a vec2/vec3, got ${typeName(v)}`, node);
+  if (!isVec(v)) throw runtimeError(`${name} requires a vec2/vec3/vec4, got ${typeName(v)}`, node);
   return v;
 }
 
@@ -425,6 +445,8 @@ function toLValue(expr, tok) {
       return { type: 'index', target: expr.target, index: expr.index, line: expr.line, col: expr.col };
     case 'comp':
       return { type: 'comp', target: expr.target, comp: expr.comp, line: expr.line, col: expr.col };
+    case 'member':
+      return { type: 'member', object: expr.object, field: expr.field, line: expr.line, col: expr.col };
     case 'array': {
       const names = [];
       for (const item of expr.items) {
@@ -549,8 +571,7 @@ class Parser {
 
   validateFuncName(tok) {
     const name = tok.value;
-    if (KEYWORDS.has(name) || ATTR_SET.has(name) || BUILTIN_NAMES.has(name) ||
-        CONSTANTS.has(name) || BUILTIN_FUNCTIONS.has(name)) {
+    if (KEYWORDS.has(name) || name === CTX_NAME || CONSTANTS.has(name) || BUILTIN_FUNCTIONS.has(name)) {
       this.errorAt(tok, `reserved name cannot be used as function name: '${name}'`);
     }
   }
@@ -572,7 +593,7 @@ class Parser {
 
   validateParamName(tok) {
     const name = tok.value;
-    if (KEYWORDS.has(name) || ATTR_SET.has(name) || BUILTIN_NAMES.has(name)) {
+    if (KEYWORDS.has(name) || name === CTX_NAME || CONSTANTS.has(name)) {
       this.errorAt(tok, `reserved name cannot be used as parameter: '${name}'`);
     }
   }
@@ -708,19 +729,8 @@ class Parser {
 
   validateGlobalStaticName(tok) {
     const name = tok.value;
-    if (KEYWORDS.has(name) || CONSTANTS.has(name)) {
+    if (KEYWORDS.has(name) || name === CTX_NAME || CONSTANTS.has(name)) {
       this.errorAt(tok, `reserved name cannot be declared: '${name}'`);
-      return;
-    }
-    if (this.phase === 'setup') {
-      // setup 只保留 n/t 只读内置量；粒子属性与其余内置名都允许作为变量。
-      if (name === 'n' || name === 't') {
-        this.errorAt(tok, `reserved name cannot be declared: '${name}'`);
-      }
-    } else if (this.phase === 'process') {
-      if (ATTR_SET.has(name) || BUILTIN_NAMES.has(name)) {
-        this.errorAt(tok, `reserved name cannot be declared: '${name}'`);
-      }
     }
   }
 
@@ -859,11 +869,13 @@ class Parser {
         if (this.match('(')) {
           const args = this.parseArgs();
           expr = { type: 'method', object: expr, method: nameTok.value, args, line: expr.line, col: expr.col };
-        } else {
-          if (!COMP_NAMES.has(nameTok.value)) {
-            this.errorAt(nameTok, `invalid component or method name '.${nameTok.value}'`);
-          }
+        } else if (COMP_NAMES.has(nameTok.value)) {
           expr = { type: 'comp', target: expr, comp: nameTok.value, line: expr.line, col: expr.col };
+        } else {
+          if (expr.type !== 'var' || expr.name !== CTX_NAME) {
+            this.errorAt(nameTok, `only Context has fields '.${nameTok.value}'`);
+          }
+          expr = { type: 'member', object: expr, field: nameTok.value, line: nameTok.line, col: nameTok.col };
         }
       } else {
         break;
@@ -932,7 +944,9 @@ function eqExact(a, b) {
   if (isBool(a) && isBool(b)) return a === b;
   if (isVec(a) && isVec(b)) {
     if (a.t !== b.t) return false;
-    return a.x === b.x && a.y === b.y && (a.t === 'vec2' || a.z === b.z);
+    if (a.t === 'vec2') return a.x === b.x && a.y === b.y;
+    if (a.t === 'vec3') return a.x === b.x && a.y === b.y && a.z === b.z;
+    return a.x === b.x && a.y === b.y && a.z === b.z && a.w === b.w;
   }
   if (isMat(a) && isMat(b)) {
     if (a.t !== b.t) return false;
@@ -958,9 +972,18 @@ function eqTol(a, b) {
   if (isBool(a) && isBool(b)) return a === b;
   if (isVec(a) && isVec(b)) {
     if (a.t !== b.t) return false;
+    if (a.t === 'vec2') {
+      return Math.abs(a.x - b.x) <= EQ_TOLERANCE && Math.abs(a.y - b.y) <= EQ_TOLERANCE;
+    }
+    if (a.t === 'vec3') {
+      return Math.abs(a.x - b.x) <= EQ_TOLERANCE &&
+        Math.abs(a.y - b.y) <= EQ_TOLERANCE &&
+        Math.abs(a.z - b.z) <= EQ_TOLERANCE;
+    }
     return Math.abs(a.x - b.x) <= EQ_TOLERANCE &&
       Math.abs(a.y - b.y) <= EQ_TOLERANCE &&
-      (a.t === 'vec2' || Math.abs(a.z - b.z) <= EQ_TOLERANCE);
+      Math.abs(a.z - b.z) <= EQ_TOLERANCE &&
+      Math.abs(a.w - b.w) <= EQ_TOLERANCE;
   }
   if (isMat(a) && isMat(b)) {
     if (a.t !== b.t) return false;
@@ -1058,69 +1081,33 @@ class Runtime {
   /* -- 名称查找 -- */
 
   lookupName(name, node) {
+    // Context 不是值，只能通过 Context.field 访问。
+    if (name === CTX_NAME) {
+      throw runtimeError(`'Context' is not a value; use Context.<field>`, node);
+    }
     // 1) 块级 / 函数局部作用域（由内向外）
     for (let i = this.scopes.length - 1; i >= 0; i--) {
       const s = this.scopes[i];
       if (s.has(name)) return s.get(name);
     }
-    // 2) process 的内置量 / 粒子属性：先于 global，避免 setup 中同名 global 遮蔽它们。
-    if (this.phase === 'process') {
-      const builtin = this.lookupBuiltin(name);
-      if (builtin.found) return builtin.value;
-      if (ATTR_SET.has(name)) return attrRead(name, this.ctx);
-    }
-    // 3) global（对象级）
+    // 2) global（对象级）
     if (this.objState.globals.has(name)) return this.objState.globals.get(name);
-    // 4) static（每粒子）
+    // 3) static（每粒子）
     if (this.phase === 'process' && this.statics && this.statics.has(name)) return this.statics.get(name);
-    // 5) setup 内置只读量（n/t）
-    if (this.phase === 'setup') {
-      const builtin = this.lookupBuiltin(name);
-      if (builtin.found) return builtin.value;
-    }
-    // 6) fx.vars 注入
+    // 4) fx.vars 注入
     if (this.varsMap.has(name)) return this.varsMap.get(name);
-    // 7) 常量
+    // 5) 常量
     if (CONSTANTS.has(name)) return CONSTANTS.get(name);
-    // 8) 顶层函数（作为 func 值；若被同名变量遮蔽，上面的作用域/global/static 会先命中）
+    // 6) 顶层函数（作为 func 值；若被同名变量遮蔽，上面的作用域/global/static 会先命中）
     if (this.program.functions.has(name)) return { t: 'func', name };
     throw runtimeError(`unknown variable '${name}'`, node);
-  }
-
-  lookupBuiltin(name) {
-    if (this.phase === 'setup') {
-      if (name === 'n') return { found: true, value: this.env && this.env.n != null ? this.env.n : 0 };
-      if (name === 't') return { found: true, value: this.env && this.env.t != null ? this.env.t : 0 };
-    } else if (this.phase === 'process') {
-      switch (name) {
-        case 'i': return { found: true, value: this.ctx && this.ctx.i != null ? this.ctx.i : 0 };
-        case 'idx': return { found: true, value: this.ctx && this.ctx.i != null ? this.ctx.i : 0 };
-        case 'n': return { found: true, value: this.ctx && this.ctx.n != null ? this.ctx.n : 0 };
-        case 't': return { found: true, value: this.ctx && this.ctx.t != null ? this.ctx.t : 0 };
-        case 'dt': return { found: true, value: this.ctx && this.ctx.dt != null ? this.ctx.dt : 0 };
-        case 'uv_x': return { found: true, value: this.ctx && this.ctx.uv_x != null ? this.ctx.uv_x : 0 };
-        case 'uv_y': return { found: true, value: this.ctx && this.ctx.uv_y != null ? this.ctx.uv_y : 0 };
-        case 'life': return { found: true, value: this.ctx && this.ctx.life != null ? this.ctx.life : 0 };
-        default: break;
-      }
-    }
-    return { found: false };
   }
 
   /* -- 赋值 -- */
 
   assignName(name, value, node) {
-    // 粒子属性：仅 process 写入输出；setup 中这些名字按普通变量处理。
-    if (this.phase === 'process' && ATTR_SET.has(name)) {
-      attrWrite(name, value, this.ctx, node);
-      return;
-    }
-    // 内置只读量：process 全部只读；setup 仅 n/t 只读。
-    if (this.phase === 'process' && BUILTIN_NAMES.has(name)) {
-      throw runtimeError(`cannot assign to read-only name '${name}'`, node);
-    }
-    if (this.phase === 'setup' && (name === 'n' || name === 't')) {
-      throw runtimeError(`cannot assign to read-only name '${name}'`, node);
+    if (name === CTX_NAME) {
+      throw runtimeError(`cannot assign to 'Context'; use Context.<field> = ...`, node);
     }
 
     // 局部作用域
@@ -1153,9 +1140,20 @@ class Runtime {
     this.currentScope().set(name, value);
   }
 
+  assignCtxField(target, value, node) {
+    if (target.object.type !== 'var' || target.object.name !== CTX_NAME) {
+      throw runtimeError(`only Context has fields '.${target.field}'`, node);
+    }
+    ctxWrite(target.field, value, this, node);
+  }
+
   assignTarget(target, value, node) {
     if (target.type === 'var') {
       this.assignName(target.name, value, node);
+      return;
+    }
+    if (target.type === 'member') {
+      this.assignCtxField(target, value, node);
       return;
     }
     if (target.type === 'index') {
@@ -1173,8 +1171,9 @@ class Runtime {
       const v = this.evalExpr(target.target);
       if (!isVec(v)) throw runtimeError('component assignment target is not a vector', node);
       const comp = COMP_ALIAS[target.comp];
-      if (v.t === 'vec2' && (comp === 'z')) {
-        throw runtimeError(`vec2 has no component '${target.comp}'`, node);
+      if ((v.t === 'vec2' && (comp === 'z' || comp === 'w')) ||
+          (v.t === 'vec3' && comp === 'w')) {
+        throw runtimeError(`${v.t} has no component '${target.comp}'`, node);
       }
       const updated = setVecComp(v, comp, expectNum(value, 'component value', node));
       this.assignTarget(target.target, updated, node);
@@ -1333,6 +1332,7 @@ class Runtime {
       }
       case 'index': return this.evalIndex(node);
       case 'comp': return this.evalComp(node);
+      case 'member': return this.evalMember(node);
       case 'call': return this.evalCall(node);
       case 'method': return this.evalMethod(node);
       default:
@@ -1402,10 +1402,19 @@ class Runtime {
       throw runtimeError(`component access requires a vector, got ${typeName(target)}`, node);
     }
     const comp = COMP_ALIAS[node.comp];
-    if (target.t === 'vec2' && comp === 'z') {
-      throw runtimeError(`vec2 has no component '${node.comp}'`, node);
+    if ((target.t === 'vec2' && (comp === 'z' || comp === 'w')) ||
+        (target.t === 'vec3' && comp === 'w')) {
+      throw runtimeError(`${target.t} has no component '${node.comp}'`, node);
     }
     return target[comp];
+  }
+
+  evalMember(node) {
+    const field = node.field;
+    if (node.object.type !== 'var' || node.object.name !== CTX_NAME) {
+      throw runtimeError(`only Context has fields '.${field}'`, node);
+    }
+    return ctxRead(field, this, node);
   }
 
   evalCall(node) {
@@ -1479,46 +1488,114 @@ function ensureOut(ctx) {
   return out;
 }
 
-function attrRead(name, ctx) {
-  const out = ensureOut(ctx);
-  switch (name) {
-    case 'x': return out.pos[0];
-    case 'y': return out.pos[1];
-    case 'z': return out.pos[2];
-    case 'r': return out.color[0];
-    case 'g': return out.color[1];
-    case 'b': return out.color[2];
-    case 'a': return out.color[3];
-    case 'vx': return out.vel[0];
-    case 'vy': return out.vel[1];
-    case 'vz': return out.vel[2];
-    case 'sc': return out.scale;
+/* -- Context 字段读取/写入（§8/§9） -- */
+
+function ctxRead(field, rt, node) {
+  if (rt.phase === 'setup') {
+    if (field === 'count') return rt.env && rt.env.n != null ? rt.env.n : 0;
+    if (field === 'time') return rt.env && rt.env.t != null ? rt.env.t : 0;
+    throw runtimeError(`Context.${field} is not available in setup`, node);
+  }
+
+  // process
+  if (field === 'index') return rt.ctx && rt.ctx.i != null ? rt.ctx.i : 0;
+  if (field === 'count') return rt.ctx && rt.ctx.n != null ? rt.ctx.n : 0;
+  if (field === 'time') return rt.ctx && rt.ctx.t != null ? rt.ctx.t : 0;
+  if (field === 'delta') return rt.ctx && rt.ctx.dt != null ? rt.ctx.dt : 0;
+  if (field === 'uv') return vec2(
+    rt.ctx && rt.ctx.uv_x != null ? rt.ctx.uv_x : 0,
+    rt.ctx && rt.ctx.uv_y != null ? rt.ctx.uv_y : 0,
+  );
+  if (field === 'life') return rt.ctx && rt.ctx.life != null ? rt.ctx.life : 0;
+
+  const out = ensureOut(rt.ctx);
+  switch (field) {
+    case 'position': return vec3(out.pos[0], out.pos[1], out.pos[2]);
+    case 'color': return vec4(out.color[0], out.color[1], out.color[2], out.color[3]);
+    case 'velocity': return vec3(out.vel[0], out.vel[1], out.vel[2]);
+    case 'scale': return out.scale;
     case 'glow': return out.glow;
     case 'light': return out.light;
-    default: return 0;
+    default: throw runtimeError(`unknown Context field '.${field}'`, node);
   }
 }
 
-function attrWrite(name, value, ctx, node) {
-  if (!isNum(value)) {
-    throw runtimeError(`particle property '${name}' requires a num, got ${typeName(value)}`, node);
+function ctxVecValues(value, len, field, node) {
+  if (isVec(value)) {
+    if (vecDim(value) !== len) {
+      throw runtimeError(`Context.${field} requires a vec${len}, got ${typeName(value)}`, node);
+    }
+    return vecComps(value);
   }
-  const out = ensureOut(ctx);
-  switch (name) {
-    case 'x': out.pos[0] = value; break;
-    case 'y': out.pos[1] = value; break;
-    case 'z': out.pos[2] = value; break;
-    case 'r': out.color[0] = clamp01(value); break;
-    case 'g': out.color[1] = clamp01(value); break;
-    case 'b': out.color[2] = clamp01(value); break;
-    case 'a': out.color[3] = clamp01(value); break;
-    case 'vx': out.vel[0] = value; break;
-    case 'vy': out.vel[1] = value; break;
-    case 'vz': out.vel[2] = value; break;
-    case 'sc': out.scale = value; break;
-    case 'glow': out.glow = value > 0.5; break;
-    case 'light': out.light = Math.max(0, Math.min(15, Math.round(value))); break;
-    default: break;
+  if (Array.isArray(value)) {
+    if (value.length !== len) {
+      throw runtimeError(`Context.${field} requires an array of ${len} numbers, got length ${value.length}`, node);
+    }
+    return value.map((x, i) => expectNum(x, `Context.${field}[${i}]`, node));
+  }
+  throw runtimeError(`Context.${field} requires a vec${len} or array of ${len} numbers, got ${typeName(value)}`, node);
+}
+
+function ctxWrite(field, value, rt, node) {
+  if (rt.phase !== 'process') {
+    throw runtimeError(`Context.${field} is read-only here`, node);
+  }
+  if (!CTX_OUT_FIELDS.has(field)) {
+    throw runtimeError(`Context.${field} is read-only`, node);
+  }
+  const out = ensureOut(rt.ctx);
+  switch (field) {
+    case 'position': {
+      const c = ctxVecValues(value, 3, 'position', node);
+      out.pos[0] = c[0]; out.pos[1] = c[1]; out.pos[2] = c[2];
+      return;
+    }
+    case 'velocity': {
+      const c = ctxVecValues(value, 3, 'velocity', node);
+      out.vel[0] = c[0]; out.vel[1] = c[1]; out.vel[2] = c[2];
+      return;
+    }
+    case 'color': {
+      if (isVec(value)) {
+        if (value.t === 'vec3') {
+          out.color[0] = clamp01(value.x);
+          out.color[1] = clamp01(value.y);
+          out.color[2] = clamp01(value.z);
+          return;
+        }
+        if (value.t === 'vec4') {
+          out.color[0] = clamp01(value.x);
+          out.color[1] = clamp01(value.y);
+          out.color[2] = clamp01(value.z);
+          out.color[3] = clamp01(value.w);
+          return;
+        }
+      } else if (Array.isArray(value)) {
+        if (value.length === 3) {
+          out.color[0] = clamp01(expectNum(value[0], 'Context.color[0]', node));
+          out.color[1] = clamp01(expectNum(value[1], 'Context.color[1]', node));
+          out.color[2] = clamp01(expectNum(value[2], 'Context.color[2]', node));
+          return;
+        }
+        if (value.length === 4) {
+          out.color[0] = clamp01(expectNum(value[0], 'Context.color[0]', node));
+          out.color[1] = clamp01(expectNum(value[1], 'Context.color[1]', node));
+          out.color[2] = clamp01(expectNum(value[2], 'Context.color[2]', node));
+          out.color[3] = clamp01(expectNum(value[3], 'Context.color[3]', node));
+          return;
+        }
+      }
+      throw runtimeError(`Context.color requires a vec3, vec4, [r,g,b] or [r,g,b,a], got ${typeName(value)}`, node);
+    }
+    case 'scale': out.scale = expectNum(value, 'Context.scale', node); return;
+    case 'glow':
+      if (!isNum(value) && !isBool(value)) {
+        throw runtimeError(`Context.glow requires a num/bool, got ${typeName(value)}`, node);
+      }
+      out.glow = value > 0.5;
+      return;
+    case 'light': out.light = Math.max(0, Math.min(15, Math.round(expectNum(value, 'Context.light', node)))); return;
+    default: throw runtimeError(`Context.${field} is read-only`, node);
   }
 }
 
@@ -1526,10 +1603,18 @@ function setVecComp(v, comp, value) {
   if (v.t === 'vec2') {
     return vec2(comp === 'x' ? value : v.x, comp === 'y' ? value : v.y);
   }
-  return vec3(
+  if (v.t === 'vec3') {
+    return vec3(
+      comp === 'x' ? value : v.x,
+      comp === 'y' ? value : v.y,
+      comp === 'z' ? value : v.z,
+    );
+  }
+  return vec4(
     comp === 'x' ? value : v.x,
     comp === 'y' ? value : v.y,
     comp === 'z' ? value : v.z,
+    comp === 'w' ? value : v.w,
   );
 }
 
@@ -1693,8 +1778,18 @@ function matVecMul(m, v, node) {
       mm[2][0] * v.x + mm[2][1] * v.y + mm[2][2] * v.z,
     );
   }
+  // mat4 * vec4：完整 4x4 变换。
+  if (vecDim(v) === 4) {
+    const mm = m.m;
+    return vec4(
+      mm[0][0] * v.x + mm[0][1] * v.y + mm[0][2] * v.z + mm[0][3] * v.w,
+      mm[1][0] * v.x + mm[1][1] * v.y + mm[1][2] * v.z + mm[1][3] * v.w,
+      mm[2][0] * v.x + mm[2][1] * v.y + mm[2][2] * v.z + mm[2][3] * v.w,
+      mm[3][0] * v.x + mm[3][1] * v.y + mm[3][2] * v.z + mm[3][3] * v.w,
+    );
+  }
   // mat4 * vec3：按仿射变换（w = 1），忽略第 4 行。
-  if (vecDim(v) !== 3) throw runtimeError('mat4 requires a vec3 operand', node);
+  if (vecDim(v) !== 3) throw runtimeError('mat4 requires a vec3 or vec4 operand', node);
   const mm = m.m;
   return vec3(
     mm[0][0] * v.x + mm[0][1] * v.y + mm[0][2] * v.z + mm[0][3],
@@ -1906,6 +2001,7 @@ const BUILTIN_TABLE = new Map([
   // —— 构造 / 变换 ——
   builtin('vec2', 2, 2, (args, rt, node) => vec2(expectNum(args[0], 'vec2', node), expectNum(args[1], 'vec2', node))),
   builtin('vec3', 3, 3, (args, rt, node) => vec3(expectNum(args[0], 'vec3', node), expectNum(args[1], 'vec3', node), expectNum(args[2], 'vec3', node))),
+  builtin('vec4', 4, 4, (args, rt, node) => vec4(expectNum(args[0], 'vec4', node), expectNum(args[1], 'vec4', node), expectNum(args[2], 'vec4', node), expectNum(args[3], 'vec4', node))),
   builtin('vec', 3, 3, (args, rt, node) => vec3(expectNum(args[0], 'vec', node), expectNum(args[1], 'vec', node), expectNum(args[2], 'vec', node))),
   builtin('mat3', 3, 3, (args, rt, node) => {
     const r0 = expectVec(args[0], 'mat3', node);
@@ -2292,7 +2388,11 @@ function formatValue(v) {
   if (typeof v === 'number') return String(v);
   if (typeof v === 'boolean') return v ? 'true' : 'false';
   if (typeof v === 'string') return v;
-  if (isVec(v)) return v.t === 'vec2' ? `vec2(${v.x}, ${v.y})` : `vec3(${v.x}, ${v.y}, ${v.z})`;
+  if (isVec(v)) {
+    if (v.t === 'vec2') return `vec2(${v.x}, ${v.y})`;
+    if (v.t === 'vec3') return `vec3(${v.x}, ${v.y}, ${v.z})`;
+    return `vec4(${v.x}, ${v.y}, ${v.z}, ${v.w})`;
+  }
   if (isMat(v)) {
     const name = v.t === 'mat3' ? 'mat3' : 'mat4';
     return `${name}(${v.m.map((row) => `[${row.join(', ')}]`).join(', ')})`;
@@ -2312,7 +2412,7 @@ function formatValue(v) {
 const OP = {
   CONST: 0, POP: 1, DUP: 2,
   LOAD: 3, STORE: 4,
-  LOAD_BUILTIN: 5, LOAD_ATTR: 6,
+  LOAD_CTX_FIELD: 5, STORE_CTX_FIELD: 6,
   LOAD_UNIFORM: 9, STORE_UNIFORM: 10,
   UNARY: 11, BINARY: 12,
   ARRAY: 13, INDEX: 14, INDEX_STORE: 15,
@@ -2326,10 +2426,6 @@ const OP = {
 const UNARY_OPS = ['-', '!'];
 const BIN_OPS = ['+', '-', '*', '/', '%', '^', '==', '!=', '<', '<=', '>', '>='];
 
-const ATTR_CODE = {};
-ATTR_NAMES.forEach((n, i) => { ATTR_CODE[n] = i; });
-const ATTR_BY_CODE = ATTR_NAMES;
-
 const BUILTIN_CODE = new Map();
 const BUILTIN_BY_CODE = [];
 for (const name of BUILTIN_TABLE.keys()) {
@@ -2337,16 +2433,13 @@ for (const name of BUILTIN_TABLE.keys()) {
   BUILTIN_BY_CODE.push(name);
 }
 
-const BUILTIN_NAME_CODE = {};
-const BUILTIN_NAME_BY_CODE = [...BUILTIN_NAMES];
-BUILTIN_NAME_BY_CODE.forEach((n, i) => { BUILTIN_NAME_CODE[n] = i; });
-
 const METHOD_NAMES = ['push', 'insert', 'remove', 'slice', 'size', 'find', 'includes', 'sort', 'unique', 'reverse'];
 const METHOD_CODE = {};
 METHOD_NAMES.forEach((n, i) => { METHOD_CODE[n] = i; });
 const METHOD_BY_CODE = METHOD_NAMES;
 
-const COMP_CODE = { x: 0, y: 1, z: 2 };
+const COMP_CODE = { x: 0, y: 1, z: 2, w: 3 };
+const COMP_BY_CODE = ['x', 'y', 'z', 'w'];
 
 // 可安全提升为 uniform 的纯内建（无 PRNG/随机、无数组变异）。
 const PURE_BUILTINS = new Set();
@@ -2423,17 +2516,26 @@ class Compiler {
         return;
       case 'var': {
         const name = node.name;
+        if (name === CTX_NAME) {
+          throw parseError(`'Context' is not a value; use Context.<field>`, node.line, node.col);
+        }
         if (this.hoisted.has(name)) {
           this.emit2(OP.LOAD_UNIFORM, this.hoisted.get(name), node);
-        } else if (this.phase === 'process' && BUILTIN_NAMES.has(name)) {
-          this.emit2(OP.LOAD_BUILTIN, BUILTIN_NAME_CODE[name], node);
-        } else if (this.phase === 'process' && ATTR_SET.has(name)) {
-          this.emit2(OP.LOAD_ATTR, ATTR_CODE[name], node);
         } else if (CONSTANTS.has(name)) {
           this.emit2(OP.CONST, this.internConst(CONSTANTS.get(name)), node);
         } else {
           this.emit2(OP.LOAD, this.internName(name), node);
         }
+        return;
+      }
+      case 'member': {
+        if (node.object.type !== 'var' || node.object.name !== CTX_NAME) {
+          throw parseError(`only Context has fields '.${node.field}'`, node.line, node.col);
+        }
+        if (!CTX_FIELD_CODE.hasOwnProperty(node.field)) {
+          throw parseError(`unknown Context field '.${node.field}'`, node.line, node.col);
+        }
+        this.emit2(OP.LOAD_CTX_FIELD, CTX_FIELD_CODE[node.field], node);
         return;
       }
       case 'array': {
@@ -2531,8 +2633,21 @@ class Compiler {
   compileTarget(target) {
     switch (target.type) {
       case 'var':
+        if (target.name === CTX_NAME) {
+          throw parseError(`cannot assign to 'Context'; use Context.<field> = ...`, target.line, target.col);
+        }
         this.emit2(OP.STORE, this.internName(target.name), target);
         return;
+      case 'member': {
+        if (target.object.type !== 'var' || target.object.name !== CTX_NAME) {
+          throw parseError(`only Context has fields '.${target.field}'`, target.line, target.col);
+        }
+        if (!CTX_FIELD_CODE.hasOwnProperty(target.field)) {
+          throw parseError(`unknown Context field '.${target.field}'`, target.line, target.col);
+        }
+        this.emit2(OP.STORE_CTX_FIELD, CTX_FIELD_CODE[target.field], target);
+        return;
+      }
       case 'index':
         this.compileExpr(target.target);
         this.compileExpr(target.index);
@@ -2544,6 +2659,16 @@ class Compiler {
           this.emit2(OP.LOAD, this.internName(inner.name), inner);
           this.emit2(OP.COMP_STORE, COMP_CODE[COMP_ALIAS[target.comp]], target);
           this.emit2(OP.STORE, this.internName(inner.name), target);
+        } else if (inner.type === 'member') {
+          if (inner.object.type !== 'var' || inner.object.name !== CTX_NAME) {
+            throw parseError(`only Context has fields '.${inner.field}'`, inner.line, inner.col);
+          }
+          if (!CTX_FIELD_CODE.hasOwnProperty(inner.field)) {
+            throw parseError(`unknown Context field '.${inner.field}'`, inner.line, inner.col);
+          }
+          this.emit2(OP.LOAD_CTX_FIELD, CTX_FIELD_CODE[inner.field], inner);
+          this.emit2(OP.COMP_STORE, COMP_CODE[COMP_ALIAS[target.comp]], target);
+          this.emit2(OP.STORE_CTX_FIELD, CTX_FIELD_CODE[inner.field], target);
         } else if (inner.type === 'index') {
           this.compileExpr(inner.target);
           this.compileExpr(inner.index);
@@ -2711,6 +2836,7 @@ function walkExpr(node, cb) {
     case 'ternary': walkExpr(node.cond, cb); walkExpr(node.thenExpr, cb); walkExpr(node.elseExpr, cb); return;
     case 'index': walkExpr(node.target, cb); walkExpr(node.index, cb); return;
     case 'comp': walkExpr(node.target, cb); return;
+    case 'member': walkExpr(node.object, cb); return;
     case 'call': walkExpr(node.callee, cb); node.args.forEach(a => walkExpr(a, cb)); return;
     case 'method': walkExpr(node.object, cb); node.args.forEach(a => walkExpr(a, cb)); return;
     default: return;
@@ -2738,6 +2864,10 @@ function isInvariantExpr(node, invariant, varNames) {
   switch (node.type) {
     case 'num': case 'str': case 'bool': return true;
     case 'var': return invariant.has(node.name);
+    case 'member': {
+      if (node.object.type !== 'var' || node.object.name !== CTX_NAME) return false;
+      return node.field === 'count' || node.field === 'time' || node.field === 'delta' || node.field === 'life';
+    }
     case 'unary': return isInvariantExpr(node.operand, invariant, varNames);
     case 'binary': return isInvariantExpr(node.left, invariant, varNames) && isInvariantExpr(node.right, invariant, varNames);
     case 'ternary': return isInvariantExpr(node.cond, invariant, varNames) && isInvariantExpr(node.thenExpr, invariant, varNames) && isInvariantExpr(node.elseExpr, invariant, varNames);
@@ -2753,7 +2883,7 @@ function isInvariantExpr(node, invariant, varNames) {
 }
 
 function hoistCandidateName(name, varNames, globalNames, staticNames, program) {
-  return !ATTR_SET.has(name) && !BUILTIN_NAMES.has(name) && !CONSTANTS.has(name) &&
+  return name !== CTX_NAME && !CONSTANTS.has(name) &&
     !varNames.includes(name) && !globalNames.includes(name) && !staticNames.includes(name) &&
     !program.functions.has(name) && !BUILTIN_FUNCTIONS.has(name);
 }
@@ -2776,7 +2906,7 @@ function collectStaticNames(processStmts) {
 
 // 返回可提升的顶层无条件单次赋值列表（按源顺序）。
 function findHoistedAssignments(processStmts, varNames, globalNames, staticNames, program) {
-  const invariant = new Set(['n', 't', 'dt', 'life']);
+  const invariant = new Set();
   for (const n of varNames) invariant.add(n);
 
   // 不动点：把所有「无条件顶层赋值且 RHS 不变」的普通变量名标为不变量。
@@ -2833,7 +2963,7 @@ function findHoistedAssignments(processStmts, varNames, globalNames, staticNames
     if (st.type !== 'assign' || st.target.type !== 'var') continue;
     const name = st.target.name;
     if (!invariant.has(name)) continue;
-    if (name === 'n' || name === 't' || name === 'dt' || name === 'life' || varNames.includes(name)) continue;
+    if (varNames.includes(name)) continue;
     if (writes.get(name) !== 1) continue;
     if (firstMention.get(name) !== 'assign') continue;
     out.push({ name, expr: st.value, node: st });
@@ -2902,16 +3032,22 @@ function compileNativeProcess(program, varNames, globalNames) {
   // 避免把「先读（global/static/var）后写」的名字误编译为 TDZ 局部量。
   const firstMention = new Map();
   for (const st of stmts) {
-    if (st.type === 'assign' && st.target.type === 'var') {
-      const name = st.target.name;
+    if (st.type !== 'assign') return null;
+    const t = st.target;
+    if (t.type === 'var') {
+      const name = t.name;
       if (!firstMention.has(name)) firstMention.set(name, 'write');
       walkExpr(st.value, (e) => {
         if (e.type === 'var' && !firstMention.has(e.name)) firstMention.set(e.name, 'read');
       });
-    } else if (st.type === 'assign' && st.target.type === 'unpack') {
-      for (const name of st.target.names) {
+    } else if (t.type === 'unpack') {
+      for (const name of t.names) {
         if (!firstMention.has(name)) firstMention.set(name, 'write');
       }
+      walkExpr(st.value, (e) => {
+        if (e.type === 'var' && !firstMention.has(e.name)) firstMention.set(e.name, 'read');
+      });
+    } else if (t.type === 'member' || t.type === 'comp') {
       walkExpr(st.value, (e) => {
         if (e.type === 'var' && !firstMention.has(e.name)) firstMention.set(e.name, 'read');
       });
@@ -2923,43 +3059,14 @@ function compileNativeProcess(program, varNames, globalNames) {
   const tempNames = new Set();
   for (const [name, mention] of firstMention) {
     if (mention !== 'write') continue;
-    if (ATTR_SET.has(name) || BUILTIN_NAMES.has(name) || CONSTANTS.has(name) ||
+    if (name === CTX_NAME || CONSTANTS.has(name) ||
         varNamesSet.has(name) || globalNamesSet.has(name) || staticNamesSet.has(name) ||
         funcNames.has(name) || BUILTIN_FUNCTIONS.has(name)) continue;
     tempNames.add(name);
   }
 
   function readExpr(name) {
-    if (ATTR_SET.has(name)) {
-      switch (name) {
-        case 'x': return 'out.pos[0]';
-        case 'y': return 'out.pos[1]';
-        case 'z': return 'out.pos[2]';
-        case 'r': return 'out.color[0]';
-        case 'g': return 'out.color[1]';
-        case 'b': return 'out.color[2]';
-        case 'a': return 'out.color[3]';
-        case 'vx': return 'out.vel[0]';
-        case 'vy': return 'out.vel[1]';
-        case 'vz': return 'out.vel[2]';
-        case 'sc': return 'out.scale';
-        case 'glow': return '(out.glow?1:0)';
-        case 'light': return 'out.light';
-        default: return FAIL;
-      }
-    }
-    if (BUILTIN_NAMES.has(name)) {
-      switch (name) {
-        case 'i': case 'idx': return 'ctx.i';
-        case 'n': return 'ctx.n';
-        case 't': return 'ctx.t';
-        case 'dt': return 'ctx.dt';
-        case 'uv_x': return 'ctx.uv_x';
-        case 'uv_y': return 'ctx.uv_y';
-        case 'life': return 'ctx.life';
-        default: return FAIL;
-      }
-    }
+    if (name === CTX_NAME) return FAIL;
     if (CONSTANTS.has(name)) return `(${CONSTANTS.get(name)})`;
     if (tempNames.has(name)) return name;
     if (staticNamesSet.has(name)) return `s.get(${JSON.stringify(name)})`;
@@ -2969,36 +3076,95 @@ function compileNativeProcess(program, varNames, globalNames) {
   }
 
   function writeExpr(name, valExpr) {
-    if (ATTR_SET.has(name)) {
-      switch (name) {
-        case 'x': return `out.pos[0]=${valExpr};`;
-        case 'y': return `out.pos[1]=${valExpr};`;
-        case 'z': return `out.pos[2]=${valExpr};`;
-        case 'r': return `out.color[0]=__clamp01(${valExpr});`;
-        case 'g': return `out.color[1]=__clamp01(${valExpr});`;
-        case 'b': return `out.color[2]=__clamp01(${valExpr});`;
-        case 'a': return `out.color[3]=__clamp01(${valExpr});`;
-        case 'vx': return `out.vel[0]=${valExpr};`;
-        case 'vy': return `out.vel[1]=${valExpr};`;
-        case 'vz': return `out.vel[2]=${valExpr};`;
-        case 'sc': return `out.scale=${valExpr};`;
-        case 'glow': return `out.glow=(${valExpr})>0.5;`;
-        case 'light': return `out.light=__clamp15(${valExpr});`;
-        default: return FAIL;
-      }
-    }
-    if (BUILTIN_NAMES.has(name) || CONSTANTS.has(name) || varNamesSet.has(name)) return FAIL;
+    if (name === CTX_NAME) return FAIL;
+    if (CONSTANTS.has(name) || varNamesSet.has(name) || funcNames.has(name)) return FAIL;
     if (tempNames.has(name)) return `${name}=${valExpr};`;
     if (staticNamesSet.has(name)) return `s.set(${JSON.stringify(name)},${valExpr});`;
-    if (globalNamesSet.has(name) || funcNames.has(name)) return FAIL;
+    if (globalNamesSet.has(name)) return FAIL;
     return FAIL;
+  }
+
+  function ctxMemberReadExpr(node) {
+    if (node.object.type !== 'var' || node.object.name !== CTX_NAME) return FAIL;
+    switch (node.field) {
+      case 'index': return 'ctx.i';
+      case 'count': return 'ctx.n';
+      case 'time': return 'ctx.t';
+      case 'delta': return 'ctx.dt';
+      case 'life': return 'ctx.life';
+      case 'scale': return 'out.scale';
+      case 'glow': return '(out.glow?1:0)';
+      case 'light': return 'out.light';
+      default: return FAIL; // uv / position / color / velocity 为向量
+    }
+  }
+
+  function ctxCompReadExpr(node) {
+    if (node.target.type !== 'member') return FAIL;
+    const inner = node.target;
+    if (inner.object.type !== 'var' || inner.object.name !== CTX_NAME) return FAIL;
+    const c = COMP_ALIAS[node.comp];
+    switch (inner.field) {
+      case 'uv':
+        if (c === 'x') return 'ctx.uv_x';
+        if (c === 'y') return 'ctx.uv_y';
+        return FAIL;
+      case 'position':
+        if (c === 'x') return 'out.pos[0]';
+        if (c === 'y') return 'out.pos[1]';
+        if (c === 'z') return 'out.pos[2]';
+        return FAIL;
+      case 'velocity':
+        if (c === 'x') return 'out.vel[0]';
+        if (c === 'y') return 'out.vel[1]';
+        if (c === 'z') return 'out.vel[2]';
+        return FAIL;
+      case 'color':
+        if (c === 'x') return 'out.color[0]';
+        if (c === 'y') return 'out.color[1]';
+        if (c === 'z') return 'out.color[2]';
+        if (c === 'w') return 'out.color[3]';
+        return FAIL;
+      default: return FAIL;
+    }
+  }
+
+  function ctxMemberWriteExpr(field, valExpr) {
+    switch (field) {
+      case 'scale': return `out.scale=${valExpr};`;
+      case 'glow': return `out.glow=(${valExpr})>0.5;`;
+      case 'light': return `out.light=__clamp15(${valExpr});`;
+      default: return FAIL;
+    }
+  }
+
+  function ctxCompWriteExpr(field, c, valExpr) {
+    switch (field) {
+      case 'position':
+        if (c === 'x') return `out.pos[0]=${valExpr};`;
+        if (c === 'y') return `out.pos[1]=${valExpr};`;
+        if (c === 'z') return `out.pos[2]=${valExpr};`;
+        return FAIL;
+      case 'velocity':
+        if (c === 'x') return `out.vel[0]=${valExpr};`;
+        if (c === 'y') return `out.vel[1]=${valExpr};`;
+        if (c === 'z') return `out.vel[2]=${valExpr};`;
+        return FAIL;
+      case 'color':
+        if (c === 'x') return `out.color[0]=__clamp01(${valExpr});`;
+        if (c === 'y') return `out.color[1]=__clamp01(${valExpr});`;
+        if (c === 'z') return `out.color[2]=__clamp01(${valExpr});`;
+        if (c === 'w') return `out.color[3]=__clamp01(${valExpr});`;
+        return FAIL;
+      default: return FAIL;
+    }
   }
 
   // 粒子属性写入必须是 num；若 RHS 可能产出 bool（VM 会抛错），退回 VM 保证语义一致。
   function mayBeBool(node, boolTemps) {
     switch (node.type) {
       case 'bool': return true;
-      case 'num': case 'str': case 'array': case 'index': case 'comp': return false;
+      case 'num': case 'str': case 'array': case 'index': case 'comp': case 'member': return false;
       case 'var': return boolTemps.has(node.name);
       case 'unary': return node.op === '!';
       case 'binary': {
@@ -3018,6 +3184,8 @@ function compileNativeProcess(program, varNames, globalNames) {
       case 'bool': return node.value ? 'true' : 'false';
       case 'str': return JSON.stringify(node.value);
       case 'var': return readExpr(node.name);
+      case 'member': return ctxMemberReadExpr(node);
+      case 'comp': return ctxCompReadExpr(node);
       case 'unary': {
         const v = genExpr(node.operand);
         if (v === FAIL) return FAIL;
@@ -3079,7 +3247,6 @@ function compileNativeProcess(program, varNames, globalNames) {
     if (st.type !== 'assign') return null;
     const target = st.target;
     if (target.type === 'var') {
-      if (ATTR_SET.has(target.name) && mayBeBool(st.value, boolTemps)) return null;
       if (tempNames.has(target.name) && mayBeBool(st.value, boolTemps)) boolTemps.add(target.name);
       const v = genExpr(st.value);
       if (v === FAIL) return null;
@@ -3090,7 +3257,6 @@ function compileNativeProcess(program, varNames, globalNames) {
       if (st.value.type !== 'array' || st.value.items.length !== target.names.length) return null;
       const vals = [];
       for (let k = 0; k < target.names.length; k++) {
-        if (ATTR_SET.has(target.names[k]) && mayBeBool(st.value.items[k], boolTemps)) return null;
         if (tempNames.has(target.names[k]) && mayBeBool(st.value.items[k], boolTemps)) boolTemps.add(target.names[k]);
         const v = genExpr(st.value.items[k]);
         if (v === FAIL) return null;
@@ -3102,6 +3268,58 @@ function compileNativeProcess(program, varNames, globalNames) {
         if (w === FAIL) return null;
         bodyLines.push(w);
       }
+    } else if (target.type === 'member') {
+      if (target.object.type !== 'var' || target.object.name !== CTX_NAME) return null;
+      const field = target.field;
+      if (field === 'position' || field === 'velocity') {
+        if (st.value.type !== 'array' || st.value.items.length !== 3) return null;
+        const vals = [];
+        for (let k = 0; k < 3; k++) {
+          if (mayBeBool(st.value.items[k], boolTemps)) return null;
+          const v = genExpr(st.value.items[k]);
+          if (v === FAIL) return null;
+          vals.push(v);
+        }
+        for (let k = 0; k < 3; k++) {
+          bodyLines.push(`out.${field === 'position' ? 'pos' : 'vel'}[${k}]=${vals[k]};`);
+        }
+      } else if (field === 'color') {
+        if (st.value.type !== 'array' || (st.value.items.length !== 3 && st.value.items.length !== 4)) return null;
+        const n = st.value.items.length;
+        const vals = [];
+        for (let k = 0; k < n; k++) {
+          if (mayBeBool(st.value.items[k], boolTemps)) return null;
+          const v = genExpr(st.value.items[k]);
+          if (v === FAIL) return null;
+          vals.push(v);
+        }
+        for (let k = 0; k < n; k++) bodyLines.push(`out.color[${k}]=__clamp01(${vals[k]});`);
+      } else if (field === 'scale' || field === 'light') {
+        if (mayBeBool(st.value, boolTemps)) return null;
+        const v = genExpr(st.value);
+        if (v === FAIL) return null;
+        const w = ctxMemberWriteExpr(field, v);
+        if (w === FAIL) return null;
+        bodyLines.push(w);
+      } else if (field === 'glow') {
+        const v = genExpr(st.value);
+        if (v === FAIL) return null;
+        bodyLines.push(ctxMemberWriteExpr('glow', v));
+      } else {
+        return null; // index/count/time/delta/uv/life 只读
+      }
+    } else if (target.type === 'comp') {
+      const inner = target.target;
+      if (inner.type !== 'member') return null;
+      if (inner.object.type !== 'var' || inner.object.name !== CTX_NAME) return null;
+      const field = inner.field;
+      if (field !== 'position' && field !== 'velocity' && field !== 'color') return null;
+      if (mayBeBool(st.value, boolTemps)) return null;
+      const v = genExpr(st.value);
+      if (v === FAIL) return null;
+      const w = ctxCompWriteExpr(field, COMP_ALIAS[target.comp], v);
+      if (w === FAIL) return null;
+      bodyLines.push(w);
     } else {
       return null;
     }
@@ -3269,14 +3487,14 @@ class Vm {
           this.rt.assignName(name, stack.pop(), node);
           break;
         }
-        case OP.LOAD_BUILTIN: {
-          const name = BUILTIN_NAME_BY_CODE[code[this.pc++]];
-          stack.push(this.rt.lookupBuiltin(name).value);
+        case OP.LOAD_CTX_FIELD: {
+          const field = CTX_FIELD_BY_CODE[code[this.pc++]];
+          stack.push(ctxRead(field, this.rt, node));
           break;
         }
-        case OP.LOAD_ATTR: {
-          const name = ATTR_BY_CODE[code[this.pc++]];
-          stack.push(attrRead(name, this.ctx));
+        case OP.STORE_CTX_FIELD: {
+          const field = CTX_FIELD_BY_CODE[code[this.pc++]];
+          ctxWrite(field, stack.pop(), this.rt, node);
           break;
         }
         case OP.LOAD_UNIFORM: stack.push(this.uniforms[code[this.pc++]]); break;
@@ -3330,24 +3548,30 @@ class Vm {
           break;
         }
         case OP.COMP: {
-          const comp = ['x', 'y', 'z'][code[this.pc++]];
+          const comp = COMP_BY_CODE[code[this.pc++]];
           const v = stack.pop();
           if (!isVec(v)) throw runtimeError(`component access requires a vector, got ${typeName(v)}`, node);
-          if (v.t === 'vec2' && comp === 'z') throw runtimeError(`vec2 has no component '${comp}'`, node);
+          if ((v.t === 'vec2' && (comp === 'z' || comp === 'w')) ||
+              (v.t === 'vec3' && comp === 'w')) {
+            throw runtimeError(`${v.t} has no component '${comp}'`, node);
+          }
           stack.push(v[comp]);
           break;
         }
         case OP.COMP_STORE: {
-          const comp = ['x', 'y', 'z'][code[this.pc++]];
+          const comp = COMP_BY_CODE[code[this.pc++]];
           const old = stack.pop();
           const nv = stack.pop();
           if (!isVec(old)) throw runtimeError('component assignment target is not a vector', node);
-          if (old.t === 'vec2' && comp === 'z') throw runtimeError(`vec2 has no component '${comp}'`, node);
+          if ((old.t === 'vec2' && (comp === 'z' || comp === 'w')) ||
+              (old.t === 'vec3' && comp === 'w')) {
+            throw runtimeError(`${old.t} has no component '${comp}'`, node);
+          }
           stack.push(setVecComp(old, comp, expectNum(nv, 'component value', node)));
           break;
         }
         case OP.COMP_STORE_INDEX: {
-          const comp = ['x', 'y', 'z'][code[this.pc++]];
+          const comp = COMP_BY_CODE[code[this.pc++]];
           const idx = stack.pop();
           const arr = stack.pop();
           const nv = stack.pop();
@@ -3356,7 +3580,10 @@ class Vm {
           if (n < 0 || n >= arr.length) throw runtimeError(`array index ${n} out of bounds (size ${arr.length})`, node);
           const old = arr[n];
           if (!isVec(old)) throw runtimeError('component assignment target is not a vector', node);
-          if (old.t === 'vec2' && comp === 'z') throw runtimeError(`vec2 has no component '${comp}'`, node);
+          if ((old.t === 'vec2' && (comp === 'z' || comp === 'w')) ||
+              (old.t === 'vec3' && comp === 'w')) {
+            throw runtimeError(`${old.t} has no component '${comp}'`, node);
+          }
           const updated = setVecComp(old, comp, expectNum(nv, 'component value', node));
           arr[n] = updated;
           stack.push(updated);

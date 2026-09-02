@@ -223,7 +223,7 @@ export function exportProject() {
   for (const [name, space] of Object.entries(state.groupSpinSpace || {})) if (space === 'local') gss[name] = 1;
   const grs = {};
   for (const [name, space] of Object.entries(state.groupRotSpace || {})) if (space === 'local') grs[name] = 1;
-  const result = { v: 9, loop: state.loop, g, p, t, f, tex, guv };
+  const result = { v: 10, loop: state.loop, g, p, t, f, tex, guv };
   if (Object.keys(gss).length > 0) result.gss = gss;
   if (Object.keys(grs).length > 0) result.grs = grs;
   // 摄像机对象（v8 新增；默认摄像机不持久化，仅存用户新建的摄像机）
@@ -349,7 +349,7 @@ export async function loadFile(file) {
   const text = await file.text();
   const obj = JSON.parse(text);
   if (file.name.toLowerCase().endsWith('.pdraw') || obj.f || obj.v >= 2) {
-    if (obj.v !== 7 && obj.v !== 8 && obj.v !== 9) {
+    if (obj.v !== 10) {
       modalAlert(t('filePicker.oldVersionTitle'), t('filePicker.oldVersionMsg'));
       return;
     }

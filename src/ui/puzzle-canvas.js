@@ -9,11 +9,10 @@
 
 import {t, tf} from '../core/i18n.js';
 import {getFunction} from '../core/constants.js';
-import {ATTR_NAMES} from '../core/easing.js';
 import {hexToRgb, rgbToHex} from './ui.js';
 import {
   BIG_BLOCKS,
-  BUILTIN_VAR_NAMES,
+  CTX_VAR_FIELDS,
   fmtNum,
   FUNC_BLOCKS,
   GROUP_COLOR,
@@ -31,6 +30,14 @@ import {
   T_SCALAR,
   T_VEC,
 } from '../core/blocks.js';
+
+const CTX_ATTR_FIELDS = ['position.x', 'position.y', 'position.z', 'velocity.x', 'velocity.y', 'velocity.z', 'color.r', 'color.g', 'color.b', 'color.a'];
+
+function ctxExprForKey(key) {
+  const field = key.slice('Context.'.length);
+  if (field.startsWith('uv.')) return { kind: 'member', obj: { kind: 'member', obj: { kind: 'var', name: 'Context' }, field: 'uv' }, field: field.slice(3) };
+  return { kind: 'member', obj: { kind: 'var', name: 'Context' }, field };
+}
 
 /* ============================ host 注入 ============================ */
 
@@ -169,6 +176,7 @@ function exprCls(node) {
     case 'num': return 'blk-const';
     case 'bool': return 'blk-const blk-bool';
     case 'var': return (node.name === 'pi' || node.name === 'e') ? 'blk-const' : 'blk-var';
+    case 'member': return 'blk-var';
     case 'func': return funcColor(node.name);
     case 'op': return 'blk-math' + (isBoolOp(node.op) ? ' blk-bool' : '');
     case 'chain': return 'blk-math';
@@ -372,6 +380,10 @@ function exprParts(node) {
     case 'num': P.push({ text: (S.edit && S.edit.node === node) ? S.edit.buffer : fmtNum(node.value) }); break;
     case 'bool': P.push({ text: node.value ? 'true' : 'false' }); break;
     case 'var': P.push({ text: node.name }); break;
+    case 'member':
+      P.push({ slot: { ref: slotRef(() => node.obj, v => { node.obj = v; }, T_ANY), type: T_ANY, label: '' } });
+      P.push({ text: '.' + node.field });
+      break;
     case 'func': {
       const spec = FUNC_BLOCKS[node.name];
       const customParams = spec ? null : (H && H.customFuncParams ? H.customFuncParams(node.name) : []);
@@ -470,7 +482,7 @@ function stmtParts(s) {
     return [
       { edit: { kind: 'text', key: 'name', ident: true, value: s.name, commit: (v) => {
         const nn = String(v).trim();
-        if (!nn || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(nn) || ATTR_NAMES.includes(nn) || BUILTIN_VAR_NAMES.includes(nn) || nn === s.name) return false;
+        if (!nn || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(nn) || nn === 'Context' || nn === s.name) return false;
         H.pushUndo();
         H.renameRefsInAll(s.name, nn);
         s.name = nn;
@@ -481,7 +493,7 @@ function stmtParts(s) {
     ];
   }
   if (s.kind === 'attr') {
-    const attrs = ATTR_NAMES.filter(n => n !== 'glow');
+    const attrs = CTX_ATTR_FIELDS;
     return [
       { attr: { stmt: s, onClick: () => {
         const idx = attrs.indexOf(s.name);
@@ -1032,7 +1044,7 @@ function layoutVars(cw) {
       kind: 'edit', shape: 'edit', space: 'var', editKey: nameKey,
       edit: { kind: 'text', ident: true, value: name, commit: (v) => {
         const nn = String(v).trim();
-        if (!nn || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(nn) || ATTR_NAMES.includes(nn) || BUILTIN_VAR_NAMES.includes(nn) || nn === name) return false;
+        if (!nn || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(nn) || nn === 'Context' || nn === name) return false;
         if (nn in bctx.varExprs) return false;
         H.pushUndo();
         H.renameVarGlobal(name, nn);
@@ -1054,13 +1066,13 @@ function layoutVars(cw) {
     out.push(nameEdit, valEdit);
   }
 
-  // 属性标签（x/y/z/…，可拖入表达式槽作为变量引用）
-  for (const name of ATTR_NAMES) {
-    if (name === 'glow') continue;
-    const tw = textW(ctx, name, FONT) + 14;
+  // Context 只读字段标签（可拖入表达式槽作为上下文引用）
+  for (const field of CTX_VAR_FIELDS) {
+    const label = 'Context.' + field;
+    const tw = textW(ctx, label, FONT) + 14;
     const tag = {
-      kind: 'attr-var', shape: 'tag', attrVar: name, x, y: y, _dy: (VARS_ROW_H - ATTR_H) / 2, w: tw, h: ATTR_H,
-      segments: [{ text: name, x: x + 7, y: y + VARS_ROW_H / 2, font: FONT }],
+      kind: 'attr-var', shape: 'tag', attrVar: label, x, y: y, _dy: (VARS_ROW_H - ATTR_H) / 2, w: tw, h: ATTR_H,
+      segments: [{ text: label, x: x + 7, y: y + VARS_ROW_H / 2, font: FONT }],
     };
     place(tag, tw);
   }
@@ -2919,7 +2931,8 @@ function onWorkDown(e) {
     if (hit && hit.kind === 'attr-var') {
       e.preventDefault();
       const r = hit;
-      startGhostDrag({ type: 'palette', stmt: false, template: { kind: 'var', name: r.attrVar } }, e, e.clientX - (rect.left + r.x), e.clientY - (rect.top + ch - VARS_H + r.y - S.varsScroll), H.getBctx().layout.view.scale);
+      const template = r.attrVar.startsWith('Context.') ? ctxExprForKey(r.attrVar) : { kind: 'var', name: r.attrVar };
+      startGhostDrag({ type: 'palette', stmt: false, template }, e, e.clientX - (rect.left + r.x), e.clientY - (rect.top + ch - VARS_H + r.y - S.varsScroll), H.getBctx().layout.view.scale);
       renderGhost();
       return;
     }

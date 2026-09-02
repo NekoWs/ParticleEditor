@@ -9,7 +9,7 @@
 
 import { _etf, t } from './i18n.js';
 import { FUNCTION_PRESETS, state, nextFunctionId, setDirty, compPr, getParticle } from './constants.js';
-import { varKfValue, evaluate, ATTR_NAMES } from './easing.js';
+import { varKfValue, evaluate } from './easing.js';
 import { modalAlert } from '../ui/ui.js';
 import { pushUndo } from '../state/undo.js';
 import { rebuildPoints } from './animation.js';
@@ -83,10 +83,7 @@ function varsAt(fx, t) {
 // 旧 API 兼容：构造变量环境（仅测试/外部调用使用）。
 export function buildEnv(vars, ctx) {
   const env = { i: ctx.i, n: ctx.n, t: ctx.t || 0 };
-  for (const name in (vars || {})) {
-    if (ATTR_NAMES.includes(name)) throw new Error(_etf('err.varReserved', name));
-    env[name] = varValueAt(vars[name], ctx.t);
-  }
+  for (const name in (vars || {})) env[name] = varValueAt(vars[name], ctx.t);
   return env;
 }
 

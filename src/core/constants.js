@@ -150,11 +150,11 @@ export const PARTICLE_SIZE_FACTOR = 0.2; // 编辑器点整宽因子；游戏端
  * 数据模型约定：
  * - particle: { id, color:[r,g,b,a], scale:[sx,sy,sz], glow, lightLevel,
  *              pos:[x,y,z], vel:[vx,vy,vz], life, st, ent, uv, fx? }
- *   派生粒子 id 固定为 `${fxId}:p${i}`，其基础属性由函数对象公式计算（只读）。
+ *   派生粒子 id 固定为 `${fxId}:p${i}`，其基础属性由函数对象脚本计算（只读）。
  * - track: { pr:'pos.x'|'scl'|..., m:'set'|'op', ids:[...], kf:[[tick,value,easing],...], fx? }
  * - group: state.groups[组名] = [粒子id...]；组级 UV 在 state.groupUV[组名]。
- * - function object: { id:'fxN', name, center:[x,y,z], count, code,
- *                      vars:{name:{expr,kf}}, duration, step, preset, params, st, ent, ui, uv }
+ * - function object: { id:'fxN', name, center:[x,y,z], count, setup, process, funcs,
+ *                      vars:{name:{base,kf}}, duration, step, preset, params, st, ent, ui, uv }
  */
 export const state = {
   name: 'my_animation',
@@ -269,8 +269,8 @@ export function indexParticle(p) { if (particleIndexCache) particleIndexCache.se
 export function getParticle(id) { return particleIndexCache ? particleIndexCache.get(id) : state.particles.find(p => p.id === id); }
 
 /* =========================================================================
- * 函数对象：预设形状模板（参数面板 + 公式视图）
- * 内置变量：i=粒子序号、n=采样数、t=时间（vars 内不可重名）
+ * 函数对象：预设形状模板（参数面板 + 脚本视图）
+ * 上下文通过 Context 对象访问：Context.index / Context.count / Context.time 等（详见 docs/script-lang-spec.md）
  * ======================================================================= */
 
 export const FUNCTION_PRESETS = {
@@ -295,11 +295,11 @@ export const FUNCTION_PRESETS = {
       count: 200,
       vars: { amp: { base: Number(p.amp), kf: [] }, freq: { base: Number(p.freq), kf: [] }, wid: { base: Number(p.wid), kf: [] } },
       setup: `global _gx = [];
-for (_k = 0; _k < n; _k = _k + 1) {
-  _gx.push(_k / n - 0.5);
+for (_k = 0; _k < Context.count; _k = _k + 1) {
+  _gx.push(_k / Context.count - 0.5);
 }`,
-      process: `xx = _gx[i] * wid;
-[x,y,z] = [xx, amp * sin(freq * pi * _gx[i]), 0];`,
+      process: `xx = _gx[Context.index] * wid;
+Context.position = [xx, amp * sin(freq * pi * _gx[Context.index]), 0];`,
     }),
   },
   sphere: {
@@ -312,11 +312,11 @@ for (_k = 0; _k < n; _k = _k + 1) {
       vars: { rad: { base: Number(p.rad), kf: [] } },
       setup: `global _th = [];
 global _ph = [];
-for (_k = 0; _k < n; _k = _k + 1) {
-  _th.push(acos(1 - 2 * (_k + 0.5) / n));
+for (_k = 0; _k < Context.count; _k = _k + 1) {
+  _th.push(acos(1 - 2 * (_k + 0.5) / Context.count));
   _ph.push(_k * pi * (3 - sqrt(5)));
 }`,
-      process: `[x,y,z] = [rad * sin(_th[i]) * cos(_ph[i]), rad * cos(_th[i]), rad * sin(_th[i]) * sin(_ph[i])];`,
+      process: `Context.position = [rad * sin(_th[Context.index]) * cos(_ph[Context.index]), rad * cos(_th[Context.index]), rad * sin(_th[Context.index]) * sin(_ph[Context.index])];`,
     }),
   },
   cube: {
@@ -331,12 +331,12 @@ for (_k = 0; _k < n; _k = _k + 1) {
       setup: `global _cx = [];
 global _cy = [];
 global _cz = [];
-for (_k = 0; _k < n; _k = _k + 1) {
+for (_k = 0; _k < Context.count; _k = _k + 1) {
   _cx.push(floor(_k / (sy * sz)) / (sx - 1) - 0.5);
   _cy.push(floor((_k % (sy * sz)) / sz) / (sy - 1) - 0.5);
   _cz.push((_k % sz) / (sz - 1) - 0.5);
 }`,
-      process: `[x,y,z] = [_cx[i] * edge, _cy[i] * edge, _cz[i] * edge];`,
+      process: `Context.position = [_cx[Context.index] * edge, _cy[Context.index] * edge, _cz[Context.index] * edge];`,
     }),
   },
   torus: {
@@ -353,11 +353,11 @@ for (_k = 0; _k < n; _k = _k + 1) {
       vars: { major: { base: Number(p.major), kf: [] }, minor: { base: Number(p.minor), kf: [] }, m: { base: Number(p.m), kf: [] }, k: { base: Number(p.k), kf: [] } },
       setup: `global _th = [];
 global _ph = [];
-for (_k = 0; _k < n; _k = _k + 1) {
+for (_k = 0; _k < Context.count; _k = _k + 1) {
   _th.push((_k % k) / k * 2 * pi);
   _ph.push(floor(_k / k) / m * 2 * pi);
 }`,
-      process: `[x,y,z] = [(major + minor * cos(_th[i])) * cos(_ph[i]), minor * sin(_th[i]), (major + minor * cos(_th[i])) * sin(_ph[i])];`,
+      process: `Context.position = [(major + minor * cos(_th[Context.index])) * cos(_ph[Context.index]), minor * sin(_th[Context.index]), (major + minor * cos(_th[Context.index])) * sin(_ph[Context.index])];`,
     }),
   },
   cylinder: {
@@ -377,15 +377,15 @@ for (_k = 0; _k < n; _k = _k + 1) {
 global _aa = [];
 global _rf = [];
 global _yf = [];
-for (_k = 0; _k < n; _k = _k + 1) {
+for (_k = 0; _k < Context.count; _k = _k + 1) {
   _ly.push(floor(_k / m));
   _aa.push((_k % m) / m * 2 * pi);
   _rf.push(clamp(min(_ly[_k] / (cr - 1), (k + 2 * cr - 1 - _ly[_k]) / (cr - 1)), 0, 1));
   _yf.push((clamp(_ly[_k], cr, cr + k - 1) - cr) / (k - 1));
 }`,
-      process: `rr = rad * _rf[i];
-yy = _yf[i] * h - h / 2;
-[x,y,z] = [rr * cos(_aa[i]), yy, rr * sin(_aa[i])];`,
+      process: `rr = rad * _rf[Context.index];
+yy = _yf[Context.index] * h - h / 2;
+Context.position = [rr * cos(_aa[Context.index]), yy, rr * sin(_aa[Context.index])];`,
     }),
   },
   cone: {
@@ -400,11 +400,11 @@ yy = _yf[i] * h - h / 2;
       vars: { rad: { base: Number(p.rad), kf: [] }, h: { base: Number(p.h), kf: [] }, m: { base: 32, kf: [] }, k: { base: 16, kf: [] } },
       setup: `global _aa = [];
 global _yy = [];
-for (_k = 0; _k < n; _k = _k + 1) {
+for (_k = 0; _k < Context.count; _k = _k + 1) {
   _aa.push((_k % m) / m * 2 * pi);
   _yy.push(floor(_k / m) / (k - 1));
 }`,
-      process: `[x,y,z] = [rad * (1 - _yy[i]) * cos(_aa[i]), (_yy[i] - 0.5) * h, rad * (1 - _yy[i]) * sin(_aa[i])];`,
+      process: `Context.position = [rad * (1 - _yy[Context.index]) * cos(_aa[Context.index]), (_yy[Context.index] - 0.5) * h, rad * (1 - _yy[Context.index]) * sin(_aa[Context.index])];`,
     }),
   },
   helix: {
@@ -419,11 +419,11 @@ for (_k = 0; _k < n; _k = _k + 1) {
       vars: { rad: { base: Number(p.rad), kf: [] }, h: { base: Number(p.h), kf: [] }, turns: { base: 3, kf: [] }, ppr: { base: 40, kf: [] } },
       setup: `global _aa = [];
 global _yf = [];
-for (_k = 0; _k < n; _k = _k + 1) {
+for (_k = 0; _k < Context.count; _k = _k + 1) {
   _aa.push(_k / ppr * 2 * pi);
-  _yf.push(_k / n - 0.5);
+  _yf.push(_k / Context.count - 0.5);
 }`,
-      process: `[x,y,z] = [rad * cos(_aa[i]), _yf[i] * h, rad * sin(_aa[i])];`,
+      process: `Context.position = [rad * cos(_aa[Context.index]), _yf[Context.index] * h, rad * sin(_aa[Context.index])];`,
     }),
   },
   plane: {
@@ -438,11 +438,11 @@ for (_k = 0; _k < n; _k = _k + 1) {
       vars: { w: { base: Number(p.w), kf: [] }, d: { base: Number(p.d), kf: [] }, cols: { base: 16, kf: [] }, rows: { base: 16, kf: [] } },
       setup: `global _xf = [];
 global _zf = [];
-for (_k = 0; _k < n; _k = _k + 1) {
+for (_k = 0; _k < Context.count; _k = _k + 1) {
   _xf.push((_k % cols) / (cols - 1) - 0.5);
   _zf.push(floor(_k / cols) / (rows - 1) - 0.5);
 }`,
-      process: `[x,y,z] = [_xf[i] * w, 0, _zf[i] * d];`,
+      process: `Context.position = [_xf[Context.index] * w, 0, _zf[Context.index] * d];`,
     }),
   },
   circle: {
@@ -454,10 +454,10 @@ for (_k = 0; _k < n; _k = _k + 1) {
       count: 200,
       vars: { rad: { base: Number(p.rad), kf: [] } },
       setup: `global _ang = [];
-for (_k = 0; _k < n; _k = _k + 1) {
-  _ang.push(_k / n * 2 * pi);
+for (_k = 0; _k < Context.count; _k = _k + 1) {
+  _ang.push(_k / Context.count * 2 * pi);
 }`,
-      process: `[x,y,z] = [rad * cos(_ang[i]), 0, rad * sin(_ang[i])];`,
+      process: `Context.position = [rad * cos(_ang[Context.index]), 0, rad * sin(_ang[Context.index])];`,
     }),
   },
   disc: {
@@ -470,13 +470,13 @@ for (_k = 0; _k < n; _k = _k + 1) {
       vars: { diskR: { base: Number(p.diskR), kf: [] } },
       setup: `global _rf = [];
 global _th = [];
-for (_k = 0; _k < n; _k = _k + 1) {
-  _rf.push(sqrt(_k / n));
+for (_k = 0; _k < Context.count; _k = _k + 1) {
+  _rf.push(sqrt(_k / Context.count));
   _th.push(_k * pi * (3 - sqrt(5)));
 }`,
-      process: `rad = diskR * _rf[i];
-x = rad * cos(_th[i]);
-z = rad * sin(_th[i]);`,
+      process: `rad = diskR * _rf[Context.index];
+Context.position.x = rad * cos(_th[Context.index]);
+Context.position.z = rad * sin(_th[Context.index]);`,
     }),
   },
   star: {
@@ -487,18 +487,18 @@ z = rad * sin(_th[i]);`,
     build: p => ({
       count: 2000,
       vars: { rad: { base: Number(p.rad), kf: [] } },
-      setup: `global _m = floor(pow(n, 0.5));
+      setup: `global _m = floor(pow(Context.count, 0.5));
 global _cx = [];
 global _cy = [];
 global _cz = [];
-for (_k = 0; _k < n; _k = _k + 1) {
+for (_k = 0; _k < Context.count; _k = _k + 1) {
   _cx.push(pow(cos(floor(_k / _m) * 2 * pi / _m) * cos((_k % _m) * pi / _m - pi / 2), 3));
   _cy.push(pow(sin(floor(_k / _m) * 2 * pi / _m) * cos((_k % _m) * pi / _m - pi / 2), 3));
   _cz.push(pow(sin((_k % _m) * pi / _m - pi / 2), 3));
 }`,
-      process: `x = rad * _cx[i];
-y = rad * _cy[i];
-z = rad * _cz[i];`
+      process: `Context.position.x = rad * _cx[Context.index];
+Context.position.y = rad * _cy[Context.index];
+Context.position.z = rad * _cz[Context.index];`
     })
   },
   rising_smoke: {
@@ -513,15 +513,15 @@ z = rad * _cz[i];`
       setup: `global _rx = [];
 global _rz = [];
 global _ry = [];
-for (_k = 0; _k < n; _k = _k + 1) {
+for (_k = 0; _k < Context.count; _k = _k + 1) {
   _rx.push(rand(_k * 2));
   _rz.push(rand(_k * 4));
   _ry.push(rand(_k * 6));
 }`,
-      process: `x = (_rx[i] * 2 - 1) * rad;
-z = (_rz[i] * 2 - 1) * rad;
-_y = (_ry[i] * 2 - 1) * rad;
-y = -rad + (_y + rad + t * spd) % (2 * rad);`
+      process: `Context.position.x = (_rx[Context.index] * 2 - 1) * rad;
+Context.position.z = (_rz[Context.index] * 2 - 1) * rad;
+_y = (_ry[Context.index] * 2 - 1) * rad;
+Context.position.y = -rad + (_y + rad + Context.time * spd) % (2 * rad);`
     })
   },
 };

@@ -10,10 +10,10 @@
 
 import {_etf, t, tf} from '../core/i18n.js';
 import {getFunction, state} from '../core/constants.js';
-import {ATTR_NAMES} from '../core/easing.js';
 import {modalAlert} from './ui.js';
 import {
   BUILTIN_VAR_INFO,
+  CTX_VAR_FIELDS,
   codeToStatements,
   collectTemps,
   exprType,
@@ -64,6 +64,7 @@ export function cloneExprNode(n) {
   if (n.kind === 'num') o.value = n.value;
   else if (n.kind === 'bool') o.value = n.value;
   else if (n.kind === 'var') o.name = n.name;
+  else if (n.kind === 'member') { o.obj = cloneExprNode(n.obj); o.field = n.field; }
   else if (n.kind === 'func') { o.name = n.name; o.args = n.args.map(cloneExprNode); }
   else if (n.kind === 'op') { o.op = n.op; o.a = cloneExprNode(n.a); o.b = cloneExprNode(n.b); }
   else if (n.kind === 'comp') { o.axis = n.axis; o.target = cloneExprNode(n.target); }
@@ -92,20 +93,22 @@ export function cloneStmt(s) {
 export function cloneStmts(stmts) { return stmts.map(cloneStmt); }
 
 export function blockVarTypeOf(name) {
-  if (name === 'i' || name === 'n' || name === 't') return T_SCALAR;
   if (name === 'pi' || name === 'e') return T_SCALAR;
-  if (ATTR_NAMES.includes(name)) return T_SCALAR; // 属性（x/y/z/…）是标量
   if (bctx && name in bctx.varExprs) return T_SCALAR;
   return T_ANY;
 }
 export function availableVars() {
-  const out = ['i', 'n', 't'];
+  const out = [];
   if (bctx) {
     for (const name of bctx.varOrder) if (name in bctx.varExprs && !out.includes(name)) out.push(name);
     const all = [...bctx.chain, ...bctx.setupChain, ...bctx.frags.flatMap(f => f.stmts), ...bctx.funcs.map(f => f.stmt)];
     for (const t of collectTemps(all)) if (!out.includes(t)) out.push(t);
   }
   return out;
+}
+export function ctxVarTemplate(field) {
+  if (field.startsWith('uv.')) return { kind: 'member', obj: { kind: 'member', obj: { kind: 'var', name: 'Context' }, field: 'uv' }, field: field.slice(3) };
+  return { kind: 'member', obj: { kind: 'var', name: 'Context' }, field };
 }
 
 /* =========================================================================
@@ -249,7 +252,7 @@ export function newStmtNode(kind) {
     case 'light': return { kind, expr: null };
     case 'glow': return { kind, on: true };
     case 'set': return { kind, name: freshTempName(), expr: null };
-    case 'attr': return { kind, name: 'x', expr: null };
+    case 'attr': return { kind, name: 'position.x', expr: null };
     case 'pos_vec': case 'vel_vec': return { kind, expr: null };
     case 'if': return { kind: 'if', cond: null, body: [], elseBody: null };
     case 'while': return { kind: 'while', cond: null, body: [] };
@@ -270,6 +273,7 @@ export function newStmtNode(kind) {
 export function newExprNodeFromTemplate(template) {
   if (template.kind === 'num') return { kind: 'num', value: 1 };
   if (template.kind === 'var') return { kind: 'var', name: template.name };
+  if (template.kind === 'member') return { kind: 'member', obj: cloneExprNode(template.obj), field: template.field };
   if (template.kind === 'comp') return { kind: 'comp', axis: 'x', target: null };
   if (template.kind === 'func') {
     const spec = FUNC_BLOCKS[template.name];
@@ -317,6 +321,10 @@ export function nodeInfo(n) {
     case 'num': return t('blk.constNum');
     case 'bool': return t('blk.constNum');
     case 'var': return (BUILTIN_VAR_INFO[n.name] && t(BUILTIN_VAR_INFO[n.name])) || t('blk.var');
+    case 'member': {
+      const key = 'Context.' + n.field;
+      return (BUILTIN_VAR_INFO[key] && t(BUILTIN_VAR_INFO[key])) || t('blk.var');
+    }
     case 'func': return funcInfo(n.name);
     case 'op': return (OP_LABELS[n.op] && t(OP_LABELS[n.op])) || t('blk.op');
     case 'chain': return t('blk.chainDesc');
@@ -357,7 +365,11 @@ export function buildPaletteGroup(g) {
     ['scl', 'glow', 'light'].forEach(k => items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: t(STMT_BLOCKS[k].label), info: t(STMT_BLOCKS[k].desc) }));
   } else if (g.id === 'var') {
     items.push({ key: 'stmt:set', type: 'stmt', kind: 'set', label: t(STMT_BLOCKS.set.label), info: t(STMT_BLOCKS.set.desc) });
-    for (const name of availableVars()) items.push({ key: 'var:' + name, type: 'expr', template: { kind: 'var', name }, label: name, info: (BUILTIN_VAR_INFO[name] && t(BUILTIN_VAR_INFO[name])) || t('blk.var') });
+    for (const field of CTX_VAR_FIELDS) {
+      const key = 'Context.' + field;
+      items.push({ key: 'var:' + key, type: 'expr', template: ctxVarTemplate(field), label: key, info: (BUILTIN_VAR_INFO[key] && t(BUILTIN_VAR_INFO[key])) || t('blk.var') });
+    }
+    for (const name of availableVars()) items.push({ key: 'var:' + name, type: 'expr', template: { kind: 'var', name }, label: name, info: t('blk.var') });
   } else if (g.id === 'const') {
     items.push({ key: 'expr:num', type: 'expr', template: { kind: 'num', value: 1 }, label: t('blk.type.scalar'), info: t('blk.constNum') });
     items.push({ key: 'expr:pi', type: 'expr', template: { kind: 'var', name: 'pi' }, label: 'pi', info: t('blk.piInfo') });
@@ -411,6 +423,7 @@ export function renameRefsInStmts(stmts, oldName, newName) {
     if (!n) return;
     if (n.kind === 'var' && n.name === oldName) n.name = newName;
     if (n.kind === 'func' || n.kind === 'method') n.args.forEach(walk);
+    if (n.kind === 'member') walk(n.obj);
     if (n.kind === 'op') { walk(n.a); walk(n.b); }
     if (n.kind === 'comp' || n.kind === 'index') { walk(n.target); if (n.index) walk(n.index); }
     if (n.kind === 'neg' || n.kind === 'not') walk(n.a);

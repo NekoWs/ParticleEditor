@@ -15,7 +15,7 @@ import {
 import { editComponentValue, renameGroup, renameParticle } from '../core/edit.js';
 import { targetComponentValue, startRename } from './tree.js';
 import { pushUndo } from '../state/undo.js';
-import { varKfValue, ATTR_NAMES, FUNCS } from '../core/easing.js';
+import { varKfValue, FUNCS } from '../core/easing.js';
 import { modalAlert } from './ui.js';
 import { rebuildPoints } from '../core/animation.js';
 import { refreshFunctionPanel, commitFunctionRebuild } from './panels.js';
@@ -32,7 +32,7 @@ let eventsBound = false;
 
 // 变量名约束：必须能作为公式标识符，且不能与属性保留字、内置变量/常量、函数名冲突
 const VAR_IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const VAR_RESERVED = new Set([...ATTR_NAMES, 'i', 'n', 't', 'cx', 'cy', 'cz', 'out', 'pi', 'e', ...Object.keys(FUNCS)]);
+const VAR_RESERVED = new Set(['Context', 'cx', 'cy', 'cz', 'out', 'pi', 'e', ...Object.keys(FUNCS)]);
 
 /* =========================================================================
  * 小工具

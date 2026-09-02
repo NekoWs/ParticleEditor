@@ -7,7 +7,7 @@
       "seed": 0,
       "count": 3,
       "setup": "",
-      "process": "[x,y,z] = [i*2, i+1, n]; r = i/n; sc = 0.5; vx = i; glow = 1; light = 12;",
+      "process": "Context.position = [Context.index*2, Context.index+1, Context.count]; Context.color.r = Context.index/Context.count; Context.scale = 0.5; Context.velocity.x = Context.index; Context.glow = 1; Context.light = 12;",
       "funcs": "",
       "gridCols": null,
       "samples": [
@@ -76,7 +76,7 @@
       "seed": 0,
       "count": 1,
       "setup": "",
-      "process": "v = vec(1,2,3); m = rotZ(pi/2); w = m * v; [x,y,z] = w; [r,g,b,a] = [len(w)/4, dot(v,w)/12, cross(v,w).y/10, 1];",
+      "process": "v = vec(1,2,3); m = rotZ(pi/2); w = m * v; Context.position = w; Context.color = [len(w)/4, dot(v,w)/12, cross(v,w).y/10, 1];",
       "funcs": "",
       "gridCols": null,
       "samples": [
@@ -116,7 +116,7 @@
       "seed": 0,
       "count": 1,
       "setup": "global arr = []; arr.push(3); arr.push(1); arr.push(2); global brr = arr.slice(0, 3);",
-      "process": "x = arr[0]; y = arr.find(2); z = arr.includes(9) ? 1 : 0; sc = brr.size();",
+      "process": "Context.position.x = arr[0]; Context.position.y = arr.find(2); Context.position.z = arr.includes(9) ? 1 : 0; Context.scale = brr.size();",
       "funcs": "",
       "gridCols": null,
       "samples": [
@@ -156,7 +156,7 @@
       "seed": 0,
       "count": 1,
       "setup": "",
-      "process": "s = 0; for (k = 0; k < 5; k = k + 1) { s = s + k; } while (s < 11) { s = s + 1; } if (s > 10) { x = s; } else { x = -1; } y = (s == 12) ? 2 : 0;",
+      "process": "s = 0; for (k = 0; k < 5; k = k + 1) { s = s + k; } while (s < 11) { s = s + 1; } if (s > 10) { Context.position.x = s; } else { Context.position.x = -1; } Context.position.y = (s == 12) ? 2 : 0;",
       "funcs": "",
       "gridCols": null,
       "samples": [
@@ -196,7 +196,7 @@
       "seed": 0,
       "count": 1,
       "setup": "",
-      "process": "x = fib(6); y = fac(4);",
+      "process": "Context.position.x = fib(6); Context.position.y = fac(4);",
       "funcs": "func fib(nn) { if (nn < 2) { return nn; } return fib(nn-1) + fib(nn-2); }\nfunc fac(nn) { if (nn <= 1) { return 1; } return nn * fac(nn-1); }",
       "gridCols": null,
       "samples": [
@@ -236,7 +236,7 @@
       "seed": 42,
       "count": 2,
       "setup": "",
-      "process": "x = noise(i, 0.5, 1.5) * 10; y = rand() * 10; z = rand(7) * 10;",
+      "process": "Context.position.x = noise(Context.index, 0.5, 1.5) * 10; Context.position.y = rand() * 10; Context.position.z = rand(7) * 10;",
       "funcs": "",
       "gridCols": null,
       "samples": [

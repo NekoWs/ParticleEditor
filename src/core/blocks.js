@@ -18,7 +18,7 @@
 
 
 import { _et, _etf } from './i18n.js';
-import { PREC, NEG_PREC, FUNCS, ATTR_NAMES, parseNameList, parseExprList } from './easing.js';
+import { PREC, NEG_PREC, FUNCS, parseExprList } from './easing.js';
 
 // 扩展比较/逻辑运算符优先级（1 最低，与 easing.js 的 + - * / ^ 衔接）。
 PREC['||'] = 1;
@@ -50,12 +50,18 @@ export const METHOD_ARITY = {
   find: 1, includes: 1, sort: 0, unique: 0, reverse: 0,
 };
 
+// Context 只读字段（拼图内作为可直接拖入表达式的上下文变量）。
+export const CTX_VAR_FIELDS = ['index', 'count', 'time', 'delta', 'life', 'uv.x', 'uv.y'];
 export const BUILTIN_VAR_INFO = {
-  i: 'blk.var.i',
-  n: 'blk.var.n',
-  t: 'blk.var.t',
+  'Context.index': 'blk.var.index',
+  'Context.count': 'blk.var.count',
+  'Context.time': 'blk.var.time',
+  'Context.delta': 'blk.var.delta',
+  'Context.life': 'blk.var.life',
+  'Context.uv.x': 'blk.var.uv',
+  'Context.uv.y': 'blk.var.uv',
 };
-export const BUILTIN_VAR_NAMES = ['i', 'n', 't'];
+export const BUILTIN_VAR_NAMES = Object.keys(BUILTIN_VAR_INFO);
 
 /* —— 积木类别 → CSS 类名（渲染层与数据层共用） —— */
 export const GROUP_COLOR = {
@@ -196,6 +202,7 @@ export function exprType(node, varTypeOf) {
     case 'num': return T_SCALAR;
     case 'bool': return T_SCALAR;
     case 'var': return (node.name === 'pi' || node.name === 'e') ? T_SCALAR : vt(node.name);
+    case 'member': return (node.field === 'uv' || node.field === 'position' || node.field === 'color' || node.field === 'velocity') ? T_VEC : T_SCALAR;
     case 'func': return FUNC_BLOCKS[node.name] ? FUNC_BLOCKS[node.name].ret : T_ANY;
     case 'array': return T_ANY;
     case 'index': return T_ANY;
@@ -232,6 +239,7 @@ export function exprComplete(node) {
   if (!node) return false;
   switch (node.kind) {
     case 'num': case 'bool': case 'var': return true;
+    case 'member': return exprComplete(node.obj);
     case 'func': return node.args.every(exprComplete);
     case 'op': return exprComplete(node.a) && exprComplete(node.b);
     case 'chain': return node.terms.every(exprComplete);
@@ -294,6 +302,8 @@ export function exprToCode(node, parentPrec) {
       s = node.value ? 'true' : 'false'; p = ATOM_PREC; break;
     case 'var':
       s = node.name; p = ATOM_PREC; break;
+    case 'member':
+      s = exprToCode(node.obj, ATOM_PREC) + '.' + node.field; p = ATOM_PREC; break;
     case 'func':
       s = node.name + '(' + node.args.map(a => exprToCode(a, 0)).join(', ') + ')'; p = ATOM_PREC; break;
     case 'array':
@@ -361,15 +371,15 @@ function emitStmt(s, level, spans, lineStart) {
   const pad = indentPad(level);
   const start = lineStart || 1;
   switch (s.kind) {
-    case 'pos': return pad + '[x,y,z] = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
-    case 'pos_vec': return pad + '[x,y,z] = ' + exprToCode(s.expr, 0);
-    case 'vel': return pad + '[vx,vy,vz] = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
-    case 'vel_vec': return pad + '[vx,vy,vz] = ' + exprToCode(s.expr, 0);
-    case 'col': return pad + '[r,g,b,a] = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
-    case 'scl': return pad + 'sc = ' + exprToCode(s.expr, 0);
-    case 'glow': return pad + 'glow = ' + (s.on ? '1' : '0');
-    case 'light': return pad + 'light = ' + exprToCode(s.expr, 0);
-    case 'attr': return pad + s.name + ' = ' + exprToCode(s.expr, 0);
+    case 'pos': return pad + 'Context.position = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
+    case 'pos_vec': return pad + 'Context.position = ' + exprToCode(s.expr, 0);
+    case 'vel': return pad + 'Context.velocity = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
+    case 'vel_vec': return pad + 'Context.velocity = ' + exprToCode(s.expr, 0);
+    case 'col': return pad + 'Context.color = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
+    case 'scl': return pad + 'Context.scale = ' + exprToCode(s.expr, 0);
+    case 'glow': return pad + 'Context.glow = ' + (s.on ? '1' : '0');
+    case 'light': return pad + 'Context.light = ' + exprToCode(s.expr, 0);
+    case 'attr': return pad + 'Context.' + s.name + ' = ' + exprToCode(s.expr, 0);
     case 'set': return pad + s.name + ' = ' + exprToCode(s.expr, 0);
     case 'expr': return pad + exprToCode(s.expr, 0) + ';';
     case 'raw': return s.text || '';
@@ -494,7 +504,7 @@ export function blockTokenize(expr) {
       tokens.push({ t: 'op', op: two });
       i += 2; expectOperand = true; continue;
     }
-    if (c === '.' && (expr[i + 1] === 'x' || expr[i + 1] === 'y' || expr[i + 1] === 'z')) {
+    if (c === '.' && /[xyzwrgba]/.test(expr[i + 1] || '') && !/[a-zA-Z0-9_]/.test(expr[i + 2] || '')) {
       tokens.push({ t: 'comp', axis: expr[i + 1] }); i += 2; expectOperand = false; continue;
     }
     if (c === '.' && isIdentStart(expr[i + 1] || '')) {
@@ -604,7 +614,7 @@ export function parseExpr(str) {
         const m = next();
         // 方法名可能恰为内建函数名（blockTokenize 会标记为 func），此处两种 token 都接受。
         if (!m || (m.t !== 'var' && m.t !== 'func')) throw new Error(_etf('err.exprNeed', 'method', str));
-        if (!peek() || peek().t !== '(') { node = { kind: 'var', name: m.name }; continue; }
+        if (!peek() || peek().t !== '(') { node = { kind: 'member', obj: node, field: m.name }; continue; }
         next(); // '('
         node = { kind: 'method', obj: node, method: m.name, args: parseCallArgs() };
       } else {
@@ -863,28 +873,43 @@ export function stmtToNode(stmt) {
   const lhs = s.slice(0, eq).trim();
   const rhs = s.slice(eq + 1).trim();
   if (lhs.startsWith('[')) {
-    const names = parseNameList(lhs);
+    // 旧 [x,y,z]=... 属性打包语法已移除；作为 raw 保留。
+    throw new Error(_etf('err.unknownPack', stmt));
+  }
+  if (lhs === 'Context.position') {
     if (rhs.startsWith('[')) {
       const exprs = parseExprList(rhs).map(e => parseExpr(e));
-      if (names.length !== exprs.length) throw new Error(_etf('err.assignCount2', stmt));
-      if (isNames(names, ['x', 'y', 'z'])) return { kind: 'pos', slots: exprs };
-      if (isNames(names, ['vx', 'vy', 'vz'])) return { kind: 'vel', slots: exprs };
-      if (isNames(names, ['r', 'g', 'b', 'a'])) return { kind: 'col', slots: exprs };
-      throw new Error(_etf('err.unknownPack', stmt));
+      if (exprs.length !== 3) throw new Error(_etf('err.assignCount2', stmt));
+      return { kind: 'pos', slots: exprs };
     }
-    const e = parseExpr(rhs);
-    if (isNames(names, ['x', 'y', 'z'])) return { kind: 'pos_vec', expr: e };
-    if (isNames(names, ['vx', 'vy', 'vz'])) return { kind: 'vel_vec', expr: e };
+    return { kind: 'pos_vec', expr: parseExpr(rhs) };
+  }
+  if (lhs === 'Context.velocity') {
+    if (rhs.startsWith('[')) {
+      const exprs = parseExprList(rhs).map(e => parseExpr(e));
+      if (exprs.length !== 3) throw new Error(_etf('err.assignCount2', stmt));
+      return { kind: 'vel', slots: exprs };
+    }
+    return { kind: 'vel_vec', expr: parseExpr(rhs) };
+  }
+  if (lhs === 'Context.color') {
+    if (rhs.startsWith('[')) {
+      const exprs = parseExprList(rhs).map(e => parseExpr(e));
+      if (exprs.length !== 4) throw new Error(_etf('err.assignCount2', stmt));
+      return { kind: 'col', slots: exprs };
+    }
     throw new Error(_etf('err.unknownUnpack', stmt));
   }
-  if (lhs === 'sc') return { kind: 'scl', expr: parseExpr(rhs) };
-  if (lhs === 'glow') {
+  if (lhs === 'Context.scale') return { kind: 'scl', expr: parseExpr(rhs) };
+  if (lhs === 'Context.glow') {
     const e = parseExpr(rhs);
     if (e.kind === 'num' && (e.value === 1 || e.value === 0)) return { kind: 'glow', on: e.value === 1 };
     throw new Error(_etf('err.glowBinary', stmt));
   }
-  if (lhs === 'light') return { kind: 'light', expr: parseExpr(rhs) };
-  if (ATTR_NAMES.includes(lhs)) return { kind: 'attr', name: lhs, expr: parseExpr(rhs) };
+  if (lhs === 'Context.light') return { kind: 'light', expr: parseExpr(rhs) };
+  if (/^Context\.(position|velocity|color)\.(x|y|z|r|g|b|a|w)$/.test(lhs)) {
+    return { kind: 'attr', name: lhs.slice('Context.'.length), expr: parseExpr(rhs) };
+  }
   return { kind: 'set', name: lhs, expr: parseExpr(rhs) };
 }
 
