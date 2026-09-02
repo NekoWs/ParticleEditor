@@ -747,6 +747,22 @@ export function maxTick() {
   return _maxTickCache;
 }
 
+// 判定函数对象脚本是否可静态复用：确定性（无 random/rand）且不依赖时间/帧间隔。
+// 变量关键帧会随时间改变注入值，必须走活源求值。
+// 兼容旧脚本：裸 t / dt / life 仍视为时间依赖（保守，牺牲一点性能避免错误跳过）。
+// this.duration 虽在播放期间恒定，但会随结构变化（maxTick）改变，保守起见也走活源求值，
+// 避免「新增轨道延长动画后该值仍为旧值」的陈旧缓存。
+export function isFxStaticScript(fx) {
+  const vars = fx.vars || {};
+  for (const name in vars) {
+    const v = vars[name];
+    if (v && v.kf && v.kf.length > 0) return false;
+  }
+  const src = (fx.process || '') + '\n' + (fx.funcs || '');
+  if (/\b(random|rand)\s*\(/.test(src)) return false;
+  return !/(\bt\b|\bdt\b|\blife\b|this\s*\.\s*(time|delta|duration))/.test(src);
+}
+
 // 轨道分段积分（线性近似，忽略缓动）：trackValueAt 的常数段 + 线性段面积
 export function trackIntegral(tr, time) {
   const kfs = tr.kf;
