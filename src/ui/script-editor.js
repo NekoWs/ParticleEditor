@@ -232,7 +232,7 @@ export function scriptCompletionSource(fx) {
 
     // 换行或语句刚结束时（分号/括号后）不弹补全。
     const lastChar = before.slice(-1);
-    if (lastChar === ';' || lastChar === '\n' || lastChar === '{' || lastChar === '}' || lastChar === ')') return null;
+    if (lastChar === ';' || lastChar === '\n' || lastChar === '{' || lastChar === '}' || lastChar === ')' || lastChar === ' ') return null;
 
     const word = context.matchBefore(/[\w.]*/);
     const from = word ? word.from : context.pos;
