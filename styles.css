@@ -625,15 +625,15 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .tl-speed-group {
   display: inline-flex; align-items: center; gap: 6px;
   background: var(--panel-3); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); padding: 0 8px; height: 30px;
+  border-radius: var(--radius-sm); padding: 0 6px; height: 30px;
 }
 .tl-time-group #tl-time,
 .tl-speed-group #tl-speed {
   background: none; border: none; padding: 0; height: auto;
   field-sizing: content;
 }
-.tl-speed-group #tl-speed { width: 35px; }
-.tl-time-group #tl-time { width: auto; min-width: 34px; }
+.tl-speed-group #tl-speed { width: 25px; }
+.tl-time-group #tl-time { width: auto; min-width: 15px; }
 .tl-time-group #tl-time:focus { border-color: transparent; }
 .tl-time-group .ticks,
 .tl-speed-group .ticks { white-space: nowrap; }
@@ -734,7 +734,7 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .tt-add-kf:hover, .tt-add-var-kf:hover, .tt-add-var:hover { color: #ffcc55; border-color: #ffcc55; }
 .tt-add-kf:disabled, .tt-add-var-kf:disabled { opacity: 0.4; cursor: default; }
 .tl-loop {
-  margin: 0; padding: 4px 10px; gap: 6px; height: 30px; display: inline-flex; align-items: center;
+  margin: 0; padding: 4px 6px; gap: 6px; height: 30px; display: inline-flex; align-items: center;
   border: 1px solid var(--border); border-radius: var(--radius-sm);
   background: var(--panel-3); transition: all 0.12s ease;
 }
@@ -1734,10 +1734,12 @@ body.puzzle-mode #puzzle-ghost-canvas { display: block; }
     box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.35);
     display: flex; flex-direction: column;
   }
-  .tl-body { order: 1; display: flex; margin-top: 0; }
+  .tl-body { order: 1; display: flex; flex: 0 0 0; min-height: 0; overflow: hidden; margin-top: 0; }
   .tl-controls { order: 2; margin-top: 0; }
+  /* 小屏下控件不要被压缩，放不下时整体换行而不是挤出 */
+  .tl-controls > * { flex: 0 0 auto; }
   body.drawer-timeline-open .timeline { height: clamp(220px, 68vh, 460px); }
-  body.drawer-timeline-open .tl-body { margin-top: 6px; }
+  body.drawer-timeline-open .tl-body { flex: 1 1 auto; margin-top: 6px; }
   body.drawer-timeline-open .tl-controls { margin-top: 6px; }
   #tl-module-resize { display: none; }
 

@@ -52,14 +52,21 @@ function syncLayout() {
 
 // 时间轴抽屉关闭时的高度 = .tl-controls 实际高度 + 时间轴自身上下内边距。
 // 写入 --tl-controls-h 供 CSS 的 height 过渡使用（展开/收起时从底部平滑滑出）。
+// 测量时临时把 timeline 设为 height:auto，避免 flex 压缩把控件高度测小（形成自引用）。
 function syncTimelineControlsHeight() {
   const timeline = document.querySelector('.timeline');
   const controls = timeline && timeline.querySelector('.tl-controls');
   if (!timeline || !controls) return;
+  const prevInline = timeline.style.height;
+  timeline.style.height = 'auto';
   const cs = getComputedStyle(timeline);
   const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
-  timeline.style.setProperty('--tl-controls-h', (controls.offsetHeight + pad) + 'px');
+  const h = controls.offsetHeight + pad;
+  timeline.style.height = prevInline;
+  timeline.style.setProperty('--tl-controls-h', h + 'px');
 }
+
+let controlsObserver = null;
 
 export function initMobileUI() {
   if (inited) return;
@@ -71,6 +78,15 @@ export function initMobileUI() {
     else if (typeof NARROW_MQ.addListener === 'function') NARROW_MQ.addListener(syncLayout);
   } catch (e) { /* 旧浏览器/测试桩忽略 */ }
   try { window.addEventListener('resize', syncTimelineControlsHeight); } catch (e) { /* 测试桩忽略 */ }
+
+  // 控件换行/宽度变化时重新测量关闭态高度（小屏换行、语言切换等场景）。
+  try {
+    const controls = document.querySelector('.tl-controls');
+    if (controls && typeof ResizeObserver !== 'undefined') {
+      controlsObserver = new ResizeObserver(() => syncTimelineControlsHeight());
+      controlsObserver.observe(controls);
+    }
+  } catch (e) { /* 旧浏览器忽略 */ }
 
   const panelBtn = document.getElementById('mobile-panel-btn');
   const timelineBtn = document.getElementById('mobile-timeline-btn');
