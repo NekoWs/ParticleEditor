@@ -3001,6 +3001,14 @@ function onPalDown(e) {
     return;
   }
   const hit = hitPalette(mx, my);
+  // 触屏：在调色板空白处单指滚动；积木仍可拖动、类别标题仍可点击折叠。
+  if (e.pointerType === 'touch' && (!hit || hit.kind === 'blank')) {
+    e.preventDefault();
+    const sb = palScrollbarGeom();
+    S.palScrollDrag = { startY: e.clientY, startScroll: S.palScroll, max: sb ? sb.max : 0 };
+    if (S.palCanvas.setPointerCapture) S.palCanvas.setPointerCapture(e.pointerId);
+    return;
+  }
   if (hit && hit.kind === 'pal-title') {
     e.preventDefault();
     toggleCategory(hit.catId);

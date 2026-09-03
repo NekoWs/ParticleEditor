@@ -1609,3 +1609,177 @@ body.puzzle-mode #puzzle-ghost-canvas { display: block; }
   overflow-wrap: break-word;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
+
+/* =========================================================================
+ * 移动端 / 平板响应式布局：视口优先 + 抽屉式面板
+ * ======================================================================= */
+
+@media (max-width: 1024px) {
+  body {
+    grid-template-rows: 44px 1fr 0px;
+  }
+
+  .topbar {
+    z-index: 130;
+    gap: 6px;
+    padding: 0 8px;
+  }
+  .menubar {
+    overflow-x: auto;
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .menubar::-webkit-scrollbar { display: none; }
+  .menu-btn { padding: 9px 10px; white-space: nowrap; }
+  #topbar-title { display: none; }
+
+  .mobile-top-actions {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+    flex: none;
+  }
+  .mobile-action-btn {
+    width: 38px; height: 34px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    padding: 0;
+  }
+  .mobile-action-btn svg { width: 19px; height: 19px; }
+  .mobile-action-btn:active { background: var(--panel-3); border-color: var(--accent); }
+
+  .layout { grid-template-columns: 1fr; }
+  .resize-handle-r { display: none; }
+  .fwin { max-width: 96vw; max-height: 70vh; }
+
+  /* 侧栏 → 右侧抽屉 */
+  .sidebar {
+    position: fixed;
+    top: 44px; right: 0; bottom: 0;
+    width: min(88vw, 360px);
+    transform: translateX(102%);
+    transition: transform 0.24s ease;
+    z-index: 110;
+    box-shadow: -10px 0 30px rgba(0, 0, 0, 0.35);
+  }
+  body.drawer-panel-open .sidebar { transform: translateX(0); }
+
+  /* 时间轴 → 底部抽屉 */
+  .timeline {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    height: clamp(220px, 68vh, 460px);
+    transform: translateY(102%);
+    transition: transform 0.24s ease;
+    z-index: 110;
+    padding: 6px 8px;
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.35);
+  }
+  body.drawer-timeline-open .timeline { transform: translateY(0); }
+  #tl-module-resize { display: none; }
+
+  .drawer-backdrop {
+    position: fixed;
+    top: 44px; left: 0; right: 0; bottom: 0;
+    z-index: 100;
+    background: rgba(5, 7, 10, 0.5);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+  body.drawer-panel-open .drawer-backdrop,
+  body.drawer-timeline-open .drawer-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* 时间轴内部重排 */
+  .tl-controls {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 40px;
+    gap: 6px;
+    padding: 6px 8px;
+  }
+  .tl-controls .btn { height: 34px; }
+  .tl-controls .tl-time-group { height: 34px; }
+  .tl-controls .tl-loop { height: 34px; }
+  .tl-controls .ease-btn { height: 34px; width: 34px; }
+
+  .tl-tree {
+    flex: 0 0 42vw;
+    min-width: 104px;
+    max-width: 46vw;
+  }
+
+  /* 视口工具栏更紧凑，给摄像机选项卡留出空间 */
+  .toolbar { left: 6px; gap: 2px; padding: 3px; }
+  .tool { width: 32px; height: 32px; }
+  #axis-gizmo { width: 92px; height: 92px; top: 8px; right: 8px; }
+  .cam-tabs {
+    max-width: calc(100% - 140px);
+    overflow-x: auto;
+    scrollbar-width: none;
+    left: 52px;
+    transform: none;
+  }
+  .cam-tabs::-webkit-scrollbar { display: none; }
+  .cam-tab { max-width: 120px; }
+}
+
+/* 触屏：加大主要交互目标并抑制原生触摸行为 */
+@media (pointer: coarse) {
+  #viewport canvas,
+  #timeline,
+  #tl-layers-canvas,
+  #axis-gizmo,
+  #tex-canvas,
+  #puzzle-palette-canvas,
+  #puzzle-workspace-canvas {
+    touch-action: none;
+  }
+
+  .menu-btn { padding: 12px 10px; }
+  .dd-item { padding: 12px 12px; }
+  .tool { width: 40px; height: 40px; }
+  .toolbar { padding: 4px; }
+  .tool svg { width: 20px; height: 20px; }
+  .tab { width: 48px; height: 44px; }
+  .tab svg { width: 22px; height: 22px; }
+  .mini { padding: 8px 12px; font-size: 13px; }
+  .ease-btn { width: 40px; height: 40px; }
+  .color-swatch { width: 40px; height: 40px; }
+  .del-x { width: 34px; height: 34px; }
+
+  .row input[type="text"],
+  .row input[type="number"],
+  .row select {
+    min-height: 40px;
+    font-size: 16px;
+  }
+  .fx-panel input,
+  .fx-panel select,
+  .tl-controls input[type="number"],
+  .tl-controls select {
+    min-height: 36px;
+    font-size: 16px;
+  }
+  .tl-controls .tl-time-group #tl-time,
+  .tl-controls input[type="number"] { height: 36px; }
+
+  .tt-arrow { flex-basis: 26px; }
+  .tt-add-kf, .tt-add-var-kf, .tt-add-var {
+    width: 30px; height: 24px;
+  }
+  .fwin-btn { width: 34px; height: 34px; }
+  .ui-modal-btn { padding: 10px 16px; font-size: 14px; }
+  .ui-modal-input { font-size: 16px; min-height: 40px; }
+  .puzzle-dd-item { padding: 10px 12px; font-size: 14px; }
+}

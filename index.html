@@ -52,6 +52,14 @@
         <button class="menu-btn" data-menu="about" id="btn-about" data-i18n="menu.about">关于</button>
       </div>
     </nav>
+    <div class="mobile-top-actions">
+      <button id="mobile-panel-btn" class="mobile-action-btn" data-i18n-title="mobile.panels" title="属性 / 函数 / 贴图">
+        <svg viewBox="0 0 18 18"><path d="M2.5 5h13M2.5 9h13M2.5 13h13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="6" cy="5" r="1.6" fill="currentColor"/><circle cx="11" cy="9" r="1.6" fill="currentColor"/><circle cx="8" cy="13" r="1.6" fill="currentColor"/></svg>
+      </button>
+      <button id="mobile-timeline-btn" class="mobile-action-btn" data-i18n-title="mobile.timeline" title="时间轴">
+        <svg viewBox="0 0 18 18"><rect x="2" y="4" width="14" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 4v10M9 4v10M13 4v10" stroke="currentColor" stroke-width="1"/><circle cx="7" cy="9" r="1.5" fill="currentColor"/></svg>
+      </button>
+    </div>
     <span id="topbar-title">my_animation.pdraw</span>
   </header>
 
@@ -202,6 +210,7 @@
 
   <input id="file-import" type="file" accept=".pdraw,.json" hidden />
   <input id="import-file" type="file" hidden />
+  <div class="drawer-backdrop" id="drawer-backdrop"></div>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

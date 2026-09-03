@@ -9,6 +9,7 @@
  * ======================================================================= */
 
 import {_etf, t, tf} from '../core/i18n.js';
+import { isNarrowLayout } from '../core/device.js';
 import {getFunction, state} from '../core/constants.js';
 import {modalAlert} from './ui.js';
 import {
@@ -690,19 +691,32 @@ export function ensurePuzzleDom() {
   toolbar.appendChild(mkBtn('puzzle-cancel', t('common.cancel')));
   document.body.appendChild(toolbar);
 
-  // 场景悬浮窗（右下角）
+  // 场景悬浮窗（右下角）；小屏改为整宽浮层，避免超出视口。
   const vw = window.innerWidth || 1200, vh = window.innerHeight || 800;
-  const sceneWin = makeFloatWindow('fwin-scene', t('blk.scene'), { x: vw - 440, y: vh - 320, w: 420, h: 300, minW: 240, minH: 160, onResize: () => { if (typeof resize === 'function') resize(); } });
+  const narrow = isNarrowLayout();
+  const sceneW = narrow ? Math.max(260, vw - 16) : 420;
+  const sceneH = narrow ? Math.round(vh * 0.38) : 300;
+  const sceneX = narrow ? 8 : vw - 440;
+  const sceneY = narrow ? 8 : vh - 320;
+  const sceneWin = makeFloatWindow('fwin-scene', t('blk.scene'), { x: sceneX, y: sceneY, w: sceneW, h: sceneH, minW: 240, minH: 160, onResize: () => { if (typeof resize === 'function') resize(); } });
   document.body.appendChild(sceneWin.el);
 
   // 代码回显悬浮窗（默认在场景上方）
-  const echoWin = makeFloatWindow('fwin-echo', t('blk.code'), { x: vw - 440, y: vh - 560, w: 340, h: 200, minW: 200, minH: 120, onResize: () => { if (typeof puzzleCanvasResize === 'function') puzzleCanvasResize(); } });
+  const echoW = narrow ? Math.max(260, vw - 16) : 340;
+  const echoH = narrow ? Math.round(vh * 0.26) : 200;
+  const echoX = narrow ? 8 : vw - 440;
+  const echoY = narrow ? 8 + sceneH + 8 : vh - 560;
+  const echoWin = makeFloatWindow('fwin-echo', t('blk.code'), { x: echoX, y: echoY, w: echoW, h: echoH, minW: 200, minH: 120, onResize: () => { if (typeof puzzleCanvasResize === 'function') puzzleCanvasResize(); } });
   const echoCanvas = document.createElement('canvas');
   echoCanvas.id = 'puzzle-echo-canvas';
   echoWin.body.appendChild(echoCanvas);
   document.body.appendChild(echoWin.el);
 
   puzzleWin = { scene: sceneWin, echo: echoWin };
+
+  // 小屏默认调色板更窄，给工作区留出空间。
+  const mainElForPal = document.querySelector('.puzzle-main');
+  if (mainElForPal && narrow) mainElForPal.style.setProperty('--pal-w', Math.round(vw * 0.56) + 'px');
 
   document.getElementById('puzzle-ok').addEventListener('click', () => closeBlockDrawer(true));
   document.getElementById('puzzle-cancel').addEventListener('click', () => closeBlockDrawer(false));
@@ -1068,7 +1082,11 @@ export function applyWorkspaceState() {
   if (layout && s.particleListWidth) layout.style.setProperty('--left-w', s.particleListWidth);
   if (layout && s.rightPanelWidth) layout.style.setProperty('--right-w', s.rightPanelWidth);
   const mainEl = document.querySelector('.puzzle-main');
-  if (mainEl && s.paletteWidth) mainEl.style.setProperty('--pal-w', s.paletteWidth);
+  if (mainEl && s.paletteWidth) {
+    let pw = parseInt(s.paletteWidth, 10);
+    if (isNarrowLayout() && pw > window.innerWidth * 0.7) pw = Math.round(window.innerWidth * 0.56);
+    if (Number.isFinite(pw) && pw > 0) mainEl.style.setProperty('--pal-w', pw + 'px');
+  }
   try {
     const bs = document.body && document.body.style;
     if (s.tlModuleH && bs && typeof bs.setProperty === 'function') bs.setProperty('--tl-h', s.tlModuleH);

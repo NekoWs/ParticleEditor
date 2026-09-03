@@ -25,6 +25,7 @@ import { initTimelineTree, refreshTimelineTree, tlTreeState } from './ui/timelin
 import { initTextureEditor, syncTextureSelection, updateTexOverlay, texAnimOverlayActive, refreshTexturePanel } from './ui/texture-editor.js';
 import { applyWorkspaceState, saveWorkspaceState } from './ui/blocks-ui.js';
 import { initTooltip } from './ui/tooltip.js';
+import { initMobileUI } from './ui/mobile.js';
 import { initImportMenu } from './ui/import-image.js';
 import { newFile, openFile, saveFile, saveFileAs, exportAnimation, loadFile, confirmDiscardChanges, ensureProjectKey } from './io/io.js';
 import { drawAxisGizmo, slerp } from './interaction/axis-gizmo.js';
@@ -192,6 +193,7 @@ export function initUI() {
   applyI18nDom();
   ensureProjectKey(); // 启动即确保密钥存在：未点「新建」直接编辑保存也能带私钥
   initTooltip();
+  initMobileUI();
   initImportMenu();
   syncPlayButton();
   const tlEase = document.getElementById('tl-easing');
@@ -201,15 +203,37 @@ export function initUI() {
     tlEase.innerHTML = easingCurveSVG(e);
   }, tlEase);
 
-  // 菜单（悬停展开）
-  document.querySelectorAll('.menu').forEach(menu => {
-    menu.addEventListener('mouseenter', () => {
-      document.querySelectorAll('.menu').forEach(m => m.classList.remove('open'));
-      menu.classList.add('open');
-    });
-    menu.addEventListener('mouseleave', () => menu.classList.remove('open'));
-  });
+  // 菜单（桌面悬停展开；触屏点击切换，点外部关闭）
   const closeMenus = () => document.querySelectorAll('.menu').forEach(m => m.classList.remove('open'));
+  const positionMenuDropdown = (menu) => {
+    const dd = menu.querySelector('.dropdown');
+    const btn = menu.querySelector('.menu-btn');
+    if (!dd || !btn) return;
+    const rect = btn.getBoundingClientRect();
+    // 小屏 menubar 可能横向滚动，absolute 下拉会被裁切；统一按 fixed 相对视口定位。
+    dd.style.position = 'fixed';
+    dd.style.left = Math.max(4, Math.min(rect.left, window.innerWidth - 200 - 4)) + 'px';
+    dd.style.top = (rect.bottom + 2) + 'px';
+  };
+  const openMenu = (menu) => {
+    document.querySelectorAll('.menu').forEach(m => m.classList.remove('open'));
+    positionMenuDropdown(menu);
+    menu.classList.add('open');
+  };
+  document.querySelectorAll('.menu').forEach(menu => {
+    menu.addEventListener('mouseenter', () => openMenu(menu));
+    menu.addEventListener('mouseleave', () => menu.classList.remove('open'));
+    const btn = menu.querySelector('.menu-btn');
+    if (btn) btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const wasOpen = menu.classList.contains('open');
+      closeMenus();
+      if (!wasOpen) openMenu(menu);
+    });
+  });
+  document.addEventListener('pointerdown', (ev) => {
+    if (!ev.target.closest('.menu')) closeMenus();
+  });
   document.getElementById('btn-about').addEventListener('click', () => { closeMenus(); showAboutModal(); });
   // 语言切换
   document.getElementById('menu-lang').addEventListener('click', (ev) => {

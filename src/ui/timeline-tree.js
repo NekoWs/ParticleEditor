@@ -8,6 +8,7 @@
  * ======================================================================= */
 
 import { t, tf, LANG } from '../core/i18n.js';
+import { hasTouch } from '../core/device.js';
 import {
   state, propComps, COMP_LABELS, GROUP_PROP_DEFS, PARTICLE_TRACK_DEFS, FUNCTION_PROP_DEFS, CAMERA_PROP_DEFS,
   getParticle, getFunction, getCamera, isDerivedParticle, plainParticleCache,
@@ -23,7 +24,15 @@ import { camTrackId } from '../core/cameras.js';
 import { refreshCameraTabs } from '../main.js';
 import { updateGizmo } from '../interaction/gizmo.js';
 
-export const TL_TREE_ROW_H = 22;
+export let TL_TREE_ROW_H = 22;
+// 触屏设备使用更高的行，保证 44px 左右的触控目标；桌面保持紧凑。
+export function updateTLTreeRowH() {
+  try {
+    TL_TREE_ROW_H = (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ? 32 : 22;
+  } catch (e) {
+    TL_TREE_ROW_H = 22;
+  }
+}
 export const tlTreeState = { expanded: new Set() };
 let tlTreeAnchor = null; // Shift 连续选择锚点（粒子 id 或组名/函数对象 key）
 
@@ -513,6 +522,21 @@ export function initTimelineTree() {
     root.addEventListener('click', onTreeClick);
     root.addEventListener('dblclick', onTreeDblClick);
     root.addEventListener('change', onTreeChange);
+
+    // 触屏没有可靠的 dblclick：手动识别双击，复用同一处理逻辑（展开/折叠、双击重命名）。
+    if (hasTouch()) {
+      let lastTap = null;
+      root.addEventListener('pointerup', (ev) => {
+        if (ev.pointerType !== 'touch') return;
+        const now = Date.now();
+        if (lastTap && now - lastTap.t <= 360 && Math.hypot(ev.clientX - lastTap.x, ev.clientY - lastTap.y) <= 14) {
+          lastTap = null;
+          onTreeDblClick(ev);
+        } else {
+          lastTap = { t: now, x: ev.clientX, y: ev.clientY };
+        }
+      });
+    }
   }
   refreshTimelineTree();
 }

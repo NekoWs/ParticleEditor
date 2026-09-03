@@ -5,7 +5,8 @@
 
 import * as THREE from 'three';
 import { t } from '../core/i18n.js';
-import { state, getParticle, getFunction, getCamera, isDerivedParticle, RAD2DEG, ROT_SNAP, PLANES, DEG2RAD, nextGroupName } from '../core/constants.js';
+import { hasTouch, addLongPress } from '../core/device.js';
+import { state, getParticle, getFunction, getCamera, isDerivedParticle, RAD2DEG, ROT_SNAP, PLANES, DEG2RAD, nextGroupName, DEFAULT_CAMERA_ID } from '../core/constants.js';
 import { shiftHeld } from './input-state.js';
 import { camera, renderer, controls, raycaster, pointer, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, AXIS_RING_COLORS, GIZMO_FACE_DEFS, RING_NORMALS, RING_SEGMENTS, RING_SEG_ARC, resetWorldAxisState, focalLengthPx } from '../scene/scene.js';
 import { currentVisual, rebuildPoints, setPreview, clearPreview, rotVectorAt, spinVectorAt, orbitCenterAt, trackValueAt, findTrackByPr, groupScaleAt, spinMatrix, mat3VecArray, applyLocalSpinRotation, applyLocalSpinRotationVec, applyLocalOrbitRotation, applyLocalOrbitRotationVec, eulerNearPrevDeg } from '../core/animation.js';
@@ -18,6 +19,7 @@ import { pushUndo, restore, undoStack, undo, redo } from '../state/undo.js';
 import { deleteFunctionObject } from '../core/generators.js';
 import { texUndo, texRedo, texActive } from '../ui/texture-editor.js';
 import { togglePlay, refreshCameraTabs } from '../main.js';
+import { openDrawer } from '../ui/mobile.js';
 import { saveFile, openFile, newFile } from '../io/io.js';
 import { nextCameraId, nextCameraName } from '../core/constants.js';
 import { createCameraAt, lockCamera, camOrientationQuaternion, cameraPoseAt } from '../core/cameras.js';
@@ -26,6 +28,48 @@ export let drag = null;
 export let modal = null;
 export let boxSel = null;
 export const lastMouse = { x: 0, y: 0 };
+
+/* ---------------- 触屏手势协调 ----------------
+ * OrbitControls 在 renderer.domElement 上以 bubble 阶段监听 pointerdown，
+ * 而本模块的选择/绘制逻辑也监听同一元素。为避免触屏上「编辑手势」与
+ * 「OrbitControls 旋转」同时触发，这里在捕获阶段预判：若本次触控应由
+ * 编辑器处理（点选/拖 gizmo/绘制），先禁用 controls，再由 bubble 逻辑接管；
+ * 否则原样放行给 OrbitControls（单指旋转、双指平移缩放）。 */
+const activeTouchIds = new Set();
+const gatedTouchIds = new Set();
+let touchPending = null; // 触屏选择工具：点中粒子后待命，拖动超过阈值才进入移动
+
+function touchGizmoHit(ev) {
+  const derived = selectionHasDerived() && !state.selectedFunction;
+  if (state.tool === 'move') {
+    if (derived) return false;
+    return !!(hitGizmoAxis(ev.clientX, ev.clientY) || hitGizmoFace(ev.clientX, ev.clientY));
+  }
+  if (state.tool === 'rotate') {
+    if (derived) return false;
+    const viewDist = viewRingDistance(ev.clientX, ev.clientY);
+    const ring = ringHitInfo(ev.clientX, ev.clientY);
+    return (viewDist < 15 && (!ring || viewDist <= ring.dist)) || !!(ring && ring.dist < 15);
+  }
+  return false;
+}
+
+function shouldHandleTouch(ev) {
+  if (['pencil', 'line', 'circle', 'rect', 'freehand', 'camera'].includes(state.tool)) return true;
+  if (state.tool === 'select') return pickParticleAt(ev.clientX, ev.clientY) >= 0;
+  if (state.tool === 'move' || state.tool === 'rotate') {
+    if (touchGizmoHit(ev)) return true;
+    return pickParticleAt(ev.clientX, ev.clientY) >= 0;
+  }
+  return false;
+}
+
+function releaseTouch(ev) {
+  if (ev.pointerType !== 'touch') return;
+  activeTouchIds.delete(ev.pointerId);
+  gatedTouchIds.delete(ev.pointerId);
+  if (activeTouchIds.size === 0 && !modal) controls.enabled = true;
+}
 
 export function currentSelected() { return state.particles.filter(p => state.selected.has(p.id)); }
 
@@ -913,8 +957,30 @@ export function setDragAxisHighlight(m) {
   resetWorldAxisState();
 }
 
+// 捕获阶段预判触屏手势：先于 OrbitControls 的 bubble 监听执行。
+window.addEventListener('pointerdown', (ev) => {
+  if (ev.pointerType !== 'touch' || ev.target !== renderer.domElement) return;
+  const multiTouch = activeTouchIds.size > 0;
+  const lockedCamera = !!state.activeCamera && state.activeCamera !== DEFAULT_CAMERA_ID;
+  activeTouchIds.add(ev.pointerId);
+  // 锁定摄像机时视角由关键帧驱动，禁用触屏 OrbitControls；编辑器手势同样不处理。
+  const gate = lockedCamera || (!multiTouch && shouldHandleTouch(ev));
+  if (gate) {
+    gatedTouchIds.add(ev.pointerId);
+    controls.enabled = false;
+  }
+}, true);
+window.addEventListener('pointerup', releaseTouch, true);
+window.addEventListener('pointercancel', releaseTouch, true);
+
 renderer.domElement.addEventListener('pointerdown', (ev) => {
   lastMouse.x = ev.clientX; lastMouse.y = ev.clientY;
+  const touch = ev.pointerType === 'touch';
+  if (touch) {
+    // 未标记的触控交给 OrbitControls（旋转/双指平移缩放），本模块不参与。
+    if (!gatedTouchIds.has(ev.pointerId)) return;
+    ev.preventDefault();
+  }
   if (ev.button === 1 || ev.button === 2) { renderer.domElement.style.cursor = 'grabbing'; return; }
   if (ev.button !== 0) return;
   if (modal) { confirmModal(); return; }
@@ -954,8 +1020,14 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
           promoteGroupSelection();
           rebuildPoints();
           syncSelectionClasses();
-          // 选择工具：点选后立即进入拖动；移动/旋转工具仅选中
-          if (state.tool === 'select') enterGrab(ev.clientX, ev.clientY);
+          // 选择工具：鼠标点选后立即进入拖动；触屏先待命，拖动超过阈值再进入移动。
+          if (state.tool === 'select') {
+            if (touch) { touchPending = { x0: ev.clientX, y0: ev.clientY }; openDrawer('panel'); }
+            else enterGrab(ev.clientX, ev.clientY);
+          } else if (touch) {
+            // 移动/旋转工具触屏点选粒子后，顺带打开属性抽屉，方便立即编辑。
+            openDrawer('panel');
+          }
           handled = true;
         }
       }
@@ -1013,6 +1085,19 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
 
 renderer.domElement.addEventListener('pointermove', (ev) => {
   lastMouse.x = ev.clientX; lastMouse.y = ev.clientY;
+
+  if (ev.pointerType === 'touch') {
+    // 触屏选择工具：点中粒子后先待命，超过阈值才进入移动（避免点选误拖）。
+    if (touchPending) {
+      if (Math.hypot(ev.clientX - touchPending.x0, ev.clientY - touchPending.y0) > 8) {
+        touchPending = null;
+        enterGrab(ev.clientX, ev.clientY);
+      }
+      return;
+    }
+    // OrbitControls 正在旋转/缩放的触控不参与编辑器悬停/预览逻辑。
+    if (!gatedTouchIds.has(ev.pointerId)) return;
+  }
 
   if (modal) {
     if (modal.type === 'grab' || modal.type === 'fx-grab') updateGrab(ev.clientX, ev.clientY);
@@ -1080,6 +1165,7 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
 });
 
 renderer.domElement.addEventListener('pointerup', (ev) => {
+  if (ev.pointerType === 'touch') touchPending = null;
   if (ev.button !== 0) return;
   if (modal) { confirmModal(); return; }
   if (boxSel) {
@@ -1299,6 +1385,13 @@ window.addEventListener('pointerup', (ev) => {
     if (Math.hypot(dx, dy) < 5 && isDrawTool()) showDrawCountEditor(ev.clientX, ev.clientY);
   }
 });
+
+// 触屏替代右键：绘制工具下长按视口空白处弹出粒子数量编辑框。
+if (hasTouch()) {
+  addLongPress(renderer.domElement, (ev) => {
+    if (!modal && !drag && !boxSel && isDrawTool()) showDrawCountEditor(ev.clientX, ev.clientY);
+  }, { delay: 550, tolerance: 12 });
+}
 
 // 拖动绘制时滚轮：动态增减粒子数量（实时更新形状预览）
 renderer.domElement.addEventListener('wheel', (ev) => {

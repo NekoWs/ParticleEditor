@@ -10,6 +10,7 @@
  * ======================================================================= */
 
 import { t } from '../core/i18n.js';
+import { addLongPress, hasTouch } from '../core/device.js';
 import { state, propComps, compPr, getParticle } from '../core/constants.js';
 import { TL_PX_PER_TICK, timelineViewStart, setTimelineViewStart, drawTimeline, scrubAutoPan, tlNiceStep, commitFunctionRebuild } from './panels.js';
 import { rebuildPoints, maxTick, invalidateMaxTickCache } from '../core/animation.js';
@@ -470,8 +471,7 @@ export function tlInitLayerEvents() {
   canvas.addEventListener('pointerup', endDrag);
   canvas.addEventListener('pointercancel', endDrag);
 
-  // 双击寿命终点手柄：无限 ⇄ 有限（取双击处 tick 与 st 的距离）
-  canvas.addEventListener('dblclick', ev => {
+  const handleLaneDblClick = (ev) => {
     const res = tlLayerHitAt(ev.clientX, ev.clientY);
     if (!res || res.hit.r.kind === 'group' || res.hit.r.kind === 'fx') return;
     if (res.zone !== 'life' && !(res.hit.inf && res.zone === 'body')) return;
@@ -483,20 +483,19 @@ export function tlInitLayerEvents() {
       p.life = -1; // 无限
     }
     refreshAllPanelsLight();
-  });
+  };
+  canvas.addEventListener('dblclick', handleLaneDblClick);
 
-  // 右键关键帧菱形 → 「编辑 / 删除」菜单
-  canvas.addEventListener('contextmenu', ev => {
-    const kfHit = hitKeyframeAt(ev.clientX, ev.clientY);
+  const openLaneContextMenu = (clientX, clientY) => {
+    const kfHit = hitKeyframeAt(clientX, clientY);
     if (!kfHit) return;
-    ev.preventDefault();
     if (kfHit.kind === 'var') {
       tlLayerState.selectedKf = { kind: 'var', fxId: kfHit.fxId, name: kfHit.name, tick: kfHit.tick };
       drawTimelineLayers();
-      showContextMenu(ev.clientX, ev.clientY, [
+      showContextMenu(clientX, clientY, [
         {
           label: t('tree.edit'),
-          action: () => openVarKeyframeEditor(canvas, kfHit.fx, kfHit.name, kfHit.tick, ev.clientX, ev.clientY),
+          action: () => openVarKeyframeEditor(canvas, kfHit.fx, kfHit.name, kfHit.tick, clientX, clientY),
         },
         {
           label: t('common.delete'),
@@ -512,10 +511,10 @@ export function tlInitLayerEvents() {
     }
     tlLayerState.selectedKf = { kind: 'track', id: kfHit.id, pr: kfHit.pr, tick: kfHit.tick };
     drawTimelineLayers();
-    showContextMenu(ev.clientX, ev.clientY, [
+    showContextMenu(clientX, clientY, [
       {
         label: t('tree.edit'),
-        action: () => openKeyframeEditor(canvas, kfHit.id, kfHit.pr, kfHit.tick, ev.clientX, ev.clientY),
+        action: () => openKeyframeEditor(canvas, kfHit.id, kfHit.pr, kfHit.tick, clientX, clientY),
       },
       {
         label: t('common.delete'),
@@ -527,7 +526,39 @@ export function tlInitLayerEvents() {
         },
       },
     ]);
+  };
+
+  let lastLongPressAt = 0;
+  // 右键关键帧菱形 → 「编辑 / 删除」菜单（桌面）
+  canvas.addEventListener('contextmenu', ev => {
+    ev.preventDefault();
+    // 触屏长按已经弹出菜单时，忽略随后可能派发的 contextmenu，避免重复。
+    if (Date.now() - lastLongPressAt < 900) return;
+    openLaneContextMenu(ev.clientX, ev.clientY);
   });
+
+  if (hasTouch()) {
+    // 触屏长按关键帧菱形 = 右键菜单
+    addLongPress(canvas, (ev) => {
+      if (hitKeyframeAt(ev.clientX, ev.clientY)) {
+        lastLongPressAt = Date.now();
+        openLaneContextMenu(ev.clientX, ev.clientY);
+      }
+    }, { delay: 480, tolerance: 12 });
+
+    // 触屏双击寿命终点手柄 = 无限 ⇄ 有限
+    let lastTap = null;
+    canvas.addEventListener('pointerup', (ev) => {
+      if (ev.pointerType !== 'touch') return;
+      const now = Date.now();
+      if (lastTap && now - lastTap.t <= 360 && Math.hypot(ev.clientX - lastTap.x, ev.clientY - lastTap.y) <= 14) {
+        lastTap = null;
+        handleLaneDblClick(ev);
+      } else {
+        lastTap = { t: now, x: ev.clientX, y: ev.clientY };
+      }
+    });
+  }
 
   // canvas 滚轮 → 滚动左侧 HTML 标签轨（其 scroll 事件会驱动本画布重绘）
   canvas.addEventListener('wheel', ev => {

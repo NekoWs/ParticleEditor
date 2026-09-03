@@ -9,6 +9,8 @@ export const viewport = document.getElementById('viewport');
 export const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
 renderer.setClearColor(0x14161c, 1);
 viewport.appendChild(renderer.domElement);
+// 触屏上必须禁止浏览器原生手势，否则 OrbitControls 与编辑器手势会同时被滚动/缩放打断。
+renderer.domElement.style.touchAction = 'none';
 
 // 根据视口 CSS 尺寸与设备像素比，动态限制实际渲染分辨率。
 // 4K 大屏若仍按 devicePixelRatio=2 渲染，绘制缓冲会达 7680×4320，帧率急剧下降；

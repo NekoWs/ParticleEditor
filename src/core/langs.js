@@ -14,6 +14,7 @@ export var LANGS = {
     'menu.selectAll': '全选', 'menu.deleteSelected': '删除选中', 'menu.group': '建立组',
     // —— 面板 / 选项卡 ——
     'panel.particleList': '粒子列表',
+    'mobile.panels': '属性 / 函数 / 贴图', 'mobile.timeline': '时间轴',
     'tab.props': '属性', 'tab.fx': '函数对象', 'tab.texture': '贴图 / UV', 'tab.import': '导入',
     // —— 场景工具栏 ——
     'tool.select': '选择（框选）', 'tool.move': '移动', 'tool.rotate': '旋转',
@@ -237,6 +238,7 @@ export var LANGS = {
     'menu.selectAll': 'Select All', 'menu.deleteSelected': 'Delete Selected', 'menu.group': 'Group',
     // —— 面板 / 选项卡 ——
     'panel.particleList': 'Particle List',
+    'mobile.panels': 'Properties / FX / Texture', 'mobile.timeline': 'Timeline',
     'tab.props': 'Properties', 'tab.fx': 'Function Object', 'tab.texture': 'Texture / UV', 'tab.import': 'Import',
     // —— 场景工具栏 ——
     'tool.select': 'Select (Box)', 'tool.move': 'Move', 'tool.rotate': 'Rotate',

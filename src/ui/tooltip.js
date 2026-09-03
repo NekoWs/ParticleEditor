@@ -106,6 +106,10 @@ function arm(target) {
 }
 
 export function initTooltip() {
+  // 触屏没有可靠的 hover，原生 title 也不会出现；自定义气泡在触屏反而会误触/残留，直接关闭。
+  try {
+    if (typeof window !== 'undefined' && window.matchMedia && !window.matchMedia('(hover: hover)').matches) return;
+  } catch (e) { /* 测试桩忽略 */ }
   ensureTip();
 
   document.addEventListener('mouseover', (e) => {
