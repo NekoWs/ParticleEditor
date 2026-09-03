@@ -18,20 +18,17 @@
 
 
 import { _et, _etf } from './i18n.js';
-import { PREC, NEG_PREC, FUNCS, parseExprList } from './easing.js';
+import { SCRIPT_BINARY_PRECEDENCE as PREC, SCRIPT_NEG_PREC as NEG_PREC, SCRIPT_FUNCTION_NAMES, parseExprList } from './script-lang.js';
 
-// 扩展比较/逻辑运算符优先级（1 最低，与 easing.js 的 + - * / ^ 衔接）。
-PREC['||'] = 1;
-PREC['&&'] = 2;
-PREC['=='] = 3; PREC['!='] = 3;
-PREC['<'] = 3; PREC['<='] = 3; PREC['>'] = 3; PREC['>='] = 3;
+const SCRIPT_FUNC_SET = new Set(SCRIPT_FUNCTION_NAMES);
+
 /* —— 类型 —— */
 export const T_SCALAR = 'scalar';
 export const T_VEC = 'vec';
 export const T_MAT = 'mat';
 export const T_ANY = 'any'; // 临时变量（类型由赋值决定，放宽约束）
 
-// PREC 复用 easing.js 的定义；ATOM_PREC 为原子表达式的虚拟优先级
+// PREC/NEG_PREC 来自 script-lang 的优先级表；ATOM_PREC 为原子表达式的虚拟优先级
 export const ATOM_PREC = 10;
 
 /* —— 语句块槽规格（ASCII 名原样显示；中文语义槽用 i18n 键 blk.slot.*） —— */
@@ -580,7 +577,7 @@ export function statementsToCodeSpans(stmts, level) {
  * ======================================================================= */
 
 /**
- * 拼图专用分词：与 easing.js 的 tokenize 等价，但 pi/e 保留为标识符
+ * 拼图专用分词：与 script-lang 表达式语法对齐，但 pi/e 保留为标识符
  * 使往返序列化保持 `pi`/`e` 原样、不损失精度。
  */
 export function blockTokenize(expr) {
@@ -621,7 +618,7 @@ export function blockTokenize(expr) {
       const name = expr.slice(i, j);
       if (name === 'true') { tokens.push({ t: 'bool', v: true }); }
       else if (name === 'false') { tokens.push({ t: 'bool', v: false }); }
-      else if (name in FUNCS) tokens.push({ t: 'func', name });
+      else if (SCRIPT_FUNC_SET.has(name)) tokens.push({ t: 'func', name });
       else tokens.push({ t: 'var', name }); // pi/e 归为 var，序列化时原样输出
       i = j; expectOperand = false; continue;
     }

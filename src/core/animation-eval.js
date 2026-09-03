@@ -5,7 +5,8 @@
  * ======================================================================= */
 
 import { COMP_INDEX, compPr, DEG2RAD, RAD2DEG, state, getParticle, getFunction, particleIndexCache, setParticleIndex, setFunctionIndex, setPlainParticles } from './constants.js';
-import { easeVal, FUNC_IMPL, matMat, vec3 } from './easing.js';
+import { easeVal } from './easing.js';
+import { scriptMatMul, scriptRotX, scriptRotY, scriptRotZ, scriptRotAxis } from './script-lang.js';
 import { evaluateParticleAt } from './generators.js';
 export { getFxFrameAuto, evalFxParticleInto } from './generators.js';
 import { groupCentroidValue } from '../ui/tree.js';
@@ -416,10 +417,10 @@ export function mat3VecArray(M, v) {
 
 // 自转旋转矩阵。world = extrinsic XYZ（Rz·Ry·Rx）；local = intrinsic XYZ（Rx·Ry·Rz）。
 export function spinMatrix(rotDeg, space) {
-  const rx = FUNC_IMPL.rotX(rotDeg[0] * DEG2RAD);
-  const ry = FUNC_IMPL.rotY(rotDeg[1] * DEG2RAD);
-  const rz = FUNC_IMPL.rotZ(rotDeg[2] * DEG2RAD);
-  return space === 'local' ? matMat(matMat(rx, ry), rz) : matMat(matMat(rz, ry), rx);
+  const rx = scriptRotX(rotDeg[0] * DEG2RAD);
+  const ry = scriptRotY(rotDeg[1] * DEG2RAD);
+  const rz = scriptRotZ(rotDeg[2] * DEG2RAD);
+  return space === 'local' ? scriptMatMul(scriptMatMul(rx, ry), rz) : scriptMatMul(scriptMatMul(rz, ry), rx);
 }
 
 // 用矩阵绕 pivot 旋转一个点。
@@ -478,21 +479,21 @@ export function eulerFromSpinMatrixNear(M, prevDeg) {
 // 数值取与 baseDeg 连续的等价表示：越过 ±90° 时不再翻转其它分量 ±180。
 export function applyLocalSpinRotation(baseDeg, axis, angle) {
   const M = spinMatrix(baseDeg, 'local');
-  const R = axis === 'X' ? FUNC_IMPL.rotX(angle) : axis === 'Y' ? FUNC_IMPL.rotY(angle) : FUNC_IMPL.rotZ(angle);
-  return eulerFromSpinMatrixNear(matMat(M, R), baseDeg);
+  const R = axis === 'X' ? scriptRotX(angle) : axis === 'Y' ? scriptRotY(angle) : scriptRotZ(angle);
+  return eulerFromSpinMatrixNear(scriptMatMul(M, R), baseDeg);
 }
 
 // 绕任意局部轴（数组单位向量）旋转 angle（弧度）的局部自转合成（数值连续）。
 export function applyLocalSpinRotationVec(baseDeg, axisVec, angle) {
   const M = spinMatrix(baseDeg, 'local');
-  const R = FUNC_IMPL.rotAxis(vec3(axisVec[0], axisVec[1], axisVec[2]), angle);
-  return eulerFromSpinMatrixNear(matMat(M, R), baseDeg);
+  const R = scriptRotAxis(axisVec, angle);
+  return eulerFromSpinMatrixNear(scriptMatMul(M, R), baseDeg);
 }
 
 // 3x3 矩阵转置。
 function mat3Transpose(M) {
   const m = M.m;
-  return { m: [
+  return { t: 'mat3', m: [
     [m[0][0], m[1][0], m[2][0]],
     [m[0][1], m[1][1], m[2][1]],
     [m[0][2], m[1][2], m[2][2]],
@@ -504,7 +505,7 @@ function mat3Transpose(M) {
 export function orbitLocalMatrix(rotDeg, spinDeg, spinSpace) {
   const Ms = spinMatrix(spinDeg, spinSpace);
   const Mo = spinMatrix(rotDeg, 'local');
-  return matMat(matMat(Ms, Mo), mat3Transpose(Ms));
+  return scriptMatMul(scriptMatMul(Ms, Mo), mat3Transpose(Ms));
 }
 
 // 局部公转合成：在现有局部公转基础上绕局部轴 axis 旋转 angle（弧度）。
@@ -512,14 +513,14 @@ export function orbitLocalMatrix(rotDeg, spinDeg, spinSpace) {
 // 数值取与 baseRot 连续的等价表示：越过 ±90° 时不再翻转其它分量 ±180。
 export function applyLocalOrbitRotation(baseRot, axis, angle) {
   const M = spinMatrix(baseRot, 'local');
-  const R = axis === 'X' ? FUNC_IMPL.rotX(angle) : axis === 'Y' ? FUNC_IMPL.rotY(angle) : FUNC_IMPL.rotZ(angle);
-  return eulerFromSpinMatrixNear(matMat(R, M), baseRot);
+  const R = axis === 'X' ? scriptRotX(angle) : axis === 'Y' ? scriptRotY(angle) : scriptRotZ(angle);
+  return eulerFromSpinMatrixNear(scriptMatMul(R, M), baseRot);
 }
 
 export function applyLocalOrbitRotationVec(baseRot, axisVec, angle) {
   const M = spinMatrix(baseRot, 'local');
-  const R = FUNC_IMPL.rotAxis(vec3(axisVec[0], axisVec[1], axisVec[2]), angle);
-  return eulerFromSpinMatrixNear(matMat(R, M), baseRot);
+  const R = scriptRotAxis(axisVec, angle);
+  return eulerFromSpinMatrixNear(scriptMatMul(R, M), baseRot);
 }
 
 // 组变换 pivot（优先索引缓存，回退到质心重算）

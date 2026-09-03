@@ -18,9 +18,10 @@
 | `v:7` | 上一版本：新增组级自转/公转空间 `gss`/`grs` |
 | `v:8` | 旧版工程：摄像机对象 `cam` 存旋转欧拉角 `rot`（本版本已移除，读取时自动换算） |
 | `v:9` | 旧版工程：摄像机朝向改为看向目标点 `target` + 翻滚角 `roll`（pitch/yaw 由 lookAt 自动计算） |
-| `v:10` | 当前版本：脚本语言改为 `this` 对象模型（`this.position` 等；旧 `i/n/[x,y,z]=...` 语法移除） |
+| `v:10` | 旧版工程：脚本语言改为 `this` 对象模型（`this.position` 等；旧 `i/n/[x,y,z]=...` 语法移除） |
+| `v:11` | 当前版本：UV 字段（`uvStart`/`uvSize`/`uvStep`/`fps`/`maxFrame`）支持 script-lang 单行表达式（见 §7） |
 
-当前编辑器**仅接受 `v:10`**；更旧版本（≤ v9）会提示「工程版本过旧」并拒绝打开。
+当前编辑器**仅接受 `v:11`**；更旧版本（≤ v10）会提示「工程版本过旧」并拒绝打开。
 
 ---
 
@@ -28,7 +29,7 @@
 
 ```jsonc
 {
-  "v": 10,                      // 格式版本，当前固定为 10
+  "v": 11,                      // 格式版本，当前固定为 11
   "key": {                      // v5 新增；Ed25519 密钥对
     "alg": "Ed25519",
     "private": "<base64 PKCS#8 DER 私钥>",
@@ -224,11 +225,19 @@
   "uvStep": [16, 0],         // UV 步长 [x,y]（像素，动画模式）
   "fps": 4,                  // 动画帧率
   "maxFrame": 8,             // 最大帧数；1=自动，>1=用户上限
-  "loop": true               // 循环
+  "loop": true,              // 循环
+  "expr": {                  // 可选，v11 起：UV 字段单行表达式（script-lang 裸表达式）
+    "start": ["this.index % 4", null],  // uvStart 各分量表达式（null = 用数值字段）
+    "size": [null, null],               // uvSize 各分量表达式
+    "step": [null, null],               // uvStep 各分量表达式
+    "fps": null,                        // fps 表达式
+    "maxFrame": null                    // maxFrame 表达式
+  }
 }
 ```
 
 - `maxFrame` 语义：`0`/`1`/缺省 = 不限制（自动帧数）；`>1` = 显式上限。
+- `expr` 内各字段仅在有表达式时写入；表达式上下文 `this` 为粒子信息（`index/count/time/delta/duration/uv` + `position/color/velocity/scale/glow/light/life`），求值错误时回退到对应数值字段。
 - 生效优先级：**函数对象 `f.uv` > 组 `guv` > 粒子 `p.uv` > 默认（无贴图）**。
 
 ---
@@ -258,4 +267,4 @@
 
 - 解析端保持宽容：缺失字段回退默认值；旧变量格式（`"amp": "2"` 或 `{expr}`）仍可读。
 - 加载判定：文件名以 `.pdraw` 结尾、`obj.v >= 2` 或存在 `obj.f` → 完整工程导入；否则按旧 JSON 导入。
-- 版本校验：当前仅接受 `v:10`；更旧版本（≤ v9）拒绝打开。`cam` 字段可选，缺失按空数组处理，播放端忽略之。
+- 版本校验：当前仅接受 `v:11`；更旧版本（≤ v10）拒绝打开。`cam` 字段可选，缺失按空数组处理，播放端忽略之。

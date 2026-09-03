@@ -88,7 +88,7 @@ export function isDefaultColor(c) {
 // UV 参数序列化 / 解析（外部 PNG 贴图只存名，像素存 textures/<name>.png）
 export function serializeUV(uv) {
   if (!uv) return undefined;
-  return {
+  const o = {
     texture: uv.texture || null,
     mode: uv.mode || 'static',
     texSize: (uv.texSize || [16, 16]).slice(0, 2),
@@ -99,10 +99,24 @@ export function serializeUV(uv) {
     maxFrame: uv.maxFrame != null ? uv.maxFrame : 1,
     loop: uv.loop != null ? !!uv.loop : true,
   };
+  const expr = {};
+  const startExpr = (uv.uvStartExpr || [null, null]).map(x => x || null);
+  const sizeExpr = (uv.uvSizeExpr || [null, null]).map(x => x || null);
+  const stepExpr = (uv.uvStepExpr || [null, null]).map(x => x || null);
+  if (startExpr[0] || startExpr[1]) expr.start = startExpr;
+  if (sizeExpr[0] || sizeExpr[1]) expr.size = sizeExpr;
+  if (stepExpr[0] || stepExpr[1]) expr.step = stepExpr;
+  if (uv.fpsExpr) expr.fps = uv.fpsExpr;
+  if (uv.maxFrameExpr) expr.maxFrame = uv.maxFrameExpr;
+  if (Object.keys(expr).length > 0) o.expr = expr;
+  return o;
 }
 export function parseUV(o) {
   if (!o) return undefined;
   const w = (o.texSize && o.texSize[0]) || 16, h = (o.texSize && o.texSize[1]) || 16;
+  const e = o.expr || {};
+  const strOrNull = (v) => (v == null || v === '') ? null : String(v);
+  const exprArr = (v) => Array.isArray(v) ? [strOrNull(v[0]), strOrNull(v[1])] : [null, null];
   return {
     texture: o.texture || null,
     mode: UV_MODES[o.mode] ? o.mode : 'static',
@@ -113,6 +127,11 @@ export function parseUV(o) {
     fps: o.fps != null ? o.fps : 1,
     maxFrame: o.maxFrame != null ? o.maxFrame : 1,
     loop: o.loop != null ? !!o.loop : true,
+    uvStartExpr: exprArr(e.start),
+    uvSizeExpr: exprArr(e.size),
+    uvStepExpr: exprArr(e.step),
+    fpsExpr: strOrNull(e.fps),
+    maxFrameExpr: strOrNull(e.maxFrame),
   };
 }
 
@@ -223,7 +242,7 @@ export function exportProject() {
   for (const [name, space] of Object.entries(state.groupSpinSpace || {})) if (space === 'local') gss[name] = 1;
   const grs = {};
   for (const [name, space] of Object.entries(state.groupRotSpace || {})) if (space === 'local') grs[name] = 1;
-  const result = { v: 10, loop: state.loop, g, p, t, f, tex, guv };
+  const result = { v: 11, loop: state.loop, g, p, t, f, tex, guv };
   if (Object.keys(gss).length > 0) result.gss = gss;
   if (Object.keys(grs).length > 0) result.grs = grs;
   // 摄像机对象（v8 新增；默认摄像机不持久化，仅存用户新建的摄像机）
@@ -349,7 +368,7 @@ export async function loadFile(file) {
   const text = await file.text();
   const obj = JSON.parse(text);
   if (file.name.toLowerCase().endsWith('.pdraw') || obj.f || obj.v >= 2) {
-    if (obj.v !== 10) {
+    if (obj.v !== 11) {
       modalAlert(t('filePicker.oldVersionTitle'), t('filePicker.oldVersionMsg'));
       return;
     }

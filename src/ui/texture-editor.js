@@ -18,6 +18,7 @@ import {
   UV_MODES
 } from '../core/constants.js';
 import {groupMemberIndexCache, rebuildPoints} from '../core/animation.js';
+import {validateUvExpression, uvExprError} from '../core/uv-eval.js';
 import {rebuildAtlas} from '../scene/scene.js';
 import {selectedGroupName} from '../interaction/interaction.js';
 import {pushUndo} from '../state/undo.js';
@@ -78,6 +79,8 @@ export function normalizeUV(uv) {
   const w = t ? t.width : ((uv.texSize && uv.texSize[0]) || 16);
   const h = t ? t.height : ((uv.texSize && uv.texSize[1]) || 16);
   const d = defaultUV(w, h);
+  const exprArr = (v) => Array.isArray(v) ? [v[0] == null ? null : String(v[0]), v[1] == null ? null : String(v[1])] : [null, null];
+  const exprStr = (v) => (v == null || v === '') ? null : String(v);
   return {
     texture: uv.texture || null,
     mode: UV_MODES[uv.mode] ? uv.mode : d.mode,
@@ -88,6 +91,11 @@ export function normalizeUV(uv) {
     fps: uv.fps != null ? uv.fps : d.fps,
     maxFrame: uv.maxFrame != null ? uv.maxFrame : d.maxFrame,
     loop: uv.loop != null ? !!uv.loop : d.loop,
+    uvStartExpr: exprArr(uv.uvStartExpr),
+    uvSizeExpr: exprArr(uv.uvSizeExpr),
+    uvStepExpr: exprArr(uv.uvStepExpr),
+    fpsExpr: exprStr(uv.fpsExpr),
+    maxFrameExpr: exprStr(uv.maxFrameExpr),
   };
 }
 
@@ -1411,13 +1419,13 @@ export function refreshUVPanel() {
   box.appendChild(modeRow);
 
   if (uv.mode !== 'fill') {
-    box.appendChild(uvVecField('tex.texSize', nu => nu.texSize, (nu, v) => nu.texSize = v, uv, false, 'x'));
-    box.appendChild(uvVecField('tex.uvStart', nu => nu.uvStart, (nu, v) => nu.uvStart = v, uv, true, '|'));
-    box.appendChild(uvVecField('tex.uvSize', nu => nu.uvSize, (nu, v) => nu.uvSize = v, uv, false, 'x'));
+    box.appendChild(uvVecField('tex.texSize', nu => nu.texSize, (nu, v) => nu.texSize = v, null, null, uv, false, 'x'));
+    box.appendChild(uvVecField('tex.uvStart', nu => nu.uvStart, (nu, v) => nu.uvStart = v, nu => nu.uvStartExpr, (nu, v) => nu.uvStartExpr = v, uv, true, '|'));
+    box.appendChild(uvVecField('tex.uvSize', nu => nu.uvSize, (nu, v) => nu.uvSize = v, nu => nu.uvSizeExpr, (nu, v) => nu.uvSizeExpr = v, uv, false, 'x'));
   }
   if (uv.mode === 'animated') {
-    box.appendChild(uvVecField('tex.uvStep', nu => nu.uvStep, (nu, v) => nu.uvStep = v, uv, true, '|'));
-    box.appendChild(uvNumField('tex.fps', nu => nu.fps, (nu, v) => nu.fps = v, uv));
+    box.appendChild(uvVecField('tex.uvStep', nu => nu.uvStep, (nu, v) => nu.uvStep = v, nu => nu.uvStepExpr, (nu, v) => nu.uvStepExpr = v, uv, true, '|'));
+    box.appendChild(uvNumField('tex.fps', nu => nu.fps, (nu, v) => nu.fps = v, nu => nu.fpsExpr, (nu, v) => nu.fpsExpr = v, uv));
     box.appendChild(uvFrameField(uv));
     box.appendChild(uvChkField('timeline.loop', nu => nu.loop, (nu, v) => nu.loop = v, uv));
   }
@@ -1449,26 +1457,83 @@ export function texAnimOverlayActive() {
 
 // 二维像素字段（[x, y] 或 [w, h]），时间轴分组风格；affectsAuto=true 表示该字段变化会改变自动帧数（即时刷新提示）
 // sep：两框间分隔符——'x' 显示乘号（贴图大小/UV 大小），'|' 显示细竖线（UV 起点/UV 步长），null 不显示
-export function uvVecField(labelText, get, set, uv, affectsAuto, sep) {
+// getExpr/setExpr 提供时，该字段每个分量带「fx」切换（数值 ↔ 单行表达式）。
+export function uvVecField(labelText, get, set, getExpr, setExpr, uv, affectsAuto, sep) {
   const row = document.createElement('div'); row.className = 'row';
   const lab = document.createElement('span'); lab.textContent = t(labelText);
   row.appendChild(lab);
   const group = document.createElement('span'); group.className = 'uv-field';
   const mk = (i, axis) => {
+    const wrap = document.createElement('span'); wrap.className = 'uv-input-wrap';
     const inp = document.createElement('input');
     inp.type = 'number'; inp.step = '1';
     inp.value = get(uv)[i];
+    inp.dataset.axis = axis;
     inp.title = axis;
+    const currentTargetUV = () => readTargetUV(currentUVTarget()) || uv;
+    const syncMode = () => {
+      const on = inp.dataset.expr === '1';
+      if (on) {
+        inp.type = 'text';
+        inp.value = (getExpr ? (getExpr(currentTargetUV()) || [null, null])[i] : null) || '';
+        inp.placeholder = 'this.index % 4';
+        inp.removeAttribute('step');
+      } else {
+        inp.type = 'number'; inp.step = '1';
+        inp.value = get(currentTargetUV())[i];
+      }
+      const err = on ? validateUvExpression((inp.value || '').trim() || null) : null;
+      inp.classList.toggle('uv-error', !!err);
+      inp.title = err || axis;
+    };
     inp.addEventListener('change', () => {
       const nu = normalizeUV({ ...readTargetUV(currentUVTarget()) });
-      const arr = get(nu).slice();
-      arr[i] = Math.max(0, parseInt(inp.value) || 0);
-      set(nu, arr);
+      if (inp.dataset.expr === '1') {
+        const expr = (inp.value || '').trim() || null;
+        const arr = getExpr(nu).slice();
+        arr[i] = expr;
+        setExpr(nu, arr);
+        inp.classList.toggle('uv-error', !!validateUvExpression(expr));
+        inp.title = validateUvExpression(expr) || axis;
+      } else {
+        const arr = get(nu).slice();
+        arr[i] = Math.max(0, parseInt(inp.value) || 0);
+        set(nu, arr);
+        inp.classList.remove('uv-error');
+        inp.title = axis;
+      }
       writeTargetUV(currentUVTarget(), nu);
       renderTexCanvas();
       if (affectsAuto) refreshAutoFrameHint();
     });
-    return inp;
+    if (getExpr && setExpr) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'uv-fx-toggle';
+      btn.textContent = 'fx';
+      btn.title = t('tex.fxToggle');
+      btn.addEventListener('click', () => {
+        const on = inp.dataset.expr !== '1';
+        if (!on) {
+          const nu = normalizeUV({ ...readTargetUV(currentUVTarget()) });
+          const arr = getExpr(nu).slice();
+          arr[i] = null;
+          setExpr(nu, arr);
+          writeTargetUV(currentUVTarget(), nu);
+          renderTexCanvas();
+          if (affectsAuto) refreshAutoFrameHint();
+        }
+        inp.dataset.expr = on ? '1' : '';
+        syncMode();
+        inp.focus();
+      });
+      wrap.appendChild(inp);
+      wrap.appendChild(btn);
+    } else {
+      wrap.appendChild(inp);
+    }
+    syncMode();
+    return wrap;
   };
   group.appendChild(mk(0, 'X'));
   if (sep) {
@@ -1485,20 +1550,71 @@ export function uvVecField(labelText, get, set, uv, affectsAuto, sep) {
   row.appendChild(group);
   return row;
 }
-export function uvNumField(labelText, get, set, uv) {
+export function uvNumField(labelText, get, set, getExpr, setExpr, uv) {
   const row = document.createElement('div'); row.className = 'row';
   const lab = document.createElement('span'); lab.textContent = t(labelText);
   row.appendChild(lab);
   const group = document.createElement('span'); group.className = 'uv-field';
+  const wrap = document.createElement('span'); wrap.className = 'uv-input-wrap';
   const inp = document.createElement('input');
   inp.type = 'number'; inp.min = '1'; inp.value = get(uv);
+  inp.dataset.axis = labelText;
+  const currentTargetUV = () => readTargetUV(currentUVTarget()) || uv;
+  const syncMode = () => {
+    const on = inp.dataset.expr === '1';
+    if (on) {
+      inp.type = 'text';
+      inp.value = (getExpr ? getExpr(currentTargetUV()) : null) || '';
+      inp.placeholder = 'this.index % 4';
+      inp.removeAttribute('min');
+    } else {
+      inp.type = 'number'; inp.min = '1';
+      inp.value = get(currentTargetUV());
+    }
+    const err = on ? validateUvExpression((inp.value || '').trim() || null) : null;
+    inp.classList.toggle('uv-error', !!err);
+    inp.title = err || t(labelText);
+  };
   inp.addEventListener('change', () => {
     const nu = normalizeUV({ ...readTargetUV(currentUVTarget()) });
-    set(nu, Math.max(1, parseInt(inp.value) || 1));
+    if (inp.dataset.expr === '1') {
+      const expr = (inp.value || '').trim() || null;
+      setExpr(nu, expr);
+      inp.classList.toggle('uv-error', !!validateUvExpression(expr));
+      inp.title = validateUvExpression(expr) || t(labelText);
+    } else {
+      set(nu, Math.max(1, parseInt(inp.value) || 1));
+      inp.classList.remove('uv-error');
+      inp.title = t(labelText);
+    }
     writeTargetUV(currentUVTarget(), nu);
     renderTexCanvas();
   });
-  group.appendChild(inp);
+  if (getExpr && setExpr) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'uv-fx-toggle';
+    btn.textContent = 'fx';
+    btn.title = t('tex.fxToggle');
+    btn.addEventListener('click', () => {
+      const on = inp.dataset.expr !== '1';
+      if (!on) {
+        const nu = normalizeUV({ ...readTargetUV(currentUVTarget()) });
+        setExpr(nu, null);
+        writeTargetUV(currentUVTarget(), nu);
+        renderTexCanvas();
+      }
+      inp.dataset.expr = on ? '1' : '';
+      syncMode();
+      inp.focus();
+    });
+    wrap.appendChild(inp);
+    wrap.appendChild(btn);
+  } else {
+    wrap.appendChild(inp);
+  }
+  syncMode();
+  group.appendChild(wrap);
   const suffix = document.createElement('span'); suffix.className = 'uv-suffix';
   suffix.textContent = t('tex.perSec'); group.appendChild(suffix);
   row.appendChild(group);
@@ -1511,24 +1627,72 @@ export function uvFrameField(uv) {
   const lab = document.createElement('span'); lab.textContent = t('tex.maxFrames');
   row.appendChild(lab);
   const group = document.createElement('span'); group.className = 'uv-field';
+  const wrap = document.createElement('span'); wrap.className = 'uv-input-wrap';
   const inp = document.createElement('input');
   inp.type = 'number'; inp.min = '0'; inp.title = t('tex.maxFramesHint');
    // 1 表示自动
   inp.value = (uv.maxFrame != null && uv.maxFrame > 1) ? uv.maxFrame : 1;
-  const t = getTexture(uv.texture);
-  const autoFrames = autoFramesFor(uv, t ? t.width : 16, t ? t.height : 16);
+  const currentTargetUV = () => readTargetUV(currentUVTarget()) || uv;
+  const syncMode = () => {
+    const on = inp.dataset.expr === '1';
+    if (on) {
+      inp.type = 'text';
+      inp.value = currentTargetUV().maxFrameExpr || '';
+      inp.placeholder = 'this.index % 4';
+      inp.removeAttribute('min');
+    } else {
+      inp.type = 'number'; inp.min = '0';
+      const mf = currentTargetUV().maxFrame;
+      inp.value = (mf != null && mf > 1) ? mf : 1;
+    }
+    const err = on ? validateUvExpression((inp.value || '').trim() || null) : null;
+    inp.classList.toggle('uv-error', !!err);
+    inp.title = err || t('tex.maxFramesHint');
+  };
+  const t1 = getTexture(uv.texture);
+  const autoFrames = autoFramesFor(uv, t1 ? t1.width : 16, t1 ? t1.height : 16);
   const suffix = document.createElement('span'); suffix.className = 'uv-suffix';
   suffix.innerHTML = '/ <em class="uv-auto-count">' + autoFrames + '</em>';
   inp.addEventListener('change', () => {
     const nu = normalizeUV({ ...readTargetUV(currentUVTarget()) });
-    const v = parseInt(inp.value);
-    // 0 / 1 → 自动（1 表示为自动的上限值，实际不限制）；否则为上限
-    nu.maxFrame = (isNaN(v) || v <= 1) ? 1 : v;
+    if (inp.dataset.expr === '1') {
+      const expr = (inp.value || '').trim() || null;
+      nu.maxFrameExpr = expr;
+      inp.classList.toggle('uv-error', !!validateUvExpression(expr));
+      inp.title = validateUvExpression(expr) || t('tex.maxFramesHint');
+    } else {
+      const v = parseInt(inp.value);
+      // 0 / 1 → 自动（1 表示为自动的上限值，实际不限制）；否则为上限
+      nu.maxFrame = (isNaN(v) || v <= 1) ? 1 : v;
+      inp.classList.remove('uv-error');
+      inp.title = t('tex.maxFramesHint');
+    }
     writeTargetUV(currentUVTarget(), nu);
     renderTexCanvas();
     refreshAutoFrameHint();
   });
-  group.appendChild(inp); group.appendChild(suffix);
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'uv-fx-toggle';
+  btn.textContent = 'fx';
+  btn.title = t('tex.fxToggle');
+  btn.addEventListener('click', () => {
+    const on = inp.dataset.expr !== '1';
+    if (!on) {
+      const nu = normalizeUV({ ...readTargetUV(currentUVTarget()) });
+      nu.maxFrameExpr = null;
+      writeTargetUV(currentUVTarget(), nu);
+      renderTexCanvas();
+      refreshAutoFrameHint();
+    }
+    inp.dataset.expr = on ? '1' : '';
+    syncMode();
+    inp.focus();
+  });
+  wrap.appendChild(inp);
+  wrap.appendChild(btn);
+  syncMode();
+  group.appendChild(wrap); group.appendChild(suffix);
   row.appendChild(group);
   return row;
 }

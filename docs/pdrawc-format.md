@@ -29,7 +29,8 @@
 ```
 
 **版本**：
-- `v9`（当前）：脚本语言改为 `this` 对象模型（`this.position` 等；旧 `i/n/[x,y,z]=...` 语法移除）；读取端**拒绝**旧版。
+- `v10`（当前）：UV 字段（`uvStart`/`uvSize`/`uvStep`/`fps`/`maxFrame`）支持 script-lang 单行表达式（§3.1）；读取端**拒绝**旧版。
+- `v9`（旧版）：脚本语言改为 `this` 对象模型（`this.position` 等；旧 `i/n/[x,y,z]=...` 语法移除）；读取端**拒绝**。
 - `v8`（旧版）：新增摄像机「旋转」空间 flags（bit0=rotLocal；局部=摄像机 lookAt+roll 自身朝向，世界=世界轴）；组级自转/公转空间**缺省改为 local**（flags 位语义不变，编辑器总是写入显式值）；读取端**拒绝**。
 - `v7`（旧版）：摄像机朝向改为「看向目标点」`target` + 翻滚角 `roll`（pitch/yaw 由 lookAt 自动计算），新增 `target.x/y/z` pr 枚举；读取端**拒绝**。
 - `v6`（旧版）：新增摄像机对象（`cameras` section + 摄像机轨道引用 kind=3 + `fov` pr）；读取端**拒绝**。
@@ -203,7 +204,15 @@ uvStep                     2 × varint：[x,y]（像素）
 fps                        float32
 maxFrame                   varint：1=自动，>1=上限
 loop                       1 byte：0/1
+exprFlags                  1 byte（v10 起）：
+                             bit0=uvStartExpr[0], bit1=uvStartExpr[1],
+                             bit2=uvSizeExpr[0],  bit3=uvSizeExpr[1],
+                             bit4=uvStepExpr[0],  bit5=uvStepExpr[1],
+                             bit6=fpsExpr,         bit7=maxFrameExpr
+exprStrings                按 exprFlags 置位顺序写入对应表达式（各为 str：len varint + UTF-8）
 ```
+
+表达式为 script-lang 裸表达式（如 `this.index % 4`），`this` 为粒子信息；求值错误时回退到对应数值字段。
 
 ### 3.2 ent（入场过渡）
 
@@ -281,7 +290,7 @@ index                       varint：对应数组的 0-based 索引
 
 ## 7. 版本与拒绝语义
 
-- 魔数不是 `PDC1`、版本不是 9、或数据截断/越界 → **拒绝**。
+- 魔数不是 `PDC1`、版本不是 10、或数据截断/越界 → **拒绝**。
 - 签名验证失败 → **拒绝播放**。
 - raw DEFLATE 解压失败 → **拒绝**。
 - 未知 `pr` 枚举、未知 UV mode、未知 easing tag 等 → 视为损坏数据拒绝。

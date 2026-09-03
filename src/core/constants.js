@@ -132,6 +132,12 @@ export function defaultUV(texWidth, texHeight) {
     fps: 1,               // 帧率（动画模式）
     maxFrame: 1,          // 最大帧数（动画模式）；1=自动（按 UV 步长算满，不限制），>1=用户上限
     loop: true,           // 循环
+    // 求值表达式（script-lang 裸表达式，null = 用对应数值字段）。仅 uvStart/uvSize/uvStep/fps/maxFrame 支持。
+    uvStartExpr: [null, null],
+    uvSizeExpr: [null, null],
+    uvStepExpr: [null, null],
+    fpsExpr: null,
+    maxFrameExpr: null,
   };
 }
 

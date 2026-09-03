@@ -4,14 +4,15 @@
  *       中统筹索引重建、UV 计算、gizmo/面板/树刷新。
  * ======================================================================= */
 
-import {PARTICLE_SIZE_FACTOR, state, functionIndexCache, effMaxFrame, autoFramesFor} from '../core/constants.js';
+import {PARTICLE_SIZE_FACTOR, state, functionIndexCache} from '../core/constants.js';
 import { points, selectedPoints, previewPoints, pointsPick, makeParticleQuadGeometry, texAtlasMap, camera, cameraWidgetMap, buildCameraWidget, removeCameraWidget } from './scene.js';
 import { cameraPoseAt } from '../core/cameras.js';
 import { resolveUV, refreshUVPanel } from '../ui/texture-editor.js';
 import { updateGizmo } from '../interaction/gizmo.js';
 import { drawTimeline, updatePropPanel } from '../ui/panels.js';
+import { evalUVInto, hasUvExpressions, evaledAutoFrames, evaledEffMaxFrame } from '../core/uv-eval.js';
 
-import { buildParticleIndex, buildTrackIndex, buildGroupIndex, buildOpDeltaCache, buildGroupXforms, buildFxSclTrackCache, currentVisual, velOffsetAt, trackValueAt, trackIntegral, trVersion, groupMemberIndexCache, groupXformCache, fxOpDeltaCache, fxSclTrackCache, invalidateMaxTickCache, getFxFrameAuto, evalFxParticleInto, fxParticleVisible, spinVectorAt, rotVectorAt, isFxStaticScript } from '../core/animation-eval.js';
+import { buildParticleIndex, buildTrackIndex, buildGroupIndex, buildOpDeltaCache, buildGroupXforms, buildFxSclTrackCache, currentVisual, velOffsetAt, trackValueAt, trackIntegral, trVersion, groupMemberIndexCache, groupXformCache, fxOpDeltaCache, fxSclTrackCache, invalidateMaxTickCache, maxTick, getFxFrameAuto, evalFxParticleInto, fxParticleVisible, particleValueAt, spinVectorAt, rotVectorAt, isFxStaticScript } from '../core/animation-eval.js';
 import * as THREE from "three";
 /* =========================================================================
  * 渲染
@@ -86,37 +87,35 @@ export function ensurePointsGeometry(pts, n) {
 
 export let rpPos = null, rpCol = null, rpSize = null, rpSelPos = null, rpSelCol = null, rpSelSize = null;
 export let rpUV = null, rpUVScale = null, rpUVAnim = null, rpUVTex = null, rpUVMode = null;
+// 动画贴图粒子缓存的「已求值 UV 字段」，供 updateAnimatedUV 在空闲墙钟推进时复用（避免逐帧重算表达式）。
+export let rpAnimStart = null, rpAnimStep = null, rpAnimFps = null, rpAnimMax = null;
 // 粒子 UV 求值的复用输出（fill 模式下强制全图采样）
 export const UVOUT = { mode: 0, au0: 0, av0: 0, au1: 0, av1: 0, sx: 0, sy: 0, sw: 16, sh: 16, stepx: 16, stepy: 0, fps: 1, maxFrame: 1, tw: 16, th: 16 };
+// 逐粒子 UV 字段求值的复用输出（表达式结果或数值回退）。
+export const UV_EVAL = { uvStart: [0, 0], uvSize: [0, 0], uvStep: [0, 0], fps: 1, maxFrame: 1 };
 
-// 计算单个粒子的 uv 渲染参数（写入复用 out），无贴图时 mode=0。
-// 返回生效的 uv 对象（无贴图时返回 null），供调用方直接复用，避免重复 resolveUV。
-// hasAnyTexture 为 false 时直接跳过 UV 解析（多数场景无贴图，省去每粒子对象分配）。
-export function computeParticleUV(p, out, hasAnyTexture) {
-  out.mode = 0;
-  if (hasAnyTexture === false) return null;
-  const uv = resolveUV(p).uv;
-  if (!uv || !uv.texture) return null;
-  const tex = texAtlasMap[uv.texture];
-  if (!tex) return null;
+// 用「已求值字段」计算单个粒子的 uv 渲染参数（写入复用 out），无贴图时 mode=0。
+// uv 为 resolveUV 结果，tex 为 texAtlasMap 条目，evaled 为 evalUVInto 的输出。
+export function computeParticleUVFrom(uv, tex, evaled, out) {
   out.au0 = tex.u0; out.av0 = tex.v0; out.au1 = tex.u1; out.av1 = tex.v1;
   out.tw = tex.w; out.th = tex.h;
   if (uv.mode === 'fill') {
     out.sx = 0; out.sy = 0; out.sw = tex.w; out.sh = tex.h;
     out.mode = 2;
   } else if (uv.mode === 'animated') {
-    const off = animatedUVOffsetAt(uv, tex.w, tex.h);
+    const maxF = evaledEffMaxFrame(evaled, evaledAutoFrames(evaled, tex.w, tex.h));
+    const off = animatedUVOffsetAt(evaled.uvStart, evaled.uvStep, evaled.fps, maxF, uv.loop, tex.w, tex.h);
     out.sx = off[0]; out.sy = off[1];
     // uvSize 为 0 时使用贴图大小（铺满整张贴图）
-    out.sw = uv.uvSize[0] || tex.w; out.sh = uv.uvSize[1] || tex.h;
+    out.sw = evaled.uvSize[0] || tex.w; out.sh = evaled.uvSize[1] || tex.h;
     out.stepx = 0; out.stepy = 0;   // 帧已计入偏移，shader 不再动画
-    out.fps = uv.fps;
-    out.maxFrame = effMaxFrame(uv, autoFramesFor(uv, tex.w, tex.h));
+    out.fps = evaled.fps;
+    out.maxFrame = maxF;
     out.mode = 1;                    // 按静态矩形采样（偏移已含帧）
   } else {
-    out.sx = uv.uvStart[0]; out.sy = uv.uvStart[1];
+    out.sx = evaled.uvStart[0]; out.sy = evaled.uvStart[1];
     // uvSize 为 0 时使用贴图大小（铺满整张贴图）
-    out.sw = uv.uvSize[0] || tex.w; out.sh = uv.uvSize[1] || tex.h;
+    out.sw = evaled.uvSize[0] || tex.w; out.sh = evaled.uvSize[1] || tex.h;
     out.mode = 1;
   }
   return uv;
@@ -136,14 +135,14 @@ export function uvDriveSeconds() {
 /**
  * 动画贴图当前帧的行主 flipbook 偏移 [sx, sy]（帧号按 uvDriveSeconds 的 float64 确定性计算，
  * 与贴图预览 currentUVFrame、游戏端 currentUvStart 完全同源）。
+ * start/step/fps/maxFrame 使用已求值字段（表达式或数值回退）。
  */
-export function animatedUVOffsetAt(uv, texW, texH) {
-  const maxF = effMaxFrame(uv, autoFramesFor(uv, texW, texH));
-  const raw = Math.floor(uvDriveSeconds() * (uv.fps || 1));
-  const frame = uv.loop ? ((raw % maxF) + maxF) % maxF : Math.min(raw, maxF - 1);
-  const stepx = uv.uvStep[0] || 0, stepy = uv.uvStep[1] || 0;
-  const cols = (stepx > 0 && uv.uvStart[0] < texW) ? Math.floor((texW - 1 - uv.uvStart[0]) / stepx) + 1 : 1;
-  return [uv.uvStart[0] + stepx * (frame % cols), uv.uvStart[1] + stepy * Math.floor(frame / cols)];
+export function animatedUVOffsetAt(start, step, fps, maxFrame, loop, texW, texH) {
+  const raw = Math.floor(uvDriveSeconds() * (fps || 1));
+  const frame = loop ? ((raw % maxFrame) + maxFrame) % maxFrame : Math.min(raw, maxFrame - 1);
+  const stepx = step[0] || 0, stepy = step[1] || 0;
+  const cols = (stepx > 0 && start[0] < texW) ? Math.floor((texW - 1 - start[0]) / stepx) + 1 : 1;
+  return [start[0] + stepx * (frame % cols), start[1] + stepy * Math.floor(frame / cols)];
 }
 
 /** 是否存在动画贴图粒子（决定是否需要每帧轻量推进 UV 帧）。 */
@@ -156,14 +155,24 @@ export function updateAnimatedUV() {
   const attr = points.geometry.getAttribute('aUVScale');
   if (!attr) return;
   const arr = attr.array;
+  const n = state.particles.length;
+  if (!rpAnimStart || rpAnimStart.length !== n * 2) return;
   let changed = false;
-  for (let i = 0; i < state.particles.length; i++) {
+  for (let i = 0; i < n; i++) {
     const p = state.particles[i];
     const uv = resolveUV(p).uv;
     if (!uv || uv.mode !== 'animated' || !uv.texture) continue;
     const tex = texAtlasMap[uv.texture];
     if (!tex) continue;
-    const off = animatedUVOffsetAt(uv, tex.w, tex.h);
+    const off = animatedUVOffsetAt(
+      [rpAnimStart[i * 2], rpAnimStart[i * 2 + 1]],
+      [rpAnimStep[i * 2], rpAnimStep[i * 2 + 1]],
+      rpAnimFps[i],
+      rpAnimMax[i],
+      uv.loop,
+      tex.w,
+      tex.h,
+    );
     arr[i * 4] = off[0];
     arr[i * 4 + 1] = off[1];
     changed = true;
@@ -221,6 +230,10 @@ function writePointBuffers(full) {
   if (!rpUVAnim || rpUVAnim.length !== n * 4) rpUVAnim = new Float32Array(n * 4);
   if (!rpUVTex || rpUVTex.length !== n * 2) rpUVTex = new Float32Array(n * 2);
   if (!rpUVMode || rpUVMode.length !== n) rpUVMode = new Float32Array(n);
+  if (!rpAnimStart || rpAnimStart.length !== n * 2) rpAnimStart = new Float32Array(n * 2);
+  if (!rpAnimStep || rpAnimStep.length !== n * 2) rpAnimStep = new Float32Array(n * 2);
+  if (!rpAnimFps || rpAnimFps.length !== n) rpAnimFps = new Float32Array(n);
+  if (!rpAnimMax || rpAnimMax.length !== n) rpAnimMax = new Float32Array(n);
   const mainGeo = ensurePointsGeometry(points, n);
   const positions = mainGeo.positions, colors = mainGeo.colors, sizes = mainGeo.sizes;
   rpPos = positions; rpCol = colors; rpSize = sizes;
@@ -248,6 +261,9 @@ function writePointBuffers(full) {
     });
   }
   const derivedOut = { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0, life: -1 };
+  // UV 表达式求值复用的 this 上下文（仅对含表达式的粒子填写，避免每粒子分配）。
+  const uvCtxOut = { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0, life: -1 };
+  const uvCtx = { i: 0, n: 0, t: T, dt: 0, duration: maxTick(), life: -1, uv_x: 0, uv_y: 0, vars: {}, out: uvCtxOut };
   // 脚本求值失败时的回退：使用上次成功重建写入的基础值，避免整帧渲染被未捕获异常打断。
   const storedFx = (p, fr, T) => {
     const sclTrs = fr.sclTrs;
@@ -264,8 +280,9 @@ function writePointBuffers(full) {
     let px, py, pz, cr, cg, cb, ca, ssx, ssy;
     let gate = p;
     let plife = -1;
+    let fr = null;
     if (p.fx) {
-      const fr = fxFrames.get(p.fx);
+      fr = fxFrames.get(p.fx);
       if (fr) gate = fr.gate;
       if (fr && fr.failed) {
         [px, py, pz, cr, cg, cb, ca, ssx, ssy] = storedFx(p, fr, T);
@@ -403,13 +420,52 @@ function writePointBuffers(full) {
     colors[i * 4] = cr; colors[i * 4 + 1] = cg; colors[i * 4 + 2] = cb; colors[i * 4 + 3] = ca;
     let texScaleX = 1, texScaleY = 1;
     if (hasAnyTexture) {
-      const uvForSize = computeParticleUV(p, UVOUT, true);
-      if (uvForSize && uvForSize.mode === 'animated') hasAnimatedTex = true;
-      // 贴图大小缩放：使用用户设置的 texSize（控制粒子显示大小），基准 16px
-      const texW = uvForSize ? (uvForSize.texSize[0] || 16) : 16;
-      const texH = uvForSize ? (uvForSize.texSize[1] || 16) : 16;
-      texScaleX = Math.max(1, texW) / 16;
-      texScaleY = Math.max(1, texH) / 16;
+      UVOUT.mode = 0;
+      const uv = resolveUV(p).uv;
+      const tex = (uv && uv.texture) ? texAtlasMap[uv.texture] : null;
+      if (uv && tex) {
+        if (hasUvExpressions(uv)) {
+          uvCtx.i = (p.fx && p._fxIdx != null) ? p._fxIdx : i;
+          uvCtx.n = (p.fx && fr && fr.frame) ? fr.frame.n : n;
+          uvCtx.t = T;
+          uvCtx.life = plife;
+          if (p.fx && fr && fr.frame) {
+            const C = fr.frame.C || 1, R = fr.frame.R || 1;
+            const idx = uvCtx.i;
+            uvCtx.uv_x = C === 1 ? 0 : (idx % C) / (C - 1);
+            uvCtx.uv_y = R === 1 ? 0 : Math.floor(idx / C) / (R - 1);
+          } else {
+            uvCtx.uv_x = 0; uvCtx.uv_y = 0;
+          }
+          uvCtxOut.pos[0] = px; uvCtxOut.pos[1] = py; uvCtxOut.pos[2] = pz;
+          uvCtxOut.color[0] = cr; uvCtxOut.color[1] = cg; uvCtxOut.color[2] = cb; uvCtxOut.color[3] = ca;
+          const vel = particleValueAt(p, 'vel', T);
+          uvCtxOut.vel[0] = vel[0]; uvCtxOut.vel[1] = vel[1]; uvCtxOut.vel[2] = vel[2];
+          uvCtxOut.scale = ssx;
+          uvCtxOut.glow = !!p.glow;
+          uvCtxOut.light = p.lightLevel || 0;
+          uvCtxOut.life = plife;
+          evalUVInto(uv, uvCtx, UV_EVAL);
+        } else {
+          evalUVInto(uv, null, UV_EVAL);
+        }
+        computeParticleUVFrom(uv, tex, UV_EVAL, UVOUT);
+        if (uv.mode === 'animated') {
+          hasAnimatedTex = true;
+          const i4 = i * 4, i2 = i * 2;
+          rpAnimStart[i2] = UV_EVAL.uvStart[0];
+          rpAnimStart[i2 + 1] = UV_EVAL.uvStart[1];
+          rpAnimStep[i2] = UV_EVAL.uvStep[0];
+          rpAnimStep[i2 + 1] = UV_EVAL.uvStep[1];
+          rpAnimFps[i] = UV_EVAL.fps;
+          rpAnimMax[i] = UVOUT.maxFrame;
+        }
+        // 贴图大小缩放：使用用户设置的 texSize（控制粒子显示大小），基准 16px
+        const texW = uv.texSize ? (uv.texSize[0] || 16) : 16;
+        const texH = uv.texSize ? (uv.texSize[1] || 16) : 16;
+        texScaleX = Math.max(1, texW) / 16;
+        texScaleY = Math.max(1, texH) / 16;
+      }
       const i4 = i * 4, i2 = i * 2;
       rpUV[i4] = UVOUT.au0; rpUV[i4 + 1] = UVOUT.av0; rpUV[i4 + 2] = UVOUT.au1; rpUV[i4 + 3] = UVOUT.av1;
       rpUVScale[i4] = UVOUT.sx; rpUVScale[i4 + 1] = UVOUT.sy; rpUVScale[i4 + 2] = UVOUT.sw; rpUVScale[i4 + 3] = UVOUT.sh;
@@ -442,9 +498,9 @@ function writePointBuffers(full) {
     const off = velOffsetAt(sel[i], state.time);
     spos[i * 3] = v.pos[0] + off[0]; spos[i * 3 + 1] = v.pos[1] + off[1]; spos[i * 3 + 2] = v.pos[2] + off[2];
     // 与主循环一致：使用用户设置的 texSize 计算粒子尺寸
-    const uvForSize = computeParticleUV(sel[i], UVOUT, hasAnyTexture);
-    const texW = uvForSize ? (uvForSize.texSize[0] || 16) : 16;
-    const texH = uvForSize ? (uvForSize.texSize[1] || 16) : 16;
+    const suv = resolveUV(sel[i]).uv;
+    const texW = (suv && suv.texSize) ? (suv.texSize[0] || 16) : 16;
+    const texH = (suv && suv.texSize) ? (suv.texSize[1] || 16) : 16;
     const texScaleX = Math.max(1, texW) / 16;
     const texScaleY = Math.max(1, texH) / 16;
     const sx = v.scale[0] * PARTICLE_SIZE_FACTOR * texScaleX, sy = v.scale[1] * PARTICLE_SIZE_FACTOR * texScaleY;

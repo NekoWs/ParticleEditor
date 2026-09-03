@@ -62,6 +62,7 @@ export var LANGS = {
     'tex.maxFramesHint': '0 或 1 = 自动（按 UV 步长算满）；>1 = 最大上限',
     'tex.texSize': '贴图大小', 'tex.uvStart': 'UV 起点', 'tex.uvSize': 'UV 大小', 'tex.uvStep': 'UV 步长',
     'tex.fps': '帧率',
+    'tex.fxToggle': '切换为表达式（单行 script-lang，this 为粒子信息）',
     'uv.mode.static': '静态', 'uv.mode.fill': '填充', 'uv.mode.animated': '动画',
     // —— 时间轴 ——
     'timeline.resizeTitle': '拖拽调整时间轴模块高度', 'timeline.loop': '循环',
@@ -287,6 +288,7 @@ export var LANGS = {
     'tex.maxFramesHint': '0 or 1 = auto (fill by UV step); >1 = max limit',
     'tex.texSize': 'Texture Size', 'tex.uvStart': 'UV Start', 'tex.uvSize': 'UV Size', 'tex.uvStep': 'UV Step',
     'tex.fps': 'Frame Rate',
+    'tex.fxToggle': 'Toggle expression (single-line script-lang, `this` = particle info)',
     'uv.mode.static': 'Static', 'uv.mode.fill': 'Fill', 'uv.mode.animated': 'Animated',
     // —— 时间轴 ——
     'timeline.resizeTitle': 'Drag to resize timeline module', 'timeline.loop': 'Loop',

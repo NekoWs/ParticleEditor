@@ -8,7 +8,7 @@ import { base64ToBytes, bytesToBase64, signData, verifyData } from './crypto.js'
 import { EASING_NONE } from './easing-constants.js';
 
 export const PDRAWC_MAGIC = new Uint8Array([0x50, 0x44, 0x43, 0x31]); // "PDC1"
-export const PDRAWC_VERSION = 9;
+export const PDRAWC_VERSION = 10;
 export const PDRAWC_SIG_LEN = 64;
 export const PDRAWC_PUB_LEN = 32;
 
@@ -112,6 +112,9 @@ class ByteReader {
 
 /* ============================ 子结构编码 ============================ */
 
+function uvExprString(v) { return (v == null || v === '') ? null : String(v); }
+function uvExprArray(v) { return Array.isArray(v) ? [uvExprString(v[0]), uvExprString(v[1])] : [null, null]; }
+
 function writeUV(w, uv, texIndex) {
   w.varint(texIndex);
   w.u8(UV_MODE[uv.mode] != null ? UV_MODE[uv.mode] : 0);
@@ -126,6 +129,30 @@ function writeUV(w, uv, texIndex) {
   w.f32(uv.fps != null ? uv.fps : 1);
   w.varint(uv.maxFrame != null ? uv.maxFrame : 1);
   w.u8(uv.loop != null && uv.loop === false ? 0 : 1);
+  // UV 字段表达式（v10 起）
+  const startExpr = uvExprArray(uv.uvStartExpr);
+  const sizeExpr = uvExprArray(uv.uvSizeExpr);
+  const stepExpr = uvExprArray(uv.uvStepExpr);
+  const fpsExpr = uvExprString(uv.fpsExpr);
+  const maxFrameExpr = uvExprString(uv.maxFrameExpr);
+  let flags = 0;
+  if (startExpr[0]) flags |= 1;
+  if (startExpr[1]) flags |= 2;
+  if (sizeExpr[0]) flags |= 4;
+  if (sizeExpr[1]) flags |= 8;
+  if (stepExpr[0]) flags |= 16;
+  if (stepExpr[1]) flags |= 32;
+  if (fpsExpr) flags |= 64;
+  if (maxFrameExpr) flags |= 128;
+  w.u8(flags);
+  if (startExpr[0]) w.str(startExpr[0]);
+  if (startExpr[1]) w.str(startExpr[1]);
+  if (sizeExpr[0]) w.str(sizeExpr[0]);
+  if (sizeExpr[1]) w.str(sizeExpr[1]);
+  if (stepExpr[0]) w.str(stepExpr[0]);
+  if (stepExpr[1]) w.str(stepExpr[1]);
+  if (fpsExpr) w.str(fpsExpr);
+  if (maxFrameExpr) w.str(maxFrameExpr);
 }
 
 function writeEnt(w, ent) {
@@ -364,7 +391,7 @@ export async function buildPdrawc(state, texPngOf) {
 /* ============================ 解码（回环测试 / 校验用） ============================ */
 
 function readUV(r) {
-  return {
+  const uv = {
     textureIndex: r.varint(),
     mode: UV_MODE_BY[r.u8()] || 'static',
     texSize: [r.varint(), r.varint()],
@@ -375,6 +402,13 @@ function readUV(r) {
     maxFrame: r.varint(),
     loop: r.u8() !== 0,
   };
+  const flags = r.u8();
+  uv.uvStartExpr = [(flags & 1) ? r.str() : null, (flags & 2) ? r.str() : null];
+  uv.uvSizeExpr = [(flags & 4) ? r.str() : null, (flags & 8) ? r.str() : null];
+  uv.uvStepExpr = [(flags & 16) ? r.str() : null, (flags & 32) ? r.str() : null];
+  uv.fpsExpr = (flags & 64) ? r.str() : null;
+  uv.maxFrameExpr = (flags & 128) ? r.str() : null;
+  return uv;
 }
 
 function readEnt(r) {

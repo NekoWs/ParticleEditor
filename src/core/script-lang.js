@@ -3779,3 +3779,118 @@ export function evalProcess(program, objState, statics, ctx) {
   vm.run();
   return ctx.out;
 }
+
+/* =========================================================================
+ * 单表达式求值（UV 字段 / 预设 countExpr 等标量表达式）
+ * -------------------------------------------------------------------------
+ * 裸表达式按 script-lang 表达式语法解析（this.<field>、内建函数、变量查表均可）。
+ * ctx 与 process 的 this 上下文同构：{ i,n,t,dt,duration,life,uv_x,uv_y,vars,out }。
+ * 返回标量（number）；表达式结果不是 number 时抛错。
+ * ======================================================================= */
+
+export function parseExpression(source) {
+  const p = new Parser(source);
+  const node = p.parseTernary();
+  const extra = p.peek();
+  if (extra.type !== 'eof') {
+    throw parseError(`unexpected '${extra.value}' after expression`, extra.line, extra.col);
+  }
+  return node;
+}
+
+// 通用表达式求值：返回任意值（number/vec/mat/bool/array）。低频路径。
+export function evalExpressionValue(expr, ctx) {
+  const node = parseExpression(expr);
+  const program = { setup: [], process: [], functions: new Map() };
+  const rt = new Runtime('process', program, createObjectState(0), null, null, ctx || null);
+  rt.pushScope(new Map());
+  try {
+    return rt.evalExpr(node);
+  } finally {
+    rt.popScope();
+  }
+}
+
+// 低频求值：每调用一次新建 Runtime/Map（供 countExpr 等非热路径使用）。
+// 仅接受标量结果；否则抛错。
+export function evalExpression(expr, ctx) {
+  const v = evalExpressionValue(expr, ctx);
+  if (!isNum(v)) {
+    const node = parseExpression(expr);
+    throw runtimeError(`expression must evaluate to a number, got ${typeName(v)}`, node);
+  }
+  return v;
+}
+
+// 高频求值：预解析表达式并复用 Runtime/Map/作用域（UV 逐粒子逐帧路径使用）。
+// 返回 { eval(ctx) }；ctx.vars 每次求值前重建，因此可安全复用。
+export function createExpressionRunner(expr) {
+  const node = parseExpression(expr);
+  const program = { setup: [], process: [], functions: new Map() };
+  const objState = createObjectState(0);
+  const rt = new Runtime('process', program, objState, null, null, null);
+  rt.pushScope(new Map());
+  return {
+    eval(ctx) {
+      rt.ctx = ctx || null;
+      rt.varsMap.clear();
+      const varsObj = rt.ctx && rt.ctx.vars;
+      if (varsObj) {
+        for (const k of Object.keys(varsObj)) rt.varsMap.set(k, varsObj[k]);
+      }
+      const v = rt.evalExpr(node);
+      if (!isNum(v)) {
+        throw runtimeError(`expression must evaluate to a number, got ${typeName(v)}`, node);
+      }
+      return v;
+    },
+  };
+}
+
+/* =========================================================================
+ * 共享迁移 API（替代 easing.js 旧迷你引擎的数学/解析工具）
+ * -------------------------------------------------------------------------
+ * 值形态统一为本模块的 vec3/mat3：{ t:'vec3', x,y,z } / { t:'mat3', m:[[...]] }。
+ * 优先级表与 Parser 的 parseOr/parseAnd/.../parsePower 实际层级一致：
+ * || < && < ==/!= < 比较 < 加减 < 乘除模 < 幂。一元 -/! 高于幂。
+ * ======================================================================= */
+
+export const SCRIPT_FUNCTION_NAMES = Object.freeze([...BUILTIN_FUNCTIONS]);
+
+export const SCRIPT_BINARY_PRECEDENCE = Object.freeze({
+  '||': 1,
+  '&&': 2,
+  '==': 3, '!=': 3,
+  '<': 4, '<=': 4, '>': 4, '>=': 4,
+  '+': 5, '-': 5,
+  '*': 6, '/': 6, '%': 6,
+  '^': 7,
+});
+
+export const SCRIPT_NEG_PREC = 7.5; // 一元 -/! 高于幂（-2^2 = (-2)^2）
+
+export function scriptVec3(x, y, z) { return vec3(x, y, z); }
+export function scriptMat3(rows) { return mat3(rows); }
+export function scriptMatMul(A, B) { return matMul(A, B, null); }
+export function scriptRotX(t) { return rotXMat3(t); }
+export function scriptRotY(t) { return rotYMat3(t); }
+export function scriptRotZ(t) { return rotZMat3(t); }
+export function scriptRotAxis(axis, t) { return mat3Rodrigues(vec3(axis[0], axis[1], axis[2]), t); }
+
+// 解析表达式列表 [e1,e2,e3] → ['e1','e2','e3']（跳过括号内逗号）。
+export function parseExprList(s) {
+  const inner = s.trim();
+  if (!inner.startsWith('[') || !inner.endsWith(']')) return [inner];
+  const body = inner.slice(1, -1);
+  const parts = [];
+  let depth = 0, cur = '';
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (c === '(') depth++;
+    else if (c === ')') depth--;
+    if (c === ',' && depth === 0) { parts.push(cur.trim()); cur = ''; }
+    else cur += c;
+  }
+  if (cur.trim()) parts.push(cur.trim());
+  return parts;
+}

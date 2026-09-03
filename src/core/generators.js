@@ -9,12 +9,12 @@
 
 import { _etf, t } from './i18n.js';
 import { FUNCTION_PRESETS, state, nextFunctionId, setDirty, compPr, getParticle } from './constants.js';
-import { varKfValue, evaluate } from './easing.js';
+import { varKfValue } from './easing.js';
 import { modalAlert } from '../ui/ui.js';
 import { pushUndo } from '../state/undo.js';
 import { rebuildPoints, maxTick } from './animation.js';
 import { refreshFunctionPanel } from '../ui/panels.js';
-import { parseProgram, createObjectState, runSetup, createStatics, evalProcess, runUniformPrelude, prepareProcess, createProcessRunner, runNativeProcess } from './script-lang.js';
+import { parseProgram, createObjectState, runSetup, createStatics, evalProcess, runUniformPrelude, prepareProcess, createProcessRunner, runNativeProcess, evalExpression } from './script-lang.js';
 
 // 主循环中 1 秒 = 20 tick（见 main.js 的 `state.time += dt * 20`）。
 const TICKS_PER_SEC = 20;
@@ -469,7 +469,7 @@ export function syncPresetCount(fx) {
   }
   let count;
   if (preset.countExpr) {
-    try { count = evaluate(preset.countExpr, scope); } catch (e) { return; }
+    try { count = evalExpression(preset.countExpr, { i: 0, n: 1, t: 0, dt: 0, duration: 0, life: -1, uv_x: 0, uv_y: 0, vars: scope }); } catch (e) { return; }
   } else if (preset.countVars && preset.countVars.length) {
     count = 1;
     for (const name of preset.countVars) {
