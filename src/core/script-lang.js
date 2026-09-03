@@ -2442,6 +2442,8 @@ for (const name of BUILTIN_TABLE.keys()) {
 }
 
 const METHOD_NAMES = ['push', 'insert', 'remove', 'slice', 'size', 'find', 'includes', 'sort', 'unique', 'reverse'];
+/** 数组方法名（供编辑器补全等复用，保持单一事实来源）。 */
+export const ARRAY_METHOD_NAMES = METHOD_NAMES;
 const METHOD_CODE = {};
 METHOD_NAMES.forEach((n, i) => { METHOD_CODE[n] = i; });
 const METHOD_BY_CODE = METHOD_NAMES;

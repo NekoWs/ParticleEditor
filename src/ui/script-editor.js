@@ -19,7 +19,7 @@ import {
 import { indentWithTab, insertNewlineAndIndent } from '@codemirror/commands';
 import { linter } from '@codemirror/lint';
 import { highlightSelectionMatches } from '@codemirror/search';
-import { parseProgram } from '../core/script-lang.js';
+import { parseProgram, ARRAY_METHOD_NAMES } from '../core/script-lang.js';
 
 /**
  * .pdraw 脚本语言（setup/process/funcs）的 CodeMirror 编辑器封装：
@@ -235,8 +235,221 @@ function wrapperLines(field) {
   return field === 'funcs' ? 0 : 1;
 }
 
+/* -------------------------------------------------------------------------
+ * 轻量类型推断：为「变量.」补全提供数组方法 / 向量分量，num/bool 等不弹。
+ * 仅做静态收集（global/static/赋值与内建返回类型），不追求完整类型系统。
+ * ---------------------------------------------------------------------- */
+
+const THIS_FIELD_TYPES = {
+  index: 'num', count: 'num', time: 'num', delta: 'num', duration: 'num',
+  uv: 'vec2', position: 'vec3', color: 'vec4', velocity: 'vec3',
+  scale: 'num', glow: 'bool', light: 'num', life: 'num',
+};
+
+const VEC_COMPONENTS = {
+  vec2: ['x', 'y', 'r', 'g'],
+  vec3: ['x', 'y', 'z', 'r', 'g', 'b'],
+  vec4: ['x', 'y', 'z', 'w', 'r', 'g', 'b', 'a'],
+};
+
+const ARRAY_METHOD_RETURN_TYPES = {
+  push: 'array', insert: 'array', remove: 'array', slice: 'array',
+  sort: 'array', unique: 'array', reverse: 'array',
+  size: 'num', find: 'num', includes: 'bool',
+};
+
+const BUILTIN_RETURN_TYPES = {
+  vec2: 'vec2', vec3: 'vec3', vec4: 'vec4', vec: 'vec3',
+  mat3: 'mat3', mat4: 'mat4',
+  translate: 'mat4', scale: 'mat4', rotate: 'mat4', lookAt: 'mat4',
+  rotX: 'mat3', rotY: 'mat3', rotZ: 'mat3', rotAxis: 'mat3',
+  cross: 'vec3',
+  dot: 'num', len: 'num', len2: 'num', distance: 'num', angle_between: 'num',
+  sin: 'num', cos: 'num', tan: 'num', asin: 'num', acos: 'num', atan: 'num', atan2: 'num',
+  sqrt: 'num', abs: 'num', sign: 'num', exp: 'num', log: 'num', ln: 'num',
+  floor: 'num', ceil: 'num', round: 'num', fract: 'num', pow: 'num',
+  min: 'num', max: 'num', step: 'num', smoothstep: 'num', mod: 'num',
+  map_range: 'num', remap: 'num',
+  noise: 'num', fbm: 'num', rand: 'num', random: 'num',
+  ease_linear: 'num', ease_in_out: 'num', ease_out_back: 'num', ease_in_elastic: 'num',
+  bool: 'bool',
+  print: 'num', assert: 'num',
+  unique: 'array', reverse: 'array', sort: 'array',
+};
+
+const isVecType = (t) => t === 'vec2' || t === 'vec3' || t === 'vec4';
+const isMatType = (t) => t === 'mat3' || t === 'mat4';
+
+function inferBinaryType(op, l, r) {
+  if (l === 'unknown' || r === 'unknown') return 'unknown';
+  if (op === '&&' || op === '||' || op === '<' || op === '<=' || op === '>' || op === '>=' || op === '==' || op === '!=') {
+    return 'bool';
+  }
+  if (op === '+' || op === '-' || op === '*' || op === '/' || op === '%' || op === '^') {
+    if (isVecType(l) && isVecType(r)) return l === r ? l : 'unknown';
+    if (isVecType(l) && r === 'num') return l;
+    if (l === 'num' && isVecType(r)) return r;
+    if (isMatType(l) && r === 'num') return l;
+    if (l === 'num' && isMatType(r)) return r;
+    if (isMatType(l) && isMatType(r)) return l === r ? l : 'unknown';
+    if (l === 'num' && r === 'num') return 'num';
+  }
+  return 'unknown';
+}
+
+function inferCallType(node, env) {
+  const callee = node.callee;
+  if (!callee || callee.type !== 'var') return 'unknown';
+  const name = callee.name;
+
+  if (name === 'lerp' || name === 'mix' || name === 'clamp') {
+    return node.args.length ? inferExprType(node.args[0], env) : 'unknown';
+  }
+  if (name === 'norm' || name === 'project' || name === 'reflect') {
+    const at = node.args.length ? inferExprType(node.args[0], env) : 'unknown';
+    return isVecType(at) ? at : 'unknown';
+  }
+  if (name === 'int' || name === 'float') {
+    const at = node.args.length ? inferExprType(node.args[0], env) : 'unknown';
+    if (at === 'bool') return 'num';
+    if (at === 'num' || isVecType(at) || isMatType(at)) return at;
+    return 'unknown';
+  }
+  return BUILTIN_RETURN_TYPES[name] || 'unknown';
+}
+
+function inferExprType(node, env) {
+  if (!node) return 'unknown';
+  switch (node.type) {
+    case 'num': return 'num';
+    case 'str': return 'string';
+    case 'bool': return 'bool';
+    case 'array': return 'array';
+    case 'var': {
+      if (env.has(node.name)) return env.get(node.name);
+      if (node.name === 'pi' || node.name === 'e') return 'num';
+      return 'unknown';
+    }
+    case 'unary': {
+      const t = inferExprType(node.operand, env);
+      if (node.op === '!') return 'bool';
+      if (node.op === '-') return (t === 'num' || isVecType(t) || isMatType(t)) ? t : 'unknown';
+      return 'unknown';
+    }
+    case 'binary':
+      return inferBinaryType(node.op, inferExprType(node.left, env), inferExprType(node.right, env));
+    case 'ternary': {
+      const a = inferExprType(node.thenExpr, env);
+      const b = inferExprType(node.elseExpr, env);
+      return a === b ? a : 'unknown';
+    }
+    case 'call': return inferCallType(node, env);
+    case 'method': return ARRAY_METHOD_RETURN_TYPES[node.method] || 'unknown';
+    case 'comp': return 'num';
+    case 'member':
+      if (node.object && node.object.type === 'var' && node.object.name === 'this') {
+        return THIS_FIELD_TYPES[node.field] || 'unknown';
+      }
+      return 'unknown';
+    default: return 'unknown';
+  }
+}
+
+/** 截掉当前字段中光标所在的那条未完成语句，使剩余代码可被 parseProgram 解析。 */
+function truncateIncomplete(code, pos) {
+  const text = code == null ? '' : String(code);
+  const upto = text.slice(0, Math.max(0, Math.min(pos, text.length)));
+  for (let i = upto.length - 1; i >= 0; i--) {
+    const ch = upto[i];
+    if (ch === ';' || ch === '{' || ch === '}') return text.slice(0, i + 1);
+  }
+  return '';
+}
+
+function combineScriptSource(setupSrc, processSrc) {
+  let src = '';
+  const s = (setupSrc || '').trim();
+  const p = (processSrc || '').trim();
+  if (s) src += `setup {\n${setupSrc}\n}\n`;
+  if (p) src += `process {\n${processSrc}\n}\n`;
+  return src;
+}
+
+/** 构建 setup / process / funcs 各自的变量→类型表（尽力而为，解析失败返回空表）。 */
+function buildScriptEnvs(fx, field, pos) {
+  const empty = { setup: new Map(), process: new Map(), funcs: new Map() };
+
+  const setupCode = field === 'setup' ? truncateIncomplete(fx?.setup, pos) : fx?.setup;
+  const processCode = field === 'process' ? truncateIncomplete(fx?.process, pos) : fx?.process;
+
+  let program;
+  try {
+    program = parseProgram(combineScriptSource(setupCode, processCode));
+  } catch {
+    return empty;
+  }
+
+  const globals = new Map();
+  const setupEnv = new Map();
+  const processEnv = new Map();
+
+  const seed = (env) => {
+    env.set('pi', 'num');
+    env.set('e', 'num');
+    for (const name of Object.keys(fx?.vars || {})) env.set(name, 'num');
+  };
+  seed(setupEnv);
+  seed(processEnv);
+
+  for (const stmt of program.setup || []) {
+    if (stmt.type === 'global') {
+      const t = stmt.init ? inferExprType(stmt.init, setupEnv) : 'unknown';
+      setupEnv.set(stmt.name, t);
+      globals.set(stmt.name, t);
+    } else if (stmt.type === 'assign' && stmt.target && stmt.target.type === 'var') {
+      const t = inferExprType(stmt.value, setupEnv);
+      setupEnv.set(stmt.target.name, t);
+      if (globals.has(stmt.target.name)) globals.set(stmt.target.name, t);
+    }
+  }
+
+  for (const [name, t] of globals) processEnv.set(name, t);
+  const statics = new Map();
+  for (const stmt of program.process || []) {
+    if (stmt.type === 'static') {
+      const t = stmt.init ? inferExprType(stmt.init, processEnv) : 'unknown';
+      processEnv.set(stmt.name, t);
+      statics.set(stmt.name, t);
+    } else if (stmt.type === 'assign' && stmt.target && stmt.target.type === 'var') {
+      const t = inferExprType(stmt.value, processEnv);
+      if (statics.has(stmt.target.name)) {
+        statics.set(stmt.target.name, t);
+        processEnv.set(stmt.target.name, t);
+      } else if (!globals.has(stmt.target.name)) {
+        // 隐式局部（process 内首次赋值）
+        processEnv.set(stmt.target.name, t);
+      }
+    }
+  }
+
+  const funcsEnv = new Map(globals);
+  seed(funcsEnv);
+
+  return { setup: setupEnv, process: processEnv, funcs: funcsEnv };
+}
+
+function resolveDotReceiverType(name, before, matchIndex, field, fx, pos) {
+  // this.<field>. 链：直接按 this 字段类型解析。
+  const prefix = before.slice(0, matchIndex);
+  if (/this\s*\.\s*$/.test(prefix)) return THIS_FIELD_TYPES[name] || 'unknown';
+
+  const envs = buildScriptEnvs(fx, field, pos);
+  const env = field === 'setup' ? envs.setup : field === 'funcs' ? envs.funcs : envs.process;
+  return env.get(name) || 'unknown';
+}
+
 /** 自动补全：关键字 + 内置函数 + this 字段 + 函数变量 + 代码中已出现的标识符。 */
-export function scriptCompletionSource(fx) {
+export function scriptCompletionSource(fx, field) {
   return (context) => {
     const before = context.state.sliceDoc(0, context.pos);
 
@@ -254,6 +467,28 @@ export function scriptCompletionSource(fx) {
         options: SCRIPT_THIS_FIELDS.map((name) => ({ label: name, type: 'property' })),
         validFor: /^\w*$/,
       };
+    }
+
+    // 类型化点补全：arr. → 数组方法；p. → 向量分量；num./bool./未知类型 → 不弹。
+    const dot = /([A-Za-z_][A-Za-z0-9_]*)\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)?$/.exec(before);
+    if (dot) {
+      const partial = dot[2] || '';
+      const receiverType = resolveDotReceiverType(dot[1], before, dot.index, field, fx, context.pos);
+      if (receiverType === 'array') {
+        return {
+          from: context.pos - partial.length,
+          options: ARRAY_METHOD_NAMES.map((name) => ({ label: name, type: 'method' })),
+          validFor: /^\w*$/,
+        };
+      }
+      if (VEC_COMPONENTS[receiverType]) {
+        return {
+          from: context.pos - partial.length,
+          options: VEC_COMPONENTS[receiverType].map((name) => ({ label: name, type: 'property' })),
+          validFor: /^\w*$/,
+        };
+      }
+      return null;
     }
 
     const options = [];
@@ -323,7 +558,7 @@ export function createScriptEditor(parent, opts) {
         if (update.docChanged && onChange) onChange(update.state.doc.toString());
       }),
       autocompletion({
-        override: [scriptCompletionSource(fx)],
+        override: [scriptCompletionSource(fx, field)],
         activateOnTypingDelay: 50,
       }),
       keymap.of([
