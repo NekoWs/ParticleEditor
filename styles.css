@@ -59,6 +59,7 @@ body {
   z-index: 20;
 }
 #topbar-title { margin: 0 auto; color: var(--muted); font-size: 12px; }
+.mobile-top-actions { display: none; }
 .menubar { display: flex; align-items: center; gap: 2px; }
 .menu { position: relative; }
 .menu-btn {
