@@ -3,21 +3,56 @@
  * - 仅在 (pointer: coarse) 下启用；桌面仍用原生 select。
  * - 保留原生 select 在 DOM 中（隐藏），选项选择后写回 select.value 并派发 change，
  *   因此已有代码读取 .value / 监听 change 的路径全部保持不变。
+ * - 下拉列表是单例并挂在 body 下（避免侧栏/抽屉的 transform 或 overflow 裁剪，
+ *   同时保证 fixed 定位相对视口）。
  * ======================================================================= */
 
 import { hasCoarsePointer } from '../core/device.js';
 
-// 单例：所有自定义下拉共用一个外部点击关闭监听，避免每次包裹 select 都新增监听。
+let sharedList = null;   // 单例下拉列表
+let activeWrap = null;   // 当前打开的下拉所属 .csel
 let outsideBound = false;
-function closeAllOpen() {
-  document.querySelectorAll('.csel.csel-open').forEach(w => w.classList.remove('csel-open'));
+
+function ensureList() {
+  if (!sharedList) {
+    sharedList = document.createElement('div');
+    sharedList.className = 'csel-list';
+    document.body.appendChild(sharedList);
+  }
+  return sharedList;
 }
+
+function closeActive() {
+  if (activeWrap) {
+    activeWrap.classList.remove('csel-open');
+    activeWrap = null;
+  }
+  if (sharedList) sharedList.style.display = 'none';
+}
+
 function ensureOutsideClose() {
   if (outsideBound) return;
   outsideBound = true;
   document.addEventListener('pointerdown', (e) => {
-    if (!e.target.closest || !e.target.closest('.csel')) closeAllOpen();
+    const t = e.target;
+    if (!t || !t.closest) return;
+    if (t.closest('.csel') || t.closest('.csel-list')) return;
+    closeActive();
   }, true);
+}
+
+function position(btn, list) {
+  const r = btn.getBoundingClientRect();
+  list.style.visibility = 'hidden';
+  list.style.display = 'block'; // 临时显示以测量尺寸
+  const lw = list.offsetWidth;
+  const lh = list.offsetHeight;
+  let x = Math.max(8, Math.min(r.left, window.innerWidth - lw - 8));
+  let y = r.bottom + 4;
+  if (y + lh > window.innerHeight - 8) y = Math.max(8, r.top - lh - 4);
+  list.style.left = x + 'px';
+  list.style.top = y + 'px';
+  list.style.visibility = '';
 }
 
 export function customSelect(selectEl) {
@@ -25,16 +60,14 @@ export function customSelect(selectEl) {
   selectEl.dataset.cselApplied = '1';
   selectEl.style.display = 'none';
   ensureOutsideClose();
+  const list = ensureList();
 
   const wrap = document.createElement('span');
   wrap.className = 'csel';
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'csel-btn';
-  const list = document.createElement('div');
-  list.className = 'csel-list';
   wrap.appendChild(btn);
-  wrap.appendChild(list);
 
   const label = () => {
     const o = selectEl.options[selectEl.selectedIndex];
@@ -43,8 +76,6 @@ export function customSelect(selectEl) {
   label();
   selectEl._cselRefresh = label;
   selectEl.parentNode.insertBefore(wrap, selectEl.nextSibling);
-
-  const close = () => wrap.classList.remove('csel-open');
 
   const open = () => {
     label();
@@ -58,32 +89,20 @@ export function customSelect(selectEl) {
         selectEl.value = o.value;
         selectEl.dispatchEvent(new Event('change', { bubbles: true }));
         label();
-        close();
+        closeActive();
       });
       list.appendChild(item);
     }
-    closeAllOpen();
+    closeActive();
+    activeWrap = wrap;
     wrap.classList.add('csel-open');
-    position();
-  };
-
-  function position() {
-    const r = btn.getBoundingClientRect();
-    list.style.visibility = 'hidden';
+    position(btn, list);
     list.style.display = 'block';
-    const lw = list.offsetWidth;
-    const lh = list.offsetHeight;
-    let x = Math.max(8, Math.min(r.left, window.innerWidth - lw - 8));
-    let y = r.bottom + 4;
-    if (y + lh > window.innerHeight - 8) y = Math.max(8, r.top - lh - 4);
-    list.style.left = x + 'px';
-    list.style.top = y + 'px';
-    list.style.visibility = '';
-  }
+  };
 
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (wrap.classList.contains('csel-open')) close();
+    if (activeWrap === wrap && list.style.display === 'block') closeActive();
     else open();
   });
 

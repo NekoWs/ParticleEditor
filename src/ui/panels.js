@@ -8,13 +8,13 @@
 
 
 import { t } from '../core/i18n.js';
-import { state, FUNCTION_PRESETS, getFunction, isDerivedParticle } from '../core/constants.js';
+import { state, getFunction, isDerivedParticle } from '../core/constants.js';
 import { currentVisual, rotVectorAt, spinVectorAt, orbitCenterAt } from '../core/animation.js';
 import { currentSelected, selectedGroupName, fxPosDeltaAt, fxScaleValuesAt } from '../interaction/interaction.js';
 import { groupCurrentCentroid } from './tree.js';
 import { modalAlert, rgbToHex, hexToRgb, rgbaToHex, hexToRgba } from './ui.js';
 import { varKfValue } from '../core/easing.js';
-import { applyPresetBuild, rebuildFunctionObject } from '../core/generators.js';
+import { rebuildFunctionObject } from '../core/generators.js';
 import { openBlockDrawer } from './blocks-ui.js';
 import { createScriptEditor } from './script-editor.js';
 import { pushUndo } from '../state/undo.js';
@@ -417,31 +417,6 @@ export function buildFunctionPanel(fx) {
   });
   centerRow.appendChild(centerGroup);
   wrap.appendChild(centerRow);
-
-  // 预设参数（无参数时不渲染空容器，避免中心点与时长之间出现多余的空 .fx-params 区块）
-  if (fx.preset && FUNCTION_PRESETS[fx.preset] && (FUNCTION_PRESETS[fx.preset].params || []).length > 0) {
-    const preset = FUNCTION_PRESETS[fx.preset];
-    const pbox = document.createElement('div');
-    pbox.className = 'fx-params';
-    for (const prm of preset.params) {
-      const row = document.createElement('label');
-      row.className = 'row';
-      row.textContent = t('fx.param.' + prm.key) + ' ';
-      const inp = document.createElement('input');
-      inp.type = 'number'; inp.step = '0.1'; inp.value = fx.params && fx.params[prm.key] != null ? fx.params[prm.key] : prm.def;
-      inp.onchange = () => {
-        pushUndo();
-        if (!fx.params) fx.params = {};
-        fx.params[prm.key] = parseFloat(inp.value) || 0;
-        applyPresetBuild(fx);
-        commitFunctionRebuild(fx);
-        refreshFunctionPanel();
-      };
-      row.appendChild(inp);
-      pbox.appendChild(row);
-    }
-    wrap.appendChild(pbox);
-  }
 
   // 时长 / 采样间隔
   const durRow = document.createElement('div');

@@ -10,7 +10,7 @@
 import { t, tf, LANG } from '../core/i18n.js';
 import { hasTouch } from '../core/device.js';
 import {
-  state, propComps, COMP_LABELS, GROUP_PROP_DEFS, PARTICLE_TRACK_DEFS, FUNCTION_PROP_DEFS, CAMERA_PROP_DEFS,
+  state, propComps, COMP_LABELS, GROUP_PROP_DEFS, PARTICLE_TRACK_DEFS, FUNCTION_PROP_DEFS, CAMERA_PROP_DEFS, FUNCTION_PRESETS,
   getParticle, getFunction, getCamera, isDerivedParticle, plainParticleCache,
 } from '../core/constants.js';
 import { editComponentValue, renameGroup, renameParticle } from '../core/edit.js';
@@ -326,10 +326,6 @@ function renderFlatRow(row) {
       const label = el('span', 'tt-sub-label');
       label.textContent = t('fx.varList') + ' (' + row.count + ')';
       div.appendChild(label);
-      // 变量提示改为灰色显示在变量列表后方（不再占用函数对象面板空间）
-      const hint = el('span', 'tt-var-hint');
-      hint.textContent = t('fx.varListHint');
-      div.appendChild(hint);
       const add = el('button', 'tt-add-var');
       add.textContent = '+';
       add.title = t('fx.addVar');
@@ -457,6 +453,14 @@ function renderFlatRow(row) {
       add.dataset.fxid = row.fx.id;
       add.dataset.name = row.name;
       div.appendChild(label);
+      // 预设参数对应的变量：在变量名右侧以灰色显示参数提示（如 rad → 半径）。
+      const preset = row.fx.preset && FUNCTION_PRESETS[row.fx.preset];
+      const prm = preset && (preset.params || []).find(p => p.key === row.name);
+      if (prm) {
+        const hint = el('span', 'tt-var-hint');
+        hint.textContent = t('fx.param.' + prm.key);
+        div.appendChild(hint);
+      }
       div.appendChild(inp);
       div.appendChild(add);
       break;

@@ -806,7 +806,6 @@ body.ctrl-held .kf-t { cursor: pointer; }
   background: var(--panel-3); border: 1px solid var(--border); border-radius: 8px;
   box-shadow: var(--shadow); padding: 4px; display: none;
 }
-.csel-open .csel-list { display: block; }
 .csel-item {
   display: block; width: 100%; text-align: left; padding: 9px 10px; margin: 0;
   background: transparent; border: none; border-radius: 5px; color: var(--text);
@@ -1154,7 +1153,7 @@ body.puzzle-mode.puzzle-palette-collapsed #pal-resize { display: none; }
   letter-spacing: 0.5px; color: var(--muted); padding: 4px 2px 6px;
   position: sticky; top: 0; background: var(--panel-2); z-index: 2;
 }
-#puzzle-workspace { position: relative; overflow: hidden; }
+#puzzle-workspace { position: relative; overflow: hidden; grid-column: 3; grid-row: 1; }
 
 /* 调色板（左侧固定栏，紧凑） */
 .pal-group { margin-bottom: 4px; }
@@ -1850,8 +1849,7 @@ body.puzzle-mode #puzzle-ghost-canvas { display: block; }
   .puzzle-dd-item { padding: 10px 12px; font-size: 14px; }
   #puzzle-toolbar .btn,
   .puzzle-taskbar-btn { height: 40px; padding: 0 14px; }
-  .tt-val { height: 26px; font-size: 13px; }
-  .tt-var-val { height: 22px; font-size: 13px; }
+  .tt-val, .tt-var-val { height: 22px; font-size: 13px; }
 
   /* 时间轴左侧标签轨：允许横向滚动，vec3 等宽行不再被裁剪 */
   .tl-tree { overflow-x: auto; }
