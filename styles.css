@@ -271,6 +271,14 @@ body {
 .tex-resize-pop .trp-btns { display: flex; justify-content: flex-end; gap: 6px; }
 #tex-color-btn { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; border: 2px solid #fff; border-radius: 5px; padding: 0; cursor: pointer; box-shadow: 0 0 3px rgba(0,0,0,0.5); }
 .tex-meta { position: absolute; bottom: 5px; right: 8px; color: var(--muted); font-size: 11px; pointer-events: none; text-shadow: 0 0 3px #000; }
+/* 画笔放大镜：绘制时显示在编辑器下方，展示当前像素及邻域 */
+.tex-magnifier {
+  position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+  z-index: 5; display: none; pointer-events: none;
+  image-rendering: pixelated; background: #0d0f14;
+  border: 1px solid var(--border); border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
 .tex-io { display: flex; gap: 6px; margin-top: 8px; }
 .tex-io .mini { flex: 1; }
 .uv-panel { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 8px; }
@@ -1817,6 +1825,7 @@ body.puzzle-mode #puzzle-ghost-canvas { display: block; }
   #tl-layers-canvas,
   #axis-gizmo,
   #tex-canvas,
+  #tex-canvas-wrap,
   #puzzle-palette-canvas,
   #puzzle-workspace-canvas {
     touch-action: none;

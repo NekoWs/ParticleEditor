@@ -56,6 +56,17 @@ export function syncPlayButton() {
 }
 
 export function togglePlay() {
+  if (!state.playing && !state.loop) {
+    // 播放完毕（非循环）后 state.time 停在末尾，再点播放应立即从头重播，
+    // 否则下一帧会因 time 仍等于 maxTick 而立刻再次暂停。
+    const mx = maxTick();
+    if (mx > 0 && state.time >= mx) {
+      state.time = 0;
+      updateTimeUI();
+      rebuildPoints();
+      syncFunctionVarValues();
+    }
+  }
   state.playing = !state.playing;
   syncPlayButton();
 }

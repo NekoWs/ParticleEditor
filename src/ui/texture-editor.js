@@ -419,6 +419,74 @@ export function floodFill(px, py, target, apply) {
 
 export let texDrag = null; // { mode: 'draw'|'pan'|'select'|'selmove'|'erase', last }
 
+// 触屏双指手势（缩放 + 平移，行为与视口 OrbitControls 一致）；单指仍为各工具原有交互。
+const texTouch = { pointers: new Map(), pinch: null };
+
+/* =========================================================================
+ * 画笔放大镜：铅笔绘制时在编辑器下方显示当前像素及邻域
+ * ======================================================================= */
+const TEX_MAG_RADIUS = 6;   // 邻域半径（总 13×13 像素）
+const TEX_MAG_CELL = 12;    // 每个源像素在放大镜中的 CSS px
+let magSrc = null, magSrcCtx = null;
+
+export function hideTexMagnifier() {
+  const el = document.getElementById('tex-magnifier');
+  if (el) el.style.display = 'none';
+}
+
+export function updateTexMagnifier(x, y) {
+  const el = document.getElementById('tex-magnifier');
+  if (!el) return;
+  const t = getCurrentTexture();
+  if (!t) { hideTexMagnifier(); return; }
+  const size = TEX_MAG_RADIUS * 2 + 1;
+  if (!magSrc) {
+    magSrc = document.createElement('canvas');
+    magSrc.width = size; magSrc.height = size;
+    magSrcCtx = magSrc.getContext('2d');
+  }
+  // 先合成 13×13 源像素图，再一次性放大绘制（imageSmoothingEnabled=false 保持像素硬边）。
+  const img = magSrcCtx.createImageData(size, size);
+  const d = img.data;
+  const half = TEX_MAG_RADIUS;
+  for (let gy = 0; gy < size; gy++) {
+    for (let gx = 0; gx < size; gx++) {
+      const px = x - half + gx, py = y - half + gy;
+      const o = (gy * size + gx) * 4;
+      if (px >= 0 && py >= 0 && px < t.width && py < t.height) {
+        const i = (py * t.width + px) * 4;
+        d[o] = t.data[i]; d[o + 1] = t.data[i + 1]; d[o + 2] = t.data[i + 2]; d[o + 3] = t.data[i + 3];
+      } else {
+        // 越界：深色棋盘格，提示已到贴图边缘外
+        const c = (gx + gy) % 2 === 0 ? 0x1a : 0x20;
+        d[o] = c; d[o + 1] = c + 2; d[o + 2] = c + 5; d[o + 3] = 255;
+      }
+    }
+  }
+  magSrcCtx.putImageData(img, 0, 0);
+  el.width = size * TEX_MAG_CELL;
+  el.height = size * TEX_MAG_CELL;
+  const ctx = el.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, el.width, el.height);
+  ctx.drawImage(magSrc, 0, 0, size, size, 0, 0, el.width, el.height);
+
+  // 邻域网格线
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.lineWidth = 1;
+  for (let i = 1; i < size; i++) {
+    const p = Math.round(i * TEX_MAG_CELL) + 0.5;
+    ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, el.height); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(el.width, p); ctx.stroke();
+  }
+  // 中心当前像素高亮框
+  const c0 = Math.round(half * TEX_MAG_CELL);
+  ctx.strokeStyle = '#ffcc55';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(c0 + 0.75, c0 + 0.75, TEX_MAG_CELL - 1.5, TEX_MAG_CELL - 1.5);
+  el.style.display = 'block';
+}
+
 // 选区像素矩形（取整归一化）；无选区/宽高为 0 返回 null
 export function selectionRect() {
   const s = texState.selection;
@@ -478,9 +546,61 @@ export function initTextureEditor() {
 
   wrap.addEventListener('pointerenter', () => { texActive = true; });
   wrap.addEventListener('pointerleave', () => { texActive = false; });
+  // 禁止浏览器原生手势接管（滚动/页面缩放），双指捏合由编辑器自行处理。
+  wrap.style.touchAction = 'none';
+
+  const beginTexPinch = () => {
+    const pts = [...texTouch.pointers.values()];
+    if (pts.length < 2) return;
+    // 双指落下：取消当前单指交互；若第一指已开始画/移动选区，用撤销恢复这一笔的开头状态。
+    if (texDrag) {
+      const revertable = texDrag.mode === 'pencil' || texDrag.mode === 'erase' || texDrag.mode === 'bucket' || texDrag.mode === 'selmove';
+      if (revertable && texState.undoStack.length) texUndo();
+      texDrag = null;
+    }
+    texState.selecting = null;
+    hideTexMagnifier();
+    for (const id of texTouch.pointers.keys()) { try { wrap.setPointerCapture(id); } catch (e) { /* ignore */ } }
+
+    const a = pts[0], b = pts[1];
+    const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
+    const wr = wrap.getBoundingClientRect();
+    const { w, h } = currentTexSize();
+    const cx = wr.left + wr.width / 2, cy = wr.top + wr.height / 2;
+    const zoom0 = texState.zoom, panX0 = texState.panX, panY0 = texState.panY;
+    // 初始中点对应的贴图像素坐标；缩放过程中该像素始终跟随两指中点（即同时支持双指平移）。
+    const originX0 = cx - w * zoom0 / 2 + panX0;
+    const originY0 = cy - h * zoom0 / 2 + panY0;
+    texTouch.pinch = {
+      startDist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+      zoom0, panX0, panY0,
+      tx0: (midX - originX0) / zoom0,
+      ty0: (midY - originY0) / zoom0,
+      cx, cy,
+    };
+  };
+
+  const updateTexPinch = () => {
+    const pinch = texTouch.pinch;
+    const pts = [...texTouch.pointers.values()];
+    if (!pinch || pts.length < 2) return;
+    const a = pts[0], b = pts[1];
+    const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
+    const { w, h } = currentTexSize();
+    const zoom = Math.max(0.1, Math.min(32, pinch.zoom0 * dist / pinch.startDist));
+    texState.zoom = zoom;
+    texState.panX = midX - pinch.tx0 * zoom - pinch.cx + w * zoom / 2;
+    texState.panY = midY - pinch.ty0 * zoom - pinch.cy + h * zoom / 2;
+    applyTexView();
+  };
 
   wrap.addEventListener('pointerdown', (ev) => {
     ev.preventDefault();
+    if (ev.pointerType === 'touch') {
+      texTouch.pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      if (texTouch.pointers.size >= 2) { beginTexPinch(); return; }
+    }
     if (ev.button === 1) { // 中键拖动：平移（灰色区域亦有效）
       texDrag = { mode: 'pan', x: ev.clientX, y: ev.clientY, panX: texState.panX, panY: texState.panY };
       wrap.setPointerCapture(ev.pointerId);
@@ -554,6 +674,10 @@ export function initTextureEditor() {
   });
 
   wrap.addEventListener('pointermove', (ev) => {
+    if (ev.pointerType === 'touch' && texTouch.pointers.has(ev.pointerId)) {
+      texTouch.pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      if (texTouch.pinch) { updateTexPinch(); return; }
+    }
     if (texDrag) {
       if (texDrag.mode === 'pan') {
         texState.panX = texDrag.panX + (ev.clientX - texDrag.x);
@@ -598,7 +722,12 @@ export function initTextureEditor() {
     }
   });
 
-  wrap.addEventListener('pointerup', () => {
+  wrap.addEventListener('pointerup', (ev) => {
+    if (ev.pointerType === 'touch') {
+      texTouch.pointers.delete(ev.pointerId);
+      if (texTouch.pinch && texTouch.pointers.size < 2) texTouch.pinch = null;
+    }
+    hideTexMagnifier();
     if (texDrag && texDrag.mode === 'select') {
       const s = texState.selection;
       if (s && Math.abs(s.x1 - s.x0) < 1 && Math.abs(s.y1 - s.y0) < 1) texState.selection = null;
@@ -614,6 +743,15 @@ export function initTextureEditor() {
     // 中键平移/右键橡皮擦松开瞬间，浏览器可能在外部元素上补发 contextmenu（此时 texDrag 已置空，
     // 靠短暂时间窗口抑制）。捕获保证 pointerup 仍落回 wrap。
     if (suppressCtx) texCtxSuppressUntil = performance.now() + 400;
+  });
+  wrap.addEventListener('pointercancel', (ev) => {
+    if (ev.pointerType === 'touch') {
+      texTouch.pointers.delete(ev.pointerId);
+      if (texTouch.pinch && texTouch.pointers.size < 2) texTouch.pinch = null;
+    }
+    texDrag = null;
+    texState.selecting = null;
+    hideTexMagnifier();
   });
 
   wrap.addEventListener('wheel', (ev) => {
@@ -645,6 +783,7 @@ export function initTextureEditor() {
     if (!btn) return;
     if (btn.id === 'tex-undo') { texUndo(); return; }
     if (btn.id === 'tex-redo') { texRedo(); return; }
+    hideTexMagnifier();
     texAltPreviewOn = false; texPreAltTool = null; // 手动切工具时退出 Alt 预览
     texState.tool = btn.dataset.ttool;
     document.querySelectorAll('.tex-tool[data-ttool]').forEach(b => b.classList.toggle('active', b === btn));
@@ -696,6 +835,7 @@ export function paintAt(p, mode) {
   if (mode === 'eraser' || mode === 'erase') paintArea(p.x, p.y, (x, y) => { texErasePixel(x, y); return true; });
   else paintArea(p.x, p.y, (x, y) => { texSetPixel(x, y); return true; });
   renderTexCanvas();
+  updateTexMagnifier(p.x, p.y);
   if (typeof rebuildAtlas === 'function') rebuildAtlas();
   setDirty(true);
 }

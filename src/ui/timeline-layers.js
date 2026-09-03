@@ -12,7 +12,7 @@
 import { t } from '../core/i18n.js';
 import { addLongPress, hasTouch } from '../core/device.js';
 import { state, propComps, compPr, getParticle } from '../core/constants.js';
-import { TL_PX_PER_TICK, timelineViewStart, setTimelineViewStart, drawTimeline, scrubAutoPan, tlNiceStep, commitFunctionRebuild } from './panels.js';
+import { TL_PX_PER_TICK, timelineViewStart, setTimelineViewStart, setTLPxPerTick, drawTimeline, scrubAutoPan, tlNiceStep, commitFunctionRebuild } from './panels.js';
 import { rebuildPoints, maxTick, invalidateMaxTickCache } from '../core/animation.js';
 import { findTrackByPr } from '../core/animation-eval.js';
 import { baseValueFor, removeKeyframe } from '../core/edit.js';
@@ -312,6 +312,43 @@ export function tlInitLayerEvents() {
   const canvas = document.getElementById('tl-layers-canvas');
   if (!canvas) return;
 
+  // 触屏手势（移动端优化）：
+  // - 单指在空白处拖动 = 平移时间轴视图（与 #timeline 中键拖动一致，不再 scrub）；
+  // - 双指捏合 = 以两指中点为锚点缩放每 tick 像素，双指中点移动同步平移。
+  // 关键帧/寿命条拖拽与鼠标左键 scrub 行为保持不变。
+  const touchGest = { pointers: new Map(), mode: null, panStart: null, pinch: null };
+
+  const beginTouchPinch = () => {
+    const pts = [...touchGest.pointers.values()];
+    if (pts.length < 2) return;
+    const a = pts[0], b = pts[1];
+    const midX = (a.x + b.x) / 2 - canvas.getBoundingClientRect().left;
+    const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    touchGest.mode = 'pinch';
+    touchGest.panStart = null;
+    touchGest.pinch = {
+      startDist: dist,
+      startPx: TL_PX_PER_TICK,
+      // 捏合锚点：手势开始时两指中点正对的 tick，缩放过程中保持该 tick 跟随中点
+      anchorTick: timelineViewStart + midX / TL_PX_PER_TICK,
+    };
+  };
+
+  const updateTouchPinch = () => {
+    const pinch = touchGest.pinch;
+    const pts = [...touchGest.pointers.values()];
+    if (!pinch || pts.length < 2) return;
+    const a = pts[0], b = pts[1];
+    const midX = (a.x + b.x) / 2 - canvas.getBoundingClientRect().left;
+    const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    const newPx = Math.max(0.25, Math.min(128, pinch.startPx * dist / pinch.startDist));
+    setTLPxPerTick(newPx);
+    // 中点移动会自然带动平移：锚点 tick 始终落在当前中点处
+    setTimelineViewStart(Math.max(0, pinch.anchorTick - midX / newPx));
+    drawTimeline();
+    drawTimelineLayers();
+  };
+
   // HTML 标签轨滚动 → 同步 lane 画布
   const tree = document.getElementById('tl-tree');
   if (tree) {
@@ -322,6 +359,22 @@ export function tlInitLayerEvents() {
   }
 
   canvas.addEventListener('pointerdown', ev => {
+    // 触屏手势登记：任何触屏按下都先记录，第二根手指落下即切换为捏合缩放。
+    if (ev.pointerType === 'touch') {
+      touchGest.pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      if (touchGest.pointers.size >= 2) {
+        // 结束当前单指拖拽（关键帧/寿命条/平移），进入双指缩放
+        tlLayerState.drag = null;
+        state.scrubbing = false;
+        touchGest.mode = null;
+        touchGest.panStart = null;
+        try { canvas.setPointerCapture(ev.pointerId); } catch (e) { /* ignore */ }
+        beginTouchPinch();
+        drawTimeline();
+        drawTimelineLayers();
+        return;
+      }
+    }
     if (ev.button !== 0) return;
     // 拖动时间轴时，之前聚焦的输入框应取消焦点而非保持/重新聚焦
     if (document.activeElement && document.activeElement !== document.body && document.activeElement.blur) {
@@ -345,7 +398,14 @@ export function tlInitLayerEvents() {
     tlLayerState.selectedKf = null;
     const res = tlLayerHitAt(ev.clientX, ev.clientY);
     if (!res) {
-      // 空白区域拖动：scrub 播放头（无关键帧/对象时也能拖动标尺）
+      if (ev.pointerType === 'touch') {
+        // 空白处触屏单指拖动：平移时间轴视图（与 #timeline 中键拖动一致）
+        canvas.setPointerCapture(ev.pointerId);
+        touchGest.mode = 'pan';
+        touchGest.panStart = { x: ev.clientX, y: ev.clientY, viewStart: timelineViewStart };
+        return;
+      }
+      // 空白区域鼠标拖动：scrub 播放头（无关键帧/对象时也能拖动标尺）
       canvas.setPointerCapture(ev.pointerId);
       state.scrubbing = true;
       state.time = Math.max(0, timelineXToTickL(ev.clientX));
@@ -388,6 +448,18 @@ export function tlInitLayerEvents() {
   });
 
   canvas.addEventListener('pointermove', ev => {
+    // 触屏手势优先：捏合缩放 / 单指平移接管，不进入关键帧/寿命条/scrub 逻辑。
+    if (ev.pointerType === 'touch' && touchGest.pointers.has(ev.pointerId)) {
+      touchGest.pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      if (touchGest.mode === 'pinch') { updateTouchPinch(); return; }
+      if (touchGest.mode === 'pan') {
+        const dx = ev.clientX - touchGest.panStart.x;
+        setTimelineViewStart(Math.max(0, touchGest.panStart.viewStart - dx / TL_PX_PER_TICK));
+        drawTimeline();
+        drawTimelineLayers();
+        return;
+      }
+    }
     const d = tlLayerState.drag;
     if (!d) {
       // 光标：默认 default；关键帧上 pointer；粒子寿命条主体上 grab；两端手柄 ew-resize
@@ -468,8 +540,32 @@ export function tlInitLayerEvents() {
   });
 
   const endDrag = () => { tlLayerState.drag = null; state.scrubbing = false; };
-  canvas.addEventListener('pointerup', endDrag);
-  canvas.addEventListener('pointercancel', endDrag);
+
+  const endTouchPointer = (ev) => {
+    if (ev.pointerType !== 'touch' || !touchGest.pointers.has(ev.pointerId)) return;
+    touchGest.pointers.delete(ev.pointerId);
+    if (touchGest.mode === 'pinch') {
+      if (touchGest.pointers.size < 2) {
+        touchGest.pinch = null;
+        if (touchGest.pointers.size === 1) {
+          // 双指缩放中抬起一指：剩余那指继续平移，手势体验连续
+          const [last] = [...touchGest.pointers.values()];
+          touchGest.mode = 'pan';
+          touchGest.panStart = { x: last.x, y: last.y, viewStart: timelineViewStart };
+        } else {
+          touchGest.mode = null;
+          touchGest.panStart = null;
+        }
+      }
+    } else if (touchGest.mode === 'pan') {
+      if (touchGest.pointers.size === 0) {
+        touchGest.mode = null;
+        touchGest.panStart = null;
+      }
+    }
+  };
+  canvas.addEventListener('pointerup', (ev) => { endTouchPointer(ev); endDrag(); });
+  canvas.addEventListener('pointercancel', (ev) => { endTouchPointer(ev); endDrag(); });
 
   const handleLaneDblClick = (ev) => {
     const res = tlLayerHitAt(ev.clientX, ev.clientY);
