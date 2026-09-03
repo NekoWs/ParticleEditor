@@ -25,6 +25,8 @@ import {showContextMenu} from './tree.js';
 import {customSelect} from './select.js';
 import {refreshTexBase64Cache} from '../io/io.js';
 import {modalAlert, modalConfirm, modalPrompt} from './ui.js';
+import {makeFloatWindow} from './float-window.js';
+import {isNarrowLayout} from '../core/device.js';
 
 export const TEX_UV_COLOR = '#5b9dff'; // UV 预览描边（实线，与选中态 --accent 一致）
 export const TEX_SEL_COLOR = '#5b9dff'; // 选区描边（虚线，固定显示）
@@ -219,22 +221,27 @@ export function updateTexOverlay() {
   const ox = cr.left - wr.left, oy = cr.top - wr.top; // canvas 相对 wrap 的偏移（已含居中与 pan 平移）
   const z = texState.zoom;
   const { w: texWpx, h: texHpx } = currentTexSize();
+  // 实际每个贴图像素占的 CSS px：用 canvas 真实尺寸反推，避免 zoom 为小数时
+  // 画布 CSS 尺寸被 Math.round 后网格/描边与像素边界逐格漂移（尺寸改变后尤其明显）。
+  const scaleX = texWpx > 0 ? cr.width / texWpx : z;
+  const scaleY = texHpx > 0 ? cr.height / texHpx : z;
 
   // 像素网格层：与画布完全对齐，每像素一条网格线（颜色与画布边框 var(--border) 一致）
   grid.style.display = 'block';
   grid.style.left = ox + 'px';
   grid.style.top = oy + 'px';
-  grid.style.width = Math.round(texWpx * z) + 'px';
-  grid.style.height = Math.round(texHpx * z) + 'px';
-  grid.style.setProperty('--cell', z + 'px');
+  grid.style.width = cr.width + 'px';
+  grid.style.height = cr.height + 'px';
+  grid.style.setProperty('--cell-x', scaleX + 'px');
+  grid.style.setProperty('--cell-y', scaleY + 'px');
 
   const setBox = (el, x, y, w, h, color, dashed) => {
     if (w <= 0 || h <= 0) { el.style.display = 'none'; return; }
     el.style.display = 'block';
-    el.style.left = (ox + x * z) + 'px';
-    el.style.top = (oy + y * z) + 'px';
-    el.style.width = Math.max(1, Math.round(w * z)) + 'px';
-    el.style.height = Math.max(1, Math.round(h * z)) + 'px';
+    el.style.left = (ox + x * scaleX) + 'px';
+    el.style.top = (oy + y * scaleY) + 'px';
+    el.style.width = Math.max(1, Math.round(w * scaleX)) + 'px';
+    el.style.height = Math.max(1, Math.round(h * scaleY)) + 'px';
     el.style.borderColor = color;
     el.style.borderStyle = dashed ? 'dashed' : 'solid';
   };
@@ -283,8 +290,8 @@ export function updateTexOverlay() {
     const spanW = stepx * lastCol + effFw, spanH = stepy * lastRow + effFh;
     setBox(cells, startX, startY, spanW, spanH, TEX_CELL_COLOR, false);
     if (stepx > 0 || stepy > 0) {
-      const gx = stepx > 0 ? 'repeating-linear-gradient(to right, ' + TEX_CELL_COLOR + ' 0, ' + TEX_CELL_COLOR + ' 1px, transparent 1px, transparent ' + (stepx * z) + 'px)' : '';
-      const gy = stepy > 0 ? 'repeating-linear-gradient(to bottom, ' + TEX_CELL_COLOR + ' 0, ' + TEX_CELL_COLOR + ' 1px, transparent 1px, transparent ' + (stepy * z) + 'px)' : '';
+      const gx = stepx > 0 ? 'repeating-linear-gradient(to right, ' + TEX_CELL_COLOR + ' 0, ' + TEX_CELL_COLOR + ' 1px, transparent 1px, transparent ' + (stepx * scaleX) + 'px)' : '';
+      const gy = stepy > 0 ? 'repeating-linear-gradient(to bottom, ' + TEX_CELL_COLOR + ' 0, ' + TEX_CELL_COLOR + ' 1px, transparent 1px, transparent ' + (stepy * scaleY) + 'px)' : '';
       cells.style.backgroundImage = gx + (gx && gy ? ', ' : '') + gy;
     } else {
       cells.style.backgroundImage = 'none';
@@ -301,9 +308,9 @@ export function updateTexOverlay() {
     setBox(sel, 0, 0, 0, 0, '', false);
   }
 
-  // 悬停描边（铅笔：显示将绘制的刷子范围）
+  // 悬停描边（铅笔/橡皮：显示将绘制的刷子范围）
   const hov = texState.hover;
-  if (hov && texState.tool === 'pencil') {
+  if (hov && (texState.tool === 'pencil' || texState.tool === 'eraser')) {
     const r = Math.floor(texState.brushSize / 2);
     setBox(frame, hov.x - r, hov.y - r, texState.brushSize, texState.brushSize,
       contrastColorAt(hov.x - r, hov.y - r, texState.brushSize, texState.brushSize), false);
@@ -421,6 +428,10 @@ export let texDrag = null; // { mode: 'draw'|'pan'|'select'|'selmove'|'erase', l
 
 // 触屏双指手势（缩放 + 平移，行为与视口 OrbitControls 一致）；单指仍为各工具原有交互。
 const texTouch = { pointers: new Map(), pinch: null };
+
+// 贴图编辑器全屏窗口状态（把编辑器/文件区移入悬浮窗，UV 面板留在侧栏）
+let texFwin = null;
+let texFwinMoved = null;
 
 /* =========================================================================
  * 画笔放大镜：铅笔绘制时在编辑器下方显示当前像素及邻域
@@ -564,6 +575,73 @@ window.addEventListener('keydown', (e) => { if (e.key === 'Alt' && texActive) { 
 window.addEventListener('keyup', (e) => { if (e.key === 'Alt') { e.preventDefault(); texAltPreview(false); } });
 window.addEventListener('blur', () => texAltPreview(false));
 
+/* =========================================================================
+ * 贴图编辑器全屏窗口：把编辑器（除 UV 面板外）移入悬浮窗
+ * ======================================================================= */
+function texFullscreenParts() {
+  const pane = document.getElementById('pane-texture');
+  if (!pane) return [];
+  return [...pane.children].filter(el => el.id !== 'uv-panel');
+}
+
+export function openTexFullscreen() {
+  if (texFwin) return;
+  const pane = document.getElementById('pane-texture');
+  if (!pane) return;
+  const mobile = isNarrowLayout();
+
+  const win = makeFloatWindow('tex-fwin', t('tex.editorTitle'), {
+    x: mobile ? 0 : 120,
+    y: mobile ? 0 : 80,
+    w: mobile ? window.innerWidth : Math.min(760, Math.max(520, Math.round(window.innerWidth * 0.6))),
+    h: mobile ? window.innerHeight : Math.min(560, Math.max(360, Math.round(window.innerHeight * 0.72))),
+    minW: 320, minH: 240,
+    resizable: !mobile,
+    minimizable: false,
+    closable: true,
+    onClose: closeTexFullscreen,
+    onResize: () => applyTexView(),
+  });
+  texFwin = win;
+  win.el.classList.add('tex-fwin');
+  if (mobile) {
+    win.el.classList.add('tex-fwin-fullscreen');
+    win.el.style.left = '0px';
+    win.el.style.top = '0px';
+    win.el.style.width = window.innerWidth + 'px';
+    win.el.style.height = window.innerHeight + 'px';
+  }
+
+  texFwinMoved = texFullscreenParts();
+  for (const el of texFwinMoved) win.body.appendChild(el);
+  document.body.appendChild(win.el);
+
+  const fsBtn = document.getElementById('tex-fullscreen-btn');
+  if (fsBtn) fsBtn.style.display = 'none';
+  pane.classList.add('tex-fullscreen-active');
+  applyTexView();
+}
+
+export function closeTexFullscreen() {
+  if (!texFwin) return;
+  const pane = document.getElementById('pane-texture');
+  const uv = document.getElementById('uv-panel');
+  if (pane) {
+    for (const el of texFwinMoved || []) {
+      if (uv && uv.parentElement === pane) pane.insertBefore(el, uv);
+      else pane.appendChild(el);
+    }
+    pane.classList.remove('tex-fullscreen-active');
+  }
+  if (texFwin.dispose) texFwin.dispose();
+  texFwin.el.remove();
+  texFwin = null;
+  texFwinMoved = null;
+  const fsBtn = document.getElementById('tex-fullscreen-btn');
+  if (fsBtn) fsBtn.style.display = '';
+  applyTexView();
+}
+
 export function initTextureEditor() {
   const wrap = texCanvasWrap();
   const c = texCanvas();
@@ -580,7 +658,7 @@ export function initTextureEditor() {
     if (pts.length < 2) return;
     // 双指落下：取消当前单指交互；若第一指已开始画/移动选区，用撤销恢复这一笔的开头状态。
     if (texDrag) {
-      const revertable = texDrag.mode === 'pencil' || texDrag.mode === 'erase' || texDrag.mode === 'bucket' || texDrag.mode === 'selmove';
+      const revertable = texDrag.mode === 'pencil' || texDrag.mode === 'eraser' || texDrag.mode === 'erase' || texDrag.mode === 'bucket' || texDrag.mode === 'selmove';
       if (revertable && texState.undoStack.length) texUndo();
       texDrag = null;
     }
@@ -738,8 +816,8 @@ export function initTextureEditor() {
       applyStroke(p, texDrag.mode);
       return;
     }
-    // 悬停描边（铅笔）
-    if (texState.tool === 'pencil') {
+    // 悬停描边（铅笔/橡皮）
+    if (texState.tool === 'pencil' || texState.tool === 'eraser') {
       const p = texPixelAt(ev);
       if (!texState.hover || texState.hover.x !== p.x || texState.hover.y !== p.y) {
         texState.hover = p;
@@ -825,6 +903,10 @@ export function initTextureEditor() {
       updateColorButton();
     });
   });
+
+  // 右下角全屏按钮
+  const fsBtn = document.getElementById('tex-fullscreen-btn');
+  if (fsBtn) fsBtn.addEventListener('click', () => openTexFullscreen());
 
   // 文件操作
   document.getElementById('btn-tex-upload').addEventListener('click', () => document.getElementById('tex-upload').click());
@@ -967,8 +1049,14 @@ export function openColorPicker(x, y, rgba, onCommit) {
 
   box.appendChild(sv); box.appendChild(hue); box.appendChild(alpha); box.appendChild(row);
   document.body.appendChild(box);
-  box.style.left = Math.min(x, window.innerWidth - 240) + 'px';
-  box.style.top = Math.min(y, window.innerHeight - 250) + 'px';
+  // 移动端/窄屏下用实际尺寸双向钳制，确保整个取色板都落在屏幕内。
+  const pad = 8;
+  const bw = box.offsetWidth || 210;
+  const bh = box.offsetHeight || 250;
+  const left = Math.max(pad, Math.min(x, window.innerWidth - bw - pad));
+  const top = Math.max(pad, Math.min(y, window.innerHeight - bh - pad));
+  box.style.left = left + 'px';
+  box.style.top = top + 'px';
 }
 export function closeColorPicker() { const b = document.getElementById('color-picker-pop'); if (b) b.remove(); }
 window.addEventListener('pointerdown', (e) => { if (!e.target.closest('#color-picker-pop') && !e.target.closest('#tex-color-btn')) closeColorPicker(); });

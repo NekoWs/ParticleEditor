@@ -51,7 +51,8 @@ export var LANGS = {
     'fx.param.w': '宽', 'fx.param.d': '深', 'fx.param.diskR': '半径',
     // —— 贴图编辑器 ——
     'tex.tool.select': '矩形选区', 'tex.tool.move': '移动选区（在选区内拖动移动内容）',
-    'tex.tool.pencil': '铅笔', 'tex.tool.bucket': '油漆桶', 'tex.tool.picker': '滴管（按住 Alt 临时切换）',
+    'tex.tool.pencil': '铅笔', 'tex.tool.eraser': '橡皮', 'tex.tool.bucket': '油漆桶', 'tex.tool.picker': '滴管（按住 Alt 临时切换）',
+    'tex.fullscreen': '全屏', 'tex.editorTitle': '贴图编辑器',
     'tex.upload': '上传贴图', 'tex.export': '导出',
     'tex.selectHint': '选中对象以编辑贴图 / UV',
     'tex.namePrompt': '贴图名称', 'tex.renameTitle': '重命名贴图', 'tex.newName': '新名称',
@@ -275,7 +276,8 @@ export var LANGS = {
     'fx.param.w': 'Width', 'fx.param.d': 'Depth', 'fx.param.diskR': 'Radius',
     // —— 贴图编辑器 ——
     'tex.tool.select': 'Rectangle Selection', 'tex.tool.move': 'Move Selection (drag inside to move content)',
-    'tex.tool.pencil': 'Pencil', 'tex.tool.bucket': 'Bucket', 'tex.tool.picker': 'Eyedropper (hold Alt)',
+    'tex.tool.pencil': 'Pencil', 'tex.tool.eraser': 'Eraser', 'tex.tool.bucket': 'Bucket', 'tex.tool.picker': 'Eyedropper (hold Alt)',
+    'tex.fullscreen': 'Fullscreen', 'tex.editorTitle': 'Texture Editor',
     'tex.upload': 'Upload Texture', 'tex.export': 'Export',
     'tex.selectHint': 'Select an object to edit texture / UV',
     'tex.namePrompt': 'Texture Name', 'tex.renameTitle': 'Rename Texture', 'tex.newName': 'New Name',

@@ -152,9 +152,11 @@ export function makeFloatWindow(id, title, opts) {
   }
   window.addEventListener('resize', clampToScreen);
 
+  function dispose() { window.removeEventListener('resize', clampToScreen); }
+
   return {
     el, body, titlebar: tb,
-    setPos, setSize, minimize, restore,
+    setPos, setSize, minimize, restore, dispose,
     get isMinimized() { return minimized; },
     get x() { return el.offsetLeft; },
     get y() { return el.offsetTop; },

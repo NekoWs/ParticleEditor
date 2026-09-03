@@ -156,6 +156,7 @@
             <button class="tex-tool active" data-ttool="select" data-i18n-title="tex.tool.select" title="矩形选区"><svg viewBox="0 0 18 18"><path d="M4 3h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2.5 2"/></svg></button>
             <button class="tex-tool" data-ttool="selmove" data-i18n-title="tex.tool.move" title="移动选区（在选区内拖动移动内容）"><svg viewBox="0 0 18 18"><path d="M4 3h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2.5 2"/><path d="M9 6v6M6 9h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
             <button class="tex-tool" data-ttool="pencil" data-i18n-title="tex.tool.pencil" title="铅笔"><svg viewBox="0 0 18 18"><path d="M3.5 14.5l.8-3 8-8 2.2 2.2-8 8-3 .8z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
+            <button class="tex-tool" data-ttool="eraser" data-i18n-title="tex.tool.eraser" title="橡皮"><svg viewBox="0 0 18 18"><path d="M8.5 14.5L3 9l6.5-6.5 5 5L8.5 14.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M3 9l-1 1 4.5 4.5L12 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
             <button class="tex-tool" data-ttool="bucket" data-i18n-title="tex.tool.bucket" title="油漆桶"><svg viewBox="0 0 18 18"><path d="M4 14L2.5 9l4-4 3 3-5.5 6z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 5L13 8.5M12 9l-1.5 1.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
             <button class="tex-tool" data-ttool="picker" data-i18n-title="tex.tool.picker" title="滴管（按住 Alt 临时切换）"><svg viewBox="0 0 18 18"><path d="M13 3l2 2-6.5 6.5-2.5.5.5-2.5L13 3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M4.5 13.5L2 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
             <div class="tex-tool-sep"></div>
@@ -172,6 +173,7 @@
             <canvas id="tex-magnifier" class="tex-magnifier"></canvas>
             <button id="tex-color-btn" data-i18n-title="common.color" title="颜色" style="display:none"></button>
           </div>
+          <button id="tex-fullscreen-btn" class="tex-fullscreen-btn" data-i18n-title="tex.fullscreen" title="全屏"><svg viewBox="0 0 18 18"><path d="M3 6V3h3M12 3h3v3M15 12v3h-3M6 15H3v-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
           <div class="tex-meta" id="tex-meta">16 × 16</div>
         </div>
         <div class="tex-io">

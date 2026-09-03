@@ -452,6 +452,11 @@ function renderFlatRow(row) {
       add.title = t('tree.addKfHint');
       add.dataset.fxid = row.fx.id;
       add.dataset.name = row.name;
+      const del = el('button', 'tt-del-var');
+      del.textContent = '×';
+      del.title = t('common.delete');
+      del.dataset.fxid = row.fx.id;
+      del.dataset.name = row.name;
       div.appendChild(label);
       // 预设参数对应的变量：在变量名右侧以灰色显示参数提示（如 rad → 半径）。
       const preset = row.fx.preset && FUNCTION_PRESETS[row.fx.preset];
@@ -463,6 +468,7 @@ function renderFlatRow(row) {
       }
       div.appendChild(inp);
       div.appendChild(add);
+      div.appendChild(del);
       break;
     }
   }
@@ -563,6 +569,11 @@ function onTreeClick(ev) {
   const addVar = ev.target.closest('.tt-add-var');
   if (addVar) {
     addVariable(addVar.dataset.fxid);
+    return;
+  }
+  const delVar = ev.target.closest('.tt-del-var');
+  if (delVar) {
+    deleteVariable(delVar.dataset.fxid, delVar.dataset.name);
     return;
   }
   const addKf = ev.target.closest('.tt-add-kf');
@@ -857,6 +868,15 @@ function addVariable(fxId) {
   fx.vars['v' + k] = { base: 0, kf: [] };
   // 展开变量行，让新建变量立即可见并可直接编辑
   tlTreeState.expanded.add('f:' + fx.id + '|@vars');
+  commitFunctionRebuild(fx);
+  refreshTimelineTree();
+}
+
+function deleteVariable(fxId, name) {
+  const fx = getFunction(fxId);
+  if (!fx || !fx.vars || !Object.prototype.hasOwnProperty.call(fx.vars, name)) return;
+  pushUndo();
+  delete fx.vars[name];
   commitFunctionRebuild(fx);
   refreshTimelineTree();
 }

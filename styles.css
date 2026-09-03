@@ -246,9 +246,9 @@ body {
 #tex-grid {
   z-index: 1; border: none; display: none;
   background-image:
-    repeating-linear-gradient(to right, var(--border) 0, var(--border) 1px, transparent 1px, transparent var(--cell, 8px)),
-    repeating-linear-gradient(to bottom, var(--border) 0, var(--border) 1px, transparent 1px, transparent var(--cell, 8px));
-  background-size: var(--cell, 8px) 100%, 100% var(--cell, 8px);
+    repeating-linear-gradient(to right, var(--border) 0, var(--border) 1px, transparent 1px, transparent var(--cell-x, 8px)),
+    repeating-linear-gradient(to bottom, var(--border) 0, var(--border) 1px, transparent 1px, transparent var(--cell-y, 8px));
+  background-size: var(--cell-x, 8px) 100%, 100% var(--cell-y, 8px);
   background-origin: content-box;
 }
 #tex-overlay-cells { background-origin: content-box; }
@@ -270,7 +270,20 @@ body {
 .tex-resize-pop input:focus { border-color: var(--accent); outline: none; }
 .tex-resize-pop .trp-btns { display: flex; justify-content: flex-end; gap: 6px; }
 #tex-color-btn { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; border: 2px solid #fff; border-radius: 5px; padding: 0; cursor: pointer; box-shadow: 0 0 3px rgba(0,0,0,0.5); }
-.tex-meta { position: absolute; bottom: 5px; right: 8px; color: var(--muted); font-size: 11px; pointer-events: none; text-shadow: 0 0 3px #000; }
+.tex-meta { position: absolute; bottom: 5px; right: 42px; color: var(--muted); font-size: 11px; pointer-events: none; text-shadow: 0 0 3px #000; }
+/* 贴图编辑器右下角全屏按钮：默认隐藏，悬停/触屏时显示图标 */
+.tex-fullscreen-btn {
+  position: absolute; right: 8px; bottom: 8px; z-index: 6;
+  width: 26px; height: 26px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--panel-2); color: var(--muted);
+  border: 1px solid var(--border); border-radius: 6px;
+  cursor: pointer; opacity: 0; pointer-events: none;
+  transition: opacity 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.tex-fullscreen-btn svg { width: 15px; height: 15px; }
+.tex-editor:hover .tex-fullscreen-btn { opacity: 1; pointer-events: auto; }
+.tex-fullscreen-btn:hover { color: var(--text); border-color: var(--accent); }
 /* 画笔放大镜：绘制时显示在编辑器下方，展示当前像素及邻域 */
 .tex-magnifier {
   position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
@@ -716,10 +729,18 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .tt-clabel { flex: 0 0 16px; font-size: 11px; color: #9aa0ad; text-align: center; font-weight: 700; }
 .tt-cval { width: 35px; }
 .tt-vname {
-  flex: 0 0 64px; min-width: 0; font-size: 12px; color: var(--text);
+  flex: 0 0 auto; min-width: 0; max-width: 180px;
+  font-size: 12px; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .tt-var-val { width: 52px; }
+.tt-del-var {
+  flex: 0 0 auto; width: 20px; height: 20px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: none; border-radius: 4px;
+  color: var(--muted); font-size: 13px; line-height: 1; cursor: pointer;
+}
+.tt-del-var:hover { color: var(--danger); background: rgba(255, 107, 107, 0.14); }
 
 .tt-val, .tt-var-val {
   font-size: 11px; color: #e8eaf0; text-align: left;
@@ -1108,6 +1129,18 @@ body.puzzle-mode .fwin { display: flex; }
 .fwin-rsz-nw { top: -3px; left: -3px; width: 10px; height: 10px; cursor: nwse-resize; }
 .fwin-rsz-se { bottom: -3px; right: -3px; width: 10px; height: 10px; cursor: nwse-resize; }
 .fwin-rsz-sw { bottom: -3px; left: -3px; width: 10px; height: 10px; cursor: nesw-resize; }
+/* 贴图编辑器全屏窗口：不受拼图模式限制，始终显示 */
+.fwin.tex-fwin { display: flex; }
+.tex-fwin .fwin-body { display: flex; flex-direction: column; }
+.tex-fwin .tex-editor { flex: 1 1 auto; height: auto; min-height: 0; }
+.tex-fwin .tex-io,
+.tex-fwin .tex-list { flex: 0 0 auto; }
+/* 移动端全屏窗口：铺满视口，忽略窄屏 .fwin 的 96vw/70vh 上限 */
+.fwin.tex-fwin-fullscreen {
+  max-width: none; max-height: none;
+  width: 100vw; height: 100vh;
+  left: 0; top: 0; border-radius: 0; border: none;
+}
 
 /* =========================================================================
  * 全屏拼图模式
@@ -1874,6 +1907,9 @@ body.puzzle-mode #puzzle-ghost-canvas { display: block; }
   #puzzle-toolbar .btn,
   .puzzle-taskbar-btn { height: 40px; padding: 0 14px; }
   .tt-val, .tt-var-val { height: 22px; font-size: 13px; }
+  .tt-del-var { width: 26px; height: 26px; }
+  /* 触屏没有 hover：全屏按钮常驻显示 */
+  .tex-fullscreen-btn { opacity: 0.85; pointer-events: auto; }
 
   /* 时间轴左侧标签轨：允许横向滚动，vec3 等宽行不再被裁剪 */
   .tl-tree { overflow-x: auto; }
