@@ -687,7 +687,8 @@ export function ensurePuzzleDom() {
   const title = document.createElement('span'); title.className = 'pz-title'; title.textContent = t('blk.title');
   const fxName = document.createElement('span'); fxName.className = 'pz-fx'; fxName.id = 'puzzle-fx-name';
   const spacer = document.createElement('span'); spacer.className = 'pz-spacer';
-  const paletteToggle = mkBtn('puzzle-palette-toggle', t('blk.palette'), 'btn pz-palette-toggle');
+  const paletteToggle = mkBtn('puzzle-palette-toggle', '☰', 'btn pz-palette-toggle');
+  paletteToggle.title = t('blk.palette');
   toolbar.appendChild(title); toolbar.appendChild(fxName); toolbar.appendChild(paletteToggle); toolbar.appendChild(spacer);
   toolbar.appendChild(mkBtn('puzzle-ok', t('common.ok'), 'btn bd-ok'));
   toolbar.appendChild(mkBtn('puzzle-cancel', t('common.cancel')));
@@ -721,11 +722,10 @@ export function ensurePuzzleDom() {
   const sceneY = narrow ? 52 : vh - 320;
   let sceneTaskIcon = null;
   const sceneWin = makeFloatWindow('fwin-scene', t('blk.scene'), {
-    x: sceneX, y: sceneY, w: sceneW, h: sceneH, minW: 240, minH: 160,
+    x: sceneX, y: sceneY, w: sceneW, h: sceneH, minW: 240, minH: 160, closable: false,
     onResize: () => { if (typeof resize === 'function') resize(); },
     onMinimize: () => { sceneWin.el.style.display = 'none'; if (!sceneTaskIcon) sceneTaskIcon = addTaskIcon(t('blk.scene'), () => sceneWin.restore()); },
-    onRestore: () => { sceneWin.el.style.display = ''; if (sceneTaskIcon) { sceneTaskIcon.remove(); sceneTaskIcon = null; } },
-    onClose: () => { sceneWin.el.style.display = 'none'; if (sceneTaskIcon) { sceneTaskIcon.remove(); sceneTaskIcon = null; } },
+    onRestore: () => { sceneWin.el.style.display = ''; if (typeof resize === 'function') resize(); if (sceneTaskIcon) { sceneTaskIcon.remove(); sceneTaskIcon = null; } },
   });
   document.body.appendChild(sceneWin.el);
 
@@ -736,11 +736,10 @@ export function ensurePuzzleDom() {
   const echoY = narrow ? 52 + sceneH + 8 : vh - 560;
   let echoTaskIcon = null;
   const echoWin = makeFloatWindow('fwin-echo', t('blk.code'), {
-    x: echoX, y: echoY, w: echoW, h: echoH, minW: 200, minH: 120,
+    x: echoX, y: echoY, w: echoW, h: echoH, minW: 200, minH: 120, closable: false,
     onResize: () => { if (typeof puzzleCanvasResize === 'function') puzzleCanvasResize(); },
     onMinimize: () => { echoWin.el.style.display = 'none'; if (!echoTaskIcon) echoTaskIcon = addTaskIcon(t('blk.code'), () => echoWin.restore()); },
-    onRestore: () => { echoWin.el.style.display = ''; if (echoTaskIcon) { echoTaskIcon.remove(); echoTaskIcon = null; } },
-    onClose: () => { echoWin.el.style.display = 'none'; if (echoTaskIcon) { echoTaskIcon.remove(); echoTaskIcon = null; } },
+    onRestore: () => { echoWin.el.style.display = ''; if (typeof puzzleCanvasResize === 'function') puzzleCanvasResize(); if (echoTaskIcon) { echoTaskIcon.remove(); echoTaskIcon = null; } },
   });
   const echoCanvas = document.createElement('canvas');
   echoCanvas.id = 'puzzle-echo-canvas';

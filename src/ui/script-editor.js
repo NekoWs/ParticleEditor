@@ -577,6 +577,18 @@ export function createScriptEditor(parent, opts) {
 
   const view = new EditorView({ state, parent });
 
+  // 触屏：聚焦代码编辑器时把编辑框滚到可视区，避免虚拟键盘遮挡正在输入的代码。
+  try {
+    if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
+      view.contentDOM.addEventListener('focus', () => {
+        setTimeout(() => {
+          try { parent.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+          catch (e) { if (typeof parent.scrollIntoView === 'function') parent.scrollIntoView(); }
+        }, 160);
+      });
+    }
+  } catch (e) { /* 测试桩 / 旧浏览器忽略 */ }
+
   // 点击容器空白区域也进入编辑；只有点击正文区才交给 CodeMirror 原生选择逻辑。
   // preventDefault 阻止浏览器默认焦点跳转，否则 view.focus() 会被随后的默认行为顶掉。
   parent.addEventListener('mousedown', (event) => {
