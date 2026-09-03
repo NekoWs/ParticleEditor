@@ -484,6 +484,32 @@ export function updateTexMagnifier(x, y) {
   ctx.strokeStyle = '#ffcc55';
   ctx.lineWidth = 1.5;
   ctx.strokeRect(c0 + 0.75, c0 + 0.75, TEX_MAG_CELL - 1.5, TEX_MAG_CELL - 1.5);
+
+  // 定位：跟随笔刷但避开手指当前触摸的像素位置。
+  // 放大镜挂在 body 下用 fixed 定位，避免被 .tex-editor 的 overflow:hidden 裁掉，
+  // 从而能放到手指上方（编辑器区域之外）而不是被手指盖住。
+  const wrap = texCanvasWrap();
+  if (wrap) {
+    const wr = wrap.getBoundingClientRect();
+    const { w, h } = currentTexSize();
+    const z = texState.zoom;
+    // 贴图画布在 wrap 内居中 + pan 偏移；笔刷中心即手指触摸点（视口坐标）。
+    const brushX = wr.left + wr.width / 2 - w * z / 2 + texState.panX + (x + 0.5) * z;
+    const brushY = wr.top + wr.height / 2 - h * z / 2 + texState.panY + (y + 0.5) * z;
+    const magW = el.width, magH = el.height;
+    const gap = 18, margin = 8;
+    if (el.parentElement !== document.body) document.body.appendChild(el);
+    el.style.position = 'fixed';
+    el.style.zIndex = '150';
+    const left = Math.max(margin, Math.min(brushX - magW / 2, Math.max(margin, window.innerWidth - magW - margin)));
+    let top = brushY - gap - magH;   // 优先：手指上方（手通常在触摸点下方）
+    if (top < margin) top = brushY + gap; // 上方放不下：手指下方
+    top = Math.max(margin, Math.min(top, Math.max(margin, window.innerHeight - magH - margin)));
+    el.style.left = left + 'px';
+    el.style.top = top + 'px';
+    el.style.bottom = 'auto';
+    el.style.transform = 'none';
+  }
   el.style.display = 'block';
 }
 
