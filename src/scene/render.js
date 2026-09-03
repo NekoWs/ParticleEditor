@@ -5,7 +5,7 @@
  * ======================================================================= */
 
 import {PARTICLE_SIZE_FACTOR, state, functionIndexCache, effMaxFrame, autoFramesFor} from '../core/constants.js';
-import { points, selectedPoints, previewPoints, texAtlasMap, camera, cameraWidgetMap, buildCameraWidget, removeCameraWidget } from './scene.js';
+import { points, selectedPoints, previewPoints, pointsPick, makeParticleQuadGeometry, texAtlasMap, camera, cameraWidgetMap, buildCameraWidget, removeCameraWidget } from './scene.js';
 import { cameraPoseAt } from '../core/cameras.js';
 import { resolveUV, refreshUVPanel } from '../ui/texture-editor.js';
 import { updateGizmo } from '../interaction/gizmo.js';
@@ -17,45 +17,65 @@ import * as THREE from "three";
  * 渲染
  * ======================================================================= */
 
-// 复用几何体与缓冲：仅顶点数量变化时重建，否则只更新数组内容（避免每帧 new/dispose 造成 GC 卡顿）
-// sizes 为每粒子 2 分量（sx, sy，非均匀 billboard 尺寸）
-export function setPointsGeometry(pts, positions, colors, sizes) {
-  let geo = pts.geometry;
-  const posAttr = geo && geo.getAttribute('position');
-  if (!geo || !posAttr || posAttr.array.length !== positions.length) {
-    geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions.length), 3));
-    geo.setAttribute('aColor', new THREE.BufferAttribute(new Float32Array(colors.length), 4));
-    geo.setAttribute('aSize', new THREE.BufferAttribute(new Float32Array(sizes.length), 2));
-    const old = pts.geometry;
-    pts.geometry = geo;
-    if (old) old.dispose();
-  }
-  geo.getAttribute('position').array.set(positions);
-  geo.getAttribute('aColor').array.set(colors);
-  geo.getAttribute('aSize').array.set(sizes);
-  geo.getAttribute('position').needsUpdate = true;
-  geo.getAttribute('aColor').needsUpdate = true;
-  geo.getAttribute('aSize').needsUpdate = true;
-  geo.setDrawRange(0, positions.length / 3);
-}
-
-// 主粒子缓冲的直写路径：返回几何体 attribute 的底层 Float32Array，调用方直接写入，
-// 避免「先写中间数组再 array.set 复制一遍」的双份拷贝（20w 粒子每帧省约 1.8M 次 float 写）。
-export function ensurePointsGeometry(pts, n) {
-  let geo = pts.geometry;
-  const posAttr = geo && geo.getAttribute('position');
-  if (!geo || !posAttr || posAttr.array.length !== n * 3) {
-    geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
-    geo.setAttribute('aColor', new THREE.BufferAttribute(new Float32Array(n * 4), 4));
-    geo.setAttribute('aSize', new THREE.BufferAttribute(new Float32Array(n * 2), 2));
-    const old = pts.geometry;
-    pts.geometry = geo;
-    if (old) old.dispose();
+// 把拾取用点集的 position attribute 指向渲染实例的同一份 Float32Array，
+// 让 Raycaster 的 Points 阈值拾取与 instanced quad 渲染完全同源（零拷贝）。
+function syncPickGeometry(n, positionsArray) {
+  const geo = pointsPick.geometry;
+  const attr = geo.getAttribute('position');
+  if (!attr || attr.array !== positionsArray) {
+    geo.setAttribute('position', new THREE.BufferAttribute(positionsArray, 3));
   }
   geo.setDrawRange(0, n);
-  const pos = geo.getAttribute('position');
+  geo.boundingSphere = null; // 位置已更新，下次拾取时重新计算包围球
+}
+
+// 复用几何体与实例缓冲：仅粒子数量变化时重建，否则只更新数组内容（避免每帧 new/dispose 造成 GC 卡顿）。
+// sizes 为每粒子 2 分量（sx, sy，billboard 四边形的世界尺寸）。
+export function setPointsGeometry(pts, positions, colors, sizes) {
+  const n = positions.length / 3;
+  const geo = pts.geometry;
+  const posAttr = geo && geo.getAttribute('aPosition');
+  if (!geo || !posAttr || posAttr.array.length !== positions.length) {
+    const newGeo = makeParticleQuadGeometry();
+    newGeo.setAttribute('aPosition', new THREE.InstancedBufferAttribute(positions, 3));
+    newGeo.setAttribute('aColor', new THREE.InstancedBufferAttribute(colors, 4));
+    newGeo.setAttribute('aSize', new THREE.InstancedBufferAttribute(sizes, 2));
+    const old = pts.geometry;
+    pts.geometry = newGeo;
+    if (old) old.dispose();
+  } else {
+    posAttr.array.set(positions);
+    geo.getAttribute('aColor').array.set(colors);
+    geo.getAttribute('aSize').array.set(sizes);
+  }
+  pts.count = n;
+  pts.geometry.getAttribute('aPosition').needsUpdate = true;
+  pts.geometry.getAttribute('aColor').needsUpdate = true;
+  pts.geometry.getAttribute('aSize').needsUpdate = true;
+}
+
+// 主粒子缓冲的直写路径：返回几何体 instance attribute 的底层 Float32Array，调用方直接写入，
+// 避免「先写中间数组再 array.set 复制一遍」的双份拷贝（20w 粒子每帧省约 1.8M 次 float 写）。
+export function ensurePointsGeometry(pts, n) {
+  const geo = pts.geometry;
+  const posAttr = geo && geo.getAttribute('aPosition');
+  if (!geo || !posAttr || posAttr.array.length !== n * 3) {
+    const newGeo = makeParticleQuadGeometry();
+    const positions = new Float32Array(n * 3);
+    const colors = new Float32Array(n * 4);
+    const sizes = new Float32Array(n * 2);
+    newGeo.setAttribute('aPosition', new THREE.InstancedBufferAttribute(positions, 3));
+    newGeo.setAttribute('aColor', new THREE.InstancedBufferAttribute(colors, 4));
+    newGeo.setAttribute('aSize', new THREE.InstancedBufferAttribute(sizes, 2));
+    const old = pts.geometry;
+    pts.geometry = newGeo;
+    if (old) old.dispose();
+    if (pts === points) syncPickGeometry(n, positions);
+    pts.count = n;
+    return { positions, colors, sizes };
+  }
+  pts.count = n;
+  const pos = geo.getAttribute('aPosition');
   const col = geo.getAttribute('aColor');
   const size = geo.getAttribute('aSize');
   pos.needsUpdate = true;
@@ -151,7 +171,7 @@ export function updateAnimatedUV() {
   if (changed) attr.needsUpdate = true;
 }
 
-// 设置 UV 相关 attribute（在 geometry 重建后调用）
+// 设置 UV 相关 instance attribute（在几何体重建后调用）
 export function setPointUVAttributes(geo, uvs) {
   const defs = [
     ['aUV', uvs.uv, 4],
@@ -163,7 +183,7 @@ export function setPointUVAttributes(geo, uvs) {
   for (const [name, arr, itemSize] of defs) {
     let attr = geo.getAttribute(name);
     if (!attr || attr.array.length !== arr.length) {
-      attr = new THREE.BufferAttribute(new Float32Array(arr.length), itemSize);
+      attr = new THREE.InstancedBufferAttribute(new Float32Array(arr.length), itemSize);
       geo.setAttribute(name, attr);
     }
     attr.array.set(arr);
@@ -405,6 +425,8 @@ function writePointBuffers(full) {
       sizes[i * 2 + 1] = sy > 0.02 ? sy : 0.02;
     }
   }
+  // 位置缓冲已原地更新：让拾取点集下次拾取时重算包围球（Raycaster 依赖它做射线粗筛）。
+  if (pointsPick.geometry) pointsPick.geometry.boundingSphere = null;
   const uvAttr = points.geometry.getAttribute('aUV');
   if (hasAnyTexture || !uvAttr || uvAttr.array.length !== n * 4) {
     setPointUVAttributes(points.geometry, { uv: rpUV, uvScale: rpUVScale, uvAnim: rpUVAnim, uvTex: rpUVTex, uvMode: rpUVMode });

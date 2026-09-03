@@ -13,7 +13,7 @@ import { showAboutModal, hexToRgba, rgbaToHex } from './ui/ui.js';
 import { openColorPicker } from './ui/color-picker.js';
 import { easeInOut } from './core/easing.js';
 import { openEasingEditor, easingCurveSVG } from './ui/easing-editor.js';
-import { viewport, renderer, camera, controls, scene, pointsMaterial, selectedMaterial, focalLengthPx, camTransition, setCamTransition, planePulse, setPlanePulse, updateRenderScale } from './scene/scene.js';
+import { viewport, renderer, camera, controls, scene, pointsMaterial, camTransition, setCamTransition, planePulse, setPlanePulse, updateRenderScale } from './scene/scene.js';
 import { rebuildPoints, rebuildPointsTime, maxTick, updateAnimatedUV, updateCameraWidgets } from './core/animation.js';
 import { editSelectionUniform, editSelectionRotationUniform } from './core/edit.js';
 import { pushUndo, undo, redo, beginContinuous, endContinuous } from './state/undo.js';
@@ -534,8 +534,6 @@ export function resize() {
   renderer.setSize(w, h);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
-  pointsMaterial.uniforms.uPixelScale.value = focalLengthPx();
-  selectedMaterial.uniforms.uPixelScale.value = focalLengthPx();
   if (!document.body.classList.contains('puzzle-mode')) {
     drawTimeline();
   }

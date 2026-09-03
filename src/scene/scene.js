@@ -136,19 +136,34 @@ export function focalLengthPx() {
   return h / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
 }
 
+// 每个粒子实例共用的小四边形（4 顶点，uv 0..1）。渲染时在顶点着色器中
+// 按相机右/上轴把四角展开成朝向相机的 billboard，从而彻底摆脱 GL_POINTS
+// 的硬件最大点尺寸限制（手机 GPU 常见 64~256px，超出会被钳制导致粒子被截断/闪烁）。
+export function makeParticleQuadGeometry() {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+    -0.5, -0.5, 0,   0.5, -0.5, 0,   0.5, 0.5, 0,   -0.5, 0.5, 0,
+  ]), 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([
+    0, 0,   1, 0,   1, 1,   0, 1,
+  ]), 2));
+  geo.setIndex([0, 1, 2, 0, 2, 3]);
+  return geo;
+}
+
 export const pointsMaterial = new THREE.ShaderMaterial({
-  uniforms: { uMap: { value: makeSquareTexture() }, uPixelScale: { value: focalLengthPx() }, uOpacity: { value: 1.0 }, uTime: { value: 0.0 } },
+  uniforms: { uMap: { value: makeSquareTexture() }, uOpacity: { value: 1.0 }, uTime: { value: 0.0 } },
   vertexShader: `
-    uniform float uPixelScale;
     attribute vec4 aColor;
     attribute vec2 aSize;
+    attribute vec3 aPosition;
     attribute vec4 aUV;
     attribute vec4 aUVScale;
     attribute vec4 aUVAnim;
     attribute vec2 aUVTex;
     attribute float aUVMode;
     varying vec4 vColor;
-    varying vec2 vAspect;
+    varying vec2 vUv;
     varying vec4 vUV;
     varying vec4 vUVScale;
     varying vec4 vUVAnim;
@@ -156,12 +171,14 @@ export const pointsMaterial = new THREE.ShaderMaterial({
     varying float vUVMode;
     void main() {
       vColor = aColor;
+      vUv = uv;
       vUV = aUV; vUVScale = aUVScale; vUVAnim = aUVAnim; vUVTex = aUVTex; vUVMode = aUVMode;
-      vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-      float m = max(aSize.x, aSize.y);
-      gl_PointSize = m * uPixelScale / max(0.1, -mvPosition.z);
-      vAspect = aSize / max(0.0001, m);
-      gl_Position = projectionMatrix * mvPosition;
+      // 相机右/上方向（世界系）：modelViewMatrix 为 view * model，model 恒为单位阵。
+      vec3 camRight = vec3(modelViewMatrix[0][0], modelViewMatrix[1][0], modelViewMatrix[2][0]);
+      vec3 camUp    = vec3(modelViewMatrix[0][1], modelViewMatrix[1][1], modelViewMatrix[2][1]);
+      vec3 offset = camRight * (position.x * aSize.x) + camUp * (position.y * aSize.y);
+      vec4 worldPos = vec4(aPosition + offset, 1.0);
+      gl_Position = projectionMatrix * modelViewMatrix * worldPos;
     }
   `,
   fragmentShader: `
@@ -169,16 +186,15 @@ export const pointsMaterial = new THREE.ShaderMaterial({
     uniform float uOpacity;
     uniform float uTime;
     varying vec4 vColor;
-    varying vec2 vAspect;
+    varying vec2 vUv;
     varying vec4 vUV;
     varying vec4 vUVScale;
     varying vec4 vUVAnim;
     varying vec2 vUVTex;
     varying float vUVMode;
     void main() {
-      // gl_PointCoord 约定：(0,0)=左上角（ES 规范）。vAspect 把非正方形粒子裁剪回居中方块。
-      vec2 uvLocal = (gl_PointCoord - 0.5) / vAspect + 0.5;
-      if (uvLocal.x < 0.0 || uvLocal.x > 1.0 || uvLocal.y < 0.0 || uvLocal.y > 1.0) discard;
+      // 四边形 uv 即粒子内坐标（0..1），无需再按 vAspect 裁剪非正方形点精灵。
+      vec2 uvLocal = vUv;
       if (vUVMode < 0.5) {
         gl_FragColor = vec4(vColor.rgb, vColor.a) * uOpacity;
       } else {
@@ -275,27 +291,26 @@ export function rebuildAtlas() {
 
 // 选中描边（方形边框，中心透明露出粒子本色）
 export const selectedMaterial = new THREE.ShaderMaterial({
-  uniforms: { uMap: { value: makeRingTexture() }, uPixelScale: { value: focalLengthPx() }, uOpacity: { value: 1.0 } },
+  uniforms: { uMap: { value: makeRingTexture() }, uOpacity: { value: 1.0 } },
   vertexShader: `
-    uniform float uPixelScale;
     attribute vec2 aSize;
-    varying vec2 vAspect;
+    attribute vec3 aPosition;
+    varying vec2 vUv;
     void main() {
-      vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-      float m = max(aSize.x, aSize.y);
-      gl_PointSize = m * uPixelScale / max(0.1, -mvPosition.z) * 1.1;
-      vAspect = aSize / max(0.0001, m);
-      gl_Position = projectionMatrix * mvPosition;
+      vUv = uv;
+      vec3 camRight = vec3(modelViewMatrix[0][0], modelViewMatrix[1][0], modelViewMatrix[2][0]);
+      vec3 camUp    = vec3(modelViewMatrix[0][1], modelViewMatrix[1][1], modelViewMatrix[2][1]);
+      vec3 offset = camRight * (position.x * aSize.x * 1.1) + camUp * (position.y * aSize.y * 1.1);
+      vec4 worldPos = vec4(aPosition + offset, 1.0);
+      gl_Position = projectionMatrix * modelViewMatrix * worldPos;
     }
   `,
   fragmentShader: `
     uniform sampler2D uMap;
     uniform float uOpacity;
-    varying vec2 vAspect;
+    varying vec2 vUv;
     void main() {
-      vec2 uv = (gl_PointCoord - 0.5) / vAspect + 0.5;
-      if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) discard;
-      vec4 tex = texture2D(uMap, uv);
+      vec4 tex = texture2D(uMap, vUv);
       gl_FragColor = vec4(1.0, 0.6, 0.25, 1.0) * tex.a * uOpacity;
     }
   `,
@@ -304,15 +319,23 @@ export const selectedMaterial = new THREE.ShaderMaterial({
   blending: THREE.NormalBlending,
 });
 
-export let points = new THREE.Points(new THREE.BufferGeometry(), pointsMaterial);
-export let selectedPoints = new THREE.Points(new THREE.BufferGeometry(), selectedMaterial);
-export let previewPoints = new THREE.Points(new THREE.BufferGeometry(), pointsMaterial);
+export let points = new THREE.InstancedMesh(makeParticleQuadGeometry(), pointsMaterial, 1);
+export let selectedPoints = new THREE.InstancedMesh(makeParticleQuadGeometry(), selectedMaterial, 1);
+export let previewPoints = new THREE.InstancedMesh(makeParticleQuadGeometry(), pointsMaterial, 1);
+points.frustumCulled = false;       // 实例位置在自定义 attribute 中，包围球无法反映粒子分布
+selectedPoints.frustumCulled = false;
+previewPoints.frustumCulled = false;
 points.renderOrder = 0;
 selectedPoints.renderOrder = 1;
 previewPoints.renderOrder = 0;
 scene.add(points);
 scene.add(selectedPoints);
 scene.add(previewPoints);
+
+// 隐藏的点集仅用于射线拾取（Raycaster 的 Points 阈值逻辑）。render.js 会把它
+// 的 position attribute 指向 points 的同一份实例位置缓冲，使拾取与渲染完全同源。
+export const pointsPick = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial());
+pointsPick.frustumCulled = false;
 
 export const gizmoGroup = new THREE.Group();
 scene.add(gizmoGroup);

@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { state, PLANES, SNAP_STEP, getFunction } from '../core/constants.js';
 import { shiftHeld } from './input-state.js';
-import { camera, renderer, raycaster, pointer, points, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, gizmoAxisHint, AXIS_RING_COLORS, RING_NORMALS, RING_SEGMENTS, RING_SEG_ARC, GIZMO_FACE_DEFS, setWorldAxisVisible, setWorldAxisGlow, resetWorldAxisState } from '../scene/scene.js';
+import { camera, renderer, raycaster, pointer, pointsPick, gizmoGroup, gizmoRotateGroup, gizmoRingSegs, gizmoRingSegDirs, gizmoViewRing, gizmoFaces, gizmoArrows, gizmoAxisHint, AXIS_RING_COLORS, RING_NORMALS, RING_SEGMENTS, RING_SEG_ARC, GIZMO_FACE_DEFS, setWorldAxisVisible, setWorldAxisGlow, resetWorldAxisState } from '../scene/scene.js';
 import { AXIS_COLORS, AXIS_VECTORS, modal, setGizmoHover, selectedGroupName, selectedCameraForRotate, selectionHasDerived, derivedFxIdFromSelection, fxCurrentPos, hoverColor, currentSpinTarget, currentRotTarget, spinQuaternion } from './interaction.js';
 import { currentVisual, orbitCenterAt, spinVectorAt } from '../core/animation.js';
 import { groupCurrentCentroid } from '../ui/tree.js';
@@ -331,7 +331,7 @@ export function pickParticleAt(clientX, clientY) {
   screenToNdc(clientX, clientY);
   raycaster.setFromCamera(pointer, camera);
   raycaster.params.Points.threshold = 0.5;
-  const hits = raycaster.intersectObject(points);
+  const hits = raycaster.intersectObject(pointsPick);
   return hits.length ? hits[0].index : -1;
 }
 
