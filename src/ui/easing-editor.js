@@ -7,6 +7,7 @@ import { t } from '../core/i18n.js';
 import { EASINGS, EASING_NONE } from '../core/constants.js';
 import { easeVal, cubicBezierX, cubicBezierY } from '../core/easing.js';
 import { refreshFunctionPanel } from './panels.js';
+import { customSelect } from './select.js';
 export function easingToBezier(easing) {
   if (easing === EASING_NONE) return null; // 无缓动不是贝塞尔，编辑器以阶跃曲线展示
   if (Array.isArray(easing)) return easing.slice(0, 4);
@@ -129,6 +130,7 @@ export function openEasingEditor(easing, applyFn, anchor) {
     refreshFunctionPanel();
   };
   pop.appendChild(presetSel);
+  customSelect(presetSel);
   document.body.appendChild(pop);
   const r = anchor.getBoundingClientRect();
   pop.style.left = Math.min(r.left, window.innerWidth - 236) + 'px';
@@ -140,6 +142,7 @@ export function openEasingEditor(easing, applyFn, anchor) {
   canvas.addEventListener('pointerdown', onEasingPointerDown);
   canvas.addEventListener('pointermove', onEasingPointerMove);
   canvas.addEventListener('pointerup', () => { if (easingEditor) { easingEditor.dragging = -1; refreshFunctionPanel(); } });
+  canvas.addEventListener('pointercancel', () => { if (easingEditor) easingEditor.dragging = -1; });
   setTimeout(() => document.addEventListener('pointerdown', onEasingDocPointerDown), 0);
 }
 

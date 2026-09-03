@@ -81,9 +81,15 @@ export function makeFloatWindow(id, title, opts) {
       el.style.left = (origL + ev.clientX - startX) + 'px';
       el.style.top = (origT + ev.clientY - startY) + 'px';
     };
-    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+    const stop = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', stop);
+      window.removeEventListener('pointercancel', stop);
+    };
     window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
+    window.addEventListener('pointerup', stop);
+    window.addEventListener('pointercancel', stop);
+    if (tb.setPointerCapture) { try { tb.setPointerCapture(e.pointerId); } catch (_) { /* 忽略 */ } }
   });
 
   function beginResize(e, dir) {
@@ -104,9 +110,16 @@ export function makeFloatWindow(id, title, opts) {
       el.style.width = W + 'px'; el.style.height = H + 'px';
       if (o.onResize) o.onResize();
     };
-    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+    const stop = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', stop);
+      window.removeEventListener('pointercancel', stop);
+    };
     window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
+    window.addEventListener('pointerup', stop);
+    window.addEventListener('pointercancel', stop);
+    const handle = e.currentTarget;
+    if (handle && handle.setPointerCapture) { try { handle.setPointerCapture(e.pointerId); } catch (_) { /* 忽略 */ } }
   }
 
   function setMin(v) {

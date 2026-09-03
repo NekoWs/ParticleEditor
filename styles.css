@@ -690,6 +690,7 @@ body.ctrl-held .kf-t { cursor: pointer; }
 }
 .tt-count { flex: 0 0 auto; color: var(--muted); font-size: 11px; }
 .tt-sub-label { flex: 0 1 auto; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tt-var-hint { flex: 0 1 auto; min-width: 0; font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tt-empty { color: var(--muted); padding: 6px 8px; font-size: 12px; }
 
 .tt-plabel { flex: 0 0 52px; color: #9aa0ad; font-size: 11px; white-space: nowrap; }
@@ -785,6 +786,34 @@ body.ctrl-held .kf-t { cursor: pointer; }
   color: var(--text); border-radius: 5px; padding: 4px 6px; height: 26px; box-sizing: border-box;
 }
 .fx-panel input:focus, .fx-panel select:focus { border-color: var(--accent); outline: none; }
+
+/* 触屏下的自定义下拉框（替代原生全屏 select，见 ui/select.js） */
+.csel { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
+.vars-head .csel, .row .csel { flex: 1; min-width: 0; }
+.csel-btn {
+  width: 100%; min-width: 0; display: inline-flex; align-items: center; justify-content: space-between;
+  background: var(--panel-3); border: 1px solid var(--border); color: var(--text);
+  border-radius: var(--radius-sm); padding: 5px 26px 5px 10px; font-size: 12px; height: 30px;
+  cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%238b93a7' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 8px center; background-size: 12px 12px;
+  transition: border-color 0.12s ease, background-color 0.12s ease;
+}
+.csel-btn:hover { border-color: var(--accent); background-color: var(--panel-2); }
+.csel-list {
+  position: fixed; z-index: 3200; min-width: 120px; max-width: min(78vw, 360px);
+  max-height: 42vh; overflow-y: auto; overflow-x: hidden;
+  background: var(--panel-3); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: var(--shadow); padding: 4px; display: none;
+}
+.csel-open .csel-list { display: block; }
+.csel-item {
+  display: block; width: 100%; text-align: left; padding: 9px 10px; margin: 0;
+  background: transparent; border: none; border-radius: 5px; color: var(--text);
+  font-size: 13px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.csel-item:hover { background: var(--accent-soft); color: var(--accent); }
+.csel-item.csel-sel { background: var(--accent-soft); color: var(--accent); }
 .fx-params { padding-left: 8px; border-left: 1px solid var(--border); margin: 2px 0; }
 .fx-fastmath-row { justify-content: space-between; }
 .fx-fastmath-row span { flex: 1; }
@@ -793,7 +822,7 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .fx-vars { display: flex; flex-direction: column; }
 .fx-vars .var-row input.var-name { max-width: 70px; flex: none; }
 .fx-code {
-  width: 100%; box-sizing: border-box; resize: vertical;
+  width: 100%; box-sizing: border-box; resize: none;
   background: #181a1d; border: 1px solid var(--border);
   color: var(--text); border-radius: 5px; padding: 0; overflow: hidden;
   font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px; line-height: 1.4;
@@ -1730,6 +1759,10 @@ body.puzzle-mode #puzzle-ghost-canvas { display: block; }
   .tl-controls .tl-time-group { height: 34px; }
   .tl-controls .tl-loop { height: 34px; }
   .tl-controls .ease-btn { height: 34px; width: 34px; }
+  /* 时间轴抽屉：控件常驻底部（先绘制树/图层，再绘制控件） */
+  .timeline { display: flex; flex-direction: column; }
+  .tl-body { order: 1; margin-top: 0; }
+  .tl-controls { order: 2; margin-top: 6px; }
 
   .tl-tree {
     flex: 0 0 42vw;
@@ -1761,6 +1794,9 @@ body.puzzle-mode #puzzle-ghost-canvas { display: block; }
 
 /* 触屏：加大主要交互目标并抑制原生触摸行为 */
 @media (pointer: coarse) {
+  /* 移动端点击后浏览器默认的蓝色高亮/闪蓝效果 */
+  * { -webkit-tap-highlight-color: transparent; }
+
   #viewport canvas,
   #timeline,
   #tl-layers-canvas,
@@ -1770,6 +1806,9 @@ body.puzzle-mode #puzzle-ghost-canvas { display: block; }
   #puzzle-workspace-canvas {
     touch-action: none;
   }
+  /* 悬浮窗标题栏拖动 / 八向缩放 / 缓动曲线点拖动：禁止浏览器滚动接管手势 */
+  .fwin-titlebar, .fwin-rsz { touch-action: none; }
+  .ee-canvas { touch-action: none; }
 
   .menu-btn { padding: 12px 10px; }
   .dd-item { padding: 12px 12px; }
@@ -1786,7 +1825,7 @@ body.puzzle-mode #puzzle-ghost-canvas { display: block; }
   .row input[type="text"],
   .row input[type="number"],
   .row select {
-    min-height: 40px;
+    min-height: 20px;
     font-size: 16px;
   }
   .fx-panel input,
@@ -1809,7 +1848,12 @@ body.puzzle-mode #puzzle-ghost-canvas { display: block; }
   .puzzle-dd-item { padding: 10px 12px; font-size: 14px; }
   #puzzle-toolbar .btn,
   .puzzle-taskbar-btn { height: 40px; padding: 0 14px; }
-  .tt-val, .tt-var-val { height: 26px; font-size: 13px; }
+  .tt-val { height: 26px; font-size: 13px; }
+  .tt-var-val { height: 22px; font-size: 13px; }
+
+  /* 时间轴左侧标签轨：允许横向滚动，vec3 等宽行不再被裁剪 */
+  .tl-tree { overflow-x: auto; }
+  .tt-row { min-width: max-content; }
 
   /* 代码编辑器：触屏下允许补全弹层溢出编辑框，否则会被 .fx-code 的 overflow:hidden 裁掉 */
   .fx-code { overflow: visible; resize: none; }

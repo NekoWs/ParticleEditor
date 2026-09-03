@@ -105,8 +105,10 @@ const S = {
   palCtx: null, workCtx: null, echoCtx: null, ghostCtx: null, colorCtx: null,
   dpr: 1,
   palScroll: 0,
+  palScrollX: 0,
   palScrollDrag: null,
   palContentPx: 0,
+  palContentW: 0,
   catCollapsed: {},
   palSelections: {},
   dropdown: null,
@@ -1382,8 +1384,11 @@ function layoutPalette(contentW) {
     }
     cy += 6;
   }
+  let maxRight = PAL_LEFT;
+  for (const r of out) maxRight = Math.max(maxRight, r.x + r.w);
   S.palRegions = out;
   S.palContentPx = PAL_SCALE * (cy + 10) + PAL_TOP;
+  S.palContentW = PAL_SCALE * maxRight + PAL_LEFT;
 }
 
 /* ============================ 绘制 ============================ */
@@ -1861,7 +1866,13 @@ function palMaxScroll() {
   const ch = S.palCanvas.clientHeight || S.palCanvas.height || 0;
   return Math.max(0, S.palContentPx - ch);
 }
+function palMaxScrollX() {
+  if (!S.palCanvas) return 0;
+  const cw = S.palCanvas.clientWidth || S.palCanvas.width || 0;
+  return Math.max(0, S.palContentW - cw);
+}
 function clampPalScroll(v) { return Math.max(0, Math.min(v, palMaxScroll())); }
+function clampPalScrollX(v) { return Math.max(0, Math.min(v, palMaxScrollX())); }
 function palScrollbarGeom() {
   const max = palMaxScroll();
   if (max <= 0 || !S.palCanvas) return null;
@@ -1885,11 +1896,13 @@ function renderPaletteCanvas() {
   clearCanvas(ctx, c, th.panel2);
   if (!H || !H.getBctx()) return;
   layoutPalette(cw / PAL_SCALE);
-  ctx.setTransform(S.dpr * PAL_SCALE, 0, 0, S.dpr * PAL_SCALE, S.dpr * PAL_LEFT, S.dpr * (PAL_TOP - S.palScroll));
+  ctx.setTransform(S.dpr * PAL_SCALE, 0, 0, S.dpr * PAL_SCALE, S.dpr * (PAL_LEFT - S.palScrollX), S.dpr * (PAL_TOP - S.palScroll));
+  const visLeft = S.palScrollX / PAL_SCALE - 40;
+  const visRight = (S.palScrollX + cw) / PAL_SCALE + 40;
   const visTop = S.palScroll / PAL_SCALE - 40;
   const visBot = (S.palScroll + ch) / PAL_SCALE + 40;
   for (const r of S.palRegions) {
-    if (r.kind === 'pal-item' && (r.y + r.h < visTop || r.y > visBot)) continue;
+    if (r.kind === 'pal-item' && (r.y + r.h < visTop || r.y > visBot || r.x + r.w < visLeft || r.x > visRight)) continue;
     drawRegion(ctx, r, null);
   }
   if (S.hover && S.hover.kind === 'pal-item') {
@@ -2168,7 +2181,7 @@ function contains(r, px, py) {
 
 function hitPalette(mx, my) {
   if (!S.palCanvas) return null;
-  const cx = (mx - PAL_LEFT) / PAL_SCALE;
+  const cx = (mx - PAL_LEFT + S.palScrollX) / PAL_SCALE;
   const cy = (my - PAL_TOP + S.palScroll) / PAL_SCALE;
   let hit = null;
   for (const r of S.palRegions) {
@@ -2176,7 +2189,7 @@ function hitPalette(mx, my) {
   }
   if (!hit) return null;
   const rect = S.palCanvas.getBoundingClientRect();
-  hit.sx = rect.left + (hit.x * PAL_SCALE + PAL_LEFT);
+  hit.sx = rect.left + (hit.x * PAL_SCALE + PAL_LEFT - S.palScrollX);
   hit.sy = rect.top + (hit.y * PAL_SCALE + PAL_TOP - S.palScroll);
   hit.sw = hit.w * PAL_SCALE;
   hit.sh = hit.h * PAL_SCALE;
@@ -3014,17 +3027,16 @@ function onPalDown(e) {
     e.stopPropagation();
     const ratio = (my - sb.thumbH / 2 - sb.trackTop) / Math.max(1, sb.trackH - sb.thumbH);
     S.palScroll = clampPalScroll(ratio * sb.max);
-    S.palScrollDrag = { startY: e.clientY, startScroll: S.palScroll, max: sb.max };
+    S.palScrollDrag = { mode: 'thumb', startY: e.clientY, startScroll: S.palScroll, max: sb.max };
     if (S.palCanvas.setPointerCapture) S.palCanvas.setPointerCapture(e.pointerId);
     puzzleCanvasRender();
     return;
   }
   const hit = hitPalette(mx, my);
-  // 触屏：在调色板空白处单指滚动；积木仍可拖动、类别标题仍可点击折叠。
+  // 触屏：在调色板空白处单指二维平移滚动（上下 + 左右）；积木仍可拖动、类别标题仍可点击折叠。
   if (e.pointerType === 'touch' && (!hit || hit.kind === 'blank')) {
     e.preventDefault();
-    const sb = palScrollbarGeom();
-    S.palScrollDrag = { startY: e.clientY, startScroll: S.palScroll, max: sb ? sb.max : 0 };
+    S.palScrollDrag = { mode: 'pan', startX: e.clientX, startY: e.clientY, startScrollX: S.palScrollX, startScroll: S.palScroll };
     if (S.palCanvas.setPointerCapture) S.palCanvas.setPointerCapture(e.pointerId);
     return;
   }
@@ -3229,10 +3241,16 @@ function onWindowMove(e) {
 
   if (S.palScrollDrag) {
     const d = S.palScrollDrag;
-    const geom = palScrollbarGeom();
-    if (geom) {
-      const trackH = Math.max(1, geom.trackH - geom.thumbH);
-      S.palScroll = clampPalScroll(d.startScroll + (e.clientY - d.startY) * geom.max / trackH);
+    if (d.mode === 'pan') {
+      // 直接像素跟随：手指上移 → 内容上移（scrollTop 增大）；左右同理。
+      S.palScroll = clampPalScroll(d.startScroll - (e.clientY - d.startY));
+      S.palScrollX = clampPalScrollX(d.startScrollX - (e.clientX - d.startX));
+    } else {
+      const geom = palScrollbarGeom();
+      if (geom) {
+        const trackH = Math.max(1, geom.trackH - geom.thumbH);
+        S.palScroll = clampPalScroll(d.startScroll + (e.clientY - d.startY) * geom.max / trackH);
+      }
     }
     puzzleCanvasRender();
     return;

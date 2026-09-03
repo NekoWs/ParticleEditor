@@ -13,6 +13,7 @@ import { showAboutModal, hexToRgba, rgbaToHex } from './ui/ui.js';
 import { openColorPicker } from './ui/color-picker.js';
 import { easeInOut } from './core/easing.js';
 import { openEasingEditor, easingCurveSVG } from './ui/easing-editor.js';
+import { customSelect, refreshCustomSelect } from './ui/select.js';
 import { viewport, renderer, camera, controls, scene, pointsMaterial, camTransition, setCamTransition, planePulse, setPlanePulse, updateRenderScale } from './scene/scene.js';
 import { rebuildPoints, rebuildPointsTime, maxTick, updateAnimatedUV, updateCameraWidgets } from './core/animation.js';
 import { editSelectionUniform, editSelectionRotationUniform } from './core/edit.js';
@@ -92,6 +93,7 @@ export function refreshFxPresetOptions() {
     sel.appendChild(o);
   }
   sel.value = 'blank';
+  refreshCustomSelect(sel);
 }
 
 // 重建视口上方摄像机选项卡：『默认』固定第一项 + 各摄像机 + 每项删除/重命名
@@ -293,6 +295,7 @@ export function initUI() {
   // 函数对象
   const fxPresetSel = document.getElementById('fx-preset-add');
   refreshFxPresetOptions();
+  customSelect(fxPresetSel);
   document.getElementById('btn-fx-preset-add').addEventListener('click', () => {
     if (fxPresetSel.value) createFunctionObject(fxPresetSel.value);
   });

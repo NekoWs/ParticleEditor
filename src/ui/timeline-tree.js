@@ -326,6 +326,10 @@ function renderFlatRow(row) {
       const label = el('span', 'tt-sub-label');
       label.textContent = t('fx.varList') + ' (' + row.count + ')';
       div.appendChild(label);
+      // 变量提示改为灰色显示在变量列表后方（不再占用函数对象面板空间）
+      const hint = el('span', 'tt-var-hint');
+      hint.textContent = t('fx.varListHint');
+      div.appendChild(hint);
       const add = el('button', 'tt-add-var');
       add.textContent = '+';
       add.title = t('fx.addVar');

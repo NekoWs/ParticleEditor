@@ -22,6 +22,7 @@ import {rebuildAtlas} from '../scene/scene.js';
 import {selectedGroupName} from '../interaction/interaction.js';
 import {pushUndo} from '../state/undo.js';
 import {showContextMenu} from './tree.js';
+import {customSelect} from './select.js';
 import {refreshTexBase64Cache} from '../io/io.js';
 import {modalAlert, modalConfirm, modalPrompt} from './ui.js';
 
@@ -1124,6 +1125,7 @@ export function refreshUVPanel() {
     renderTexCanvas();
   };
   texRow.appendChild(texSel);
+  customSelect(texSel);
   box.appendChild(texRow);
 
   // UV 模式
@@ -1139,6 +1141,7 @@ export function refreshUVPanel() {
     renderTexCanvas();
   };
   modeRow.appendChild(modeSel);
+  customSelect(modeSel);
   box.appendChild(modeRow);
 
   if (uv.mode !== 'fill') {
