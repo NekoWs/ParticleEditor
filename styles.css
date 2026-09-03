@@ -296,7 +296,7 @@ body {
 }
 .uv-field .uv-suffix { color: var(--muted); white-space: nowrap; font-size: 12px; }
 .uv-field .uv-suffix em { font-style: normal; color: var(--accent); }
-.uv-panel .row { width: 100%; justify-content: space-between; padding: 5px 5px 5px 15px; background: var(--panel-2); border-radius: 10px; }
+.uv-panel .row { width: 100%; justify-content: space-between; padding: 5px 15px; background: var(--panel-2); border-radius: 10px; }
 
 /* 属性 / 函数对象选项卡的 row 采用与贴图 UV 面板一致的卡片样式 */
 #pane-props .row,
