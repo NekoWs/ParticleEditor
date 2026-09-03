@@ -27,7 +27,7 @@ import { parseProgram } from '../core/script-lang.js';
  */
 
 export const SCRIPT_KEYWORDS = [
-  'setup', 'process', 'func', 'global', 'static',
+  'this', 'setup', 'process', 'func', 'global', 'static',
   'if', 'else', 'while', 'do', 'for', 'break', 'continue', 'return',
   'true', 'false',
 ];
@@ -36,6 +36,8 @@ export const SCRIPT_THIS_FIELDS = [
   'index', 'count', 'time', 'delta', 'duration', 'uv',
   'position', 'color', 'velocity', 'scale', 'glow', 'light', 'life',
 ];
+
+const THIS_FIELD_SET = new Set(SCRIPT_THIS_FIELDS);
 
 export const SCRIPT_BUILTINS = [
   'vec2', 'vec3', 'vec4', 'mat3', 'mat4',
@@ -52,8 +54,13 @@ export const SCRIPT_BUILTINS = [
 const KEYWORD_SET = new Set(SCRIPT_KEYWORDS);
 const BUILTIN_SET = new Set(SCRIPT_BUILTINS);
 
-const scriptLanguage = StreamLanguage.define({
+export const scriptLanguage = StreamLanguage.define({
   name: 'pdraw-script',
+  // StreamLanguage 默认把 token 名 'function' 当作「起始修饰符」而拒绝解析（返回无样式）。
+  // 显式映射到具体标签，使 arr.push / sin(...) 等方法与内置函数能真正高亮。
+  tokenTable: {
+    function: tags.function(tags.variableName),
+  },
   startState() {
     return { inBlockComment: false, afterDot: false, afterThisDot: false, lastWord: '' };
   },
@@ -111,7 +118,9 @@ const scriptLanguage = StreamLanguage.define({
         state.afterDot = false;
         state.afterThisDot = false;
         state.lastWord = word;
-        return isThisField ? 'propertyName' : 'function';
+        if (isThisField) return 'propertyName';
+        // 与 parser 语义一致：点后名称若（可跨空白）紧跟 '(' 是方法调用，否则是普通成员字段。
+        return stream.match(/^\s*\(/, false) ? 'function' : 'propertyName';
       }
 
       state.lastWord = word;
@@ -152,13 +161,14 @@ const PALETTE = {
   highlight: '#548af7',
 };
 
-const scriptHighlightStyle = HighlightStyle.define([
+export const scriptHighlightStyle = HighlightStyle.define([
   { tag: tags.keyword, color: PALETTE.keyword },
   { tag: tags.comment, color: PALETTE.comment, fontStyle: 'italic' },
   { tag: tags.string, color: PALETTE.string },
   { tag: tags.number, color: PALETTE.number },
   { tag: tags.operator, color: PALETTE.operator },
-  { tag: tags.function, color: PALETTE.function },
+  // tags.function 本身是修饰符（无 .id），必须用具体标签 function(variableName) 才能命中。
+  { tag: tags.function(tags.variableName), color: PALETTE.function },
   { tag: tags.variableName, color: PALETTE.variable },
   { tag: tags.propertyName, color: PALETTE.property },
   { tag: tags.atom, color: PALETTE.atom },
@@ -256,7 +266,8 @@ export function scriptCompletionSource(fx) {
     const doc = context.state.doc.toString();
     for (const m of doc.matchAll(/[A-Za-z_][A-Za-z0-9_]*/g)) {
       const name = m[0];
-      if (!seen.has(name) && !BUILTIN_SET.has(name) && !KEYWORD_SET.has(name) && name !== 'this') {
+      // this 及其字段只在 this. 之后提示，不作为普通标识符补全。
+      if (!seen.has(name) && !BUILTIN_SET.has(name) && !KEYWORD_SET.has(name) && !THIS_FIELD_SET.has(name)) {
         seen.add(name);
         options.push({ label: name, type: 'variable' });
       }
