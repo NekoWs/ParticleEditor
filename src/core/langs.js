@@ -131,7 +131,7 @@ export var LANGS = {
     'err.glowBinary': '发光赋值只能是 0 或 1: {0}',
     'err.varCycle': '变量循环引用: {0}', 'err.varReserved': '变量名 {0} 是属性保留字，请换名',
     // —— 拼图 UI ——
-    'blk.title': '拼图代码块', 'blk.scene': '场景', 'blk.code': '代码',
+    'blk.title': '拼图代码块', 'blk.palette': '积木面板', 'blk.scene': '场景', 'blk.code': '代码',
     'blk.lensHint': '拖动到拼图上查看含义',
     'blk.openFailTitle': '无法用拼图打开', 'blk.parseFail': '代码解析失败\n{0}\n\n请先在文本视图修正代码。',
     'blk.varExprErrTitle': '变量表达式错误', 'blk.varExprErr': '变量 {0} 的表达式解析失败：{1}',
@@ -358,7 +358,7 @@ export var LANGS = {
     'err.glowBinary': 'glow assignment must be 0 or 1: {0}',
     'err.varCycle': 'variable circular reference: {0}', 'err.varReserved': 'Variable name {0} is a reserved attribute name, please rename',
     // —— 拼图 UI ——
-    'blk.title': 'Puzzle Code Blocks', 'blk.scene': 'Scene', 'blk.code': 'Code',
+    'blk.title': 'Puzzle Code Blocks', 'blk.palette': 'Blocks', 'blk.scene': 'Scene', 'blk.code': 'Code',
     'blk.lensHint': 'Drag onto a block to see its meaning',
     'blk.openFailTitle': 'Cannot Open in Puzzle View', 'blk.parseFail': 'Failed to parse code\n{0}\n\nPlease fix the code in text view first.',
     'blk.varExprErrTitle': 'Variable Expression Error', 'blk.varExprErr': 'Failed to parse expression of variable {0}: {1}',

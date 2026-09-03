@@ -1091,6 +1091,19 @@ body.puzzle-mode #puzzle-toolbar { display: flex; }
 #puzzle-toolbar .btn { height: 30px; padding: 0 14px; display: inline-flex; align-items: center; }
 #puzzle-toolbar .bd-ok { background: var(--accent); border-color: var(--accent); color: #fff; }
 #puzzle-toolbar .bd-ok:hover { color: #fff; border-color: var(--accent); filter: brightness(1.1); }
+#puzzle-toolbar .pz-palette-toggle { height: 30px; padding: 0 12px; display: inline-flex; align-items: center; }
+.puzzle-taskbar-btn {
+  height: 30px; padding: 0 12px;
+  background: var(--panel-3); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  cursor: pointer; font-size: 12px; white-space: nowrap;
+}
+.puzzle-taskbar-btn:active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* 拼图左侧调色板抽屉式收起 */
+body.puzzle-mode.puzzle-palette-collapsed .puzzle-main { grid-template-columns: 0 0 1fr; }
+body.puzzle-mode.puzzle-palette-collapsed #puzzle-palette,
+body.puzzle-mode.puzzle-palette-collapsed #pal-resize { display: none; }
 
 
 /* 主区：左调色板 + 右工作区 */
@@ -1737,7 +1750,8 @@ body.puzzle-mode #puzzle-ghost-canvas { display: block; }
   .cam-tab { max-width: 120px; }
 
   /* 拼图模式：小屏工具栏更紧凑 */
-  #puzzle-toolbar { gap: 6px; padding: 0 8px; }
+  #puzzle-toolbar { gap: 6px; padding: 0 8px; overflow-x: auto; scrollbar-width: none; }
+  #puzzle-toolbar::-webkit-scrollbar { display: none; }
   #puzzle-toolbar .pz-title { font-size: 12px; }
   #puzzle-toolbar .pz-fx { display: none; }
   #puzzle-toolbar .btn { height: 34px; padding: 0 10px; }
@@ -1791,4 +1805,7 @@ body.puzzle-mode #puzzle-ghost-canvas { display: block; }
   .ui-modal-btn { padding: 10px 16px; font-size: 14px; }
   .ui-modal-input { font-size: 16px; min-height: 40px; }
   .puzzle-dd-item { padding: 10px 12px; font-size: 14px; }
+  #puzzle-toolbar .btn,
+  .puzzle-taskbar-btn { height: 40px; padding: 0 14px; }
+  .tt-val, .tt-var-val { height: 26px; font-size: 13px; }
 }

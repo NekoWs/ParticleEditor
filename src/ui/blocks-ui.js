@@ -47,6 +47,7 @@ import {resize} from '../main.js';
 import {
   initPuzzleCanvas,
   puzzleCanvasCancelEdit,
+  puzzleCanvasMeasureChain,
   puzzleCanvasRender,
   puzzleCanvasResize,
   setPuzzleHost
@@ -686,10 +687,29 @@ export function ensurePuzzleDom() {
   const title = document.createElement('span'); title.className = 'pz-title'; title.textContent = t('blk.title');
   const fxName = document.createElement('span'); fxName.className = 'pz-fx'; fxName.id = 'puzzle-fx-name';
   const spacer = document.createElement('span'); spacer.className = 'pz-spacer';
-  toolbar.appendChild(title); toolbar.appendChild(fxName); toolbar.appendChild(spacer);
+  const paletteToggle = mkBtn('puzzle-palette-toggle', t('blk.palette'), 'btn pz-palette-toggle');
+  toolbar.appendChild(title); toolbar.appendChild(fxName); toolbar.appendChild(paletteToggle); toolbar.appendChild(spacer);
   toolbar.appendChild(mkBtn('puzzle-ok', t('common.ok'), 'btn bd-ok'));
   toolbar.appendChild(mkBtn('puzzle-cancel', t('common.cancel')));
   document.body.appendChild(toolbar);
+  document.getElementById('puzzle-palette-toggle').addEventListener('click', () => {
+    document.body.classList.toggle('puzzle-palette-collapsed');
+    puzzleCanvasResize();
+  });
+
+  // 最小化到顶栏：窗口隐藏后生成一个图标按钮，点击图标恢复。
+  const taskbar = document.getElementById('puzzle-toolbar');
+  const taskbarSpacer = taskbar ? taskbar.querySelector('.pz-spacer') : null;
+  function addTaskIcon(label, restoreFn) {
+    const icon = document.createElement('button');
+    icon.className = 'puzzle-taskbar-btn';
+    icon.textContent = label;
+    icon.title = label;
+    icon.addEventListener('click', () => restoreFn());
+    if (taskbarSpacer) taskbar.insertBefore(icon, taskbarSpacer);
+    else if (taskbar) taskbar.appendChild(icon);
+    return icon;
+  }
 
   // 场景悬浮窗（右下角）；小屏改为整宽浮层，避免超出视口。
   const vw = window.innerWidth || 1200, vh = window.innerHeight || 800;
@@ -699,7 +719,14 @@ export function ensurePuzzleDom() {
   const sceneX = narrow ? 8 : vw - 440;
   // 小屏时顶部有 44px 的拼图工具栏，窗口不能压住「代码块」标题。
   const sceneY = narrow ? 52 : vh - 320;
-  const sceneWin = makeFloatWindow('fwin-scene', t('blk.scene'), { x: sceneX, y: sceneY, w: sceneW, h: sceneH, minW: 240, minH: 160, onResize: () => { if (typeof resize === 'function') resize(); }, onClose: () => { sceneWin.el.style.display = 'none'; } });
+  let sceneTaskIcon = null;
+  const sceneWin = makeFloatWindow('fwin-scene', t('blk.scene'), {
+    x: sceneX, y: sceneY, w: sceneW, h: sceneH, minW: 240, minH: 160,
+    onResize: () => { if (typeof resize === 'function') resize(); },
+    onMinimize: () => { sceneWin.el.style.display = 'none'; if (!sceneTaskIcon) sceneTaskIcon = addTaskIcon(t('blk.scene'), () => sceneWin.restore()); },
+    onRestore: () => { sceneWin.el.style.display = ''; if (sceneTaskIcon) { sceneTaskIcon.remove(); sceneTaskIcon = null; } },
+    onClose: () => { sceneWin.el.style.display = 'none'; if (sceneTaskIcon) { sceneTaskIcon.remove(); sceneTaskIcon = null; } },
+  });
   document.body.appendChild(sceneWin.el);
 
   // 代码回显悬浮窗（默认在场景上方）
@@ -707,7 +734,14 @@ export function ensurePuzzleDom() {
   const echoH = narrow ? Math.round(vh * 0.26) : 200;
   const echoX = narrow ? 8 : vw - 440;
   const echoY = narrow ? 52 + sceneH + 8 : vh - 560;
-  const echoWin = makeFloatWindow('fwin-echo', t('blk.code'), { x: echoX, y: echoY, w: echoW, h: echoH, minW: 200, minH: 120, onResize: () => { if (typeof puzzleCanvasResize === 'function') puzzleCanvasResize(); }, onClose: () => { echoWin.el.style.display = 'none'; } });
+  let echoTaskIcon = null;
+  const echoWin = makeFloatWindow('fwin-echo', t('blk.code'), {
+    x: echoX, y: echoY, w: echoW, h: echoH, minW: 200, minH: 120,
+    onResize: () => { if (typeof puzzleCanvasResize === 'function') puzzleCanvasResize(); },
+    onMinimize: () => { echoWin.el.style.display = 'none'; if (!echoTaskIcon) echoTaskIcon = addTaskIcon(t('blk.code'), () => echoWin.restore()); },
+    onRestore: () => { echoWin.el.style.display = ''; if (echoTaskIcon) { echoTaskIcon.remove(); echoTaskIcon = null; } },
+    onClose: () => { echoWin.el.style.display = 'none'; if (echoTaskIcon) { echoTaskIcon.remove(); echoTaskIcon = null; } },
+  });
   const echoCanvas = document.createElement('canvas');
   echoCanvas.id = 'puzzle-echo-canvas';
   echoWin.body.appendChild(echoCanvas);
@@ -785,10 +819,15 @@ export function openBlockDrawer(fx) {
   // 起始块存在性：新格式显式记录；旧格式按「是否有代码 / 是否保存过位置」回退。
   const hasSetup = savedHats ? !!savedHats.setup : (setupChain.length > 0 || !!saved.setup);
   const hasProcess = savedHats ? !!savedHats.process : (chain.length > 0 || !!saved.chain);
-  // 默认位置按 process 语句条数估算高度，保证 setup 起始块不会与 process 链重叠。
-  const EST_HAT_H = 34, EST_STMT_H = 26;
+  // 默认位置：未保存时按前一个起始块的预期宽度向右平铺，避免默认起始块互相遮挡。
   const chainPosDefault = { x: 40, y: 40 };
-  const setupPosDefault = { x: 40, y: 40 + EST_HAT_H + Math.max(chain.length, 1) * EST_STMT_H + 24 };
+  let setupPosDefault;
+  if (chain.length === 0) {
+    setupPosDefault = { x: 40, y: 40 };
+  } else {
+    const chainW = puzzleCanvasMeasureChain(chain, t('blk.start')).w;
+    setupPosDefault = { x: 40 + chainW + 48, y: 40 };
+  }
   const setupPos = (saved.setup && typeof saved.setup === 'object') ? saved.setup : setupPosDefault;
   const chainPos = (saved.chain && typeof saved.chain === 'object') ? saved.chain : chainPosDefault;
   const funcs = funcStmts.map((stmt, i) => {

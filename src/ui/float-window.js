@@ -109,12 +109,16 @@ export function makeFloatWindow(id, title, opts) {
     window.addEventListener('pointerup', up);
   }
 
-  function toggleMin() {
-    minimized = !minimized;
-    el.classList.toggle('fwin-minimized', minimized);
+  function setMin(v) {
+    if (minimized === v) return;
+    minimized = v;
+    el.classList.toggle('fwin-minimized', v);
+    if (v && o.onMinimize) o.onMinimize();
+    else if (!v && o.onRestore) o.onRestore();
   }
-  function minimize() { if (!minimized) { minimized = true; el.classList.add('fwin-minimized'); } }
-  function restore() { if (minimized) { minimized = false; el.classList.remove('fwin-minimized'); } }
+  function toggleMin() { setMin(!minimized); }
+  function minimize() { setMin(true); }
+  function restore() { setMin(false); }
 
   // 点击任意处置顶
   el.addEventListener('pointerdown', () => raise(), true);

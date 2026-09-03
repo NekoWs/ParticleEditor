@@ -1200,6 +1200,23 @@ function layoutWorkspace() {
   S.wsRegions = out;
 }
 
+/** 估算一条链（含起始块）的布局宽度，供默认位置向右平铺起始块时使用。 */
+export function puzzleCanvasMeasureChain(stmts, title) {
+  const ctx = S.workCtx;
+  if (!ctx || !H || !H.getBctx) return { w: 220, h: 60 };
+  const out = [];
+  try {
+    const r = layoutChain(stmts, 0, 0, out, ctx, {
+      title: title || '',
+      head: { key: 'chain' },
+      dropRef: { chain: stmts },
+    });
+    return { w: r.w || 220, h: r.h || 60 };
+  } catch (e) {
+    return { w: 220, h: 60 };
+  }
+}
+
 /* ============================ 布局：变量区 ============================ */
 
 function layoutVars(cw) {
