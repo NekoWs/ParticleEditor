@@ -60,6 +60,7 @@ body {
 }
 #topbar-title { margin: 0 auto; color: var(--muted); font-size: 12px; }
 .mobile-top-actions { display: none; }
+.drawer-backdrop { display: none; }
 .menubar { display: flex; align-items: center; gap: 2px; }
 .menu { position: relative; }
 .menu-btn {
@@ -1687,6 +1688,7 @@ body.puzzle-mode #puzzle-ghost-canvas { display: block; }
   #tl-module-resize { display: none; }
 
   .drawer-backdrop {
+    display: block;
     position: fixed;
     top: 44px; left: 0; right: 0; bottom: 0;
     z-index: 100;
