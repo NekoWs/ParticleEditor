@@ -1810,4 +1810,9 @@ body.puzzle-mode #puzzle-ghost-canvas { display: block; }
   #puzzle-toolbar .btn,
   .puzzle-taskbar-btn { height: 40px; padding: 0 14px; }
   .tt-val, .tt-var-val { height: 26px; font-size: 13px; }
+
+  /* 代码编辑器：触屏下允许补全弹层溢出编辑框，否则会被 .fx-code 的 overflow:hidden 裁掉 */
+  .fx-code { overflow: visible; resize: none; }
+  .fx-code .cm-tooltip { z-index: 30; }
+  .tab-pane { padding-bottom: 80px; }
 }
