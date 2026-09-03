@@ -44,7 +44,10 @@ export function applyTimeChange() {
 }
 
 export function updateTimeUI() {
-  document.getElementById('tl-time').value = Math.round(state.time);
+  const timeEl = document.getElementById('tl-time');
+  const v = Math.round(state.time);
+  timeEl.value = v;
+  timeEl.size = Math.max(1, String(v).length);
   document.getElementById('tl-max').textContent = maxTick();
 }
 
@@ -434,6 +437,7 @@ export function initUI() {
     drawTimelineLayers();
   }, { passive: false });
 
+  updateTimeUI();
   rebuildPoints();
   refreshTimelineTree();
   // 恢复工作区状态（粒子列表宽）

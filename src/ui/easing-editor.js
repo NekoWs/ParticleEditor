@@ -51,10 +51,6 @@ export function openEasingEditor(easing, applyFn, anchor) {
   const pop = document.createElement('div');
   pop.id = 'easing-editor';
   pop.className = 'easing-editor';
-  const title = document.createElement('div');
-  title.className = 'ee-title';
-  title.textContent = t('easing.editorTitle');
-  pop.appendChild(title);
 
   const inputs = document.createElement('div');
   inputs.className = 'ee-inputs';

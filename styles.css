@@ -548,7 +548,6 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .easing-editor.closing { animation: eePopOut 0.14s ease-in forwards; }
 @keyframes eePopIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
 @keyframes eePopOut { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.92); } }
-.ee-title { font-weight: 600; margin-bottom: 8px; }
 .ee-inputs { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
 .ee-input-row { display: flex; align-items: center; gap: 4px; }
 .ee-input-label { width: 22px; flex: none; font-size: 11px; color: var(--muted); font-weight: 600; }
@@ -615,7 +614,6 @@ body.ctrl-held .kf-t { cursor: pointer; }
   color: var(--text); border-radius: var(--radius-sm); padding: 5px 8px; height: 30px;
 }
 .tl-controls input[type="number"]:focus { border-color: var(--accent); outline: none; }
-.tl-controls #tl-time { width: 46px; }
 .tl-controls select {
   background: var(--panel-3); border: 1px solid var(--border); color: var(--text);
   border-radius: var(--radius-sm); padding: 5px 8px; height: 30px;
@@ -623,14 +621,22 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .tl-controls select:focus { border-color: var(--accent); outline: none; }
 .tl-controls .ease-btn { height: 30px; }
 .ticks { color: var(--muted); }
-.tl-time-group {
+.tl-time-group,
+.tl-speed-group {
   display: inline-flex; align-items: center; gap: 6px;
   background: var(--panel-3); border: 1px solid var(--border);
   border-radius: var(--radius-sm); padding: 0 8px; height: 30px;
 }
-.tl-time-group #tl-time { width: 46px; background: none; border: none; padding: 0; height: auto; }
+.tl-time-group #tl-time,
+.tl-speed-group #tl-speed {
+  background: none; border: none; padding: 0; height: auto;
+  field-sizing: content;
+}
+.tl-speed-group #tl-speed { width: 35px; }
+.tl-time-group #tl-time { width: auto; min-width: 34px; }
 .tl-time-group #tl-time:focus { border-color: transparent; }
-.tl-time-group .ticks { white-space: nowrap; }
+.tl-time-group .ticks,
+.tl-speed-group .ticks { white-space: nowrap; }
 #timeline { flex: 0 0 28px; width: 100%; height: 28px; margin-top: 6px; cursor: default; border-radius: 0; }
 #tl-module-resize {
   position: absolute; top: -3px; left: 0; right: 0; height: 7px;
@@ -789,17 +795,17 @@ body.ctrl-held .kf-t { cursor: pointer; }
 
 /* 触屏下的自定义下拉框（替代原生全屏 select，见 ui/select.js） */
 .csel { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
-.vars-head .csel, .row .csel { flex: 1; min-width: 0; }
+.vars-head .csel, .row .csel { flex: 1; min-width: 0; margin-right: 10px; }
 .csel-btn {
   width: 100%; min-width: 0; display: inline-flex; align-items: center; justify-content: space-between;
-  background: var(--panel-3); border: 1px solid var(--border); color: var(--text);
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
   border-radius: var(--radius-sm); padding: 5px 26px 5px 10px; font-size: 12px; height: 30px;
   cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%238b93a7' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat; background-position: right 8px center; background-size: 12px 12px;
   transition: border-color 0.12s ease, background-color 0.12s ease;
 }
-.csel-btn:hover { border-color: var(--accent); background-color: var(--panel-2); }
+.csel-btn:hover { border-color: var(--accent); background-color: var(--panel-3); }
 .csel-list {
   position: fixed; z-index: 3200; min-width: 120px; max-width: min(78vw, 360px);
   max-height: 42vh; overflow-y: auto; overflow-x: hidden;
@@ -1720,16 +1726,18 @@ body.puzzle-mode #puzzle-ghost-canvas { display: block; }
   .timeline {
     position: fixed;
     left: 0; right: 0; bottom: 0;
-    height: auto;
+    height: var(--tl-controls-h, 62px);
+    overflow: hidden;
+    transition: height 0.24s ease;
     z-index: 110;
     padding: 6px 8px;
     box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.35);
     display: flex; flex-direction: column;
   }
-  .tl-body { display: none; order: 1; margin-top: 0; }
+  .tl-body { order: 1; display: flex; margin-top: 0; }
   .tl-controls { order: 2; margin-top: 0; }
   body.drawer-timeline-open .timeline { height: clamp(220px, 68vh, 460px); }
-  body.drawer-timeline-open .tl-body { display: flex; margin-top: 6px; }
+  body.drawer-timeline-open .tl-body { margin-top: 6px; }
   body.drawer-timeline-open .tl-controls { margin-top: 6px; }
   #tl-module-resize { display: none; }
 
@@ -1758,9 +1766,10 @@ body.puzzle-mode #puzzle-ghost-canvas { display: block; }
     padding: 6px 8px;
   }
   .tl-controls .btn { height: 34px; }
-  .tl-controls .tl-time-group { height: 34px; }
-  .tl-controls .tl-loop { height: 34px; }
-  .tl-controls .ease-btn { height: 34px; width: 34px; }
+  .tl-controls .tl-time-group,
+  .tl-controls .tl-speed-group { height: 36px; }
+  .tl-controls .tl-loop { height: 36px; }
+  .tl-controls .ease-btn { height: 36px; width: 36px; }
   /* 时间轴抽屉：控件常驻底部（先绘制树/图层，再绘制控件） */
   .tl-body { order: 1; }
   .tl-controls { order: 2; }
@@ -1818,7 +1827,7 @@ body.puzzle-mode #puzzle-ghost-canvas { display: block; }
   .tool svg { width: 20px; height: 20px; }
   .tab { width: 48px; height: 44px; }
   .tab svg { width: 22px; height: 22px; }
-  .mini { padding: 8px 12px; font-size: 13px; }
+  .mini { padding: 5px 12px; font-size: 13px; }
   .ease-btn { width: 40px; height: 40px; }
   .color-swatch { width: 40px; height: 40px; }
   .del-x { width: 34px; height: 34px; }
@@ -1837,6 +1846,7 @@ body.puzzle-mode #puzzle-ghost-canvas { display: block; }
     font-size: 16px;
   }
   .tl-controls .tl-time-group #tl-time,
+  .tl-controls .tl-speed-group #tl-speed,
   .tl-controls input[type="number"] { height: 36px; }
 
   .tt-arrow { flex-basis: 26px; }

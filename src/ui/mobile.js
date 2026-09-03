@@ -47,6 +47,18 @@ function syncLayout() {
   updateTLTreeRowH();
   // 行高变化会同时影响 HTML 标签轨与 lane 画布，必须重建左轨 DOM。
   if (TL_TREE_ROW_H !== prevRowH) refreshTimelineTree(true);
+  syncTimelineControlsHeight();
+}
+
+// 时间轴抽屉关闭时的高度 = .tl-controls 实际高度 + 时间轴自身上下内边距。
+// 写入 --tl-controls-h 供 CSS 的 height 过渡使用（展开/收起时从底部平滑滑出）。
+function syncTimelineControlsHeight() {
+  const timeline = document.querySelector('.timeline');
+  const controls = timeline && timeline.querySelector('.tl-controls');
+  if (!timeline || !controls) return;
+  const cs = getComputedStyle(timeline);
+  const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+  timeline.style.setProperty('--tl-controls-h', (controls.offsetHeight + pad) + 'px');
 }
 
 export function initMobileUI() {
@@ -58,6 +70,7 @@ export function initMobileUI() {
     if (typeof NARROW_MQ.addEventListener === 'function') NARROW_MQ.addEventListener('change', syncLayout);
     else if (typeof NARROW_MQ.addListener === 'function') NARROW_MQ.addListener(syncLayout);
   } catch (e) { /* 旧浏览器/测试桩忽略 */ }
+  try { window.addEventListener('resize', syncTimelineControlsHeight); } catch (e) { /* 测试桩忽略 */ }
 
   const panelBtn = document.getElementById('mobile-panel-btn');
   const timelineBtn = document.getElementById('mobile-timeline-btn');

@@ -63,7 +63,7 @@ export var LANGS = {
     'tex.fps': '帧率',
     'uv.mode.static': '静态', 'uv.mode.fill': '填充', 'uv.mode.animated': '动画',
     // —— 时间轴 ——
-    'timeline.resizeTitle': '拖拽调整时间轴模块高度', 'timeline.speed': '速度', 'timeline.loop': '循环',
+    'timeline.resizeTitle': '拖拽调整时间轴模块高度', 'timeline.loop': '循环',
     'timeline.easing': '缓动函数', 'timeline.play': '▶ 播放', 'timeline.pause': '⏸ 暂停',
     // —— 粒子列表 / 树 ——
     'tree.addParticle': '添加粒子',
@@ -98,7 +98,7 @@ export var LANGS = {
     'about.desc': 'ParticleDrawing 粒子动画编辑器 — 用于创作 .pdraw 动画并在 Minecraft 中播放。',
     'about.developer': '开发者',
     // —— 缓动编辑器 ——
-    'easing.editTitle': '编辑缓动函数', 'easing.editorTitle': '缓动函数编辑器', 'easing.presets': '预设…',
+    'easing.editTitle': '编辑缓动函数', 'easing.presets': '预设…',
     'easing.none': '无缓动',
     // —— 悬浮窗 ——
     'fwin.minimize': '最小化',
@@ -287,7 +287,7 @@ export var LANGS = {
     'tex.fps': 'Frame Rate',
     'uv.mode.static': 'Static', 'uv.mode.fill': 'Fill', 'uv.mode.animated': 'Animated',
     // —— 时间轴 ——
-    'timeline.resizeTitle': 'Drag to resize timeline module', 'timeline.speed': 'Speed', 'timeline.loop': 'Loop',
+    'timeline.resizeTitle': 'Drag to resize timeline module', 'timeline.loop': 'Loop',
     'timeline.easing': 'Easing', 'timeline.play': '▶ Play', 'timeline.pause': '⏸ Pause',
     // —— 粒子列表 / 树 ——
     'tree.addParticle': 'Add Particle',
@@ -325,7 +325,7 @@ export var LANGS = {
     'about.desc': 'ParticleDrawing Particle Animation Editor — create .pdraw animations and play them in Minecraft.',
     'about.developer': 'Developer',
     // —— 缓动编辑器 ——
-    'easing.editTitle': 'Edit Easing', 'easing.editorTitle': 'Easing Editor', 'easing.presets': 'Presets…',
+    'easing.editTitle': 'Edit Easing', 'easing.presets': 'Presets…',
     'easing.none': 'None',
     // —— 悬浮窗 ——
     'fwin.minimize': 'Minimize',
