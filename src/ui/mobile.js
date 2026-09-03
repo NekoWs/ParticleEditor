@@ -52,18 +52,15 @@ function syncLayout() {
 
 // 时间轴抽屉关闭时的高度 = .tl-controls 实际高度 + 时间轴自身上下内边距。
 // 写入 --tl-controls-h 供 CSS 的 height 过渡使用（展开/收起时从底部平滑滑出）。
-// 测量时临时把 timeline 设为 height:auto，避免 flex 压缩把控件高度测小（形成自引用）。
+// 仅在关闭态更新；展开态更新变量无意义，且可能打断正在进行的 height 过渡。
 function syncTimelineControlsHeight() {
   const timeline = document.querySelector('.timeline');
   const controls = timeline && timeline.querySelector('.tl-controls');
   if (!timeline || !controls) return;
-  const prevInline = timeline.style.height;
-  timeline.style.height = 'auto';
+  if (document.body && document.body.classList.contains('drawer-timeline-open')) return;
   const cs = getComputedStyle(timeline);
   const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
-  const h = controls.offsetHeight + pad;
-  timeline.style.height = prevInline;
-  timeline.style.setProperty('--tl-controls-h', h + 'px');
+  timeline.style.setProperty('--tl-controls-h', (controls.offsetHeight + pad) + 'px');
 }
 
 let controlsObserver = null;
