@@ -1735,6 +1735,12 @@ body.puzzle-mode #puzzle-ghost-canvas { display: block; }
   }
   .cam-tabs::-webkit-scrollbar { display: none; }
   .cam-tab { max-width: 120px; }
+
+  /* 拼图模式：小屏工具栏更紧凑 */
+  #puzzle-toolbar { gap: 6px; padding: 0 8px; }
+  #puzzle-toolbar .pz-title { font-size: 12px; }
+  #puzzle-toolbar .pz-fx { display: none; }
+  #puzzle-toolbar .btn { height: 34px; padding: 0 10px; }
 }
 
 /* 触屏：加大主要交互目标并抑制原生触摸行为 */

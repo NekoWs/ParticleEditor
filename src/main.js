@@ -6,6 +6,7 @@
  * ======================================================================= */
 
 import { t, applyI18nDom, setLanguage } from './core/i18n.js';
+import { hasCoarsePointer } from './core/device.js';
 import { state, FUNCTION_PRESETS, getParticle, getFunction, isDerivedParticle, updateTopbarTitle, clearObjectState } from './core/constants.js';
 import { setShiftHeld } from './interaction/input-state.js';
 import { showAboutModal, hexToRgba, rgbaToHex } from './ui/ui.js';
@@ -221,15 +222,20 @@ export function initUI() {
     menu.classList.add('open');
   };
   document.querySelectorAll('.menu').forEach(menu => {
-    menu.addEventListener('mouseenter', () => openMenu(menu));
-    menu.addEventListener('mouseleave', () => menu.classList.remove('open'));
-    const btn = menu.querySelector('.menu-btn');
-    if (btn) btn.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      const wasOpen = menu.classList.contains('open');
-      closeMenus();
-      if (!wasOpen) openMenu(menu);
-    });
+    if (hasCoarsePointer()) {
+      // 触屏：点击切换，避免合成 mouseenter 与 click 互相打架导致菜单闪开即关。
+      const btn = menu.querySelector('.menu-btn');
+      if (btn) btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const wasOpen = menu.classList.contains('open');
+        closeMenus();
+        if (!wasOpen) openMenu(menu);
+      });
+    } else {
+      // 桌面：悬停展开/离开收起（与既有交互一致）。
+      menu.addEventListener('mouseenter', () => openMenu(menu));
+      menu.addEventListener('mouseleave', () => menu.classList.remove('open'));
+    }
   });
   document.addEventListener('pointerdown', (ev) => {
     if (!ev.target.closest('.menu')) closeMenus();

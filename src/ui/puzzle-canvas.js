@@ -129,6 +129,8 @@ const S = {
   colorPicker: null,
   colorDrag: null,
   colorHexInput: null,
+  workPointers: new Map(),
+  pinch: null,
 };
 
 /* ============================ 小工具 ============================ */
@@ -3035,6 +3037,28 @@ function onWorkDown(e) {
   if (!H || !H.getBctx()) return;
   if (e.button !== 0) return;
   if (S.altHover) clearAltHover();
+
+  // 触屏双指：第二根手指落下时取消当前单指拖拽，开始缩放/平移。
+  if (e.pointerType === 'touch') {
+    S.workPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (S.workPointers.size === 2) {
+      if (S.drag) {
+        S.drag = null; S.dropHover = null; S.dropPreview = null; S.trashOver = false;
+        renderGhost();
+      }
+      const pts = [...S.workPointers.values()];
+      const view = H.getBctx().layout.view;
+      S.pinch = {
+        d0: Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y) || 1,
+        cx0: (pts[0].x + pts[1].x) / 2,
+        cy0: (pts[0].y + pts[1].y) / 2,
+        view: { x: view.x, y: view.y, scale: view.scale },
+      };
+      e.preventDefault();
+      return;
+    }
+  }
+
   const rect = S.workCanvas.getBoundingClientRect();
   const mx = e.clientX - rect.left, my = e.clientY - rect.top;
   const ch = S.workCanvas.clientHeight || S.workCanvas.height;
@@ -3165,6 +3189,27 @@ function onWorkWheel(e) {
 }
 
 function onWindowMove(e) {
+  if (S.pinch) {
+    const p = S.workPointers.get(e.pointerId);
+    if (p) { p.x = e.clientX; p.y = e.clientY; }
+    const pts = [...S.workPointers.values()];
+    if (pts.length >= 2) {
+      const d = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y) || 1;
+      const cx = (pts[0].x + pts[1].x) / 2;
+      const cy = (pts[0].y + pts[1].y) / 2;
+      const view = H.getBctx().layout.view;
+      const rect = S.workCanvas.getBoundingClientRect();
+      const scale = Math.min(2.5, Math.max(0.4, S.pinch.view.scale * d / S.pinch.d0));
+      const wx = (S.pinch.cx0 - rect.left - S.pinch.view.x) / S.pinch.view.scale;
+      const wy = (S.pinch.cy0 - rect.top - S.pinch.view.y) / S.pinch.view.scale;
+      view.scale = scale;
+      view.x = cx - rect.left - wx * scale;
+      view.y = cy - rect.top - wy * scale;
+      puzzleCanvasRender();
+    }
+    return;
+  }
+
   if (S.palScrollDrag) {
     const d = S.palScrollDrag;
     const geom = palScrollbarGeom();
@@ -3201,6 +3246,10 @@ function onWindowMove(e) {
   updateHover(e);
 }
 function onWindowUp(e) {
+  if (e.pointerType === 'touch') {
+    S.workPointers.delete(e.pointerId);
+    if (S.pinch && S.workPointers.size < 2) S.pinch = null;
+  }
   if (S.palScrollDrag) { S.palScrollDrag = null; return; }
   if (S.drag && S.drag.mode === 'op-pending') {
     const d = S.drag;
@@ -3244,6 +3293,18 @@ function onWindowUp(e) {
       return;
     }
     endDrag(e);
+  }
+}
+
+function onWindowCancel(e) {
+  if (e.pointerType === 'touch') {
+    S.workPointers.delete(e.pointerId);
+    if (S.pinch && S.workPointers.size < 2) S.pinch = null;
+  }
+  if (S.palScrollDrag) S.palScrollDrag = null;
+  if (S.drag) {
+    S.drag = null; S.dropHover = null; S.dropPreview = null; S.trashOver = false;
+    renderGhost();
   }
 }
 
@@ -3335,6 +3396,7 @@ export function initPuzzleCanvas() {
   }
   window.addEventListener('pointermove', onWindowMove);
   window.addEventListener('pointerup', onWindowUp);
+  window.addEventListener('pointercancel', onWindowCancel);
   window.addEventListener('resize', puzzleCanvasResize);
   window.addEventListener('keydown', (ev) => {
     if (!H || !H.getBctx()) return;

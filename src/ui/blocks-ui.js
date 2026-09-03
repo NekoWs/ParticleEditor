@@ -697,16 +697,17 @@ export function ensurePuzzleDom() {
   const sceneW = narrow ? Math.max(260, vw - 16) : 420;
   const sceneH = narrow ? Math.round(vh * 0.38) : 300;
   const sceneX = narrow ? 8 : vw - 440;
-  const sceneY = narrow ? 8 : vh - 320;
-  const sceneWin = makeFloatWindow('fwin-scene', t('blk.scene'), { x: sceneX, y: sceneY, w: sceneW, h: sceneH, minW: 240, minH: 160, onResize: () => { if (typeof resize === 'function') resize(); } });
+  // 小屏时顶部有 44px 的拼图工具栏，窗口不能压住「代码块」标题。
+  const sceneY = narrow ? 52 : vh - 320;
+  const sceneWin = makeFloatWindow('fwin-scene', t('blk.scene'), { x: sceneX, y: sceneY, w: sceneW, h: sceneH, minW: 240, minH: 160, onResize: () => { if (typeof resize === 'function') resize(); }, onClose: () => { sceneWin.el.style.display = 'none'; } });
   document.body.appendChild(sceneWin.el);
 
   // 代码回显悬浮窗（默认在场景上方）
   const echoW = narrow ? Math.max(260, vw - 16) : 340;
   const echoH = narrow ? Math.round(vh * 0.26) : 200;
   const echoX = narrow ? 8 : vw - 440;
-  const echoY = narrow ? 8 + sceneH + 8 : vh - 560;
-  const echoWin = makeFloatWindow('fwin-echo', t('blk.code'), { x: echoX, y: echoY, w: echoW, h: echoH, minW: 200, minH: 120, onResize: () => { if (typeof puzzleCanvasResize === 'function') puzzleCanvasResize(); } });
+  const echoY = narrow ? 52 + sceneH + 8 : vh - 560;
+  const echoWin = makeFloatWindow('fwin-echo', t('blk.code'), { x: echoX, y: echoY, w: echoW, h: echoH, minW: 200, minH: 120, onResize: () => { if (typeof puzzleCanvasResize === 'function') puzzleCanvasResize(); }, onClose: () => { echoWin.el.style.display = 'none'; } });
   const echoCanvas = document.createElement('canvas');
   echoCanvas.id = 'puzzle-echo-canvas';
   echoWin.body.appendChild(echoCanvas);
@@ -784,8 +785,12 @@ export function openBlockDrawer(fx) {
   // 起始块存在性：新格式显式记录；旧格式按「是否有代码 / 是否保存过位置」回退。
   const hasSetup = savedHats ? !!savedHats.setup : (setupChain.length > 0 || !!saved.setup);
   const hasProcess = savedHats ? !!savedHats.process : (chain.length > 0 || !!saved.chain);
-  const setupPos = (saved.setup && typeof saved.setup === 'object') ? saved.setup : { x: 40, y: 120 };
-  const chainPos = (saved.chain && typeof saved.chain === 'object') ? saved.chain : { x: 40, y: 40 };
+  // 默认位置按 process 语句条数估算高度，保证 setup 起始块不会与 process 链重叠。
+  const EST_HAT_H = 34, EST_STMT_H = 26;
+  const chainPosDefault = { x: 40, y: 40 };
+  const setupPosDefault = { x: 40, y: 40 + EST_HAT_H + Math.max(chain.length, 1) * EST_STMT_H + 24 };
+  const setupPos = (saved.setup && typeof saved.setup === 'object') ? saved.setup : setupPosDefault;
+  const chainPos = (saved.chain && typeof saved.chain === 'object') ? saved.chain : chainPosDefault;
   const funcs = funcStmts.map((stmt, i) => {
     const sp = saved.funcs && saved.funcs[i];
     return {

@@ -22,6 +22,7 @@ export function makeFloatWindow(id, title, opts) {
   const minW = o.minW != null ? o.minW : 240;
   const minH = o.minH != null ? o.minH : 160;
   if (o.x != null) { el.style.left = o.x + 'px'; el.style.top = o.y + 'px'; }
+  else { el.style.left = '80px'; el.style.top = '80px'; }
   if (o.w != null) el.style.width = o.w + 'px';
   if (o.h != null) el.style.height = o.h + 'px';
 
@@ -68,9 +69,10 @@ export function makeFloatWindow(id, title, opts) {
 
   function raise() { el.style.zIndex = ++fwinZTop; }
 
-  // 标题栏拖动
+  // 标题栏拖动；最小化状态下点击标题栏先恢复窗口，避免误拖。
   tb.addEventListener('pointerdown', (e) => {
     if (e.target.closest('.fwin-btn')) return;
+    if (minimized) { restore(); return; }
     e.preventDefault();
     raise();
     const startX = e.clientX, startY = e.clientY;

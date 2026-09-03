@@ -19,7 +19,6 @@ import { pushUndo, restore, undoStack, undo, redo } from '../state/undo.js';
 import { deleteFunctionObject } from '../core/generators.js';
 import { texUndo, texRedo, texActive } from '../ui/texture-editor.js';
 import { togglePlay, refreshCameraTabs } from '../main.js';
-import { openDrawer } from '../ui/mobile.js';
 import { saveFile, openFile, newFile } from '../io/io.js';
 import { nextCameraId, nextCameraName } from '../core/constants.js';
 import { createCameraAt, lockCamera, camOrientationQuaternion, cameraPoseAt } from '../core/cameras.js';
@@ -1022,11 +1021,8 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
           syncSelectionClasses();
           // 选择工具：鼠标点选后立即进入拖动；触屏先待命，拖动超过阈值再进入移动。
           if (state.tool === 'select') {
-            if (touch) { touchPending = { x0: ev.clientX, y0: ev.clientY }; openDrawer('panel'); }
+            if (touch) touchPending = { x0: ev.clientX, y0: ev.clientY };
             else enterGrab(ev.clientX, ev.clientY);
-          } else if (touch) {
-            // 移动/旋转工具触屏点选粒子后，顺带打开属性抽屉，方便立即编辑。
-            openDrawer('panel');
           }
           handled = true;
         }
