@@ -1728,18 +1728,21 @@ body.puzzle-mode #puzzle-ghost-canvas { display: block; }
     left: 0; right: 0; bottom: 0;
     height: var(--tl-controls-h, 62px);
     overflow: hidden;
-    transition: height 0.24s ease;
     z-index: 110;
     padding: 6px 8px;
     box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.35);
     display: flex; flex-direction: column;
   }
-  .tl-body { order: 1; display: flex; flex: 0 0 0; min-height: 0; overflow: hidden; margin-top: 0; transition: margin-top 0.24s ease; }
-  .tl-controls { order: 2; margin-top: 0; transition: margin-top 0.24s ease; }
+  .tl-body {
+    order: 1; display: flex; flex: 0 0 0; min-height: 0; overflow: hidden;
+    margin-top: 0; opacity: 0; pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+  .tl-controls { order: 2; margin-top: 0; }
   /* 小屏下控件不要被压缩，放不下时整体换行而不是挤出 */
   .tl-controls > * { flex: 0 0 auto; }
   body.drawer-timeline-open .timeline { height: clamp(220px, 68vh, 460px); }
-  body.drawer-timeline-open .tl-body { flex: 1 1 auto; margin-top: 6px; }
+  body.drawer-timeline-open .tl-body { flex: 1 1 auto; margin-top: 6px; opacity: 1; pointer-events: auto; }
   body.drawer-timeline-open .tl-controls { margin-top: 6px; }
   #tl-module-resize { display: none; }
 
