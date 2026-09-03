@@ -511,7 +511,13 @@ export function updateTexMagnifier(x, y) {
     const gap = 18, margin = 8;
     if (el.parentElement !== document.body) document.body.appendChild(el);
     el.style.position = 'fixed';
-    el.style.zIndex = '150';
+    // 全屏窗口（.fwin）z-index 从 1000 起，放大镜必须压在其上，否则会被窗口遮挡。
+    let zi = 150;
+    if (texFwin && texFwin.el) {
+      const wz = parseInt(getComputedStyle(texFwin.el).zIndex, 10);
+      if (Number.isFinite(wz)) zi = wz + 1;
+    }
+    el.style.zIndex = String(zi);
     const left = Math.max(margin, Math.min(brushX - magW / 2, Math.max(margin, window.innerWidth - magW - margin)));
     let top = brushY - gap - magH;   // 优先：手指上方（手通常在触摸点下方）
     if (top < margin) top = brushY + gap; // 上方放不下：手指下方
@@ -652,6 +658,12 @@ export function initTextureEditor() {
   wrap.addEventListener('pointerleave', () => { texActive = false; });
   // 禁止浏览器原生手势接管（滚动/页面缩放），双指捏合由编辑器自行处理。
   wrap.style.touchAction = 'none';
+  // 右侧面板宽度/窗口尺寸变化会让 wrap 重排：重新定位网格与各描边层，避免网格偏移。
+  try {
+    if (typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(() => applyTexView()).observe(wrap);
+    }
+  } catch (e) { /* 旧浏览器忽略 */ }
 
   const beginTexPinch = () => {
     const pts = [...texTouch.pointers.values()];
