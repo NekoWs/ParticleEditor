@@ -12,7 +12,8 @@ import { updateGizmo } from '../interaction/gizmo.js';
 import { drawTimeline, updatePropPanel } from '../ui/panels.js';
 import { evalUVInto, hasUvExpressions, evaledAutoFrames, evaledEffMaxFrame } from '../core/uv-eval.js';
 
-import { buildParticleIndex, buildTrackIndex, buildGroupIndex, buildOpDeltaCache, buildGroupXforms, buildFxSclTrackCache, currentVisual, velOffsetAt, trackValueAt, trackIntegral, trVersion, groupMemberIndexCache, groupXformCache, fxOpDeltaCache, fxSclTrackCache, invalidateMaxTickCache, maxTick, getFxFrameAuto, evalFxParticleInto, fxParticleVisible, particleValueAt, spinVectorAt, rotVectorAt, isFxStaticScript } from '../core/animation-eval.js';
+import { buildParticleIndex, buildTrackIndex, buildGroupIndex, buildOpDeltaCache, buildGroupXforms, buildFxSclTrackCache, currentVisual, velOffsetAt, trackValueAt, trackIntegral, trVersion, groupMemberIndexCache, groupXformCache, fxOpDeltaCache, fxSclTrackCache, invalidateMaxTickCache, maxTick, fxParticleVisible, particleValueAt, spinVectorAt, rotVectorAt } from '../core/animation-eval.js';
+import { evaluateFxFrame } from '../core/generators.js';
 import * as THREE from "three";
 /* =========================================================================
  * 渲染
@@ -217,11 +218,16 @@ function readVisualFallback(p, T) {
           v.scale[0], v.scale[1]];
 }
 
-// 确定性的「无 random/rand、不依赖时间/帧间隔、变量无关键帧」函数对象：
-// rebuildFunctionObject 已按 t=0 求出并写入 p.pos/p.color/p.scale，播放期间无需每帧重跑脚本。
-// 判定逻辑在 animation-eval.js 的 isFxStaticScript（与求值缓存同层，便于测试）。
+// 派生粒子读取存储值（脚本已在 tick/process 中直接写入 p.pos/p.color/p.scale），
+// 并叠加函数对象整体变换；不再逐粒子执行脚本，也不叠加速度积分（运动由脚本显式控制）。
+function readDerivedVisual(p, T) {
+  const v = currentVisual(p);
+  return [v.pos[0], v.pos[1], v.pos[2],
+          v.color[0], v.color[1], v.color[2], v.color[3],
+          v.scale[0], v.scale[1]];
+}
 
-function writePointBuffers(full) {
+function writePointBuffers(full, deltaMs) {
   buildOpDeltaCache(state.time);
   buildGroupXforms(state.time);
   const n = state.particles.length;
@@ -244,77 +250,22 @@ function writePointBuffers(full) {
   const xforms = groupXformCache;
   const SZF = PARTICLE_SIZE_FACTOR;
   hasAnimatedTex = false; // 主循环顺带统计动画贴图粒子，避免额外整表扫描
-  // 派生粒子活源求值帧：每个函数对象每帧只建一次（编译/变量/缓存/执行器复用），逐粒子只跑脚本。
-  const fxFrames = new Map();
+  // 先推进每个函数对象的 tick/process（脚本直接写粒子存储值）。
   for (const fx of state.functions) {
-    const frame = getFxFrameAuto(fx, T, 0);
-    const hasOp = fxOpDeltaCache && fxOpDeltaCache.has(fx.id);
-    const hasSpin = spinVectorAt('f:' + fx.id, T).some(v => v !== 0);
-    const hasRot = rotVectorAt('f:' + fx.id, T).some(v => v !== 0);
-    fxFrames.set(fx.id, {
-      frame,
-      failed: !frame || !!frame.failed,
-      fast: !hasOp && !hasSpin && !hasRot,
-      staticScript: isFxStaticScript(fx),
-      gate: (functionIndexCache.get(fx.id) || fx),
-      sclTrs: (fxSclTrackCache && fxSclTrackCache.get(fx.id)) || null,
-    });
+    evaluateFxFrame(fx, T, deltaMs || 0);
   }
-  const derivedOut = { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0, life: -1 };
   // UV 表达式求值复用的 this 上下文（仅对含表达式的粒子填写，避免每粒子分配）。
   const uvCtxOut = { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0, life: -1 };
-  const uvCtx = { i: 0, n: 0, t: T, dt: 0, duration: maxTick(), life: -1, uv_x: 0, uv_y: 0, vars: {}, out: uvCtxOut };
-  // 脚本求值失败时的回退：使用上次成功重建写入的基础值，避免整帧渲染被未捕获异常打断。
-  const storedFx = (p, fr, T) => {
-    const sclTrs = fr.sclTrs;
-    const baseScale = p.scale[0];
-    return [
-      p.pos[0], p.pos[1], p.pos[2],
-      p.color[0], p.color[1], p.color[2], p.color[3],
-      sclTrs && sclTrs[0] ? trackValueAt(sclTrs[0], T, baseScale) : baseScale,
-      sclTrs && sclTrs[1] ? trackValueAt(sclTrs[1], T, baseScale) : baseScale,
-    ];
-  };
+  const uvCtx = { i: 0, n, t: T, dt: 0, duration: maxTick(), life: -1, uv_x: 0, uv_y: 0, vars: {}, out: uvCtxOut };
   for (let i = 0; i < n; i++) {
     const p = state.particles[i];
     let px, py, pz, cr, cg, cb, ca, ssx, ssy;
     let gate = p;
     let plife = -1;
-    let fr = null;
     if (p.fx) {
-      fr = fxFrames.get(p.fx);
-      if (fr) gate = fr.gate;
-      if (fr && fr.failed) {
-        [px, py, pz, cr, cg, cb, ca, ssx, ssy] = storedFx(p, fr, T);
-        plife = typeof p.life === 'number' ? p.life : -1;
-      } else if (fr && fr.fast && !(hasGroups && memberIdx.has(p.id)) && fr.staticScript) {
-        // 确定性静态脚本：直接使用 rebuild 阶段写好的基础值，跳过每帧脚本求值。
-        px = p.pos[0]; py = p.pos[1]; pz = p.pos[2];
-        cr = p.color[0]; cg = p.color[1]; cb = p.color[2]; ca = p.color[3];
-        const sclTrs = fr.sclTrs;
-        const baseScale = p.scale[0];
-        ssx = sclTrs && sclTrs[0] ? trackValueAt(sclTrs[0], T, baseScale) : baseScale;
-        ssy = sclTrs && sclTrs[1] ? trackValueAt(sclTrs[1], T, baseScale) : baseScale;
-        plife = typeof p.life === 'number' ? p.life : -1;
-      } else if (fr && fr.fast && !(hasGroups && memberIdx.has(p.id))) {
-        const out = evalFxParticleInto(fr.frame, p._statics || (p._statics = new Map()), p._fxIdx, derivedOut);
-        if (fr.frame && fr.frame.failed) {
-          fr.failed = true;
-          [px, py, pz, cr, cg, cb, ca, ssx, ssy] = storedFx(p, fr, T);
-          plife = typeof p.life === 'number' ? p.life : -1;
-        } else {
-          px = out.pos[0]; py = out.pos[1]; pz = out.pos[2];
-          cr = out.color[0]; cg = out.color[1]; cb = out.color[2]; ca = out.color[3];
-          const sclTrs = fr.sclTrs;
-          const baseScale = out.scale;
-          ssx = sclTrs && sclTrs[0] ? trackValueAt(sclTrs[0], T, baseScale) : baseScale;
-          ssy = sclTrs && sclTrs[1] ? trackValueAt(sclTrs[1], T, baseScale) : baseScale;
-          plife = Number.isFinite(out.life) ? out.life : -1;
-        }
-      } else {
-        [px, py, pz, cr, cg, cb, ca, ssx, ssy] = readVisualFallback(p, T);
-        plife = typeof p.life === 'number' ? p.life : -1;
-      }
+      gate = (functionIndexCache.get(p.fx) || p);
+      [px, py, pz, cr, cg, cb, ca, ssx, ssy] = readDerivedVisual(p, T);
+      plife = typeof p.life === 'number' ? p.life : -1;
     } else {
       const inGroup = hasGroups && memberIdx.has(p.id);
       const tr = (p._trVersion === trVersion) ? p._tr : null;
@@ -426,17 +377,10 @@ function writePointBuffers(full) {
       if (uv && tex) {
         if (hasUvExpressions(uv)) {
           uvCtx.i = (p.fx && p._fxIdx != null) ? p._fxIdx : i;
-          uvCtx.n = (p.fx && fr && fr.frame) ? fr.frame.n : n;
+          uvCtx.n = n;
           uvCtx.t = T;
           uvCtx.life = plife;
-          if (p.fx && fr && fr.frame) {
-            const C = fr.frame.C || 1, R = fr.frame.R || 1;
-            const idx = uvCtx.i;
-            uvCtx.uv_x = C === 1 ? 0 : (idx % C) / (C - 1);
-            uvCtx.uv_y = R === 1 ? 0 : Math.floor(idx / C) / (R - 1);
-          } else {
-            uvCtx.uv_x = 0; uvCtx.uv_y = 0;
-          }
+          uvCtx.uv_x = 0; uvCtx.uv_y = 0;
           uvCtxOut.pos[0] = px; uvCtxOut.pos[1] = py; uvCtxOut.pos[2] = pz;
           uvCtxOut.color[0] = cr; uvCtxOut.color[1] = cg; uvCtxOut.color[2] = cb; uvCtxOut.color[3] = ca;
           const vel = particleValueAt(p, 'vel', T);
@@ -517,15 +461,15 @@ function writePointBuffers(full) {
   }
 }
 
-// 结构变化后的完整刷新：重建索引并写缓冲。
-export function rebuildPoints(full) {
+// 结构变化后的完整刷新：重建索引并写缓冲。deltaMs 为本次 process 的毫秒增量（scrub/seek 传 0）。
+export function rebuildPoints(full, deltaMs) {
   rebuildIndexes();
-  writePointBuffers(full);
+  writePointBuffers(full, deltaMs || 0);
 }
 
 // 播放/拖动时间轴专用：结构未变、仅 time 变化，跳过索引重建以降低帧耗时。
-export function rebuildPointsTime(full) {
-  writePointBuffers(full);
+export function rebuildPointsTime(full, deltaMs) {
+  writePointBuffers(full, deltaMs || 0);
 }
 
 export function setPreview(positions) {

@@ -156,11 +156,12 @@ export const PARTICLE_SIZE_FACTOR = 0.2; // 编辑器点整宽因子；游戏端
  * 数据模型约定：
  * - particle: { id, color:[r,g,b,a], scale:[sx,sy,sz], glow, lightLevel,
  *              pos:[x,y,z], vel:[vx,vy,vz], life, st, ent, uv, fx? }
- *   派生粒子 id 固定为 `${fxId}:p${i}`，其基础属性由函数对象脚本计算（只读）。
+ *   派生粒子 id 固定为 `${fxId}:p${spawn序号}`，由函数对象脚本在运行期 spawn（v12）。
  * - track: { pr:'pos.x'|'scl'|..., m:'set'|'op', ids:[...], kf:[[tick,value,easing],...], fx? }
  * - group: state.groups[组名] = [粒子id...]；组级 UV 在 state.groupUV[组名]。
- * - function object: { id:'fxN', name, center:[x,y,z], count, setup, process, funcs,
- *                      vars:{name:{base,kf}}, duration, step, preset, params, st, ent, ui, uv }
+ * - function object: { id:'fxN', name, center:[x,y,z], setup, tick, process, funcs,
+ *                      processParam, vars:{name:{base,kf}}, duration, preset, params,
+ *                      st, ent, ui, uv, fastMath, spinSpace, rotSpace }
  */
 export const state = {
   name: 'my_animation',
@@ -284,10 +285,11 @@ export const FUNCTION_PRESETS = {
     label: '空',
     params: [],
     build: p => ({
-      count: 30,
       vars: {},
       setup: '',
+      tick: '',
       process: '',
+      processParam: 'delta',
     }),
   },
   sin: {
@@ -298,14 +300,15 @@ export const FUNCTION_PRESETS = {
       { key: 'wid', label: '宽度', def: 8 },
     ],
     build: p => ({
-      count: 200,
       vars: { amp: { base: Number(p.amp), kf: [] }, freq: { base: Number(p.freq), kf: [] }, wid: { base: Number(p.wid), kf: [] } },
-      setup: `global _gx = [];
-for (_k = 0; _k < this.count; _k = _k + 1) {
-  _gx.push(_k / this.count - 0.5);
+      setup: `for (_k = 0; _k < 200; _k = _k + 1) {
+  _p = this.spawn();
+  _xx = (_k / 200 - 0.5) * wid;
+  _p.position = [_xx, amp * sin(freq * pi * (_k / 200 - 0.5)), 0];
 }`,
-      process: `xx = _gx[this.index] * wid;
-this.position = [xx, amp * sin(freq * pi * _gx[this.index]), 0];`,
+      tick: '',
+      process: '',
+      processParam: 'delta',
     }),
   },
   sphere: {
@@ -314,40 +317,36 @@ this.position = [xx, amp * sin(freq * pi * _gx[this.index]), 0];`,
       { key: 'rad', label: '半径', def: 3 },
     ],
     build: p => ({
-      count: 200,
       vars: { rad: { base: Number(p.rad), kf: [] } },
-      setup: `global _th = [];
-global _ph = [];
-for (_k = 0; _k < this.count; _k = _k + 1) {
-  _th.push(acos(1 - 2 * (_k + 0.5) / this.count));
-  _ph.push(_k * pi * (3 - sqrt(5)));
+      setup: `for (_k = 0; _k < 200; _k = _k + 1) {
+  _p = this.spawn();
+  _th = acos(1 - 2 * (_k + 0.5) / 200);
+  _ph = _k * pi * (3 - sqrt(5));
+  _p.position = [rad * sin(_th) * cos(_ph), rad * cos(_th), rad * sin(_th) * sin(_ph)];
 }`,
-      process: `this.position = [rad * sin(_th[this.index]) * cos(_ph[this.index]), rad * cos(_th[this.index]), rad * sin(_th[this.index]) * sin(_ph[this.index])];`,
+      tick: '',
+      process: '',
+      processParam: 'delta',
     }),
   },
   cube: {
     label: '立方体',
-    countVars: ['sx', 'sy', 'sz'],
     params: [
       { key: 'edge', label: '边长', def: 4 },
     ],
     build: p => ({
-      count: 512,
       vars: { edge: { base: Number(p.edge), kf: [] }, sx: { base: 8, kf: [] }, sy: { base: 8, kf: [] }, sz: { base: 8, kf: [] } },
-      setup: `global _cx = [];
-global _cy = [];
-global _cz = [];
-for (_k = 0; _k < this.count; _k = _k + 1) {
-  _cx.push(floor(_k / (sy * sz)) / (sx - 1) - 0.5);
-  _cy.push(floor((_k % (sy * sz)) / sz) / (sy - 1) - 0.5);
-  _cz.push((_k % sz) / (sz - 1) - 0.5);
+      setup: `for (_k = 0; _k < sx * sy * sz; _k = _k + 1) {
+  _p = this.spawn();
+  _p.position = [(floor(_k / (sy * sz)) / (sx - 1) - 0.5) * edge, (floor((_k % (sy * sz)) / sz) / (sy - 1) - 0.5) * edge, ((_k % sz) / (sz - 1) - 0.5) * edge];
 }`,
-      process: `this.position = [_cx[this.index] * edge, _cy[this.index] * edge, _cz[this.index] * edge];`,
+      tick: '',
+      process: '',
+      processParam: 'delta',
     }),
   },
   torus: {
     label: '甜甜圈',
-    countVars: ['m', 'k'],
     params: [
       { key: 'major', label: '大半径', def: 3 },
       { key: 'minor', label: '管半径', def: 1 },
@@ -355,20 +354,20 @@ for (_k = 0; _k < this.count; _k = _k + 1) {
       { key: 'k', label: '圆环密度', def: 16 },
     ],
     build: p => ({
-      count: 717,
       vars: { major: { base: Number(p.major), kf: [] }, minor: { base: Number(p.minor), kf: [] }, m: { base: Number(p.m), kf: [] }, k: { base: Number(p.k), kf: [] } },
-      setup: `global _th = [];
-global _ph = [];
-for (_k = 0; _k < this.count; _k = _k + 1) {
-  _th.push((_k % k) / k * 2 * pi);
-  _ph.push(floor(_k / k) / m * 2 * pi);
+      setup: `for (_k = 0; _k < m * k; _k = _k + 1) {
+  _p = this.spawn();
+  _th = (_k % k) / k * 2 * pi;
+  _ph = floor(_k / k) / m * 2 * pi;
+  _p.position = [(major + minor * cos(_th)) * cos(_ph), minor * sin(_th), (major + minor * cos(_th)) * sin(_ph)];
 }`,
-      process: `this.position = [(major + minor * cos(_th[this.index])) * cos(_ph[this.index]), minor * sin(_th[this.index]), (major + minor * cos(_th[this.index])) * sin(_ph[this.index])];`,
+      tick: '',
+      process: '',
+      processParam: 'delta',
     }),
   },
   cylinder: {
     label: '圆柱',
-    countExpr: 'm*(k+2*cr)',
     params: [
       { key: 'rad', label: '半径', def: 2 },
       { key: 'h', label: '高度', def: 4 },
@@ -377,78 +376,73 @@ for (_k = 0; _k < this.count; _k = _k + 1) {
       { key: 'cr', label: '顶/底密度', def: 8 },
     ],
     build: p => ({
-      count: 512,
       vars: { rad: { base: Number(p.rad), kf: [] }, h: { base: Number(p.h), kf: [] }, m: { base: Number(p.m), kf: [] }, k: { base: Number(p.k), kf: [] }, cr: { base: Number(p.cr), kf: [] } },
-      setup: `global _ly = [];
-global _aa = [];
-global _rf = [];
-global _yf = [];
-for (_k = 0; _k < this.count; _k = _k + 1) {
-  _ly.push(floor(_k / m));
-  _aa.push((_k % m) / m * 2 * pi);
-  _rf.push(clamp(min(_ly[_k] / (cr - 1), (k + 2 * cr - 1 - _ly[_k]) / (cr - 1)), 0, 1));
-  _yf.push((clamp(_ly[_k], cr, cr + k - 1) - cr) / (k - 1));
+      setup: `for (_k = 0; _k < m * (k + 2 * cr); _k = _k + 1) {
+  _p = this.spawn();
+  _ly = floor(_k / m);
+  _aa = (_k % m) / m * 2 * pi;
+  _rf = clamp(min(_ly / (cr - 1), (k + 2 * cr - 1 - _ly) / (cr - 1)), 0, 1);
+  _yf = (clamp(_ly, cr, cr + k - 1) - cr) / (k - 1);
+  _p.position = [rad * _rf * cos(_aa), _yf * h - h / 2, rad * _rf * sin(_aa)];
 }`,
-      process: `rr = rad * _rf[this.index];
-yy = _yf[this.index] * h - h / 2;
-this.position = [rr * cos(_aa[this.index]), yy, rr * sin(_aa[this.index])];`,
+      tick: '',
+      process: '',
+      processParam: 'delta',
     }),
   },
   cone: {
     label: '圆锥',
-    countVars: ['m', 'k'],
     params: [
       { key: 'rad', label: '底面半径', def: 2 },
       { key: 'h', label: '高度', def: 4 },
     ],
     build: p => ({
-      count: 512,
       vars: { rad: { base: Number(p.rad), kf: [] }, h: { base: Number(p.h), kf: [] }, m: { base: 32, kf: [] }, k: { base: 16, kf: [] } },
-      setup: `global _aa = [];
-global _yy = [];
-for (_k = 0; _k < this.count; _k = _k + 1) {
-  _aa.push((_k % m) / m * 2 * pi);
-  _yy.push(floor(_k / m) / (k - 1));
+      setup: `for (_k = 0; _k < m * k; _k = _k + 1) {
+  _p = this.spawn();
+  _aa = (_k % m) / m * 2 * pi;
+  _yy = floor(_k / m) / (k - 1);
+  _p.position = [rad * (1 - _yy) * cos(_aa), (_yy - 0.5) * h, rad * (1 - _yy) * sin(_aa)];
 }`,
-      process: `this.position = [rad * (1 - _yy[this.index]) * cos(_aa[this.index]), (_yy[this.index] - 0.5) * h, rad * (1 - _yy[this.index]) * sin(_aa[this.index])];`,
+      tick: '',
+      process: '',
+      processParam: 'delta',
     }),
   },
   helix: {
     label: '螺旋线',
-    countVars: ['turns', 'ppr'],
     params: [
       { key: 'rad', label: '半径', def: 2 },
       { key: 'h', label: '总高度', def: 6 },
     ],
     build: p => ({
-      count: 120,
       vars: { rad: { base: Number(p.rad), kf: [] }, h: { base: Number(p.h), kf: [] }, turns: { base: 3, kf: [] }, ppr: { base: 40, kf: [] } },
-      setup: `global _aa = [];
-global _yf = [];
-for (_k = 0; _k < this.count; _k = _k + 1) {
-  _aa.push(_k / ppr * 2 * pi);
-  _yf.push(_k / this.count - 0.5);
+      setup: `for (_k = 0; _k < turns * ppr; _k = _k + 1) {
+  _p = this.spawn();
+  _aa = _k / ppr * 2 * pi;
+  _yf = _k / (turns * ppr) - 0.5;
+  _p.position = [rad * cos(_aa), _yf * h, rad * sin(_aa)];
 }`,
-      process: `this.position = [rad * cos(_aa[this.index]), _yf[this.index] * h, rad * sin(_aa[this.index])];`,
+      tick: '',
+      process: '',
+      processParam: 'delta',
     }),
   },
   plane: {
     label: '平面网格',
-    countVars: ['cols', 'rows'],
     params: [
       { key: 'w', label: '宽', def: 8 },
       { key: 'd', label: '深', def: 8 },
     ],
     build: p => ({
-      count: 256,
       vars: { w: { base: Number(p.w), kf: [] }, d: { base: Number(p.d), kf: [] }, cols: { base: 16, kf: [] }, rows: { base: 16, kf: [] } },
-      setup: `global _xf = [];
-global _zf = [];
-for (_k = 0; _k < this.count; _k = _k + 1) {
-  _xf.push((_k % cols) / (cols - 1) - 0.5);
-  _zf.push(floor(_k / cols) / (rows - 1) - 0.5);
+      setup: `for (_k = 0; _k < cols * rows; _k = _k + 1) {
+  _p = this.spawn();
+  _p.position = [((_k % cols) / (cols - 1) - 0.5) * w, 0, (floor(_k / cols) / (rows - 1) - 0.5) * d];
 }`,
-      process: `this.position = [_xf[this.index] * w, 0, _zf[this.index] * d];`,
+      tick: '',
+      process: '',
+      processParam: 'delta',
     }),
   },
   circle: {
@@ -457,13 +451,15 @@ for (_k = 0; _k < this.count; _k = _k + 1) {
       { key: 'rad', label: '半径', def: 4 }
     ],
     build: p => ({
-      count: 200,
       vars: { rad: { base: Number(p.rad), kf: [] } },
-      setup: `global _ang = [];
-for (_k = 0; _k < this.count; _k = _k + 1) {
-  _ang.push(_k / this.count * 2 * pi);
+      setup: `for (_k = 0; _k < 200; _k = _k + 1) {
+  _p = this.spawn();
+  _ang = _k / 200 * 2 * pi;
+  _p.position = [rad * cos(_ang), 0, rad * sin(_ang)];
 }`,
-      process: `this.position = [rad * cos(_ang[this.index]), 0, rad * sin(_ang[this.index])];`,
+      tick: '',
+      process: '',
+      processParam: 'delta',
     }),
   },
   disc: {
@@ -472,17 +468,16 @@ for (_k = 0; _k < this.count; _k = _k + 1) {
       { key: 'diskR', label: '半径', def: 4 },
     ],
     build: p => ({
-      count: 400,
       vars: { diskR: { base: Number(p.diskR), kf: [] } },
-      setup: `global _rf = [];
-global _th = [];
-for (_k = 0; _k < this.count; _k = _k + 1) {
-  _rf.push(sqrt(_k / this.count));
-  _th.push(_k * pi * (3 - sqrt(5)));
+      setup: `for (_k = 0; _k < 400; _k = _k + 1) {
+  _p = this.spawn();
+  _rf = sqrt(_k / 400);
+  _th = _k * pi * (3 - sqrt(5));
+  _p.position = [diskR * _rf * cos(_th), 0, diskR * _rf * sin(_th)];
 }`,
-      process: `rad = diskR * _rf[this.index];
-this.position.x = rad * cos(_th[this.index]);
-this.position.z = rad * sin(_th[this.index]);`,
+      tick: '',
+      process: '',
+      processParam: 'delta',
     }),
   },
   star: {
@@ -491,20 +486,17 @@ this.position.z = rad * sin(_th[this.index]);`,
       { key: 'rad', label: '半径', def: 20 },
     ],
     build: p => ({
-      count: 2000,
       vars: { rad: { base: Number(p.rad), kf: [] } },
-      setup: `global _m = floor(pow(this.count, 0.5));
-global _cx = [];
-global _cy = [];
-global _cz = [];
-for (_k = 0; _k < this.count; _k = _k + 1) {
-  _cx.push(pow(cos(floor(_k / _m) * 2 * pi / _m) * cos((_k % _m) * pi / _m - pi / 2), 3));
-  _cy.push(pow(sin(floor(_k / _m) * 2 * pi / _m) * cos((_k % _m) * pi / _m - pi / 2), 3));
-  _cz.push(pow(sin((_k % _m) * pi / _m - pi / 2), 3));
+      setup: `_m = floor(pow(2000, 0.5));
+for (_k = 0; _k < 2000; _k = _k + 1) {
+  _p = this.spawn();
+  _p.position.x = rad * pow(cos(floor(_k / _m) * 2 * pi / _m) * cos((_k % _m) * pi / _m - pi / 2), 3);
+  _p.position.y = rad * pow(sin(floor(_k / _m) * 2 * pi / _m) * cos((_k % _m) * pi / _m - pi / 2), 3);
+  _p.position.z = rad * pow(sin((_k % _m) * pi / _m - pi / 2), 3);
 }`,
-      process: `this.position.x = rad * _cx[this.index];
-this.position.y = rad * _cy[this.index];
-this.position.z = rad * _cz[this.index];`
+      tick: '',
+      process: '',
+      processParam: 'delta',
     })
   },
   rising_smoke: {
@@ -514,20 +506,21 @@ this.position.z = rad * _cz[this.index];`
       { key: 'spd', label: '上升速度', def: 0.5 },
     ],
     build: p => ({
-      count: 2000,
       vars: { rad: { base: Number(p.rad), kf: []}, spd: { base: Number(p.spd), kf: [] } },
-      setup: `global _rx = [];
-global _rz = [];
-global _ry = [];
-for (_k = 0; _k < this.count; _k = _k + 1) {
-  _rx.push(rand(_k * 2));
-  _rz.push(rand(_k * 4));
-  _ry.push(rand(_k * 6));
+      setup: `for (_k = 0; _k < 2000; _k = _k + 1) {
+  _p = this.spawn();
+  _p.rx = rand(_k * 2);
+  _p.rz = rand(_k * 4);
+  _p.ry = rand(_k * 6);
 }`,
-      process: `this.position.x = (_rx[this.index] * 2 - 1) * rad;
-this.position.z = (_rz[this.index] * 2 - 1) * rad;
-_y = (_ry[this.index] * 2 - 1) * rad;
-this.position.y = -rad + (_y + rad + this.time * spd) % (2 * rad);`
+      tick: '',
+      process: `for (const _p of this.particles) {
+  _p.position.x = (_p.rx * 2 - 1) * rad;
+  _p.position.z = (_p.rz * 2 - 1) * rad;
+  _y = (_p.ry * 2 - 1) * rad;
+  _p.position.y = -rad + (_y + rad + this.time * spd) % (2 * rad);
+}`,
+      processParam: 'delta',
     })
   },
 };

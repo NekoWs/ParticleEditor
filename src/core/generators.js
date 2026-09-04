@@ -1,67 +1,60 @@
 /* =========================================================================
- * 函数对象：活源重算
+ * 函数对象：spawn 运行时（v12）
  * 职责：
- *   1) 脚本编译缓存（setup / process → AST）
- *   2) setup（对象级）与 process（粒子级）求值
- *   3) 派生粒子与派生轨道的重建（rebuildFunctionObject / buildDerivedTracks）
- *   4) 预设应用与采样数联动（applyPreset / syncPresetCount / createFunctionObject）
+ *   1) 脚本编译缓存（setup / tick / process / funcs → AST）
+ *   2) 运行时粒子列表管理（spawn / kill / 寿命递减）
+ *   3) 帧调度：补跑 tick() → 跑一次 process(deltaMs)
+ *   4) 预设应用与函数对象增删改
  * ======================================================================= */
 
-import { _etf, t } from './i18n.js';
-import { FUNCTION_PRESETS, state, nextFunctionId, setDirty, compPr, getParticle } from './constants.js';
+import { t } from './i18n.js';
+import { FUNCTION_PRESETS, state, nextFunctionId, setDirty } from './constants.js';
 import { varKfValue } from './easing.js';
 import { modalAlert } from '../ui/ui.js';
 import { pushUndo } from '../state/undo.js';
 import { rebuildPoints, maxTick } from './animation.js';
 import { refreshFunctionPanel } from '../ui/panels.js';
-import { parseProgram, createObjectState, runSetup, createStatics, evalProcess, runUniformPrelude, prepareProcess, createProcessRunner, runNativeProcess, evalExpression } from './script-lang.js';
+import { parseProgram, createObjectState, runSetup, runTick, runProcessFrame } from './script-lang.js';
 
-// 主循环中 1 秒 = 20 tick（见 main.js 的 `state.time += dt * 20`）。
+// 主循环中 1 秒 = 20 tick（见 main.js）。
 const TICKS_PER_SEC = 20;
 const DT_PER_TICK = 1 / TICKS_PER_SEC;
 
-// 新建一个 process 输出对象（默认值：位置原点、颜色/alpha=1、速度 0、缩放 1、不发光、寿命 -1=无限）。
-function newOut() {
-  return { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0, life: -1 };
-}
-
-// 记录脚本运行时错误（不弹窗；提交/重建路径会另行弹窗提示）。
-function markFxError(fx, e) {
-  if (fx) fx._error = (e && e.message) ? e.message : String(e);
-}
-
-// 脚本求值失败时回退到粒子已存储的基础值（上次成功重建写入的 p.pos/p.color/p.scale）。
-function storedVisual(p) {
-  return {
-    pos: (p && p.pos) ? p.pos.slice() : [0, 0, 0],
-    color: (p && p.color) ? p.color.slice() : [1, 1, 1, 1],
-    vel: (p && p.vel) ? p.vel.slice() : [0, 0, 0],
-    scale: (p && p.scale && Number.isFinite(p.scale[0])) ? p.scale[0] : 1,
-    glow: !!(p && p.glow),
-    light: (p && p.lightLevel != null) ? p.lightLevel : 0,
-    life: (p && typeof p.life === 'number') ? p.life : -1,
-  };
+export function buildScriptSource(setup, process, tick, funcs, processParam) {
+  const parts = [];
+  const st = (setup || '').trim();
+  const tk = (tick || '').trim();
+  const pr = (process || '').trim();
+  const fn = (funcs || '').trim();
+  if (fn) parts.push(fn);
+  if (st) parts.push('func setup() {\n' + st + '\n}');
+  if (tk) parts.push('func tick() {\n' + tk + '\n}');
+  if (pr) parts.push('func process(' + (processParam || 'delta') + ') {\n' + pr + '\n}');
+  return parts.join('\n');
 }
 
 /* -------------------------------------------------------------------------
  * 脚本编译缓存
  * ---------------------------------------------------------------------- */
 
-export function buildScriptSource(setup, process, funcs) {
-  const f = (funcs || '').trim();
-  return (f ? f + '\n' : '') + 'setup {\n' + (setup || '').trim() + '\n}\nprocess {\n' + (process || '').trim() + '\n}\n';
-}
-
 export function getProgram(fx) {
-  // 只比较两端源码，避免每次调用拼接整段字符串（getProgram 处于每粒子热路径）。
   const setup = (fx.setup || '').trim();
+  const tick = (fx.tick || '').trim();
   const process = (fx.process || '').trim();
   const funcs = (fx.funcs || '').trim();
-  if (fx._program === undefined || fx._programSrcSetup !== setup || fx._programSrcProcess !== process || fx._programSrcFuncs !== funcs) {
-    fx._program = parseProgram(buildScriptSource(setup, process, funcs));
+  const processParam = (fx.processParam || 'delta');
+  if (fx._program === undefined ||
+      fx._programSrcSetup !== setup ||
+      fx._programSrcTick !== tick ||
+      fx._programSrcProcess !== process ||
+      fx._programSrcFuncs !== funcs ||
+      fx._programSrcProcessParam !== processParam) {
+    fx._program = parseProgram(buildScriptSource(setup, process, tick, funcs, processParam));
     fx._programSrcSetup = setup;
+    fx._programSrcTick = tick;
     fx._programSrcProcess = process;
     fx._programSrcFuncs = funcs;
+    fx._programSrcProcessParam = processParam;
   }
   return fx._program;
 }
@@ -89,291 +82,216 @@ export function buildEnv(vars, ctx) {
 }
 
 /* -------------------------------------------------------------------------
- * setup / process 求值
+ * 粒子存储与运行时
  * ---------------------------------------------------------------------- */
 
-function gridCols(fx, n) {
-  const v = fx.vars && fx.vars['grid_cols'];
-  if (v && Number.isFinite(v.base)) return Math.max(1, Math.round(v.base));
-  return Math.max(1, Math.ceil(Math.sqrt(n)));
+function markFxError(fx, e) {
+  if (fx) fx._error = (e && e.message) ? e.message : String(e);
 }
 
-function uvFor(fx, n, i) {
-  const C = gridCols(fx, n);
-  const R = Math.max(1, Math.ceil(n / C));
-  const col = i % C;
-  const row = Math.floor(i / C);
+function newParticleWrapper(fx, runtime) {
+  const serial = runtime.spawnSerial++;
   return {
-    uv_x: (C === 1) ? 0 : col / (C - 1),
-    uv_y: (R === 1) ? 0 : row / (R - 1),
+    pos: [0, 0, 0],
+    color: [1, 1, 1, 1],
+    vel: [0, 0, 0],
+    scale: 1,
+    glow: false,
+    light: 0,
+    life: -1,
+    index: serial,
+    fields: new Map(),
+    alive: true,
+    _spawnTick: runtime.curTick,
+    _p: null,
+    kill() { killParticle(fx, runtime, this); },
   };
 }
 
-function lifeAt(fx, t) {
-  const dur = fx.duration || 0;
-  if (dur <= 0) return 0;
-  const st = fx.st || 0;
-  return Math.min(1, Math.max(0, (t - st) / dur));
+function syncParticleState(p) {
+  const w = p._w;
+  if (!w) return;
+  const s = Number.isFinite(w.scale) ? w.scale : 1;
+  p.scale[0] = s; p.scale[1] = s; p.scale[2] = 1;
+  p.glow = !!w.glow;
+  p.lightLevel = Math.max(0, Math.min(15, Math.round(w.light)));
+  p.life = Number.isFinite(w.life) ? w.life : -1;
 }
 
-function getObjectState(fx) {
-  const duration = maxTick();
-  if (fx._objState !== undefined && fx._objStateDuration === duration) return fx._objState;
-  const program = getProgram(fx);
-  const n = Math.max(1, Math.round(fx.count) || 1);
+function attachParticle(fx, w) {
+  const p = {
+    id: fx.id + ':p' + w.index,
+    fx: fx.id,
+    pos: w.pos,
+    color: w.color,
+    vel: w.vel,
+    scale: [1, 1, 1],
+    glow: false,
+    lightLevel: 0,
+    life: -1,
+    _fxIdx: w.index,
+    _w: w,
+  };
+  w._p = p;
+  state.particles.push(p);
+  syncParticleState(p);
+  return p;
+}
+
+function spawnFor(fx, runtime) {
+  const w = newParticleWrapper(fx, runtime);
+  runtime.particles.push(w);
+  attachParticle(fx, w);
+  return w;
+}
+
+function removeStateParticle(p) {
+  const si = state.particles.indexOf(p);
+  if (si >= 0) state.particles.splice(si, 1);
+  state.tracks = state.tracks.filter(tr => !tr.ids.includes(p.id));
+  state.selected.delete(p.id);
+}
+
+function killParticle(fx, runtime, w) {
+  if (!w.alive) return;
+  w.alive = false;
+  const li = runtime.particles.indexOf(w);
+  if (li >= 0) runtime.particles.splice(li, 1);
+  if (w._p) removeStateParticle(w._p);
+}
+
+function dropAllParticles(fx) {
+  for (const p of [...state.particles]) {
+    if (p.fx === fx.id) removeStateParticle(p);
+  }
+  if (fx._runtime) {
+    fx._runtime.particles.length = 0;
+    fx._runtime.spawnSerial = 0;
+  }
+}
+
+// 每个 tick 开始前递减剩余寿命；到期（或 life 已为 0）立即移除。
+// entry = max(spawnTick, fx.st)：setup 中 spawn 的粒子从 st 开始倒计时。
+function decrementLife(fx, runtime, tick) {
   const st = fx.st || 0;
+  for (let i = runtime.particles.length - 1; i >= 0; i--) {
+    const w = runtime.particles[i];
+    const entry = Math.max(w._spawnTick, st);
+    if (w.life >= 0 && tick > entry) {
+      if (w.life <= 1) {
+        killParticle(fx, runtime, w);
+      } else {
+        w.life -= 1;
+      }
+    }
+  }
+}
+
+function ensureRuntime(fx) {
+  if (fx._runtime) return fx._runtime;
+  const program = getProgram(fx);
   const objState = createObjectState(fx.seed | 0);
-  runSetup(program, objState, { n, t: st, duration, vars: varsAt(fx, st) });
-  fx._objState = objState;
-  fx._objStateDuration = duration;
-  return objState;
-}
-
-// 每 (fx, n, t, dt) 求值上下文：vars 对象与 uniform 值只算一次，同帧所有粒子广播。
-// 同时预编译字节码并创建可复用 process 执行器，避免每粒子重复解析/分配。
-function getEvalContext(fx, objState, n, t, dt) {
-  const key = (t || 0) + '|' + n + '|' + (dt || 0) + '|' + maxTick();
-  if (fx._evalCtx && fx._evalCtx.key === key) return fx._evalCtx;
-  const varsObj = varsAt(fx, t || 0);
-  const life = lifeAt(fx, t || 0);
-  const program = getProgram(fx);
-  const varNames = Object.keys(varsObj);
-  const globalNames = objState.globals ? [...objState.globals.keys()].sort() : [];
-  const compiled = prepareProcess(program, varNames, globalNames);
-  const preCtx = {
-    i: 0, n, t: t || 0, dt: dt || 0,
-    duration: maxTick(), life, uv_x: 0, uv_y: 0,
-    vars: varsObj, fastMath: !!fx.fastMath,
-    out: newOut(),
+  const st = fx.st || 0;
+  const runtime = {
+    particles: [],
+    spawnSerial: 0,
+    tickCursor: Math.floor(st) - 1,
+    curTick: st,
+    objState,
+    program,
   };
-  const uniforms = runUniformPrelude(program, objState, null, preCtx, compiled);
-  const runner = createProcessRunner(compiled, objState, preCtx, uniforms);
-  const ctx = { key, varsObj, life, uniforms, program, compiled, preCtx, runner, native: compiled.native };
-  fx._evalCtx = ctx;
-  return ctx;
-}
-
-function evalParticleFor(fx, objState, statics, i, n, t, dt) {
-  const evalCtx = getEvalContext(fx, objState, n, t || 0, dt || 0);
-  const uv = uvFor(fx, n, i);
-  const ctx = {
-    i, n, t: t || 0, dt: dt || 0,
+  fx._runtime = runtime;
+  const spawn = () => spawnFor(fx, runtime);
+  runSetup(program, objState, {
+    t: st,
     duration: maxTick(),
-    life: evalCtx.life,
-    uv_x: uv.uv_x, uv_y: uv.uv_y,
-    vars: evalCtx.varsObj,
-    fastMath: !!fx.fastMath,
-    uniforms: evalCtx.uniforms,
-    out: newOut(),
-  };
-  if (evalCtx.native) {
-    runNativeProcess(evalCtx.native, objState, statics, ctx, ctx.out, !!fx.fastMath);
-  } else {
-    evalProcess(evalCtx.program, objState, statics, ctx);
+    vars: varsAt(fx, st),
+    particles: runtime.particles,
+    spawn,
+  });
+  for (const w of runtime.particles) {
+    if (w._p) syncParticleState(w._p);
   }
-  const out = ctx.out;
-  const center = fx.center || [0, 0, 0];
-  const clamp01 = x => (Number.isFinite(x) ? Math.min(1, Math.max(0, x)) : 0);
+  return runtime;
+}
+
+function makeCtx(fx, runtime, T, deltaMs) {
   return {
-    pos: [out.pos[0] + center[0], out.pos[1] + center[1], out.pos[2] + center[2]],
-    color: out.color.map(clamp01),
-    vel: [out.vel[0], out.vel[1], out.vel[2]],
-    scale: Number.isFinite(out.scale) ? out.scale : 1,
-    glow: !!out.glow,
-    light: Math.max(0, Math.min(15, Math.round(out.light))),
-    life: Number.isFinite(out.life) ? out.life : -1,
+    t: T,
+    duration: maxTick(),
+    vars: varsAt(fx, T),
+    particles: runtime.particles,
+    spawn: () => spawnFor(fx, runtime),
+    deltaMs: deltaMs || 0,
+    fastMath: !!fx.fastMath,
   };
 }
 
 /* -------------------------------------------------------------------------
- * 热路径：单帧内逐粒子复用的活源求值（渲染 20w 派生粒子时避免每粒子分配）
+ * 帧调度：把函数对象推进到时间 T。
+ *  - T < st：仅保证 setup 已执行（初始粒子存在但由渲染层按 st 隐藏）
+ *  - 超过 duration：不再运行 tick/process（粒子保留、渲染层隐藏）
+ *  - 正常：补跑 (lastTick, floor(T)] 的 tick()，再跑一次 process(deltaMs)
+ *  - 向后 seek：重建运行时（清空粒子、重跑 setup、重置 tick 游标）
  * ---------------------------------------------------------------------- */
 
-// 创建/复用某个 (fx,t) 帧的求值器：脚本字节码、uniforms、Runner 均只建一次。
-// 渲染热路径入口：按函数对象取/建对象级状态，并返回该 (fx,t) 的可复用求值帧。
-function failedFxFrame(fx, t, dt) {
-  return {
-    fx, objState: null, n: Math.max(1, Math.round(fx.count) || 1),
-    t: t || 0, dt: dt || 0, C: 1, R: 1, life: 0,
-    ctx: null, uniforms: [], runner: null, native: null,
-    failed: true,
-  };
-}
+export function evaluateFxFrame(fx, T, deltaMs) {
+  const st = fx.st || 0;
+  const dur = fx.duration || 0;
+  if (T < st) {
+    try { ensureRuntime(fx); } catch (e) { markFxError(fx, e); }
+    return;
+  }
+  if (dur > 0 && T >= st + dur) {
+    try { ensureRuntime(fx); } catch (e) { markFxError(fx, e); }
+    return;
+  }
 
-export function getFxFrameAuto(fx, t, dt) {
+  let runtime;
   try {
-    const objState = getObjectState(fx);
-    const n = Math.max(1, Math.round(fx.count) || 1);
-    return getFxFrame(fx, objState, n, t || 0, dt || 0);
+    runtime = ensureRuntime(fx);
   } catch (e) {
     markFxError(fx, e);
-    return failedFxFrame(fx, t, dt);
+    return;
   }
-}
 
-export function getFxFrame(fx, objState, n, t, dt) {
-  let evalCtx;
-  try {
-    evalCtx = getEvalContext(fx, objState, n, t || 0, dt || 0);
-  } catch (e) {
-    markFxError(fx, e);
-    return failedFxFrame(fx, t, dt);
-  }
-  const C = gridCols(fx, n);
-  const R = Math.max(1, Math.ceil(n / C));
-  return {
-    fx, objState, n, t: t || 0, dt: dt || 0,
-    life: evalCtx.life,
-    ctx: evalCtx.preCtx,
-    uniforms: evalCtx.uniforms,
-    runner: evalCtx.runner,
-    native: evalCtx.native,
-    C, R,
-  };
-}
-
-// 求值一个派生粒子并把结果写入复用 out（{pos,color,vel,scale,glow,light,life}）。
-// 返回值即 out；调用方必须立即消费（下一次调用会覆盖）。与 evalParticleFor 语义一致。
-export function evalFxParticleInto(frame, statics, i, out) {
-  const ctx = frame.ctx;
-  const o = out || (ctx ? ctx.out : newOut());
-  o.pos[0] = 0; o.pos[1] = 0; o.pos[2] = 0;
-  o.color[0] = 1; o.color[1] = 1; o.color[2] = 1; o.color[3] = 1;
-  o.vel[0] = 0; o.vel[1] = 0; o.vel[2] = 0;
-  o.scale = 1; o.glow = false; o.light = 0; o.life = -1;
-  if (!ctx || frame.failed) return o;
-  ctx.i = i;
-  const C = frame.C, R = frame.R;
-  ctx.uv_x = (C === 1) ? 0 : (i % C) / (C - 1);
-  ctx.uv_y = (R === 1) ? 0 : Math.floor(i / C) / (R - 1);
-  try {
-    if (frame.native) {
-      runNativeProcess(frame.native, frame.objState, statics, ctx, o, !!frame.fx.fastMath);
-      const center = frame.fx.center || [0, 0, 0];
-      o.pos[0] += center[0]; o.pos[1] += center[1]; o.pos[2] += center[2];
-      o.life = Number.isFinite(o.life) ? o.life : -1;
-      return o;
+  // 向后 seek：确定性重算。
+  if (T < runtime.tickCursor) {
+    dropAllParticles(fx);
+    fx._runtime = null;
+    try {
+      runtime = ensureRuntime(fx);
+    } catch (e) {
+      markFxError(fx, e);
+      return;
     }
-    frame.runner.resetForRun(statics, ctx, frame.uniforms);
-    // VM 路径：runner 通过 ensureOut(ctx) 写入 ctx.out。当调用方显式传入复用 out 时，
-    // 必须让 ctx.out 指向该对象，否则 runner 写入的是 frame.ctx 里的旧 out，而返回值读取的是传入的 o，
-    // 导致所有粒子被写成默认值（位置归原点、颜色/alpha 为 1）。
-    ctx.out = o;
-    frame.runner.run();
-  } catch (e) {
-    markFxError(frame.fx, e);
-    frame.failed = true;
-    return o;
   }
-  const center = frame.fx.center || [0, 0, 0];
-  o.pos[0] += center[0]; o.pos[1] += center[1]; o.pos[2] += center[2];
-  for (let c = 0; c < 4; c++) {
-    const v = o.color[c];
-    o.color[c] = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0;
-  }
-  o.scale = Number.isFinite(o.scale) ? o.scale : 1;
-  o.glow = !!o.glow;
-  o.light = Math.max(0, Math.min(15, Math.round(o.light)));
-  o.life = Number.isFinite(o.life) ? o.life : -1;
-  return o;
-}
 
-// 求值单个粒子在某时刻的完整状态（供 currentVisualDerived 等外部调用）。
-// 脚本运行错误在此被捕获并回退到粒子已存储的基础值，避免编辑器交互/渲染被未捕获异常打断。
-export function evaluateParticleAt(fx, i, n, t) {
-  try {
-    const objState = getObjectState(fx);
-    const p = getParticle(fx.id + ':p' + i);
-    const statics = (p && p._statics) || createStatics();
-    return evalParticleFor(fx, objState, statics, i, Math.max(1, Math.round(n) || 1), t || 0, 0);
-  } catch (e) {
-    markFxError(fx, e);
-    const p = fx ? getParticle(fx.id + ':p' + i) : null;
-    return storedVisual(p);
-  }
-}
-
-export function evaluateParticleBase(fx, i, n) {
-  return evaluateParticleAt(fx, i, n, 0);
-}
-
-/* 校验脚本但不改动任何粒子/轨道状态；成功返回 null，失败返回 Error（含行列号）。 */
-export function validateFunctionScript(fx, setupOverride, processOverride, funcsOverride) {
-  const setup = (setupOverride != null ? setupOverride : (fx.setup || '')).trim();
-  const process = (processOverride != null ? processOverride : (fx.process || '')).trim();
-  const funcs = (funcsOverride != null ? funcsOverride : (fx.funcs || '')).trim();
-  const program = parseProgram(buildScriptSource(setup, process, funcs));
-  const n = Math.max(1, Math.round(fx.count) || 1);
-  const objState = createObjectState(fx.seed | 0);
-  runSetup(program, objState, { n, t: fx.st || 0, vars: varsAt(fx, fx.st || 0) });
-  const statics = createStatics();
-  const t = 0;
-  const uv = uvFor(fx, n, 0);
-  const ctx = {
-    i: 0, n, t, dt: 0,
-    life: lifeAt(fx, t),
-    uv_x: uv.uv_x, uv_y: uv.uv_y,
-    vars: varsAt(fx, t),
-    fastMath: !!fx.fastMath,
-    uniforms: null,
-    out: newOut(),
-  };
-  evalProcess(program, objState, statics, ctx);
-  return null;
-}
-
-export const eq3 = (a, b) => a.length === b.length && a.every((x, i) => Math.abs(x - b[i]) < 1e-9);
-
-/* -------------------------------------------------------------------------
- * 派生轨道采样
- * ---------------------------------------------------------------------- */
-
-export function buildDerivedTracks(fx) {
-  const n = Math.max(1, Math.round(fx.count) || 1);
-  const duration = Math.max(0, Math.round(fx.duration) || 0);
-  const step = Math.max(1, Math.round(fx.step) || 1);
-  if (duration <= 0) return;
-  const hasAnim = Object.values(fx.vars || {}).some(v => (v.kf || []).length > 1) ||
-    (fx.setup || '').trim() !== '' || (fx.process || '').trim() !== '';
-  if (!hasAnim) return;
-
-  const objState = getObjectState(fx);
-  const times = [0];
-  for (let t = step; t <= duration; t += step) times.push(t);
-
-  for (let i = 0; i < n; i++) {
-    const pid = fx.id + ':p' + i;
-    const p = getParticle(pid);
-    if (!p) continue;
-    const statics = createStatics();
-    p._statics = statics;
-
-    const samples = [];
-    for (let si = 0; si < times.length; si++) {
-      const t = times[si];
-      const dt = si === 0 ? 0 : (times[si] - times[si - 1]) * DT_PER_TICK;
-      samples.push(evalParticleFor(fx, objState, statics, i, n, t, dt));
+  const floorT = Math.floor(T);
+  while (runtime.tickCursor < floorT) {
+    runtime.tickCursor += 1;
+    runtime.curTick = runtime.tickCursor;
+    decrementLife(fx, runtime, runtime.tickCursor);
+    if (runtime.program.tick) {
+      try {
+        runTick(runtime.program, runtime.objState, makeCtx(fx, runtime, runtime.tickCursor, deltaMs));
+      } catch (e) {
+        markFxError(fx, e);
+        break;
+      }
     }
+  }
 
-    const base = samples[0];
-    const changed = (key) => samples.some(s => s !== base && !eq3(s[key], base[key]));
-    const pushComp = (prop, comps, getVal) => {
-      comps.forEach((comp, ci) => {
-        const kfs = samples.map((_, idx) => [times[idx], getVal(idx, ci), 0]);
-        if (kfs.some(k => Math.abs(k[1] - kfs[0][1]) > 1e-9)) {
-          state.tracks.push({ pr: compPr(prop, comp), m: 'set', ids: [pid], kf: kfs, fx: fx.id });
-        }
-      });
-    };
-    if (changed('pos')) pushComp('pos', ['x', 'y', 'z'], (idx, ci) => samples[idx].pos[ci]);
-    if (changed('color')) pushComp('col', ['r', 'g', 'b', 'a'], (idx, ci) => samples[idx].color[ci]);
-    if (changed('vel')) pushComp('vel', ['x', 'y', 'z'], (idx, ci) => samples[idx].vel[ci]);
-    if (samples.some(s => Math.abs(s.scale - base.scale) > 1e-9)) {
-      const kfs = samples.map((_, idx) => [times[idx], samples[idx].scale, 0]);
-      ['x', 'y', 'z'].forEach(comp => {
-        state.tracks.push({ pr: 'scl.' + comp, m: 'set', ids: [pid], kf: kfs.map(k => k.slice()), fx: fx.id });
-      });
+  runtime.curTick = T;
+  if (runtime.program.process) {
+    try {
+      runProcessFrame(runtime.program, runtime.objState, makeCtx(fx, runtime, T, deltaMs));
+    } catch (e) {
+      markFxError(fx, e);
     }
+  }
+  for (const w of runtime.particles) {
+    if (w._p) syncParticleState(w._p);
   }
 }
 
@@ -382,106 +300,65 @@ export function buildDerivedTracks(fx) {
  * ---------------------------------------------------------------------- */
 
 export function rebuildFunctionObject(fx) {
-  // 失效脚本与对象级缓存
   fx._program = undefined;
-  fx._programSrcSetup = undefined;
-  fx._programSrcProcess = undefined;
-  fx._objState = undefined;
-  fx._objStateDuration = undefined;
-  fx._evalCtx = undefined;
-
-  const n = Math.max(1, Math.round(fx.count) || 1);
-  const prefix = fx.id + ':p';
-  // 移除函数派生轨道：新格式（带 fx 标记）+ 旧格式（ids 命中 fxId:p 前缀）一并清除
-  state.tracks = state.tracks.filter(tr => tr.fx !== fx.id && !tr.ids.some(id => id.startsWith(prefix)));
-  const existing = new Map();
-  // 复用带 fx 标记的派生粒子；旧格式残留（无 fx 标记但 id 命中前缀）直接移除
-  for (const p of [...state.particles]) {
-    if (!p.id.startsWith(prefix)) continue;
-    if (p.fx === fx.id) existing.set(p.id, p);
-    else {
-      state.particles = state.particles.filter(x => x !== p);
-      state.tracks = state.tracks.filter(tr => !tr.ids.includes(p.id));
-      state.selected.delete(p.id);
-    }
+  fx._error = null;
+  dropAllParticles(fx);
+  fx._runtime = null;
+  try {
+    ensureRuntime(fx);
+  } catch (e) {
+    markFxError(fx, e);
+    dropAllParticles(fx);
+    fx._runtime = null;
   }
-
-  // setup 执行一次得到对象级环境（含 global、数组、PRNG 状态）。
-  const objState = getObjectState(fx);
-
-  const kept = new Set();
-  for (let i = 0; i < n; i++) {
-    const id = fx.id + ':p' + i;
-    kept.add(id);
-    let p = existing.get(id);
-    if (!p) {
-      p = { id, fx: fx.id, color: [1, 1, 1, 1], scale: [1, 1, 1], glow: false, lightLevel: 0, pos: [0, 0, 0], vel: [0, 0, 0] };
-      state.particles.push(p);
-    }
-    p._fxIdx = i;
-    const statics = createStatics();
-    const base = evalParticleFor(fx, objState, statics, i, n, 0, 0);
-    p._statics = statics;
-    p.color = base.color.slice();
-    p.scale = [base.scale, base.scale, base.scale];
-    p.glow = base.glow;
-    p.lightLevel = base.light;
-    p.life = base.life;
-    p.pos = base.pos.slice();
-    p.vel = base.vel.slice();
-  }
-  for (const p of [...state.particles]) {
-    if (p.fx === fx.id && !kept.has(p.id)) {
-      state.particles = state.particles.filter(x => x !== p);
-      state.tracks = state.tracks.filter(tr => !tr.ids.includes(p.id));
-      state.selected.delete(p.id);
-    }
-  }
-  buildDerivedTracks(fx);
   rebuildPoints();
   setDirty(true);
+}
+
+/* 校验脚本但不改动任何粒子/轨道状态；成功返回 null，失败返回 Error。 */
+export function validateFunctionScript(fx, setupOverride, processOverride, funcsOverride, tickOverride, processParamOverride) {
+  const setup = (setupOverride != null ? setupOverride : (fx.setup || '')).trim();
+  const process = (processOverride != null ? processOverride : (fx.process || '')).trim();
+  const funcs = (funcsOverride != null ? funcsOverride : (fx.funcs || '')).trim();
+  const tick = (tickOverride != null ? tickOverride : (fx.tick || '')).trim();
+  const processParam = (processParamOverride != null ? processParamOverride : (fx.processParam || 'delta'));
+  const program = parseProgram(buildScriptSource(setup, process, tick, funcs, processParam));
+  const objState = createObjectState(fx.seed | 0);
+  const st = fx.st || 0;
+  const particles = [];
+  let serial = 0;
+  const spawn = () => {
+    const w = {
+      pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0],
+      scale: 1, glow: false, light: 0, life: -1,
+      index: serial++, fields: new Map(), alive: true, _spawnTick: st,
+      kill() { this.alive = false; },
+    };
+    particles.push(w);
+    return w;
+  };
+  const env = { t: st, duration: maxTick(), vars: varsAt(fx, st), particles, spawn };
+  runSetup(program, objState, env);
+  if (program.tick) runTick(program, objState, env);
+  if (program.process) runProcessFrame(program, objState, { ...env, deltaMs: 0 });
+  return null;
 }
 
 /* -------------------------------------------------------------------------
  * 预设
  * ---------------------------------------------------------------------- */
 
-// 预设：按参数生成 setup/process + 变量（改参数时不重置 count）
+// 预设：按参数生成 setup/tick/process + 变量。
 export function applyPresetBuild(fx) {
   const preset = FUNCTION_PRESETS[fx.preset];
   if (!preset) return;
   const built = preset.build(fx.params || {});
   fx.vars = { ...built.vars };
   fx.setup = built.setup || '';
+  fx.tick = built.tick || '';
   fx.process = built.process || '';
+  fx.processParam = built.processParam || 'delta';
   fx.funcs = '';
-}
-
-// 分辨率变量联动 count：改 m/k/cols/rows/turns/ppr 时重算 count=乘积
-export function syncPresetCount(fx) {
-  const preset = FUNCTION_PRESETS[fx.preset];
-  if (!preset) return;
-  // 先把所有变量求值为 scope（供 countExpr 或 countVars 使用）
-  const scope = { i: 0, n: 1, t: 0 };
-  for (const name in fx.vars) {
-    const v = fx.vars[name];
-    scope[name] = varValueAt(v, 0);
-  }
-  let count;
-  if (preset.countExpr) {
-    try { count = evalExpression(preset.countExpr, { i: 0, n: 1, t: 0, dt: 0, duration: 0, life: -1, uv_x: 0, uv_y: 0, vars: scope }); } catch (e) { return; }
-  } else if (preset.countVars && preset.countVars.length) {
-    count = 1;
-    for (const name of preset.countVars) {
-      const val = scope[name];
-      if (!Number.isFinite(val) || val <= 0) return;
-      count *= Math.round(val);
-    }
-  } else {
-    return;
-  }
-  if (!Number.isFinite(count) || count <= 0) return;
-  fx.count = Math.max(1, Math.round(count));
 }
 
 export function applyPreset(fx, presetId) {
@@ -490,26 +367,24 @@ export function applyPreset(fx, presetId) {
   fx.preset = presetId;
   fx.params = {};
   for (const p of preset.params) fx.params[p.key] = p.def;
-  const built = preset.build(fx.params);
-  fx.vars = { ...built.vars };
-  fx.setup = built.setup || '';
-  fx.process = built.process || '';
-  fx.funcs = '';
-  // 声明了 countVars/countExpr 的预设：采样数按变量联动求值；否则用模板默认值
-  if (preset.countExpr || (preset.countVars && preset.countVars.length)) syncPresetCount(fx);
-  else fx.count = built.count;
+  applyPresetBuild(fx);
 }
 
 export function createFunctionObject(presetId) {
   pushUndo();
   const fx = {
     id: nextFunctionId(), name: presetId ? t('fx.preset.' + presetId) : t('fx.defaultName'),
-    center: [0, 0, 0], count: 30,
+    center: [0, 0, 0],
     setup: '',
-    process: '[x,y,z] = [0, 0, 0];\n[r,g,b,a] = [1,1,1,1];\nglow = 0;\nlight = 0',
+    tick: '',
+    process: '',
     funcs: '',
+    processParam: 'delta',
     seed: 0,
-    vars: {}, duration: 100, step: 5, preset: null, params: null,
+    vars: {},
+    duration: 100,
+    preset: null,
+    params: null,
     fastMath: false,
     spinSpace: 'local',
     rotSpace: 'local',
@@ -531,14 +406,9 @@ export function createFunctionObject(presetId) {
 
 export function deleteFunctionObject(fxId) {
   pushUndo();
+  const fx = state.functions.find(f => f.id === fxId);
+  if (fx) dropAllParticles(fx);
   state.functions = state.functions.filter(f => f.id !== fxId);
-  for (const p of [...state.particles]) {
-    if (p.fx === fxId) {
-      state.particles = state.particles.filter(x => x !== p);
-      state.tracks = state.tracks.filter(tr => !tr.ids.includes(p.id));
-      state.selected.delete(p.id);
-    }
-  }
   state.tracks = state.tracks.filter(tr => !tr.ids.includes('f:' + fxId)); // 移除整体变换轨道
   if (state.selectedFunction === fxId) state.selectedFunction = null;
   state.expandedParticles.delete('f:' + fxId);

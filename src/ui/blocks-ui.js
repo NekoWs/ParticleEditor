@@ -106,7 +106,7 @@ export function availableVars() {
   const out = [];
   if (bctx) {
     for (const name of bctx.varOrder) if (name in bctx.varExprs && !out.includes(name)) out.push(name);
-    const all = [...bctx.chain, ...bctx.setupChain, ...bctx.frags.flatMap(f => f.stmts), ...bctx.funcs.map(f => f.stmt)];
+    const all = [...bctx.chain, ...bctx.setupChain, ...bctx.tickChain, ...bctx.frags.flatMap(f => f.stmts), ...bctx.funcs.map(f => f.stmt)];
     for (const t of collectTemps(all)) if (!out.includes(t)) out.push(t);
   }
   return out;
@@ -411,6 +411,7 @@ export function buildPaletteGroup(g) {
   const items = [];
   if (g.id === 'start') {
     items.push({ key: 'hat:setup', type: 'hat', kind: 'setup', label: t('blk.setup'), info: t('blk.stmt.setup.desc') });
+    items.push({ key: 'hat:tick', type: 'hat', kind: 'tick', label: t('blk.tick'), info: t('blk.stmt.tick.desc') });
     items.push({ key: 'hat:process', type: 'hat', kind: 'process', label: t('blk.start'), info: t('blk.stmt.process.desc') });
     items.push({ key: 'hat:func', type: 'hat', kind: 'func', label: t('blk.stmt.func'), info: t('blk.stmt.func.desc') });
   } else if (g.id === 'funcs') {
@@ -476,7 +477,7 @@ export function buildPaletteGroup(g) {
  * ======================================================================= */
 
 export function renameRefsInAll(oldName, newName) {
-  renameRefsInStmts([...bctx.chain, ...bctx.setupChain, ...bctx.frags.flatMap(f => f.stmts), ...bctx.funcs.map(f => f.stmt)], oldName, newName);
+  renameRefsInStmts([...bctx.chain, ...bctx.setupChain, ...bctx.tickChain, ...bctx.frags.flatMap(f => f.stmts), ...bctx.funcs.map(f => f.stmt)], oldName, newName);
 }
 export function renameRefsInStmts(stmts, oldName, newName) {
   const walk = (n) => {
@@ -560,6 +561,7 @@ export function restoreStmtGroup(loc, group) {
 export function hatExists(kind) {
   if (!bctx) return false;
   if (kind === 'setup') return !!bctx.layout.setup;
+  if (kind === 'tick') return !!bctx.layout.tick;
   if (kind === 'process') return !!bctx.layout.chain;
   if (kind === 'func') return true; // 函数起始块允许存在多个
   return false;
@@ -569,6 +571,11 @@ export function createHat(kind, x, y) {
   if (kind === 'setup') {
     if (bctx.layout.setup) return false;
     bctx.layout.setup = { x, y };
+    return true;
+  }
+  if (kind === 'tick') {
+    if (bctx.layout.tick) return false;
+    bctx.layout.tick = { x, y };
     return true;
   }
   if (kind === 'process') {
@@ -792,17 +799,20 @@ function extractTopLevelFuncs(stmts) {
 
 export function openBlockDrawer(fx) {
   ensurePuzzleDom();
-  let chain, setupChain, funcStmts;
+  let chain, setupChain, tickChain, funcStmts;
   try {
     chain = codeToStatements(fx.process || '');
     setupChain = codeToStatements(fx.setup || '');
+    tickChain = codeToStatements(fx.tick || '');
     funcStmts = codeToStatements(fx.funcs || '');
-    // 旧工程可能把 func 误存在 setup/process 内；按规范迁移为顶层函数。
+    // 旧工程可能把 func 误存在 setup/process/tick 内；按规范迁移为顶层函数。
     const cExtract = extractTopLevelFuncs(chain);
     const sExtract = extractTopLevelFuncs(setupChain);
+    const tExtract = extractTopLevelFuncs(tickChain);
     chain = cExtract.rest;
     setupChain = sExtract.rest;
-    funcStmts = funcStmts.concat(cExtract.funcs, sExtract.funcs);
+    tickChain = tExtract.rest;
+    funcStmts = funcStmts.concat(cExtract.funcs, sExtract.funcs, tExtract.funcs);
   }
   catch (e) { modalAlert(t('blk.openFailTitle'), tf('blk.parseFail', e.message)); return; }
   const varExprs = {};
@@ -817,17 +827,18 @@ export function openBlockDrawer(fx) {
   const savedHats = saved.hats || null;
   // 起始块存在性：新格式显式记录；旧格式按「是否有代码 / 是否保存过位置」回退。
   const hasSetup = savedHats ? !!savedHats.setup : (setupChain.length > 0 || !!saved.setup);
+  const hasTick = savedHats ? !!savedHats.tick : (tickChain.length > 0 || !!saved.tick);
   const hasProcess = savedHats ? !!savedHats.process : (chain.length > 0 || !!saved.chain);
   // 默认位置：未保存时按前一个起始块的预期宽度向右平铺，避免默认起始块互相遮挡。
   const chainPosDefault = { x: 40, y: 40 };
-  let setupPosDefault;
-  if (chain.length === 0) {
-    setupPosDefault = { x: 40, y: 40 };
-  } else {
-    const chainW = puzzleCanvasMeasureChain(chain, t('blk.start')).w;
-    setupPosDefault = { x: 40 + chainW + 48, y: 40 };
-  }
+  const setupPosDefault = (chain.length === 0)
+    ? { x: 40, y: 40 }
+    : { x: 40 + puzzleCanvasMeasureChain(chain, t('blk.start')).w + 48, y: 40 };
+  const tickPosDefault = (chain.length === 0)
+    ? { x: 40, y: 40 }
+    : { x: 40 + puzzleCanvasMeasureChain(chain, t('blk.start')).w + 48, y: 40 };
   const setupPos = (saved.setup && typeof saved.setup === 'object') ? saved.setup : setupPosDefault;
+  const tickPos = (saved.tick && typeof saved.tick === 'object') ? saved.tick : tickPosDefault;
   const chainPos = (saved.chain && typeof saved.chain === 'object') ? saved.chain : chainPosDefault;
   const funcs = funcStmts.map((stmt, i) => {
     const sp = saved.funcs && saved.funcs[i];
@@ -841,15 +852,18 @@ export function openBlockDrawer(fx) {
     fxId: fx.id,
     chain,
     setupChain,
+    tickChain,
+    processParam: fx.processParam || 'delta',
     funcs,
     frags: (saved.frags || []).map(f => ({ stmts: codeToStatements(f.code || ''), x: f.x, y: f.y })).filter(f => f.stmts.length > 0),
     varExprs, varOrder,
     errors: [],
-    snapshot: { setup: fx.setup || '', process: fx.process || '', funcs: fx.funcs || '', vars: cloneVars(fx.vars), preset: fx.preset, params: fx.params },
+    snapshot: { setup: fx.setup || '', tick: fx.tick || '', process: fx.process || '', processParam: fx.processParam || 'delta', funcs: fx.funcs || '', vars: cloneVars(fx.vars), preset: fx.preset, params: fx.params },
     undoStack: [], redoStack: [],
     layout: {
       chain: hasProcess ? chainPos : null,
       setup: hasSetup ? setupPos : null,
+      tick: hasTick ? tickPos : null,
       view: saved.view || { x: 0, y: 0, scale: 1 },
     },
   };
@@ -885,9 +899,13 @@ export function closeBlockDrawer(commit) {
   if (commit && fx) {
     const newCode = bctx.layout.chain ? statementsToCode(bctx.chain) : '';
     const setupText = bctx.layout.setup ? statementsToCode(bctx.setupChain) : '';
+    const tickText = bctx.layout.tick ? statementsToCode(bctx.tickChain) : '';
     const funcsText = statementsToCode(bctx.funcs.map(f => f.stmt));
+    const paramText = (String(bctx.processParam || '').trim()) || 'delta';
     fx.process = newCode;
     fx.setup = setupText;
+    fx.tick = tickText;
+    fx.processParam = paramText;
     fx.funcs = funcsText;
     for (const name of bctx.varOrder) {
       if (name in bctx.varExprs) {
@@ -895,10 +913,10 @@ export function closeBlockDrawer(commit) {
         if (v && (v.kf || []).length === 0) v.base = Number.isFinite(bctx.varExprs[name]) ? bctx.varExprs[name] : 0;
       }
     }
-    if (newCode !== bctx.snapshot.process || setupText !== bctx.snapshot.setup || funcsText !== bctx.snapshot.funcs) { fx.preset = null; fx.params = null; }
+    if (newCode !== bctx.snapshot.process || setupText !== bctx.snapshot.setup || tickText !== bctx.snapshot.tick || paramText !== bctx.snapshot.processParam || funcsText !== bctx.snapshot.funcs) { fx.preset = null; fx.params = null; }
     pushUndo();
     let err = null;
-    try { err = validateFunctionScript(fx, setupText, newCode, funcsText); }
+    try { err = validateFunctionScript(fx, setupText, newCode, funcsText, tickText, paramText); }
     catch (e) { err = e; }
     if (err) {
       // 保留已保存的代码与错误标记；不重建粒子，避免把半成品渲染写入场景。
@@ -910,6 +928,8 @@ export function closeBlockDrawer(commit) {
   } else if (fx) {
     fx.process = bctx.snapshot.process;
     fx.setup = bctx.snapshot.setup;
+    fx.tick = bctx.snapshot.tick;
+    fx.processParam = bctx.snapshot.processParam || 'delta';
     fx.funcs = bctx.snapshot.funcs;
     fx.vars = cloneVars(bctx.snapshot.vars);
     fx.preset = bctx.snapshot.preset;
@@ -919,9 +939,10 @@ export function closeBlockDrawer(commit) {
   }
   if (fx) {
     fx.ui = {
-      hats: { setup: !!bctx.layout.setup, process: !!bctx.layout.chain },
+      hats: { setup: !!bctx.layout.setup, tick: !!bctx.layout.tick, process: !!bctx.layout.chain },
       chain: bctx.layout.chain || undefined,
       setup: bctx.layout.setup || undefined,
+      tick: bctx.layout.tick || undefined,
       view: bctx.layout.view,
       frags: bctx.frags.filter(f => f.stmts.length > 0).map(f => ({ code: statementsToCode(f.stmts), x: f.x, y: f.y })),
       funcs: bctx.funcs.map(f => ({ x: f.x, y: f.y })),
@@ -994,7 +1015,7 @@ function errorsFromValidation(fx, setupCode, processCode, funcsCode, err) {
   const stmt = mapErrorToStmt(funcsSpans, setupSpans, processSpans, funcsCode, setupCode, processCode, err && err.message);
   if (stmt) return [{ stmt, message: err.message }];
   // 没有可定位行号时，仍保留错误并挂到首个可用语句，避免静默吞掉。
-  const any = bctx.chain[0] || bctx.setupChain[0] || (bctx.funcs[0] && bctx.funcs[0].stmt);
+  const any = bctx.chain[0] || bctx.setupChain[0] || bctx.tickChain[0] || (bctx.funcs[0] && bctx.funcs[0].stmt);
   return any ? [{ stmt: any, message: err.message }] : [{ message: err.message }];
 }
 
@@ -1003,10 +1024,12 @@ function computeBctxErrors() {
   const fx = getFunction(bctx.fxId);
   if (!fx) return [];
   const setupCode = bctx.layout.setup ? statementsToCode(bctx.setupChain) : '';
+  const tickCode = bctx.layout.tick ? statementsToCode(bctx.tickChain) : '';
   const processCode = bctx.layout.chain ? statementsToCode(bctx.chain) : '';
   const funcsCode = statementsToCode(bctx.funcs.map(f => f.stmt));
+  const paramText = (String(bctx.processParam || '').trim()) || 'delta';
   let err = null;
-  try { err = validateFunctionScript(fx, setupCode, processCode, funcsCode); }
+  try { err = validateFunctionScript(fx, setupCode, processCode, funcsCode, tickCode, paramText); }
   catch (e) { err = e; }
   if (!err) return [];
   return errorsFromValidation(fx, setupCode, processCode, funcsCode, err);
@@ -1018,9 +1041,13 @@ export function blockPreview() {
   if (!fx) return;
   const code = bctx.layout.chain ? statementsToCode(bctx.chain) : '';
   const setupText = bctx.layout.setup ? statementsToCode(bctx.setupChain) : '';
+  const tickText = bctx.layout.tick ? statementsToCode(bctx.tickChain) : '';
   const funcsText = statementsToCode(bctx.funcs.map(f => f.stmt));
+  const paramText = (String(bctx.processParam || '').trim()) || 'delta';
   fx.process = code;
   fx.setup = setupText;
+  fx.tick = tickText;
+  fx.processParam = paramText;
   fx.funcs = funcsText;
   for (const name of bctx.varOrder) {
     if (name in bctx.varExprs) {
@@ -1029,7 +1056,7 @@ export function blockPreview() {
     }
   }
   let err = null;
-  try { err = validateFunctionScript(fx, setupText, code, funcsText); }
+  try { err = validateFunctionScript(fx, setupText, code, funcsText, tickText, paramText); }
   catch (e) { err = e; }
   if (err) {
     fx._error = err.message;
@@ -1055,21 +1082,27 @@ export function snapBctx() {
   return {
     chain: cloneStmts(bctx.chain),
     setupChain: cloneStmts(bctx.setupChain),
+    tickChain: cloneStmts(bctx.tickChain),
+    processParam: bctx.processParam,
     funcs: (bctx.funcs || []).map(f => ({ stmt: cloneStmt(f.stmt), x: f.x, y: f.y })),
     frags: bctx.frags.map(f => ({ stmts: cloneStmts(f.stmts), x: f.x, y: f.y })),
     varExprs: deepCloneVarExprs(bctx.varExprs),
     chainPos: bctx.layout.chain ? { x: bctx.layout.chain.x, y: bctx.layout.chain.y } : null,
     setupPos: bctx.layout.setup ? { x: bctx.layout.setup.x, y: bctx.layout.setup.y } : null,
+    tickPos: bctx.layout.tick ? { x: bctx.layout.tick.x, y: bctx.layout.tick.y } : null,
   };
 }
 export function restoreBctx(s) {
   bctx.chain = cloneStmts(s.chain);
   bctx.setupChain = cloneStmts(s.setupChain);
+  bctx.tickChain = cloneStmts(s.tickChain || []);
+  bctx.processParam = s.processParam || 'delta';
   bctx.funcs = (s.funcs || []).map(f => ({ stmt: cloneStmt(f.stmt), x: f.x, y: f.y }));
   bctx.frags = s.frags.map(f => ({ stmts: cloneStmts(f.stmts), x: f.x, y: f.y }));
   bctx.varExprs = deepCloneVarExprs(s.varExprs);
   bctx.layout.chain = s.chainPos ? { x: s.chainPos.x, y: s.chainPos.y } : null;
   bctx.layout.setup = s.setupPos ? { x: s.setupPos.x, y: s.setupPos.y } : null;
+  bctx.layout.tick = s.tickPos ? { x: s.tickPos.x, y: s.tickPos.y } : null;
 }
 export function deepCloneVarExprs(o) { const r = {}; for (const k in o) r[k] = o[k]; return r; }
 export function bctxUndo() {

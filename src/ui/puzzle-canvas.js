@@ -1188,6 +1188,11 @@ function layoutWorkspace() {
       title: t('blk.setup'), head: { key: 'setup' }, dropRef: { chain: bctx.setupChain },
     });
   }
+  if (l.tick) {
+    layoutChain(bctx.tickChain, l.tick.x, l.tick.y, out, ctx, {
+      title: t('blk.tick'), head: { key: 'tick' }, dropRef: { chain: bctx.tickChain },
+    });
+  }
   if (l.chain) {
     layoutChain(bctx.chain, l.chain.x, l.chain.y, out, ctx, {
       title: t('blk.start'), head: { key: 'chain' }, dropRef: { chain: bctx.chain },
@@ -1238,25 +1243,26 @@ function layoutVars(cw) {
     out.push(region);
   };
 
-  // 采样数
+  // process 参数名（process(delta) 的 delta 可重命名）
   {
-    const lab = t('blk.sampleCount');
-    const isEditingCount = S.edit && S.edit.space === 'var' && S.edit.regionKey === 'count';
-    const val = isEditingCount ? S.edit.buffer : (fx ? String(fx.count) : '1');
+    const lab = t('blk.processParam');
+    const isEditing = S.edit && S.edit.space === 'var' && S.edit.regionKey === 'processParam';
+    const val = isEditing ? S.edit.buffer : (bctx.processParam || 'delta');
     const lw = textW(ctx, lab, FONT);
     const eqw = textW(ctx, ' = ', FONT);
     const vw = textW(ctx, val, FONT) + 12;
     const w = 14 + lw + eqw + vw + 8;
-    const row = { kind: 'var-row', shape: 'row', varRow: { kind: 'count' }, x, y, w, h: VARS_ROW_H, segments: [] };
+    const row = { kind: 'var-row', shape: 'row', varRow: { kind: 'processParam' }, x, y, w, h: VARS_ROW_H, segments: [] };
     place(row, w);
     row.segments.push({ text: lab, x: row.x + 7, y: row.y + VARS_ROW_H / 2, font: FONT });
     row.segments.push({ text: ' = ', x: row.x + 7 + lw, y: row.y + VARS_ROW_H / 2, font: FONT });
     out.push({
-      kind: 'edit', shape: 'edit', space: 'var', editKey: 'count',
-      edit: { kind: 'num', value: val, commit: (v) => {
-        if (!fx) return false;
-        fx.count = Math.max(1, Math.round(parseInt(v) || 1));
-        H.commitCount(fx);
+      kind: 'edit', shape: 'edit', space: 'var', editKey: 'processParam',
+      edit: { kind: 'text', ident: true, value: val, commit: (v) => {
+        const nn = String(v).trim();
+        if (!nn || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(nn) || nn === 'this') return false;
+        H.pushUndo();
+        bctx.processParam = nn;
         return true;
       } },
       x: row.x + 7 + lw + eqw, y: row.y + (VARS_ROW_H - EDIT_H) / 2, w: vw, h: EDIT_H,
@@ -2028,10 +2034,12 @@ function echoCodeText() {
   const bctx = H.getBctx();
   const funcsCode = statementsToCode((bctx.funcs || []).map(f => f.stmt));
   const setupCode = bctx.layout.setup ? statementsToCode(bctx.setupChain) : '';
+  const tickCode = bctx.layout.tick ? statementsToCode(bctx.tickChain) : '';
   const processCode = bctx.layout.chain ? statementsToCode(bctx.chain) : '';
+  const pp = (String(bctx.processParam || '').trim()) || 'delta';
   let out = '';
   if (funcsCode) out += '// ' + t('blk.pal.funcs') + '\n' + funcsCode + '\n\n';
-  out += '// ' + t('blk.setup') + '\n' + setupCode + '\n\n// ' + t('blk.start') + '\n' + processCode;
+  out += '// ' + t('blk.setup') + '\n' + setupCode + '\n\n// ' + t('blk.tick') + '\n' + tickCode + '\n\n// process(' + pp + ')\n' + processCode;
   return out;
 }
 
@@ -2148,7 +2156,7 @@ function renderGhost() {
     else layoutExpr(node, 0, 0, tmp, ctx);
     for (const r of tmp) drawRegion(ctx, r, null);
   } else if (d.source.type === 'hat') {
-    const label = d.source.kind === 'setup' ? t('blk.setup') : d.source.kind === 'process' ? t('blk.start') : t('blk.stmt.func');
+    const label = d.source.kind === 'setup' ? t('blk.setup') : d.source.kind === 'tick' ? t('blk.tick') : d.source.kind === 'process' ? t('blk.start') : t('blk.stmt.func');
     const w = textW(ctx, label, FONT) + 30;
     ctx.fillStyle = blockColor('blk-start');
     hatPath(ctx, 0, 0, w, HAT_H);
@@ -2771,6 +2779,9 @@ function endDrag(e) {
         if (d.key === 'setup') {
           bctx.layout.setup = null;
           bctx.setupChain.length = 0;
+        } else if (d.key === 'tick') {
+          bctx.layout.tick = null;
+          bctx.tickChain.length = 0;
         } else {
           bctx.layout.chain = null;
           bctx.chain.length = 0;
@@ -2979,7 +2990,7 @@ function hoverInfoAt(e) {
     const hit = my < (ch - VARS_H) ? hitWorkspace(mx, my, false) : hitVars(mx, my);
     if (hit && hit.kind === 'expr') info = H.nodeInfo(hit.node) || '';
     else if (hit && hit.kind === 'stmt' && hit.stmt) info = t(STMT_BLOCKS[hit.stmt.kind] ? STMT_BLOCKS[hit.stmt.kind].desc : '') || '';
-    else if (hit && hit.kind === 'head') info = hit.head.frag ? t('blk.fragment') : (hit.head.key === 'setup' ? t('blk.setup') : t('blk.start'));
+    else if (hit && hit.kind === 'head') info = hit.head.frag ? t('blk.fragment') : (hit.head.key === 'setup' ? t('blk.setup') : hit.head.key === 'tick' ? t('blk.tick') : t('blk.start'));
     else if (hit && hit.kind === 'attr-var') info = tf('blk.attrRefHint', hit.attrVar);
     else if (hit && hit.kind === 'var-row' && hit.varRow && hit.varRow.name) info = tf('blk.varHasKf', hit.varRow.name);
   }

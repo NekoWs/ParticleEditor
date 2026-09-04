@@ -7,8 +7,6 @@
 import { COMP_INDEX, compPr, DEG2RAD, RAD2DEG, state, getParticle, getFunction, particleIndexCache, setParticleIndex, setFunctionIndex, setPlainParticles } from './constants.js';
 import { easeVal } from './easing.js';
 import { scriptMatMul, scriptRotX, scriptRotY, scriptRotZ, scriptRotAxis } from './script-lang.js';
-import { evaluateParticleAt } from './generators.js';
-export { getFxFrameAuto, evalFxParticleInto } from './generators.js';
 import { groupCentroidValue } from '../ui/tree.js';
 import { rotateVector } from '../interaction/interaction.js';
 
@@ -665,15 +663,19 @@ export function currentVisual(p) {
   };
 }
 
-// 派生粒子活源求值：每帧执行公式代码块（random 每帧变化，实现星光闪闪预览），
-// 再按「自转 → 函数对象 pos op → 公转 → 组 op」顺序叠加整体变换，与游戏端活源语义一致。
+// 派生粒子读取存储值（v12：脚本在 tick/process 中已直接写入 p.pos/p.color/p.scale），
+// 再按「组缩放 → 自转 → 函数对象 pos op → 公转 → 组 op」顺序叠加整体变换。
 // 返回的 scale 为三分量数组 [sx,sy,sz]（函数对象整体缩放可独立分轴）。
 export function currentVisualDerived(p, T) {
   const fx = getFunction(p.fx);
   if (!fx) return { pos: [0, 0, 0], color: [1, 1, 1, 1], scale: [1, 1, 1] };
-  const i = (p._fxIdx !== undefined) ? p._fxIdx : parseInt(p.id.slice(fx.id.length + 2), 10);
-  const r = evaluateParticleAt(fx, i, fx.count, T);
-  const base = r.scale;
+  const base = (p.scale && Number.isFinite(p.scale[0])) ? p.scale[0] : 1;
+  const center = fx.center || [0, 0, 0];
+  const r = {
+    pos: [(p.pos[0] || 0) + center[0], (p.pos[1] || 0) + center[1], (p.pos[2] || 0) + center[2]],
+    color: (p.color || [1, 1, 1, 1]).slice(),
+    scale: base,
+  };
   const sclTrs = (fxSclTrackCache && fxSclTrackCache.get(p.fx)) || null;
   const scaleVec = sclTrs
     ? [sclTrs[0] ? trackValueAt(sclTrs[0], T, base) : base,
@@ -701,18 +703,15 @@ export function currentVisualDerived(p, T) {
 /**
  * 派生粒子可见性门控（编辑器与播放器共用语义）：
  * - `T < fx.st`：未出场，隐藏；
- * - 逐粒子寿命 `life`（tick）：`life >= 0` 且 `T - fx.st >= life` 时到期隐藏，`life < 0` = 无限；
  * - 对象整体时长 `fx.duration`（tick）：`duration > 0` 且 `T - fx.st >= duration` 时隐藏；
- *   `duration <= 0` 视为无时长上限（兼容旧工程 duration 缺省 0 的解析回退）。
+ *   `duration <= 0` 视为无时长上限。
+ * 逐粒子寿命由运行时在 tick 边界递减并移除到期粒子（v12 spawn 模型），此处不再二次判定。
  */
 export function fxParticleVisible(fx, T, life) {
   const st = (fx && fx.st) || 0;
-  const local = T - st;
-  if (local < 0) return false;
-  const lf = (typeof life === 'number' && Number.isFinite(life)) ? life : -1;
-  if (lf >= 0 && local >= lf) return false;
+  if (T < st) return false;
   const dur = (fx && fx.duration) || 0;
-  if (dur > 0 && local >= dur) return false;
+  if (dur > 0 && T - st >= dur) return false;
   return true;
 }
 
@@ -746,22 +745,6 @@ export function maxTick() {
   _maxTickCache = Math.ceil(m);
   _maxTickValid = true;
   return _maxTickCache;
-}
-
-// 判定函数对象脚本是否可静态复用：确定性（无 random/rand）且不依赖时间/帧间隔。
-// 变量关键帧会随时间改变注入值，必须走活源求值。
-// 兼容旧脚本：裸 t / dt / life 仍视为时间依赖（保守，牺牲一点性能避免错误跳过）。
-// this.duration 虽在播放期间恒定，但会随结构变化（maxTick）改变，保守起见也走活源求值，
-// 避免「新增轨道延长动画后该值仍为旧值」的陈旧缓存。
-export function isFxStaticScript(fx) {
-  const vars = fx.vars || {};
-  for (const name in vars) {
-    const v = vars[name];
-    if (v && v.kf && v.kf.length > 0) return false;
-  }
-  const src = (fx.process || '') + '\n' + (fx.funcs || '');
-  if (/\b(random|rand)\s*\(/.test(src)) return false;
-  return !/(\bt\b|\bdt\b|\blife\b|this\s*\.\s*(time|delta|duration))/.test(src);
 }
 
 // 轨道分段积分（线性近似，忽略缓动）：trackValueAt 的常数段 + 线性段面积

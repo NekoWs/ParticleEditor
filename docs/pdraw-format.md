@@ -19,9 +19,10 @@
 | `v:8` | 旧版工程：摄像机对象 `cam` 存旋转欧拉角 `rot`（本版本已移除，读取时自动换算） |
 | `v:9` | 旧版工程：摄像机朝向改为看向目标点 `target` + 翻滚角 `roll`（pitch/yaw 由 lookAt 自动计算） |
 | `v:10` | 旧版工程：脚本语言改为 `this` 对象模型（`this.position` 等；旧 `i/n/[x,y,z]=...` 语法移除） |
-| `v:11` | 当前版本：UV 字段（`uvStart`/`uvSize`/`uvStep`/`fps`/`maxFrame`）支持 script-lang 单行表达式（见 §7） |
+| `v:11` | 旧版工程：UV 字段（`uvStart`/`uvSize`/`uvStep`/`fps`/`maxFrame`）支持 script-lang 单行表达式（见 §7） |
+| `v:12` | 当前版本：函数对象改为 spawn 模型（`func setup()` / `func tick()` / `func process(delta)`，粒子运行时生成；移除 `count`/`step`，新增 `tick`/`pp`） |
 
-当前编辑器**仅接受 `v:11`**；更旧版本（≤ v10）会提示「工程版本过旧」并拒绝打开。
+当前编辑器**仅接受 `v:12`**；更旧版本（≤ v11）会提示「工程版本过旧」并拒绝打开。
 
 ---
 
@@ -29,7 +30,7 @@
 
 ```jsonc
 {
-  "v": 11,                      // 格式版本，当前固定为 11
+  "v": 12,                      // 格式版本，当前固定为 12
   "key": {                      // v5 新增；Ed25519 密钥对
     "alg": "Ed25519",
     "private": "<base64 PKCS#8 DER 私钥>",
@@ -182,16 +183,16 @@
   "id": "fx0",                  // 必填
   "name": "函数对象",            // 名称
   "center": [0, 0, 0],          // [x,y,z]
-  "count": 200,                 // 派生粒子采样数
-  "setup": "arr = []; ...",                          // setup 代码块（对象初始化一次；空字符串省略式写 ""）
-  "process": "this.position = arr[this.index]; ...", // process 代码块（每粒子每帧）
-  "funcs": "func f(a) { ... }", // 可选，顶层函数定义代码块（script-lang §4；缺省 = ""）
+  "setup": "...",               // func setup() 代码体（对象初始化一次）
+  "tick": "...",                // func tick() 代码体（每个动画 tick 一次）
+  "process": "...",             // func process(param) 代码体（每个渲染帧一次）
+  "pp": "delta",                // process 参数名（默认 delta）
+  "funcs": "func f(a) { ... }", // 可选，自定义顶层函数定义（缺省 = ""）
   "seed": 0,                    // 随机种子（整数；rand()/noise 默认使用）
   "vars": {                     // 变量表
     "amp": { "b": 2, "kf": [[0, 2, 3], [20, 4, 3]] }
   },
   "duration": 40,               // 时长 tick
-  "step": 5,                    // 采样间隔（编辑器用）
   "st": 0,                      // 可选，入场时间
   "ent": { "p": "fade", "d": 5 },  // 可选，入场过渡
   "preset": "sin",              // 可选，预设 id
@@ -205,9 +206,8 @@
 ```
 
 - `vars`：`{ 变量名: { b: 数值基值, kf: [[tick,value,easing],...] } }`。
-  当前编辑器使用**数值基值 + 关键帧**模型（不再使用表达式字符串）。
 - 函数对象脚本语法见 [`script-lang-spec.md`](./script-lang-spec.md)。
-- 解析回退：`name→'函数对象'`、`center→[0,0,0]`、`count→30`、`duration→0`、`step→5`、`st→0`、`setup/process/funcs→''`、`seed→0`、`fm→false`、`ss→'world'`、`rs→'world'`。
+- `count` 与 `step` 字段已移除（v12 spawn 模型）；解析回退：`name→'函数对象'`、`center→[0,0,0]`、`duration→0`、`st→0`、`setup/tick/process/funcs→''`、`pp→'delta'`、`seed→0`、`fm→false`、`ss→'world'`、`rs→'world'`。
 
 ---
 

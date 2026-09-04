@@ -8,7 +8,7 @@ import { base64ToBytes, bytesToBase64, signData, verifyData } from './crypto.js'
 import { EASING_NONE } from './easing-constants.js';
 
 export const PDRAWC_MAGIC = new Uint8Array([0x50, 0x44, 0x43, 0x31]); // "PDC1"
-export const PDRAWC_VERSION = 10;
+export const PDRAWC_VERSION = 11;
 export const PDRAWC_SIG_LEN = 64;
 export const PDRAWC_PUB_LEN = 32;
 
@@ -276,9 +276,10 @@ function encodeBody(state, texPngOf) {
   for (const fx of functions) {
     const center = fx.center || [0, 0, 0];
     w.f32(center[0]); w.f32(center[1]); w.f32(center[2]);
-    w.varint(fx.count || 0);
     w.str(fx.setup || '');
     w.str(fx.process || '');
+    w.str(fx.tick || '');
+    w.str(fx.processParam || 'delta');
     w.varint(Number.isInteger(fx.seed) ? fx.seed : 0);
     w.varint(fx.duration || 0);
     w.varint(fx.st || 0);
@@ -505,9 +506,10 @@ export async function decodePdrawc(bytes) {
   const functions = [];
   for (let i = 0; i < fxCount; i++) {
     const center = [br.f32(), br.f32(), br.f32()];
-    const count = br.varint();
     const setup = br.str();
     const process = br.str();
+    const tick = br.str();
+    const processParam = br.str() || 'delta';
     const seed = br.varint();
     const duration = br.varint();
     const st = br.varint();
@@ -526,7 +528,7 @@ export async function decodePdrawc(bytes) {
       const kf = readKf(br);
       vars.push({ name, base, kf });
     }
-    functions.push({ center, count, setup, process, funcs, seed, duration, st, ent, uv, vars, fastMath, spinLocal, rotLocal });
+    functions.push({ center, setup, process, tick, processParam, funcs, seed, duration, st, ent, uv, vars, fastMath, spinLocal, rotLocal });
   }
 
   const camCount = br.varint();

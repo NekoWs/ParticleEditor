@@ -614,7 +614,7 @@ export function animate(now) {
       else { state.time = mx; state.playing = false; syncPlayButton(); }
     }
     updateTimeUI();
-    rebuildPointsTime(false);
+    rebuildPointsTime(false, frameMs * state.playSpeed);
     syncFunctionVarValues();
   }
   // 仅动画贴图粒子需要每帧随墙钟推进 UV 帧：轻量更新（只改 sx/sy），

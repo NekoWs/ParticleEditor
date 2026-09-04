@@ -150,7 +150,7 @@ function structureSignature() {
     if (tlTreeState.expanded.has('f:' + fx.id + '|@vars')) {
       for (const n of names) h = hashStr(n, h);
     }
-    parts.push('F:' + fx.id + ':' + hashStr(fx.name || '', 0) + ':' + fx.count + ':' + h);
+    parts.push('F:' + fx.id + ':' + hashStr(fx.name || '', 0) + ':' + h);
     parts.push('FS:' + fx.id + ':' + (fx.spinSpace === 'world' ? 'world' : 'local') + ':' + (fx.rotSpace === 'world' ? 'world' : 'local'));
   }
   for (const cam of state.cameras) {
@@ -295,10 +295,7 @@ function renderFlatRow(row) {
       const label = el('span', 'tt-label');
       label.textContent = row.fx.name;
       label.title = row.fx.name + ' · ' + t('tree.dblclickRename');
-      const count = el('span', 'tt-count');
-      count.textContent = tf('tree.fxParticleCount', row.fx.count);
       div.appendChild(label);
-      div.appendChild(count);
       break;
     }
     case 'members': {

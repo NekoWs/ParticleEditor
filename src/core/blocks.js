@@ -47,29 +47,19 @@ export const METHOD_ARITY = {
   find: 1, includes: 1, sort: 0, unique: 0, reverse: 0,
 };
 
-// this 只读字段（拼图内作为可直接拖入表达式的上下文变量）。
-export const CTX_VAR_FIELDS = ['index', 'count', 'time', 'delta', 'duration', 'life', 'uv.x', 'uv.y'];
+// this 只读字段（拼图内作为可直接拖入表达式的上下文变量；v12 spawn 模型）。
+export const CTX_VAR_FIELDS = ['time', 'duration', 'particles'];
 // 上下文变量的短显示名（工作台积木与下拉列表使用）。
 export const BUILTIN_VAR_INFO = {
-  'this.index': 'blk.ctx.index',
-  'this.count': 'blk.ctx.count',
   'this.time': 'blk.ctx.time',
-  'this.delta': 'blk.ctx.delta',
   'this.duration': 'blk.ctx.duration',
-  'this.life': 'blk.ctx.life',
-  'this.uv.x': 'blk.ctx.uvx',
-  'this.uv.y': 'blk.ctx.uvy',
+  'this.particles': 'blk.ctx.particles',
 };
 // 上下文变量的帮助文本（Alt 悬停/下拉提示使用，较完整）。
 export const CTX_VAR_INFO = {
-  'this.index': 'blk.var.index',
-  'this.count': 'blk.var.count',
   'this.time': 'blk.var.time',
-  'this.delta': 'blk.var.delta',
   'this.duration': 'blk.var.duration',
-  'this.life': 'blk.var.life',
-  'this.uv.x': 'blk.var.uv',
-  'this.uv.y': 'blk.var.uv',
+  'this.particles': 'blk.var.particles',
 };
 export const BUILTIN_VAR_NAMES = Object.keys(BUILTIN_VAR_INFO);
 

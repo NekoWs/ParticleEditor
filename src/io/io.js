@@ -174,12 +174,14 @@ export function parseVars(vars) {
 }
 export function serializeFunction(fx) {
   const o = {
-    id: fx.id, name: fx.name, center: fx.center.slice(), count: fx.count,
+    id: fx.id, name: fx.name, center: fx.center.slice(),
     setup: fx.setup || '',
+    tick: fx.tick || '',
     process: fx.process || '',
+    pp: fx.processParam || 'delta',
     seed: Number.isInteger(fx.seed) ? fx.seed : 0,
     vars: serializeVars(fx.vars),
-    duration: fx.duration, step: fx.step,
+    duration: fx.duration,
   };
   if (fx.funcs) o.funcs = fx.funcs;
   if (fx.st) o.st = fx.st;
@@ -195,13 +197,15 @@ export function serializeFunction(fx) {
 }
 export function parseFunction(o) {
   return {
-    id: o.id, name: o.name || '函数对象', center: (o.center || [0, 0, 0]).slice(0, 3), count: o.count || 30,
+    id: o.id, name: o.name || '函数对象', center: (o.center || [0, 0, 0]).slice(0, 3),
     setup: o.setup != null ? String(o.setup) : '',
+    tick: o.tick != null ? String(o.tick) : '',
     process: o.process != null ? String(o.process) : '',
+    processParam: (o.pp != null && String(o.pp).trim()) ? String(o.pp).trim() : 'delta',
     funcs: o.funcs != null ? String(o.funcs) : '',
     seed: Number.isInteger(o.seed) ? o.seed : 0,
     vars: parseVars(o.vars),
-    duration: o.duration || 0, step: o.step || 5,
+    duration: o.duration || 0,
     st: o.st || 0,
     ent: o.ent && o.ent.p ? { p: String(o.ent.p), d: o.ent.d != null ? o.ent.d : 5 } : null,
     preset: o.preset || null, params: o.params ? { ...o.params } : null,
@@ -242,7 +246,7 @@ export function exportProject() {
   for (const [name, space] of Object.entries(state.groupSpinSpace || {})) if (space === 'local') gss[name] = 1;
   const grs = {};
   for (const [name, space] of Object.entries(state.groupRotSpace || {})) if (space === 'local') grs[name] = 1;
-  const result = { v: 11, loop: state.loop, g, p, t, f, tex, guv };
+  const result = { v: 12, loop: state.loop, g, p, t, f, tex, guv };
   if (Object.keys(gss).length > 0) result.gss = gss;
   if (Object.keys(grs).length > 0) result.grs = grs;
   // 摄像机对象（v8 新增；默认摄像机不持久化，仅存用户新建的摄像机）
@@ -368,7 +372,7 @@ export async function loadFile(file) {
   const text = await file.text();
   const obj = JSON.parse(text);
   if (file.name.toLowerCase().endsWith('.pdraw') || obj.f || obj.v >= 2) {
-    if (obj.v !== 11) {
+    if (obj.v !== 12) {
       modalAlert(t('filePicker.oldVersionTitle'), t('filePicker.oldVersionMsg'));
       return;
     }

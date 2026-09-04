@@ -29,7 +29,8 @@
 ```
 
 **版本**：
-- `v10`（当前）：UV 字段（`uvStart`/`uvSize`/`uvStep`/`fps`/`maxFrame`）支持 script-lang 单行表达式（§3.1）；读取端**拒绝**旧版。
+- `v11`（当前）：函数对象改为 spawn 模型（`func setup()` / `func tick()` / `func process(param)`；移除 `count`，新增 `tick`/`processParam`）；读取端**拒绝**旧版。
+- `v10`（旧版）：UV 字段（`uvStart`/`uvSize`/`uvStep`/`fps`/`maxFrame`）支持 script-lang 单行表达式（§3.1）；读取端**拒绝**。
 - `v9`（旧版）：脚本语言改为 `this` 对象模型（`this.position` 等；旧 `i/n/[x,y,z]=...` 语法移除）；读取端**拒绝**。
 - `v8`（旧版）：新增摄像机「旋转」空间 flags（bit0=rotLocal；局部=摄像机 lookAt+roll 自身朝向，世界=世界轴）；组级自转/公转空间**缺省改为 local**（flags 位语义不变，编辑器总是写入显式值）；读取端**拒绝**。
 - `v7`（旧版）：摄像机朝向改为「看向目标点」`target` + 翻滚角 `roll`（pitch/yaw 由 lookAt 自动计算），新增 `target.x/y/z` pr 枚举；读取端**拒绝**。
@@ -122,11 +123,14 @@ count × {
 count                       varint
 count × {
   center                    3 × float32：[x,y,z]
-  count                     varint：派生粒子数
   setupLen                  varint
-  setup                     setupLen 字节 UTF-8（setup 代码块，原样保留）
+  setup                     setupLen 字节 UTF-8（func setup() 代码体，原样保留）
   processLen                varint
-  process                   processLen 字节 UTF-8（process 代码块，原样保留）
+  process                   processLen 字节 UTF-8（func process(param) 代码体，原样保留）
+  tickLen                   varint
+  tick                      tickLen 字节 UTF-8（func tick() 代码体，原样保留）
+  processParamLen           varint
+  processParam              processParamLen 字节 UTF-8（process 参数名，默认 "delta"）
   seed                      varint：随机种子（有符号截断后按 int 解释）
   duration                  varint：tick
   st                        varint：入场 tick
@@ -145,7 +149,7 @@ count × {
 }
 ```
 
-函数对象 id 不存储；解码时按顺序合成为 `fx0, fx1, …`，派生粒子 id 为 `fx<i>:p<j>`。
+函数对象 id 不存储；解码时按顺序合成为 `fx0, fx1, …`。派生粒子由脚本在运行期 spawn（v11 spawn 模型），不再编码 `count`。
 
 > 函数对象脚本语法见 `docs/script-lang-spec.md`；变量使用**数值基值 + 关键帧**模型。
 
@@ -290,7 +294,7 @@ index                       varint：对应数组的 0-based 索引
 
 ## 7. 版本与拒绝语义
 
-- 魔数不是 `PDC1`、版本不是 10、或数据截断/越界 → **拒绝**。
+- 魔数不是 `PDC1`、版本不是 11、或数据截断/越界 → **拒绝**。
 - 签名验证失败 → **拒绝播放**。
 - raw DEFLATE 解压失败 → **拒绝**。
 - 未知 `pr` 枚举、未知 UV mode、未知 easing tag 等 → 视为损坏数据拒绝。

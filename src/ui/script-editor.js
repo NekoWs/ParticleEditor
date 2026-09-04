@@ -27,14 +27,13 @@ import { parseProgram, ARRAY_METHOD_NAMES } from '../core/script-lang.js';
  */
 
 export const SCRIPT_KEYWORDS = [
-  'this', 'setup', 'process', 'func', 'global', 'static',
+  'this', 'setup', 'process', 'tick', 'func', 'global', 'of', 'const',
   'if', 'else', 'while', 'do', 'for', 'break', 'continue', 'return',
   'true', 'false',
 ];
 
 export const SCRIPT_THIS_FIELDS = [
-  'index', 'count', 'time', 'delta', 'duration', 'uv',
-  'position', 'color', 'velocity', 'scale', 'glow', 'light', 'life',
+  'time', 'duration', 'particles',
 ];
 
 const THIS_FIELD_SET = new Set(SCRIPT_THIS_FIELDS);
@@ -216,10 +215,11 @@ const scriptTheme = EditorView.theme({
 });
 
 /** 把单个代码段包装成可被 parseProgram 解析的完整脚本源。 */
-export function buildSectionSource(field, code) {
+export function buildSectionSource(field, code, processParam) {
   const text = code == null ? '' : String(code);
-  if (field === 'setup') return `setup {\n${text}\n}\n`;
-  if (field === 'process') return `process {\n${text}\n}\n`;
+  if (field === 'setup') return `func setup() {\n${text}\n}\n`;
+  if (field === 'tick') return `func tick() {\n${text}\n}\n`;
+  if (field === 'process') return `func process(${processParam || 'delta'}) {\n${text}\n}\n`;
   return text; // funcs：顶层函数定义，无需包装
 }
 
@@ -241,9 +241,7 @@ function wrapperLines(field) {
  * ---------------------------------------------------------------------- */
 
 const THIS_FIELD_TYPES = {
-  index: 'num', count: 'num', time: 'num', delta: 'num', duration: 'num',
-  uv: 'vec2', position: 'vec3', color: 'vec4', velocity: 'vec3',
-  scale: 'num', glow: 'bool', light: 'num', life: 'num',
+  time: 'num', duration: 'num', particles: 'particleList', spawn: 'func',
 };
 
 const VEC_COMPONENTS = {
@@ -366,31 +364,35 @@ function truncateIncomplete(code, pos) {
   return '';
 }
 
-function combineScriptSource(setupSrc, processSrc) {
+function combineScriptSource(setupSrc, processSrc, tickSrc, processParam) {
   let src = '';
   const s = (setupSrc || '').trim();
+  const tk = (tickSrc || '').trim();
   const p = (processSrc || '').trim();
-  if (s) src += `setup {\n${setupSrc}\n}\n`;
-  if (p) src += `process {\n${processSrc}\n}\n`;
+  if (s) src += `func setup() {\n${setupSrc}\n}\n`;
+  if (tk) src += `func tick() {\n${tickSrc}\n}\n`;
+  if (p) src += `func process(${processParam || 'delta'}) {\n${processSrc}\n}\n`;
   return src;
 }
 
-/** 构建 setup / process / funcs 各自的变量→类型表（尽力而为，解析失败返回空表）。 */
+/** 构建 setup / tick / process / funcs 各自的变量→类型表（尽力而为，解析失败返回空表）。 */
 function buildScriptEnvs(fx, field, pos) {
-  const empty = { setup: new Map(), process: new Map(), funcs: new Map() };
+  const empty = { setup: new Map(), tick: new Map(), process: new Map(), funcs: new Map() };
 
   const setupCode = field === 'setup' ? truncateIncomplete(fx?.setup, pos) : fx?.setup;
+  const tickCode = field === 'tick' ? truncateIncomplete(fx?.tick, pos) : fx?.tick;
   const processCode = field === 'process' ? truncateIncomplete(fx?.process, pos) : fx?.process;
 
   let program;
   try {
-    program = parseProgram(combineScriptSource(setupCode, processCode));
+    program = parseProgram(combineScriptSource(setupCode, processCode, tickCode, fx?.processParam));
   } catch {
     return empty;
   }
 
   const globals = new Map();
   const setupEnv = new Map();
+  const tickEnv = new Map();
   const processEnv = new Map();
 
   const seed = (env) => {
@@ -399,9 +401,10 @@ function buildScriptEnvs(fx, field, pos) {
     for (const name of Object.keys(fx?.vars || {})) env.set(name, 'num');
   };
   seed(setupEnv);
+  seed(tickEnv);
   seed(processEnv);
 
-  for (const stmt of program.setup || []) {
+  for (const stmt of (program.setup && program.setup.body && program.setup.body.body) || []) {
     if (stmt.type === 'global') {
       const t = stmt.init ? inferExprType(stmt.init, setupEnv) : 'unknown';
       setupEnv.set(stmt.name, t);
@@ -413,29 +416,22 @@ function buildScriptEnvs(fx, field, pos) {
     }
   }
 
-  for (const [name, t] of globals) processEnv.set(name, t);
-  const statics = new Map();
-  for (const stmt of program.process || []) {
-    if (stmt.type === 'static') {
-      const t = stmt.init ? inferExprType(stmt.init, processEnv) : 'unknown';
-      processEnv.set(stmt.name, t);
-      statics.set(stmt.name, t);
-    } else if (stmt.type === 'assign' && stmt.target && stmt.target.type === 'var') {
-      const t = inferExprType(stmt.value, processEnv);
-      if (statics.has(stmt.target.name)) {
-        statics.set(stmt.target.name, t);
-        processEnv.set(stmt.target.name, t);
-      } else if (!globals.has(stmt.target.name)) {
-        // 隐式局部（process 内首次赋值）
-        processEnv.set(stmt.target.name, t);
-      }
+  for (const [name, t] of globals) { tickEnv.set(name, t); processEnv.set(name, t); }
+  for (const stmt of (program.tick && program.tick.body && program.tick.body.body) || []) {
+    if (stmt.type === 'assign' && stmt.target && stmt.target.type === 'var') {
+      tickEnv.set(stmt.target.name, inferExprType(stmt.value, tickEnv));
+    }
+  }
+  for (const stmt of (program.process && program.process.body && program.process.body.body) || []) {
+    if (stmt.type === 'assign' && stmt.target && stmt.target.type === 'var') {
+      processEnv.set(stmt.target.name, inferExprType(stmt.value, processEnv));
     }
   }
 
   const funcsEnv = new Map(globals);
   seed(funcsEnv);
 
-  return { setup: setupEnv, process: processEnv, funcs: funcsEnv };
+  return { setup: setupEnv, tick: tickEnv, process: processEnv, funcs: funcsEnv };
 }
 
 function resolveDotReceiverType(name, before, matchIndex, field, fx, pos) {
@@ -444,7 +440,7 @@ function resolveDotReceiverType(name, before, matchIndex, field, fx, pos) {
   if (/this\s*\.\s*$/.test(prefix)) return THIS_FIELD_TYPES[name] || 'unknown';
 
   const envs = buildScriptEnvs(fx, field, pos);
-  const env = field === 'setup' ? envs.setup : field === 'funcs' ? envs.funcs : envs.process;
+  const env = field === 'setup' ? envs.setup : field === 'tick' ? envs.tick : field === 'funcs' ? envs.funcs : envs.process;
   return env.get(name) || 'unknown';
 }
 

@@ -384,15 +384,19 @@ export function buildFunctionPanel(fx) {
 
   // 「名称」不再在此编辑：函数对象重命名走底部时间轴列表的名字行双击（行内编辑框）。
 
-  // 采样数（面板首行）
-  const countRow = document.createElement('label');
-  countRow.className = 'row';
-  countRow.textContent = t('fx.sampleCount');
-  const countIn = document.createElement('input');
-  countIn.type = 'number'; countIn.min = '1'; countIn.value = fx.count;
-  countIn.onchange = () => { pushUndo(); fx.count = Math.max(1, Math.round(parseInt(countIn.value) || 1)); commitFunctionRebuild(fx); };
-  countRow.appendChild(countIn);
-  wrap.appendChild(countRow);
+  // process 参数名（process(delta) 的 delta 可重命名）
+  const paramRow = document.createElement('label');
+  paramRow.className = 'row';
+  paramRow.textContent = t('fx.processParam');
+  const paramIn = document.createElement('input');
+  paramIn.type = 'text'; paramIn.value = fx.processParam || 'delta';
+  paramIn.onchange = () => {
+    const v = String(paramIn.value).trim();
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(v) || v === 'this') { paramIn.value = fx.processParam || 'delta'; return; }
+    pushUndo(); fx.processParam = v; commitFunctionRebuild(fx);
+  };
+  paramRow.appendChild(paramIn);
+  wrap.appendChild(paramRow);
 
   // 中心点（合并为单个紧凑组合输入框）
   const centerRow = document.createElement('div');
@@ -418,7 +422,7 @@ export function buildFunctionPanel(fx) {
   centerRow.appendChild(centerGroup);
   wrap.appendChild(centerRow);
 
-  // 时长 / 采样间隔
+  // 时长
   const durRow = document.createElement('div');
   durRow.className = 'row';
   const durLabel = document.createElement('span'); durLabel.textContent = t('fx.duration');
@@ -427,12 +431,6 @@ export function buildFunctionPanel(fx) {
   durIn.type = 'number'; durIn.min = '0'; durIn.id = 'fx-duration'; durIn.value = fx.duration; durIn.style.width = '52px';
   durIn.onchange = () => { pushUndo(); fx.duration = Math.max(0, parseInt(durIn.value) || 0); commitFunctionRebuild(fx); };
   durRow.appendChild(durIn);
-  const stepLabel = document.createElement('span'); stepLabel.textContent = t('fx.interval');
-  durRow.appendChild(stepLabel);
-  const stepIn = document.createElement('input');
-  stepIn.type = 'number'; stepIn.min = '1'; stepIn.value = fx.step; stepIn.style.width = '52px';
-  stepIn.onchange = () => { pushUndo(); fx.step = Math.max(1, parseInt(stepIn.value) || 1); commitFunctionRebuild(fx); };
-  durRow.appendChild(stepIn);
   wrap.appendChild(durRow);
 
   // 随机种子
@@ -473,8 +471,9 @@ export function buildFunctionPanel(fx) {
   };
   codeWrap.appendChild(codeBody);
 
-  // Setup / Process / 顶层函数：标题与输入框合并在同一组内
+  // Setup / Tick / Process / 顶层函数：标题与输入框合并在同一组内
   buildCodeBlock(fx, codeBody, 'setup', 'fx.setupBlock', 4);
+  buildCodeBlock(fx, codeBody, 'tick', 'fx.tickBlock', 5);
   buildCodeBlock(fx, codeBody, 'process', 'fx.processBlock', 7);
   buildCodeBlock(fx, codeBody, 'funcs', 'fx.funcsBlock', 4);
 

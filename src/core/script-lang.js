@@ -44,13 +44,16 @@
 import { FAST_MATH } from './fastmath.js';
 
 const KEYWORDS = new Set([
-  'setup', 'process', 'func', 'return', 'if', 'else', 'while', 'do', 'for',
-  'break', 'continue', 'global', 'static', 'true', 'false',
+  'setup', 'process', 'tick', 'func', 'return', 'if', 'else', 'while', 'do', 'for', 'of', 'const',
+  'break', 'continue', 'global', 'true', 'false',
 ]);
 
 // this 对象：唯一保留的上下文访问名。i/n/t/dt/uv_x/uv_y/life 与单字母
 // 粒子属性名（x/y/z/r/g/b/a/vx/vy/vz/sc/glow/light）不再保留，均可作普通变量。
 const CTX_NAME = 'this';
+
+// 生命周期入口：setup / tick / process 是保留函数名，其它自定义函数不可使用。
+const LIFECYCLE_FUNCS = new Set(['setup', 'tick', 'process']);
 
 // this 只读字段。setup 仅 count/time/duration；process 只读 index/count/time/delta/duration/uv（life 为输出字段）。
 const CTX_SETUP_READ = new Set(['count', 'time', 'duration']);
@@ -94,12 +97,17 @@ const vec3 = (x, y, z) => ({ t: 'vec3', x, y, z });
 const vec4 = (x, y, z, w) => ({ t: 'vec4', x, y, z, w });
 const mat3 = (m) => ({ t: 'mat3', m });
 const mat4 = (m) => ({ t: 'mat4', m });
+// 粒子句柄 / 粒子列表（v12 spawn 模型）。w 为宿主侧粒子存储对象。
+const particleValue = (w) => ({ t: 'particle', w });
+const particleList = (list) => ({ t: 'particleList', list });
 
 const isNum = (v) => typeof v === 'number';
 const isBool = (v) => typeof v === 'boolean';
 const isVec = (v) => v != null && (v.t === 'vec2' || v.t === 'vec3' || v.t === 'vec4');
 const isMat = (v) => v != null && (v.t === 'mat3' || v.t === 'mat4');
 const isFunc = (v) => v != null && v.t === 'func';
+const isParticle = (v) => v != null && v.t === 'particle';
+const isParticleList = (v) => v != null && v.t === 'particleList';
 
 const vecDim = (v) => (v.t === 'vec2' ? 2 : v.t === 'vec3' ? 3 : 4);
 const vecComps = (v) => {
@@ -119,7 +127,7 @@ function typeName(v) {
   if (typeof v === 'string') return 'string';
   if (Array.isArray(v)) return 'array';
   if (v == null) return 'null';
-  if (v.t === 'vec2' || v.t === 'vec3' || v.t === 'vec4' || v.t === 'mat3' || v.t === 'mat4' || v.t === 'func') return v.t;
+  if (v.t === 'vec2' || v.t === 'vec3' || v.t === 'vec4' || v.t === 'mat3' || v.t === 'mat4' || v.t === 'func' || v.t === 'particle' || v.t === 'particleList') return v.t;
   return 'unknown';
 }
 
@@ -527,46 +535,52 @@ class Parser {
   /* -- 顶层 -- */
 
   parseProgram() {
-    const setup = [];
-    const process = [];
+    const lifecycle = { setup: null, tick: null, process: null };
     const functions = new Map();
 
     while (!this.atEnd()) {
-      if (this.matchKw('setup')) {
-        this.expect('{');
-        this.phase = 'setup';
-        while (!this.check('}') && !this.atEnd()) setup.push(this.parseStatement());
-        this.expect('}');
-        this.phase = null;
-      } else if (this.matchKw('process')) {
-        this.expect('{');
-        this.phase = 'process';
-        while (!this.check('}') && !this.atEnd()) process.push(this.parseStatement());
-        this.expect('}');
-        this.phase = null;
-      } else if (this.matchKw('func')) {
-        const nameTok = this.expectIdent();
-        this.validateFuncName(nameTok);
-        this.expect('(');
-        const params = this.parseParamList();
-        this.expect(')');
-        this.phase = 'func';
-        const body = this.parseBlock();
-        this.phase = null;
-        if (functions.has(nameTok.value)) {
-          this.errorAt(nameTok, `duplicate function name '${nameTok.value}'`);
+      this.expectKw('func');
+      const nameTok = this.expectIdent();
+      this.expect('(');
+      const params = this.parseParamList();
+      this.expect(')');
+      this.phase = LIFECYCLE_FUNCS.has(nameTok.value) ? nameTok.value : 'func';
+      const body = this.parseBlock();
+      this.phase = null;
+
+      const fn = {
+        type: 'func', name: nameTok.value, params, body,
+        line: nameTok.line, col: nameTok.col,
+      };
+
+      if (LIFECYCLE_FUNCS.has(fn.name)) {
+        if (lifecycle[fn.name]) {
+          this.errorAt(nameTok, `duplicate lifecycle function '${fn.name}'`);
         }
-        functions.set(nameTok.value, {
-          type: 'func', name: nameTok.value, params, body,
-          line: nameTok.line, col: nameTok.col,
-        });
+        this.validateLifecycleSignature(nameTok, fn);
+        lifecycle[fn.name] = fn;
       } else {
-        const tok = this.peek();
-        this.errorAt(tok, `expected 'setup', 'process' or 'func', got '${tok.value}'`);
+        this.validateFuncName(nameTok);
+        if (functions.has(fn.name)) {
+          this.errorAt(nameTok, `duplicate function name '${fn.name}'`);
+        }
+        functions.set(fn.name, fn);
       }
     }
 
-    return { setup, process, functions };
+    return { setup: lifecycle.setup, tick: lifecycle.tick, process: lifecycle.process, functions };
+  }
+
+  validateLifecycleSignature(tok, fn) {
+    if (fn.name === 'setup' || fn.name === 'tick') {
+      if (fn.params.length !== 0) {
+        this.errorAt(tok, `'${fn.name}' must not take parameters`);
+      }
+    } else if (fn.name === 'process') {
+      if (fn.params.length !== 1) {
+        this.errorAt(tok, `'process' must take exactly one parameter (delta milliseconds)`);
+      }
+    }
   }
 
   validateFuncName(tok) {
@@ -623,7 +637,6 @@ class Parser {
         case 'continue': return this.parseContinue(tok);
         case 'return': return this.parseReturn(tok);
         case 'global': return this.parseGlobal(tok);
-        case 'static': return this.parseStatic(tok);
         default: break;
       }
     }
@@ -669,6 +682,33 @@ class Parser {
   parseFor() {
     const start = this.next();
     this.expect('(');
+
+    // for-of：for (const name of expr) 或 for (name of expr)
+    const saved = this.pos;
+    if (this.matchKw('const')) {
+      const nameTok = this.expectIdent();
+      this.validateForVarName(nameTok);
+      this.expectKw('of');
+      const iter = this.parseTernary();
+      this.expect(')');
+      this.loopDepth++;
+      const body = this.parseStatement();
+      this.loopDepth--;
+      return { type: 'forof', name: nameTok.value, iter, body, line: start.line, col: start.col };
+    }
+    if (this.peek().type === 'ident' && this.peek(1).type === 'ident' && this.peek(1).value === 'of') {
+      const nameTok = this.expectIdent();
+      this.validateForVarName(nameTok);
+      this.expectKw('of');
+      const iter = this.parseTernary();
+      this.expect(')');
+      this.loopDepth++;
+      const body = this.parseStatement();
+      this.loopDepth--;
+      return { type: 'forof', name: nameTok.value, iter, body, line: start.line, col: start.col };
+    }
+    this.pos = saved;
+
     let init = null;
     if (!this.check(';')) init = this.parseAssignExpr();
     this.expect(';');
@@ -682,6 +722,12 @@ class Parser {
     const body = this.parseStatement();
     this.loopDepth--;
     return { type: 'for', init, cond, inc, body, line: start.line, col: start.col };
+  }
+
+  validateForVarName(tok) {
+    if (KEYWORDS.has(tok.value) || tok.value === CTX_NAME || CONSTANTS.has(tok.value)) {
+      this.errorAt(tok, `reserved name cannot be used as loop variable: '${tok.value}'`);
+    }
   }
 
   parseBreak(tok) {
@@ -699,7 +745,7 @@ class Parser {
   }
 
   parseReturn(tok) {
-    if (this.phase !== 'func') this.errorAt(tok, "'return' only allowed inside a function");
+    if (!this.phase) this.errorAt(tok, "'return' only allowed inside a function");
     this.next();
     let expr = null;
     if (!this.check(';')) expr = this.parseTernary();
@@ -710,11 +756,6 @@ class Parser {
   parseGlobal(tok) {
     if (this.phase !== 'setup') this.errorAt(tok, "'global' only allowed inside setup");
     return this.parseGlobalStaticBody(tok, 'global');
-  }
-
-  parseStatic(tok) {
-    if (this.phase !== 'process') this.errorAt(tok, "'static' only allowed inside process");
-    return this.parseGlobalStaticBody(tok, 'static');
   }
 
   parseGlobalStaticBody(tok, type) {
@@ -872,9 +913,6 @@ class Parser {
         } else if (COMP_NAMES.has(nameTok.value)) {
           expr = { type: 'comp', target: expr, comp: nameTok.value, line: expr.line, col: expr.col };
         } else {
-          if (expr.type !== 'var' || expr.name !== CTX_NAME) {
-            this.errorAt(nameTok, `only this has fields '.${nameTok.value}'`);
-          }
           expr = { type: 'member', object: expr, field: nameTok.value, line: nameTok.line, col: nameTok.col };
         }
       } else {
@@ -1092,13 +1130,11 @@ class Runtime {
     }
     // 2) global（对象级）
     if (this.objState.globals.has(name)) return this.objState.globals.get(name);
-    // 3) static（每粒子）
-    if (this.phase === 'process' && this.statics && this.statics.has(name)) return this.statics.get(name);
-    // 4) fx.vars 注入
+    // 3) fx.vars 注入
     if (this.varsMap.has(name)) return this.varsMap.get(name);
-    // 5) 常量
+    // 4) 常量
     if (CONSTANTS.has(name)) return CONSTANTS.get(name);
-    // 6) 顶层函数（作为 func 值；若被同名变量遮蔽，上面的作用域/global/static 会先命中）
+    // 5) 顶层函数（作为 func 值；若被同名变量遮蔽，上面的作用域/global 会先命中）
     if (this.program.functions.has(name)) return { t: 'func', name };
     throw runtimeError(`unknown variable '${name}'`, node);
   }
@@ -1125,12 +1161,6 @@ class Runtime {
       throw runtimeError(`global '${name}' is read-only here`, node);
     }
 
-    // static：process 内可写。
-    if (this.phase === 'process' && this.statics && this.statics.has(name)) {
-      this.statics.set(name, value);
-      return;
-    }
-
     // 剩余只读名：fx.vars 与常量；函数名允许被变量遮蔽。
     if (this.varsMap.has(name) || CONSTANTS.has(name)) {
       throw runtimeError(`cannot assign to read-only name '${name}'`, node);
@@ -1144,7 +1174,7 @@ class Runtime {
     if (target.object.type !== 'var' || target.object.name !== CTX_NAME) {
       throw runtimeError(`only this has fields '.${target.field}'`, node);
     }
-    ctxWrite(target.field, value, this, node);
+    throw runtimeError(`this.${target.field} is read-only`, node);
   }
 
   assignTarget(target, value, node) {
@@ -1153,8 +1183,15 @@ class Runtime {
       return;
     }
     if (target.type === 'member') {
-      this.assignCtxField(target, value, node);
-      return;
+      if (target.object.type === 'var' && target.object.name === CTX_NAME) {
+        throw runtimeError(`this.${target.field} is read-only`, node);
+      }
+      const obj = this.evalExpr(target.object);
+      if (isParticle(obj)) {
+        particleSetField(obj, target.field, value, node);
+        return;
+      }
+      throw runtimeError(`only this / particle have fields '.${target.field}'`, node);
     }
     if (target.type === 'index') {
       const arr = this.evalExpr(target.target);
@@ -1207,13 +1244,7 @@ class Runtime {
         this.objState.globals.set(node.name, v);
         return;
       }
-      case 'static': {
-        if (!this.statics.has(node.name)) {
-          const v = node.init ? this.evalExpr(node.init) : 0;
-          this.statics.set(node.name, v);
-        }
-        return;
-      }
+      case 'forof': return this.execForOf(node);
       case 'expr': {
         this.evalExpr(node.expr);
         return;
@@ -1315,6 +1346,37 @@ class Runtime {
     else this.evalExpr(part);
   }
 
+  execForOf(node) {
+    const iter = this.evalExpr(node.iter);
+    let snapshot;
+    if (isParticleList(iter)) {
+      snapshot = iter.list.slice();
+    } else if (Array.isArray(iter)) {
+      snapshot = iter.slice();
+    } else {
+      throw runtimeError(`for-of requires a particle list or array, got ${typeName(iter)}`, node.iter);
+    }
+    this.pushScope(new Map());
+    try {
+      let idx = 0;
+      for (const item of snapshot) {
+        if (++idx > MAX_LOOP_ITERATIONS) {
+          throw runtimeError(`loop iteration limit (${MAX_LOOP_ITERATIONS}) exceeded`, node);
+        }
+        this.currentScope().set(node.name, isParticleList(iter) ? particleValue(item) : item);
+        try {
+          this.execStmt(node.body);
+        } catch (f) {
+          if (f instanceof Flow && f.kind === 'break') break;
+          if (f instanceof Flow && f.kind === 'continue') continue;
+          throw f;
+        }
+      }
+    } finally {
+      this.popScope();
+    }
+  }
+
   /* -- 表达式求值 -- */
 
   evalExpr(node) {
@@ -1385,11 +1447,17 @@ class Runtime {
 
   evalIndex(node) {
     const target = this.evalExpr(node.target);
-    if (!Array.isArray(target)) {
-      throw runtimeError(`index access requires an array, got ${typeName(target)}`, node);
-    }
     const idx = this.evalExpr(node.index);
-    const n = expectInt(idx, 'array index', node);
+    const n = expectInt(idx, 'index', node);
+    if (isParticleList(target)) {
+      if (n < 0 || n >= target.list.length) {
+        throw runtimeError(`particle list index ${n} out of bounds (size ${target.list.length})`, node);
+      }
+      return particleValue(target.list[n]);
+    }
+    if (!Array.isArray(target)) {
+      throw runtimeError(`index access requires an array or particle list, got ${typeName(target)}`, node);
+    }
     if (n < 0 || n >= target.length) {
       throw runtimeError(`array index ${n} out of bounds (size ${target.length})`, node);
     }
@@ -1411,10 +1479,12 @@ class Runtime {
 
   evalMember(node) {
     const field = node.field;
-    if (node.object.type !== 'var' || node.object.name !== CTX_NAME) {
-      throw runtimeError(`only this has fields '.${field}'`, node);
+    if (node.object.type === 'var' && node.object.name === CTX_NAME) {
+      return ctxRead(field, this, node);
     }
-    return ctxRead(field, this, node);
+    const obj = this.evalExpr(node.object);
+    if (isParticle(obj)) return particleGetField(obj, field, node);
+    throw runtimeError(`only this / particle have fields '.${field}'`, node);
   }
 
   evalCall(node) {
@@ -1437,11 +1507,35 @@ class Runtime {
   }
 
   evalMethod(node) {
-    const obj = this.evalExpr(node.object);
-    if (!Array.isArray(obj)) {
-      throw runtimeError(`method '.${node.method}()' requires an array, got ${typeName(obj)}`, node);
+    // this.spawn()
+    if (node.object.type === 'var' && node.object.name === CTX_NAME && node.method === 'spawn') {
+      const fx = fxRuntime(this);
+      if (!fx || typeof fx.spawn !== 'function') {
+        throw runtimeError('this.spawn is not available here', node);
+      }
+      const w = fx.spawn();
+      if (!w) throw runtimeError('spawn failed', node);
+      return particleValue(w);
     }
+
+    const obj = this.evalExpr(node.object);
     const args = node.args.map((a) => this.evalExpr(a));
+
+    if (isParticle(obj)) {
+      if (node.method === 'kill') {
+        if (args.length !== 0) throw runtimeError("'kill' takes no arguments", node);
+        particleKill(obj, node);
+        return 0;
+      }
+      throw runtimeError(`particle has no method '.${node.method}()'`, node);
+    }
+    if (isParticleList(obj)) {
+      if (node.method === 'size') return obj.list.length;
+      throw runtimeError(`particle list has no method '.${node.method}()'`, node);
+    }
+    if (!Array.isArray(obj)) {
+      throw runtimeError(`method '.${node.method}()' requires an array, particle or particle list, got ${typeName(obj)}`, node);
+    }
     return applyArrayMethod(obj, node.method, args, this, node);
   }
 
@@ -1474,9 +1568,10 @@ class Runtime {
   }
 }
 
-/* -- 粒属性读取/写入（§8） -- */
+/* -- 粒子 / this 字段读取写入（v12 spawn 模型） -- */
 
 function ensureOut(ctx) {
+  if (!ctx) ctx = {};
   if (!ctx.out) ctx.out = {};
   const out = ctx.out;
   if (!Array.isArray(out.pos)) out.pos = [0, 0, 0];
@@ -1489,122 +1584,159 @@ function ensureOut(ctx) {
   return out;
 }
 
-/* -- this 字段读取/写入（§8/§9） -- */
-
-function ctxRead(field, rt, node) {
-  if (rt.phase === 'setup') {
-    if (field === 'count') return rt.env && rt.env.n != null ? rt.env.n : 0;
-    if (field === 'time') return rt.env && rt.env.t != null ? rt.env.t : 0;
-    if (field === 'duration') return rt.env && rt.env.duration != null ? rt.env.duration : 0;
-    throw runtimeError(`this.${field} is not available in setup`, node);
-  }
-
-  // process
-  if (field === 'index') return rt.ctx && rt.ctx.i != null ? rt.ctx.i : 0;
-  if (field === 'count') return rt.ctx && rt.ctx.n != null ? rt.ctx.n : 0;
-  if (field === 'time') return rt.ctx && rt.ctx.t != null ? rt.ctx.t : 0;
-  if (field === 'delta') return rt.ctx && rt.ctx.dt != null ? rt.ctx.dt : 0;
-  if (field === 'duration') return rt.ctx && rt.ctx.duration != null ? rt.ctx.duration : 0;
-  if (field === 'uv') return vec2(
-    rt.ctx && rt.ctx.uv_x != null ? rt.ctx.uv_x : 0,
-    rt.ctx && rt.ctx.uv_y != null ? rt.ctx.uv_y : 0,
-  );
-
-  const out = ensureOut(rt.ctx);
-  switch (field) {
-    case 'position': return vec3(out.pos[0], out.pos[1], out.pos[2]);
-    case 'color': return vec4(out.color[0], out.color[1], out.color[2], out.color[3]);
-    case 'velocity': return vec3(out.vel[0], out.vel[1], out.vel[2]);
-    case 'scale': return out.scale;
-    case 'glow': return out.glow;
-    case 'light': return out.light;
-    case 'life': return out.life;
-    default: throw runtimeError(`unknown this field '.${field}'`, node);
-  }
+// 当前函数对象运行时上下文（setup 用 env，tick/process 用 ctx）。
+function fxRuntime(rt) {
+  return rt.phase === 'setup' ? rt.env : rt.ctx;
 }
 
-function ctxVecValues(value, len, field, node) {
+function ctxRead(field, rt, node) {
+  if (rt.phase === 'expr') {
+    // 单表达式上下文（UV 字段表达式等）：保留旧 index/count/time/delta/duration/uv 与输出字段。
+    const c = rt.ctx || null;
+    if (field === 'index') return c && c.i != null ? c.i : 0;
+    if (field === 'count') return c && c.n != null ? c.n : 0;
+    if (field === 'time') return c && c.t != null ? c.t : 0;
+    if (field === 'delta') return c && c.dt != null ? c.dt : 0;
+    if (field === 'duration') return c && c.duration != null ? c.duration : 0;
+    if (field === 'uv') return vec2(
+      c && c.uv_x != null ? c.uv_x : 0,
+      c && c.uv_y != null ? c.uv_y : 0,
+    );
+    const out = ensureOut(c);
+    switch (field) {
+      case 'position': return vec3(out.pos[0], out.pos[1], out.pos[2]);
+      case 'color': return vec4(out.color[0], out.color[1], out.color[2], out.color[3]);
+      case 'velocity': return vec3(out.vel[0], out.vel[1], out.vel[2]);
+      case 'scale': return out.scale;
+      case 'glow': return out.glow;
+      case 'light': return out.light;
+      case 'life': return out.life;
+      default: throw runtimeError(`unknown this field '.${field}'`, node);
+    }
+  }
+
+  const fx = fxRuntime(rt) || null;
+  if (field === 'time') return fx && fx.t != null ? fx.t : 0;
+  if (field === 'duration') return fx && fx.duration != null ? fx.duration : 0;
+  if (field === 'particles') return particleList(fx && Array.isArray(fx.particles) ? fx.particles : []);
+  throw runtimeError(`this.${field} is not available here`, node);
+}
+
+function ctxWrite(field, value, rt, node) {
+  throw runtimeError(`this.${field} is read-only`, node);
+}
+
+function vecFieldValues(value, len, what, node) {
   if (isVec(value)) {
     if (vecDim(value) !== len) {
-      throw runtimeError(`this.${field} requires a vec${len}, got ${typeName(value)}`, node);
+      throw runtimeError(`${what} requires a vec${len}, got ${typeName(value)}`, node);
     }
     return vecComps(value);
   }
   if (Array.isArray(value)) {
     if (value.length !== len) {
-      throw runtimeError(`this.${field} requires an array of ${len} numbers, got length ${value.length}`, node);
+      throw runtimeError(`${what} requires an array of ${len} numbers, got length ${value.length}`, node);
     }
-    return value.map((x, i) => expectNum(x, `this.${field}[${i}]`, node));
+    return value.map((x, i) => expectNum(x, `${what}[${i}]`, node));
   }
-  throw runtimeError(`this.${field} requires a vec${len} or array of ${len} numbers, got ${typeName(value)}`, node);
+  throw runtimeError(`${what} requires a vec${len} or array of ${len} numbers, got ${typeName(value)}`, node);
 }
 
-function ctxWrite(field, value, rt, node) {
-  if (rt.phase !== 'process') {
-    throw runtimeError(`this.${field} is read-only here`, node);
+function writeParticleColor(w, value, node) {
+  if (isVec(value)) {
+    if (value.t === 'vec3') {
+      w.color[0] = clamp01(value.x);
+      w.color[1] = clamp01(value.y);
+      w.color[2] = clamp01(value.z);
+      return;
+    }
+    if (value.t === 'vec4') {
+      w.color[0] = clamp01(value.x);
+      w.color[1] = clamp01(value.y);
+      w.color[2] = clamp01(value.z);
+      w.color[3] = clamp01(value.w);
+      return;
+    }
+  } else if (Array.isArray(value)) {
+    if (value.length === 3) {
+      w.color[0] = clamp01(expectNum(value[0], 'particle.color[0]', node));
+      w.color[1] = clamp01(expectNum(value[1], 'particle.color[1]', node));
+      w.color[2] = clamp01(expectNum(value[2], 'particle.color[2]', node));
+      return;
+    }
+    if (value.length === 4) {
+      w.color[0] = clamp01(expectNum(value[0], 'particle.color[0]', node));
+      w.color[1] = clamp01(expectNum(value[1], 'particle.color[1]', node));
+      w.color[2] = clamp01(expectNum(value[2], 'particle.color[2]', node));
+      w.color[3] = clamp01(expectNum(value[3], 'particle.color[3]', node));
+      return;
+    }
   }
-  if (!CTX_OUT_FIELDS.has(field)) {
-    throw runtimeError(`this.${field} is read-only`, node);
+  throw runtimeError(`particle.color requires a vec3, vec4, [r,g,b] or [r,g,b,a], got ${typeName(value)}`, node);
+}
+
+function particleGetField(pv, field, node) {
+  const w = pv.w;
+  switch (field) {
+    case 'position': return vec3(w.pos[0], w.pos[1], w.pos[2]);
+    case 'color': return vec4(w.color[0], w.color[1], w.color[2], w.color[3]);
+    case 'velocity': return vec3(w.vel[0], w.vel[1], w.vel[2]);
+    case 'scale': return w.scale;
+    case 'glow': return w.glow;
+    case 'light': return w.light;
+    case 'life': return w.life;
+    case 'index': return w.index;
+    default:
+      return (w.fields && w.fields.has(field)) ? w.fields.get(field) : 0;
   }
-  const out = ensureOut(rt.ctx);
+}
+
+function particleSetField(pv, field, value, node) {
+  const w = pv.w;
   switch (field) {
     case 'position': {
-      const c = ctxVecValues(value, 3, 'position', node);
-      out.pos[0] = c[0]; out.pos[1] = c[1]; out.pos[2] = c[2];
+      const c = vecFieldValues(value, 3, 'particle.position', node);
+      w.pos[0] = c[0]; w.pos[1] = c[1]; w.pos[2] = c[2];
       return;
     }
     case 'velocity': {
-      const c = ctxVecValues(value, 3, 'velocity', node);
-      out.vel[0] = c[0]; out.vel[1] = c[1]; out.vel[2] = c[2];
+      const c = vecFieldValues(value, 3, 'particle.velocity', node);
+      w.vel[0] = c[0]; w.vel[1] = c[1]; w.vel[2] = c[2];
       return;
     }
-    case 'color': {
-      if (isVec(value)) {
-        if (value.t === 'vec3') {
-          out.color[0] = clamp01(value.x);
-          out.color[1] = clamp01(value.y);
-          out.color[2] = clamp01(value.z);
-          return;
-        }
-        if (value.t === 'vec4') {
-          out.color[0] = clamp01(value.x);
-          out.color[1] = clamp01(value.y);
-          out.color[2] = clamp01(value.z);
-          out.color[3] = clamp01(value.w);
-          return;
-        }
-      } else if (Array.isArray(value)) {
-        if (value.length === 3) {
-          out.color[0] = clamp01(expectNum(value[0], 'this.color[0]', node));
-          out.color[1] = clamp01(expectNum(value[1], 'this.color[1]', node));
-          out.color[2] = clamp01(expectNum(value[2], 'this.color[2]', node));
-          return;
-        }
-        if (value.length === 4) {
-          out.color[0] = clamp01(expectNum(value[0], 'this.color[0]', node));
-          out.color[1] = clamp01(expectNum(value[1], 'this.color[1]', node));
-          out.color[2] = clamp01(expectNum(value[2], 'this.color[2]', node));
-          out.color[3] = clamp01(expectNum(value[3], 'this.color[3]', node));
-          return;
-        }
-      }
-      throw runtimeError(`this.color requires a vec3, vec4, [r,g,b] or [r,g,b,a], got ${typeName(value)}`, node);
-    }
-    case 'scale': out.scale = expectNum(value, 'this.scale', node); return;
+    case 'color':
+      writeParticleColor(w, value, node);
+      return;
+    case 'scale':
+      w.scale = expectNum(value, 'particle.scale', node);
+      return;
     case 'glow':
       if (!isNum(value) && !isBool(value)) {
-        throw runtimeError(`this.glow requires a num/bool, got ${typeName(value)}`, node);
+        throw runtimeError(`particle.glow requires a num/bool, got ${typeName(value)}`, node);
       }
-      out.glow = value > 0.5;
+      w.glow = value > 0.5;
       return;
-    case 'light': out.light = Math.max(0, Math.min(15, Math.round(expectNum(value, 'this.light', node)))); return;
+    case 'light':
+      w.light = Math.max(0, Math.min(15, Math.round(expectNum(value, 'particle.light', node))));
+      return;
     case 'life': {
-      const v = Math.round(expectNum(value, 'this.life', node));
-      out.life = Number.isFinite(v) ? (v < 0 ? -1 : v) : -1;
+      const v = Math.round(expectNum(value, 'particle.life', node));
+      w.life = Number.isFinite(v) ? (v < 0 ? -1 : v) : -1;
       return;
     }
-    default: throw runtimeError(`this.${field} is read-only`, node);
+    case 'index':
+      throw runtimeError('particle.index is read-only', node);
+    default:
+      if (!w.fields) w.fields = new Map();
+      w.fields.set(field, value);
+      return;
   }
+}
+
+function particleKill(pv, node) {
+  const w = pv.w;
+  if (typeof w.kill === 'function') w.kill();
+  else w.alive = false;
 }
 
 function setVecComp(v, comp, value) {
@@ -3723,61 +3855,43 @@ export function createObjectState(seed) {
   return { globals: new Map(), rand: mulberry32(s), seed: s };
 }
 
-// 执行 setup（对象级，一次）。env: { n, t, vars:{name:number} }。返回 objState。
+// 执行 setup（对象级，一次）。env: { t, duration, vars, particles, spawn }。返回 objState。
 export function runSetup(program, objState, env) {
-  const rt = new Runtime('setup', program, objState, null, env, null);
+  const rt = new Runtime('setup', program, objState, null, env || null, null);
   rt.pushScope(new Map());
   try {
-    for (const st of program.setup) rt.execStmt(st);
+    if (program.setup) rt.execStmt(program.setup.body);
   } finally {
     rt.popScope();
   }
   return objState;
 }
 
-// 创建每粒子 static 状态容器（Map）。
-export function createStatics() {
-  return new Map();
-}
-
-// 预编译 process 字节码（供高频求值路径复用；varNames/globalNames 每个 (fx,t) 只算一次）。
-export function prepareProcess(program, varNames, globalNames) {
-  return getCompiledProgram(program, varNames, globalNames);
-}
-
-// 创建可复用的 process 执行器（同一 (fx,t) 帧内逐粒子复用，避免每粒子 new Vm/new Runtime/Map）。
-export function createProcessRunner(compiled, objState, ctx, uniforms) {
-  return new Vm(compiled, objState, null, ctx, uniforms, null, null, compiled.mainStart);
-}
-
-// 执行原生 JS 快路径（compileNativeProcess 产物）。返回 ctx.out。
-export function runNativeProcess(native, objState, statics, ctx, out, useFast) {
-  return native(ctx, objState.globals, statics, ctx.vars, out, useFast, FAST_MATH);
-}
-
-// 计算 uniform 值（process 中与粒子无关的不变表达式，每个 (fx,t) 广播一次）。
-export function runUniformPrelude(program, objState, statics, ctx, compiledIn) {
-  const varNames = ctx && ctx.vars ? Object.keys(ctx.vars) : [];
-  const globalNames = objState && objState.globals ? [...objState.globals.keys()].sort() : [];
-  const compiled = compiledIn || getCompiledProgram(program, varNames, globalNames);
-  const uniforms = new Array(compiled.uniformCount);
-  if (compiled.prelude.length) {
-    const vm = new Vm(compiled, objState, statics, ctx, uniforms, compiled.prelude, compiled.preludeLocs, 0);
-    vm.run();
+// 执行 tick（每动画 tick 一次）。ctx: { t, duration, vars, particles, spawn }。
+export function runTick(program, objState, ctx) {
+  if (!program.tick) return;
+  const rt = new Runtime('tick', program, objState, null, null, ctx || null);
+  rt.pushScope(new Map());
+  try {
+    rt.execStmt(program.tick.body);
+  } finally {
+    rt.popScope();
   }
-  return uniforms;
 }
 
-// 执行 process（每粒子、每个时间点）。写入 ctx.out 并返回 ctx.out。
-export function evalProcess(program, objState, statics, ctx) {
-  ensureOut(ctx);
-  const varNames = ctx && ctx.vars ? Object.keys(ctx.vars) : [];
-  const globalNames = objState && objState.globals ? [...objState.globals.keys()].sort() : [];
-  const compiled = getCompiledProgram(program, varNames, globalNames);
-  const uniforms = (ctx && ctx.uniforms) || runUniformPrelude(program, objState, statics, ctx, compiled);
-  const vm = new Vm(compiled, objState, statics, ctx, uniforms, null, null, compiled.mainStart);
-  vm.run();
-  return ctx.out;
+// 执行 process（每渲染帧一次）。ctx: { t, duration, vars, particles, spawn, deltaMs }。
+// process 的参数名由 program.process.params[0] 决定，delta 值为 ctx.deltaMs（毫秒）。
+export function runProcessFrame(program, objState, ctx) {
+  if (!program.process) return;
+  const rt = new Runtime('process', program, objState, null, null, ctx || null);
+  rt.pushScope(new Map());
+  try {
+    const paramName = program.process.params[0];
+    rt.currentScope().set(paramName, ctx && ctx.deltaMs != null ? ctx.deltaMs : 0);
+    rt.execStmt(program.process.body);
+  } finally {
+    rt.popScope();
+  }
 }
 
 /* =========================================================================
@@ -3801,8 +3915,8 @@ export function parseExpression(source) {
 // 通用表达式求值：返回任意值（number/vec/mat/bool/array）。低频路径。
 export function evalExpressionValue(expr, ctx) {
   const node = parseExpression(expr);
-  const program = { setup: [], process: [], functions: new Map() };
-  const rt = new Runtime('process', program, createObjectState(0), null, null, ctx || null);
+  const program = { setup: null, tick: null, process: null, functions: new Map() };
+  const rt = new Runtime('expr', program, createObjectState(0), null, null, ctx || null);
   rt.pushScope(new Map());
   try {
     return rt.evalExpr(node);
@@ -3826,9 +3940,9 @@ export function evalExpression(expr, ctx) {
 // 返回 { eval(ctx) }；ctx.vars 每次求值前重建，因此可安全复用。
 export function createExpressionRunner(expr) {
   const node = parseExpression(expr);
-  const program = { setup: [], process: [], functions: new Map() };
+  const program = { setup: null, tick: null, process: null, functions: new Map() };
   const objState = createObjectState(0);
-  const rt = new Runtime('process', program, objState, null, null, null);
+  const rt = new Runtime('expr', program, objState, null, null, null);
   rt.pushScope(new Map());
   return {
     eval(ctx) {
