@@ -183,11 +183,7 @@
   "id": "fx0",                  // 必填
   "name": "函数对象",            // 名称
   "center": [0, 0, 0],          // [x,y,z]
-  "setup": "...",               // func setup() 代码体（对象初始化一次）
-  "tick": "...",                // func tick() 代码体（每个动画 tick 一次）
-  "process": "...",             // func process(param) 代码体（每个渲染帧一次）
-  "pp": "delta",                // process 参数名（默认 delta）
-  "funcs": "func f(a) { ... }", // 可选，自定义顶层函数定义（缺省 = ""）
+  "source": "func setup() {...}\nfunc process(delta) {...}",  // 完整脚本源码（唯一源码字段）
   "seed": 0,                    // 随机种子（整数；rand()/noise 默认使用）
   "vars": {                     // 变量表
     "amp": { "b": 2, "kf": [[0, 2, 3], [20, 4, 3]] }
@@ -207,7 +203,7 @@
 
 - `vars`：`{ 变量名: { b: 数值基值, kf: [[tick,value,easing],...] } }`。
 - 函数对象脚本语法见 [`script-lang-spec.md`](./script-lang-spec.md)。
-- `count` 与 `step` 字段已移除（v12 spawn 模型）；解析回退：`name→'函数对象'`、`center→[0,0,0]`、`duration→0`、`st→0`、`setup/tick/process/funcs→''`、`pp→'delta'`、`seed→0`、`fm→false`、`ss→'world'`、`rs→'world'`。
+- v12 起 `setup/tick/process/funcs/pp` 合并为单一 `source` 字段；解析回退：`name→'函数对象'`、`center→[0,0,0]`、`source→''`、`duration→0`、`st→0`、`seed→0`、`fm→false`、`ss→'world'`、`rs→'world'`。
 
 ---
 

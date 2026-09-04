@@ -35,11 +35,14 @@ import { updateGizmo, updateGizmoFrame, restoreAxisColors, setAxisGlow } from '.
 import { getCamera, DEFAULT_CAMERA_ID } from './core/constants.js';
 import { lockCamera, unlockCamera, applyCameraPose } from './core/cameras.js';
 
+// 当前显示刷新率（由主循环估算），seek/scrub 时用于推测 process 的 delta 毫秒。
+let lastRefreshRate = 60;
+
 // 时间轴数值变化后的统一刷新：粒子状态、时间 UI、函数变量插值显示。
 // 多处 scrub / 播放头拖动路径共用，避免漏刷某一项。
 export function applyTimeChange() {
   updateTimeUI();
-  rebuildPoints();
+  rebuildPoints(false, 1000 / lastRefreshRate);
   syncFunctionVarValues();
 }
 
@@ -431,7 +434,7 @@ export function initUI() {
     }
     tlDrag.lastX = ev.clientX;
     drawTimeline();
-    if (tlDrag.mode === 'scrub') { rebuildPoints(); syncFunctionVarValues(); }
+    if (tlDrag.mode === 'scrub') { rebuildPoints(false, 1000 / lastRefreshRate); syncFunctionVarValues(); }
   });
   tlCanvas.addEventListener('pointerup', () => { tlDrag = null; state.scrubbing = false; });
   tlCanvas.addEventListener('pointerleave', () => { tlDrag = null; state.scrubbing = false; });
@@ -582,8 +585,10 @@ export function animate(now) {
   const middleFrame = Math.max(1, sorted[Math.max(0, Math.floor(sorted.length * 0.5))]);
   let fps = Math.round(1000 / middleFrame);
 
+  const refresh = snapToDisplayRefresh(fps);
+  lastRefreshRate = refresh;
   const fpsEl = document.getElementById('fps-counter');
-  if (fpsEl) fpsEl.textContent = snapToDisplayRefresh(fps) + 'FPS';
+  if (fpsEl) fpsEl.textContent = refresh + 'FPS';
 
   if (camTransition) {
     const t = Math.min(1, (now - camTransition.t0) / camTransition.dur);

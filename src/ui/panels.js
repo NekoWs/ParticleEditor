@@ -334,6 +334,7 @@ export function commitFunctionRebuild(fx, opts) {
     fx._error = e.message;
     if (!(opts && opts.silent)) modalAlert(t('fx.exprError'), e.message);
   }
+  refreshFxTerminal(fx);
 }
 
 // 函数面板的代码块（setup/process/funcs）：标题 + CodeMirror 编辑器，
@@ -384,20 +385,6 @@ export function buildFunctionPanel(fx) {
 
   // 「名称」不再在此编辑：函数对象重命名走底部时间轴列表的名字行双击（行内编辑框）。
 
-  // process 参数名（process(delta) 的 delta 可重命名）
-  const paramRow = document.createElement('label');
-  paramRow.className = 'row';
-  paramRow.textContent = t('fx.processParam');
-  const paramIn = document.createElement('input');
-  paramIn.type = 'text'; paramIn.value = fx.processParam || 'delta';
-  paramIn.onchange = () => {
-    const v = String(paramIn.value).trim();
-    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(v) || v === 'this') { paramIn.value = fx.processParam || 'delta'; return; }
-    pushUndo(); fx.processParam = v; commitFunctionRebuild(fx);
-  };
-  paramRow.appendChild(paramIn);
-  wrap.appendChild(paramRow);
-
   // 中心点（合并为单个紧凑组合输入框）
   const centerRow = document.createElement('div');
   centerRow.className = 'row';
@@ -443,7 +430,7 @@ export function buildFunctionPanel(fx) {
   seedRow.appendChild(seedIn);
   wrap.appendChild(seedRow);
 
-  // 公式代码块（默认折叠；文本代码与快速数学放在折叠区内）
+  // 公式代码块（默认折叠；完整源码 + 终端 + 快速数学放在折叠区内）
   const codeWrap = document.createElement('div');
   codeWrap.className = 'fx-code-wrap';
   const codeHead = document.createElement('div');
@@ -471,13 +458,34 @@ export function buildFunctionPanel(fx) {
   };
   codeWrap.appendChild(codeBody);
 
-  // Setup / Tick / Process / 顶层函数：标题与输入框合并在同一组内
-  buildCodeBlock(fx, codeBody, 'setup', 'fx.setupBlock', 4);
-  buildCodeBlock(fx, codeBody, 'tick', 'fx.tickBlock', 5);
-  buildCodeBlock(fx, codeBody, 'process', 'fx.processBlock', 7);
-  buildCodeBlock(fx, codeBody, 'funcs', 'fx.funcsBlock', 4);
+  // 完整源码编辑器（直接显示 func setup()/tick()/process(...) 与自定义函数）
+  const sourceContainer = document.createElement('div');
+  sourceContainer.className = 'fx-code';
+  codeBody.appendChild(sourceContainer);
 
-  // 快速数学近似（放在文本代码下方）：左侧 label，右侧勾选框
+  const terminal = document.createElement('div');
+  terminal.className = 'fx-terminal';
+  codeBody.appendChild(terminal);
+
+  let editing = false;
+  const view = createScriptEditor(sourceContainer, {
+    fx,
+    rows: 12,
+    onChange: (value) => {
+      if (!editing) { editing = true; pushUndo(); }
+      fx.source = value;
+      refreshFxTerminal(fx);
+    },
+  });
+
+  sourceContainer.addEventListener('focusout', () => {
+    if (!editing) return;
+    editing = false;
+    commitFunctionRebuild(fx);
+    refreshFxTerminal(fx);
+  });
+
+  // 快速数学近似
   const fmRow = document.createElement('label');
   fmRow.className = 'row fx-fastmath-row';
   const fmLabel = document.createElement('span');
@@ -489,6 +497,7 @@ export function buildFunctionPanel(fx) {
     pushUndo();
     fx.fastMath = fmChk.checked;
     commitFunctionRebuild(fx);
+    refreshFxTerminal(fx);
   };
   fmRow.appendChild(fmLabel);
   fmRow.appendChild(fmChk);
@@ -496,7 +505,20 @@ export function buildFunctionPanel(fx) {
 
   wrap.appendChild(codeWrap);
 
+  refreshFxTerminal(fx);
+
   return wrap;
+}
+
+/** 把 fx._terminal（print 输出与错误）渲染到函数面板的终端区域。 */
+export function refreshFxTerminal(fx) {
+  const wrap = document.querySelector('.fx-panel');
+  if (!wrap) return;
+  const term = wrap.querySelector('.fx-terminal');
+  if (!term) return;
+  const lines = Array.isArray(fx && fx._terminal) ? fx._terminal : [];
+  term.textContent = lines.join('\n');
+  term.style.display = lines.length ? 'block' : 'none';
 }
 
 // 实时同步「有关键帧」变量输入框显示的当前帧插值值（不重建面板）

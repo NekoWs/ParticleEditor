@@ -37,7 +37,8 @@ import {
   typeAccepts,
   walkStatements
 } from '../core/blocks.js';
-import {validateFunctionScript} from '../core/generators.js';
+import {validateFunctionScript, buildScriptSource} from '../core/generators.js';
+import {parseProgram} from '../core/script-lang.js';
 import {makeFloatWindow} from './float-window.js';
 import {cloneVars, pushUndo} from '../state/undo.js';
 import {commitFunctionRebuild, drawTimeline, refreshFunctionPanel} from './panels.js';
@@ -797,15 +798,51 @@ function extractTopLevelFuncs(stmts) {
   return { funcs, rest };
 }
 
+function extractFuncBody(src, name) {
+  const re = new RegExp('func\\s+' + name + '\\s*\\([^)]*\\)\\s*\\{', 'g');
+  const m = re.exec(src);
+  if (!m) return '';
+  let i = re.lastIndex;
+  let depth = 1;
+  const start = i;
+  while (i < src.length && depth > 0) {
+    const ch = src[i];
+    if (ch === '{') depth++;
+    else if (ch === '}') depth--;
+    i++;
+  }
+  return src.slice(start, i - 1);
+}
+
+// 把 fx.source 解析回拼图所需的 setup/tick/process 语句与自定义函数起始块。
+function parsePuzzleSource(fx) {
+  const src = fx.source || '';
+  const program = parseProgram(src);
+  const setupBody = program.setup ? extractFuncBody(src, 'setup') : '';
+  const tickBody = program.tick ? extractFuncBody(src, 'tick') : '';
+  const processBody = program.process ? extractFuncBody(src, 'process') : '';
+  const processParam = program.process ? (program.process.params[0] || 'delta') : 'delta';
+  const funcStmts = [];
+  for (const [name, fn] of program.functions) {
+    const body = extractFuncBody(src, name);
+    const stmts = codeToStatements('func ' + name + '(' + fn.params.join(', ') + ') {\n' + body + '\n}');
+    if (stmts.length === 1 && stmts[0].kind === 'func') funcStmts.push(stmts[0]);
+    else funcStmts.push({ kind: 'func', name, params: fn.params.slice(), body: codeToStatements(body) });
+  }
+  return { setupBody, tickBody, processBody, processParam, funcStmts };
+}
+
 export function openBlockDrawer(fx) {
   ensurePuzzleDom();
-  let chain, setupChain, tickChain, funcStmts;
+  let chain, setupChain, tickChain, funcStmts, processParam;
   try {
-    chain = codeToStatements(fx.process || '');
-    setupChain = codeToStatements(fx.setup || '');
-    tickChain = codeToStatements(fx.tick || '');
-    funcStmts = codeToStatements(fx.funcs || '');
-    // 旧工程可能把 func 误存在 setup/process/tick 内；按规范迁移为顶层函数。
+    const parsed = parsePuzzleSource(fx);
+    setupChain = codeToStatements(parsed.setupBody);
+    tickChain = codeToStatements(parsed.tickBody);
+    chain = codeToStatements(parsed.processBody);
+    funcStmts = parsed.funcStmts;
+    processParam = parsed.processParam;
+    // 兼容：setup/tick/process 体内若混入 func 定义，迁移为顶层函数。
     const cExtract = extractTopLevelFuncs(chain);
     const sExtract = extractTopLevelFuncs(setupChain);
     const tExtract = extractTopLevelFuncs(tickChain);
@@ -853,12 +890,12 @@ export function openBlockDrawer(fx) {
     chain,
     setupChain,
     tickChain,
-    processParam: fx.processParam || 'delta',
+    processParam: processParam || 'delta',
     funcs,
     frags: (saved.frags || []).map(f => ({ stmts: codeToStatements(f.code || ''), x: f.x, y: f.y })).filter(f => f.stmts.length > 0),
     varExprs, varOrder,
     errors: [],
-    snapshot: { setup: fx.setup || '', tick: fx.tick || '', process: fx.process || '', processParam: fx.processParam || 'delta', funcs: fx.funcs || '', vars: cloneVars(fx.vars), preset: fx.preset, params: fx.params },
+    snapshot: { source: fx.source || '', vars: cloneVars(fx.vars), preset: fx.preset, params: fx.params },
     undoStack: [], redoStack: [],
     layout: {
       chain: hasProcess ? chainPos : null,
@@ -902,21 +939,18 @@ export function closeBlockDrawer(commit) {
     const tickText = bctx.layout.tick ? statementsToCode(bctx.tickChain) : '';
     const funcsText = statementsToCode(bctx.funcs.map(f => f.stmt));
     const paramText = (String(bctx.processParam || '').trim()) || 'delta';
-    fx.process = newCode;
-    fx.setup = setupText;
-    fx.tick = tickText;
-    fx.processParam = paramText;
-    fx.funcs = funcsText;
+    const source = buildScriptSource(setupText, newCode, tickText, funcsText, paramText);
+    fx.source = source;
     for (const name of bctx.varOrder) {
       if (name in bctx.varExprs) {
         const v = fx.vars[name];
         if (v && (v.kf || []).length === 0) v.base = Number.isFinite(bctx.varExprs[name]) ? bctx.varExprs[name] : 0;
       }
     }
-    if (newCode !== bctx.snapshot.process || setupText !== bctx.snapshot.setup || tickText !== bctx.snapshot.tick || paramText !== bctx.snapshot.processParam || funcsText !== bctx.snapshot.funcs) { fx.preset = null; fx.params = null; }
+    if (source !== bctx.snapshot.source) { fx.preset = null; fx.params = null; }
     pushUndo();
     let err = null;
-    try { err = validateFunctionScript(fx, setupText, newCode, funcsText, tickText, paramText); }
+    try { err = validateFunctionScript(fx, source); }
     catch (e) { err = e; }
     if (err) {
       // 保留已保存的代码与错误标记；不重建粒子，避免把半成品渲染写入场景。
@@ -926,11 +960,7 @@ export function closeBlockDrawer(commit) {
       commitFunctionRebuild(fx, { silent: true });
     }
   } else if (fx) {
-    fx.process = bctx.snapshot.process;
-    fx.setup = bctx.snapshot.setup;
-    fx.tick = bctx.snapshot.tick;
-    fx.processParam = bctx.snapshot.processParam || 'delta';
-    fx.funcs = bctx.snapshot.funcs;
+    fx.source = bctx.snapshot.source;
     fx.vars = cloneVars(bctx.snapshot.vars);
     fx.preset = bctx.snapshot.preset;
     fx.params = bctx.snapshot.params;
@@ -1028,8 +1058,9 @@ function computeBctxErrors() {
   const processCode = bctx.layout.chain ? statementsToCode(bctx.chain) : '';
   const funcsCode = statementsToCode(bctx.funcs.map(f => f.stmt));
   const paramText = (String(bctx.processParam || '').trim()) || 'delta';
+  const source = buildScriptSource(setupCode, processCode, tickCode, funcsCode, paramText);
   let err = null;
-  try { err = validateFunctionScript(fx, setupCode, processCode, funcsCode, tickCode, paramText); }
+  try { err = validateFunctionScript(fx, source); }
   catch (e) { err = e; }
   if (!err) return [];
   return errorsFromValidation(fx, setupCode, processCode, funcsCode, err);
@@ -1044,11 +1075,8 @@ export function blockPreview() {
   const tickText = bctx.layout.tick ? statementsToCode(bctx.tickChain) : '';
   const funcsText = statementsToCode(bctx.funcs.map(f => f.stmt));
   const paramText = (String(bctx.processParam || '').trim()) || 'delta';
-  fx.process = code;
-  fx.setup = setupText;
-  fx.tick = tickText;
-  fx.processParam = paramText;
-  fx.funcs = funcsText;
+  const source = buildScriptSource(setupText, code, tickText, funcsText, paramText);
+  fx.source = source;
   for (const name of bctx.varOrder) {
     if (name in bctx.varExprs) {
       const v = fx.vars[name];
@@ -1056,7 +1084,7 @@ export function blockPreview() {
     }
   }
   let err = null;
-  try { err = validateFunctionScript(fx, setupText, code, funcsText, tickText, paramText); }
+  try { err = validateFunctionScript(fx, source); }
   catch (e) { err = e; }
   if (err) {
     fx._error = err.message;

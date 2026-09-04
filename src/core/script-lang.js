@@ -425,6 +425,13 @@ function tokenize(source) {
       tokens.push({ type: 'punct', value: op, line: startLine, col: startCol });
       continue;
     }
+    if ((c === '+' && src[i + 1] === '+') || (c === '-' && src[i + 1] === '-')) {
+      const startLine = line, startCol = col;
+      const op = c === '+' ? '++' : '--';
+      advance(); advance();
+      tokens.push({ type: 'punct', value: op, line: startLine, col: startCol });
+      continue;
+    }
 
     // 单字符运算符 / 分隔符
     if ('+-*/%^!?:=<>()[]{},;.'.includes(c)) {
@@ -783,7 +790,7 @@ class Parser {
       return expr;
     }
     this.expect(';');
-    if (expr.type !== 'call' && expr.type !== 'method') {
+    if (expr.type !== 'call' && expr.type !== 'method' && expr.type !== 'preinc' && expr.type !== 'postinc') {
       this.errorAt(start, 'expression statement must be a function call');
     }
     return { type: 'expr', expr, line: start.line, col: start.col };
@@ -892,6 +899,12 @@ class Parser {
       const operand = this.parseUnary();
       return { type: 'unary', op: opTok.value, operand, line: opTok.line, col: opTok.col };
     }
+    if (this.check('++') || this.check('--')) {
+      const opTok = this.next();
+      const target = this.parseUnary();
+      toLValue(target, opTok); // 校验为可赋值目标
+      return { type: 'preinc', op: opTok.value, target, line: opTok.line, col: opTok.col };
+    }
     return this.parsePostfix();
   }
 
@@ -915,6 +928,10 @@ class Parser {
         } else {
           expr = { type: 'member', object: expr, field: nameTok.value, line: nameTok.line, col: nameTok.col };
         }
+      } else if (this.check('++') || this.check('--')) {
+        const opTok = this.next();
+        toLValue(expr, opTok); // 校验为可赋值目标
+        expr = { type: 'postinc', op: opTok.value, target: expr, line: opTok.line, col: opTok.col };
       } else {
         break;
       }
@@ -1397,6 +1414,18 @@ class Runtime {
       case 'member': return this.evalMember(node);
       case 'call': return this.evalCall(node);
       case 'method': return this.evalMethod(node);
+      case 'preinc': {
+        const old = this.evalLValue(node.target);
+        const nv = incDecValue(old, node.op, node);
+        this.assignTarget(node.target, nv, node);
+        return nv;
+      }
+      case 'postinc': {
+        const old = this.evalLValue(node.target);
+        const nv = incDecValue(old, node.op, node);
+        this.assignTarget(node.target, nv, node);
+        return old;
+      }
       default:
         throw runtimeError(`unknown expression type '${node.type}'`, node);
     }
@@ -1485,6 +1514,15 @@ class Runtime {
     const obj = this.evalExpr(node.object);
     if (isParticle(obj)) return particleGetField(obj, field, node);
     throw runtimeError(`only this / particle have fields '.${field}'`, node);
+  }
+
+  // 读取可赋值目标（供 ++/-- 使用）。
+  evalLValue(target) {
+    if (target.type === 'var') return this.lookupName(target.name, target);
+    if (target.type === 'member') return this.evalMember(target);
+    if (target.type === 'index') return this.evalIndex(target);
+    if (target.type === 'comp') return this.evalComp(target);
+    throw runtimeError(`invalid increment target '${target.type}'`, target);
   }
 
   evalCall(node) {
@@ -1779,6 +1817,11 @@ function truthy(v, node) {
   if (isBool(v)) return v;
   if (isNum(v)) return v !== 0;
   throw runtimeError(`condition requires a num/bool, got ${typeName(v)}`, node);
+}
+
+function incDecValue(v, op, node) {
+  const n = expectNum(v, op === '++' ? "'++' operand" : "'--' operand", node);
+  return op === '++' ? n + 1 : n - 1;
 }
 
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
@@ -2126,14 +2169,15 @@ function checkArity(name, args, min, max, node) {
 }
 
 const BUILTIN_TABLE = new Map([
-  // —— 调试（仅 setup）——
+  // —— 调试（print 输出到终端；assert 全阶段可用）——
   builtin('print', 0, null, (args, rt, node) => {
-    if (rt.phase !== 'setup') throw runtimeError("'print' is only allowed in setup", node);
-    console.log(args.map(formatValue).join(' '));
+    const line = args.map(formatValue).join(' ');
+    const out = (rt.phase === 'setup' ? rt.env : rt.ctx);
+    if (out && typeof out.print === 'function') out.print(line);
+    else console.log(line);
     return 0;
   }),
   builtin('assert', 2, 2, (args, rt, node) => {
-    if (rt.phase !== 'setup') throw runtimeError("'assert' is only allowed in setup", node);
     if (!truthy(args[0], node)) throw new Error(String(args[1]));
     return 0;
   }),

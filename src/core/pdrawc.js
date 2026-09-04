@@ -276,10 +276,7 @@ function encodeBody(state, texPngOf) {
   for (const fx of functions) {
     const center = fx.center || [0, 0, 0];
     w.f32(center[0]); w.f32(center[1]); w.f32(center[2]);
-    w.str(fx.setup || '');
-    w.str(fx.process || '');
-    w.str(fx.tick || '');
-    w.str(fx.processParam || 'delta');
+    w.str(fx.source || '');
     w.varint(Number.isInteger(fx.seed) ? fx.seed : 0);
     w.varint(fx.duration || 0);
     w.varint(fx.st || 0);
@@ -506,10 +503,7 @@ export async function decodePdrawc(bytes) {
   const functions = [];
   for (let i = 0; i < fxCount; i++) {
     const center = [br.f32(), br.f32(), br.f32()];
-    const setup = br.str();
-    const process = br.str();
-    const tick = br.str();
-    const processParam = br.str() || 'delta';
+    const source = br.str();
     const seed = br.varint();
     const duration = br.varint();
     const st = br.varint();
@@ -519,7 +513,7 @@ export async function decodePdrawc(bytes) {
     const fastMath = !!(flags & 4);
     const spinLocal = !!(flags & 16);
     const rotLocal = !!(flags & 32);
-    const funcs = (flags & 8) !== 0 ? br.str() : '';
+    const funcs = ''; // v12 起 funcs 已并入 source
     const varCount = br.varint();
     const vars = [];
     for (let j = 0; j < varCount; j++) {
@@ -528,7 +522,7 @@ export async function decodePdrawc(bytes) {
       const kf = readKf(br);
       vars.push({ name, base, kf });
     }
-    functions.push({ center, setup, process, tick, processParam, funcs, seed, duration, st, ent, uv, vars, fastMath, spinLocal, rotLocal });
+    functions.push({ center, source, funcs, seed, duration, st, ent, uv, vars, fastMath, spinLocal, rotLocal });
   }
 
   const camCount = br.varint();

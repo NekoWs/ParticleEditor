@@ -22,8 +22,8 @@ import { highlightSelectionMatches } from '@codemirror/search';
 import { parseProgram, ARRAY_METHOD_NAMES } from '../core/script-lang.js';
 
 /**
- * .pdraw 脚本语言（setup/process/funcs）的 CodeMirror 编辑器封装：
- * 语法高亮 + 自动补全 + 解析错误诊断。语言定义以 docs/script-lang-spec.md 为准。
+ * .pdraw 脚本语言（v12：func setup/tick/process + 自定义函数）的 CodeMirror 编辑器封装：
+ * 语法高亮 + 自动补全 + 解析错误诊断。fx.source 为唯一源码字段。
  */
 
 export const SCRIPT_KEYWORDS = [
@@ -55,8 +55,6 @@ const BUILTIN_SET = new Set(SCRIPT_BUILTINS);
 
 export const scriptLanguage = StreamLanguage.define({
   name: 'pdraw-script',
-  // StreamLanguage 默认把 token 名 'function' 当作「起始修饰符」而拒绝解析（返回无样式）。
-  // 显式映射到具体标签，使 arr.push / sin(...) 等方法与内置函数能真正高亮。
   tokenTable: {
     function: tags.function(tags.variableName),
   },
@@ -90,7 +88,7 @@ export const scriptLanguage = StreamLanguage.define({
       return 'number';
     }
 
-    if (stream.match(/^(==|!=|<=|>=|&&|\|\|)/)) {
+    if (stream.match(/^(==|!=|<=|>=|&&|\|\||\+\+|--)/)) {
       state.afterDot = false;
       state.afterThisDot = false;
       return 'operator';
@@ -102,7 +100,6 @@ export const scriptLanguage = StreamLanguage.define({
       return 'operator';
     }
 
-    // 点运算符：标记下一标识符是字段（this.*）还是方法调用（*.push(...)）。
     if (stream.match(/^\./)) {
       state.afterDot = true;
       state.afterThisDot = state.lastWord === 'this';
@@ -118,7 +115,6 @@ export const scriptLanguage = StreamLanguage.define({
         state.afterThisDot = false;
         state.lastWord = word;
         if (isThisField) return 'propertyName';
-        // 与 parser 语义一致：点后名称若（可跨空白）紧跟 '(' 是方法调用，否则是普通成员字段。
         return stream.match(/^\s*\(/, false) ? 'function' : 'propertyName';
       }
 
@@ -135,7 +131,6 @@ export const scriptLanguage = StreamLanguage.define({
   },
 });
 
-// Islands Dark 配色（参考 vscode-dark-islands 主题）
 const PALETTE = {
   bg: '#181a1d',
   gutter: '#181a1d',
@@ -166,7 +161,6 @@ export const scriptHighlightStyle = HighlightStyle.define([
   { tag: tags.string, color: PALETTE.string },
   { tag: tags.number, color: PALETTE.number },
   { tag: tags.operator, color: PALETTE.operator },
-  // tags.function 本身是修饰符（无 .id），必须用具体标签 function(variableName) 才能命中。
   { tag: tags.function(tags.variableName), color: PALETTE.function },
   { tag: tags.variableName, color: PALETTE.variable },
   { tag: tags.propertyName, color: PALETTE.property },
@@ -214,15 +208,6 @@ const scriptTheme = EditorView.theme({
   '.cm-completionDetail': { color: PALETTE.comment, fontStyle: 'normal' },
 });
 
-/** 把单个代码段包装成可被 parseProgram 解析的完整脚本源。 */
-export function buildSectionSource(field, code, processParam) {
-  const text = code == null ? '' : String(code);
-  if (field === 'setup') return `func setup() {\n${text}\n}\n`;
-  if (field === 'tick') return `func tick() {\n${text}\n}\n`;
-  if (field === 'process') return `func process(${processParam || 'delta'}) {\n${text}\n}\n`;
-  return text; // funcs：顶层函数定义，无需包装
-}
-
 /** 从解析错误消息中提取 (line, col)，均为 1 起。 */
 export function parseErrorLocation(message) {
   const m = /\(line (\d+), col (\d+)\)$/.exec(message || '');
@@ -230,19 +215,19 @@ export function parseErrorLocation(message) {
   return { line: parseInt(m[1], 10), col: parseInt(m[2], 10) };
 }
 
-/** 代码段字段的包装前缀行数（错误行号映射回编辑器时减去）。 */
-function wrapperLines(field) {
-  return field === 'funcs' ? 0 : 1;
-}
-
 /* -------------------------------------------------------------------------
- * 轻量类型推断：为「变量.」补全提供数组方法 / 向量分量，num/bool 等不弹。
- * 仅做静态收集（global/static/赋值与内建返回类型），不追求完整类型系统。
+ * 轻量类型推断
  * ---------------------------------------------------------------------- */
 
 const THIS_FIELD_TYPES = {
   time: 'num', duration: 'num', particles: 'particleList', spawn: 'func',
 };
+
+const PARTICLE_FIELD_TYPES = {
+  position: 'vec3', color: 'vec4', velocity: 'vec3', scale: 'num',
+  glow: 'bool', light: 'num', life: 'num', index: 'num',
+};
+const PARTICLE_METHODS = ['kill'];
 
 const VEC_COMPONENTS = {
   vec2: ['x', 'y', 'r', 'g'],
@@ -344,48 +329,69 @@ function inferExprType(node, env) {
     case 'call': return inferCallType(node, env);
     case 'method': return ARRAY_METHOD_RETURN_TYPES[node.method] || 'unknown';
     case 'comp': return 'num';
-    case 'member':
+    case 'member': {
       if (node.object && node.object.type === 'var' && node.object.name === 'this') {
         return THIS_FIELD_TYPES[node.field] || 'unknown';
       }
+      const objT = inferExprType(node.object, env);
+      if (objT === 'particle') return PARTICLE_FIELD_TYPES[node.field] || 'unknown';
       return 'unknown';
+    }
+    case 'preinc': case 'postinc': return 'num';
     default: return 'unknown';
   }
 }
 
-/** 截掉当前字段中光标所在的那条未完成语句，使剩余代码可被 parseProgram 解析。 */
+/** 截掉光标所在的那条未完成语句，并补齐未闭合的 `}`，使剩余代码可被 parseProgram 解析。 */
 function truncateIncomplete(code, pos) {
   const text = code == null ? '' : String(code);
   const upto = text.slice(0, Math.max(0, Math.min(pos, text.length)));
+  let cut = '';
   for (let i = upto.length - 1; i >= 0; i--) {
     const ch = upto[i];
-    if (ch === ';' || ch === '{' || ch === '}') return text.slice(0, i + 1);
+    if (ch === ';' || ch === '{' || ch === '}') { cut = text.slice(0, i + 1); break; }
   }
-  return '';
+  if (!cut) return '';
+  let depth = 0;
+  for (const ch of cut) {
+    if (ch === '{') depth++;
+    else if (ch === '}') depth--;
+  }
+  return cut + '}'.repeat(Math.max(0, depth));
 }
 
-function combineScriptSource(setupSrc, processSrc, tickSrc, processParam) {
-  let src = '';
-  const s = (setupSrc || '').trim();
-  const tk = (tickSrc || '').trim();
-  const p = (processSrc || '').trim();
-  if (s) src += `func setup() {\n${setupSrc}\n}\n`;
-  if (tk) src += `func tick() {\n${tickSrc}\n}\n`;
-  if (p) src += `func process(${processParam || 'delta'}) {\n${processSrc}\n}\n`;
-  return src;
+// 遍历语句收集变量类型（含 for-of 循环变量）。
+function collectTypes(stmts, env) {
+  for (const st of stmts) {
+    if (!st) continue;
+    if (st.type === 'global') {
+      env.set(st.name, st.init ? inferExprType(st.init, env) : 'unknown');
+    } else if (st.type === 'assign' && st.target && st.target.type === 'var') {
+      env.set(st.target.name, inferExprType(st.value, env));
+    } else if (st.type === 'forof') {
+      const iterT = inferExprType(st.iter, env);
+      env.set(st.name, iterT === 'particleList' ? 'particle' : 'unknown');
+      if (Array.isArray(st.body)) collectTypes(st.body, env);
+      else if (st.body && Array.isArray(st.body.body)) collectTypes(st.body.body, env);
+    } else if (st.type === 'block' && Array.isArray(st.body)) {
+      collectTypes(st.body, env);
+    } else if (st.type === 'if') {
+      if (st.then) collectTypes(Array.isArray(st.then) ? st.then : [st.then], env);
+      if (st.els) collectTypes(Array.isArray(st.els) ? st.els : [st.els], env);
+    } else if (st.type === 'while' || st.type === 'do' || st.type === 'for') {
+      if (st.body) collectTypes(Array.isArray(st.body) ? st.body : [st.body], env);
+    }
+  }
 }
 
-/** 构建 setup / tick / process / funcs 各自的变量→类型表（尽力而为，解析失败返回空表）。 */
-function buildScriptEnvs(fx, field, pos) {
-  const empty = { setup: new Map(), tick: new Map(), process: new Map(), funcs: new Map() };
-
-  const setupCode = field === 'setup' ? truncateIncomplete(fx?.setup, pos) : fx?.setup;
-  const tickCode = field === 'tick' ? truncateIncomplete(fx?.tick, pos) : fx?.tick;
-  const processCode = field === 'process' ? truncateIncomplete(fx?.process, pos) : fx?.process;
-
+/** 解析当前完整源码（必要时截断未完成语句），返回各函数环境。 */
+function buildScriptEnvs(fx, pos) {
+  const empty = { setup: new Map(), tick: new Map(), process: new Map(), funcs: new Map(), current: new Map() };
+  const src = (fx && fx.source) || '';
+  const code = pos != null ? truncateIncomplete(src, pos) : src;
   let program;
   try {
-    program = parseProgram(combineScriptSource(setupCode, processCode, tickCode, fx?.processParam));
+    program = parseProgram(code);
   } catch {
     return empty;
   }
@@ -394,62 +400,57 @@ function buildScriptEnvs(fx, field, pos) {
   const setupEnv = new Map();
   const tickEnv = new Map();
   const processEnv = new Map();
-
+  const funcsEnv = new Map();
   const seed = (env) => {
     env.set('pi', 'num');
     env.set('e', 'num');
     for (const name of Object.keys(fx?.vars || {})) env.set(name, 'num');
   };
-  seed(setupEnv);
-  seed(tickEnv);
-  seed(processEnv);
+  seed(setupEnv); seed(tickEnv); seed(processEnv); seed(funcsEnv);
 
-  for (const stmt of (program.setup && program.setup.body && program.setup.body.body) || []) {
-    if (stmt.type === 'global') {
-      const t = stmt.init ? inferExprType(stmt.init, setupEnv) : 'unknown';
-      setupEnv.set(stmt.name, t);
-      globals.set(stmt.name, t);
-    } else if (stmt.type === 'assign' && stmt.target && stmt.target.type === 'var') {
-      const t = inferExprType(stmt.value, setupEnv);
-      setupEnv.set(stmt.target.name, t);
-      if (globals.has(stmt.target.name)) globals.set(stmt.target.name, t);
-    }
+  if (program.setup) {
+    collectTypes(program.setup.body.body, setupEnv);
+    for (const [name, t] of setupEnv) if (name !== 'pi' && name !== 'e' && !(name in (fx?.vars || {}))) globals.set(name, t);
+  }
+  for (const [name, t] of globals) { tickEnv.set(name, t); processEnv.set(name, t); funcsEnv.set(name, t); }
+  if (program.tick) collectTypes(program.tick.body.body, tickEnv);
+  if (program.process) collectTypes(program.process.body.body, processEnv);
+  // 自定义函数参数
+  for (const [name, fn] of program.functions) {
+    const env = new Map(globals);
+    seed(env);
+    for (const p of fn.params) env.set(p, 'unknown');
+    collectTypes(fn.body.body, env);
+    funcsEnv.set(name, 'func');
   }
 
-  for (const [name, t] of globals) { tickEnv.set(name, t); processEnv.set(name, t); }
-  for (const stmt of (program.tick && program.tick.body && program.tick.body.body) || []) {
-    if (stmt.type === 'assign' && stmt.target && stmt.target.type === 'var') {
-      tickEnv.set(stmt.target.name, inferExprType(stmt.value, tickEnv));
-    }
-  }
-  for (const stmt of (program.process && program.process.body && program.process.body.body) || []) {
-    if (stmt.type === 'assign' && stmt.target && stmt.target.type === 'var') {
-      processEnv.set(stmt.target.name, inferExprType(stmt.value, processEnv));
-    }
-  }
-
-  const funcsEnv = new Map(globals);
-  seed(funcsEnv);
-
-  return { setup: setupEnv, tick: tickEnv, process: processEnv, funcs: funcsEnv };
+  return { setup: setupEnv, tick: tickEnv, process: processEnv, funcs: funcsEnv, current: processEnv };
 }
 
-function resolveDotReceiverType(name, before, matchIndex, field, fx, pos) {
-  // this.<field>. 链：直接按 this 字段类型解析。
+/** 找到光标所在的顶层函数名（setup/tick/process/自定义函数）。 */
+function enclosingFuncName(src, pos) {
+  const upto = String(src || '').slice(0, Math.max(0, Math.min(pos, String(src || '').length)));
+  const re = /func\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/g;
+  let m, last = null;
+  while ((m = re.exec(upto))) last = m[1];
+  return last;
+}
+
+function resolveDotReceiverType(name, before, matchIndex, fx, pos) {
   const prefix = before.slice(0, matchIndex);
   if (/this\s*\.\s*$/.test(prefix)) return THIS_FIELD_TYPES[name] || 'unknown';
 
-  const envs = buildScriptEnvs(fx, field, pos);
-  const env = field === 'setup' ? envs.setup : field === 'tick' ? envs.tick : field === 'funcs' ? envs.funcs : envs.process;
+  const envs = buildScriptEnvs(fx, pos);
+  const fnName = enclosingFuncName(fx && fx.source, pos);
+  const env = fnName === 'setup' ? envs.setup : fnName === 'tick' ? envs.tick : fnName === 'process' ? envs.process : envs.funcs;
   return env.get(name) || 'unknown';
 }
 
-/** 自动补全：关键字 + 内置函数 + this 字段 + 函数变量 + 代码中已出现的标识符。 */
-export function scriptCompletionSource(fx, field) {
+/** 自动补全：关键字 + 内置函数 + this 字段 + 粒子/向量/数组成员 + 代码中已出现的标识符。 */
+export function scriptCompletionSource(fx) {
   return (context) => {
     const before = context.state.sliceDoc(0, context.pos);
 
-    // 换行或语句刚结束时（分号/括号后）不弹补全。
     const lastChar = before.slice(-1);
     if (lastChar === ';' || lastChar === '\n' || lastChar === '{' || lastChar === '}' || lastChar === ')' || lastChar === ' ') return null;
 
@@ -465,25 +466,19 @@ export function scriptCompletionSource(fx, field) {
       };
     }
 
-    // 类型化点补全：arr. → 数组方法；p. → 向量分量；num./bool./未知类型 → 不弹。
     const dot = /([A-Za-z_][A-Za-z0-9_]*)\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)?$/.exec(before);
     if (dot) {
       const partial = dot[2] || '';
-      const receiverType = resolveDotReceiverType(dot[1], before, dot.index, field, fx, context.pos);
-      if (receiverType === 'array') {
-        return {
-          from: context.pos - partial.length,
-          options: ARRAY_METHOD_NAMES.map((name) => ({ label: name, type: 'method' })),
-          validFor: /^\w*$/,
-        };
-      }
-      if (VEC_COMPONENTS[receiverType]) {
-        return {
-          from: context.pos - partial.length,
-          options: VEC_COMPONENTS[receiverType].map((name) => ({ label: name, type: 'property' })),
-          validFor: /^\w*$/,
-        };
-      }
+      const receiverType = resolveDotReceiverType(dot[1], before, dot.index, fx, context.pos);
+      const make = (labels, type) => ({
+        from: context.pos - partial.length,
+        options: labels.map((label) => ({ label, type })),
+        validFor: /^\w*$/,
+      });
+      if (receiverType === 'array') return make(ARRAY_METHOD_NAMES, 'method');
+      if (receiverType === 'particleList') return make(['size'], 'method');
+      if (receiverType === 'particle') return make([...Object.keys(PARTICLE_FIELD_TYPES), ...PARTICLE_METHODS], 'property');
+      if (VEC_COMPONENTS[receiverType]) return make(VEC_COMPONENTS[receiverType], 'property');
       return null;
     }
 
@@ -497,7 +492,6 @@ export function scriptCompletionSource(fx, field) {
     const doc = context.state.doc.toString();
     for (const m of doc.matchAll(/[A-Za-z_][A-Za-z0-9_]*/g)) {
       const name = m[0];
-      // this 及其字段只在 this. 之后提示，不作为普通标识符补全。
       if (!seen.has(name) && !BUILTIN_SET.has(name) && !KEYWORD_SET.has(name) && !THIS_FIELD_SET.has(name)) {
         seen.add(name);
         options.push({ label: name, type: 'variable' });
@@ -508,12 +502,12 @@ export function scriptCompletionSource(fx, field) {
   };
 }
 
-/** 诊断：解析当前代码段，把 parseProgram 错误映射为 CodeMirror 标记。 */
-export function scriptLintSource(fx, field) {
+/** 诊断：解析完整源码，把 parseProgram 错误映射为 CodeMirror 标记。 */
+export function scriptLintSource(fx) {
   return linter((view) => {
     const code = view.state.doc.toString();
     try {
-      parseProgram(buildSectionSource(field, code));
+      parseProgram(code);
       return [];
     } catch (e) {
       const loc = parseErrorLocation(e.message);
@@ -521,8 +515,8 @@ export function scriptLintSource(fx, field) {
       if (!loc) {
         return [{ from: 0, to: doc.length, severity: 'error', message: e.message }];
       }
-      const editorLine = Math.max(1, Math.min(doc.lines, loc.line - wrapperLines(field)));
-      const line = doc.line(editorLine);
+      const lineNo = Math.max(1, Math.min(doc.lines, loc.line));
+      const line = doc.line(lineNo);
       const from = Math.min(line.from + Math.max(0, loc.col - 1), line.to);
       const message = (e.message || '').replace(/\s*\(line \d+, col \d+\)$/, '');
       return [{ from, to: from, severity: 'error', message }];
@@ -533,13 +527,13 @@ export function scriptLintSource(fx, field) {
 /**
  * 创建脚本代码编辑器并挂到父元素。
  * @param parent 父 DOM 节点
- * @param opts { fx, field, rows, onChange }；onChange 在每次文档更新时调用（传入新文本）
+ * @param opts { fx, rows, onChange }；onChange 在每次文档更新时调用（传入新文本）
  * @returns {EditorView}
  */
 export function createScriptEditor(parent, opts) {
-  const { fx, field, rows = 4, onChange } = opts;
+  const { fx, rows = 10, onChange } = opts;
   const state = EditorState.create({
-    doc: fx[field] || '',
+    doc: (fx && fx.source) || '',
     extensions: [
       scriptLanguage,
       syntaxHighlighting(scriptHighlightStyle),
@@ -554,17 +548,20 @@ export function createScriptEditor(parent, opts) {
         if (update.docChanged && onChange) onChange(update.state.doc.toString());
       }),
       autocompletion({
-        override: [scriptCompletionSource(fx, field)],
+        override: [scriptCompletionSource(fx)],
         activateOnTypingDelay: 50,
       }),
       keymap.of([
         { key: 'Tab', run: acceptCompletion },
         indentWithTab,
         { key: 'Enter', run: insertNewlineAndIndent },
+        // 显式放行删除键：报错/lint/补全弹层存在时也保证可删除。
+        { key: 'Backspace', run: () => false },
+        { key: 'Delete', run: () => false },
         ...closeBracketsKeymap,
         ...completionKeymap,
       ]),
-      scriptLintSource(fx, field),
+      scriptLintSource(fx),
       EditorView.theme({
         '&': { minHeight: `${rows * 1.4 + 0.7}em` },
       }),
@@ -573,7 +570,6 @@ export function createScriptEditor(parent, opts) {
 
   const view = new EditorView({ state, parent });
 
-  // 触屏：聚焦代码编辑器时把编辑框滚到可视区，避免虚拟键盘遮挡正在输入的代码。
   try {
     if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
       view.contentDOM.addEventListener('focus', () => {
@@ -585,8 +581,6 @@ export function createScriptEditor(parent, opts) {
     }
   } catch (e) { /* 测试桩 / 旧浏览器忽略 */ }
 
-  // 点击容器空白区域也进入编辑；只有点击正文区才交给 CodeMirror 原生选择逻辑。
-  // preventDefault 阻止浏览器默认焦点跳转，否则 view.focus() 会被随后的默认行为顶掉。
   parent.addEventListener('mousedown', (event) => {
     const target = event.target;
     if (target instanceof Element && target.closest('.cm-content')) return;

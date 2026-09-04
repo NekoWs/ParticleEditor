@@ -175,15 +175,11 @@ export function parseVars(vars) {
 export function serializeFunction(fx) {
   const o = {
     id: fx.id, name: fx.name, center: fx.center.slice(),
-    setup: fx.setup || '',
-    tick: fx.tick || '',
-    process: fx.process || '',
-    pp: fx.processParam || 'delta',
+    source: fx.source || '',
     seed: Number.isInteger(fx.seed) ? fx.seed : 0,
     vars: serializeVars(fx.vars),
     duration: fx.duration,
   };
-  if (fx.funcs) o.funcs = fx.funcs;
   if (fx.st) o.st = fx.st;
   if (fx.ent) o.ent = { p: fx.ent.p, d: fx.ent.d != null ? fx.ent.d : 5 };
   if (fx.preset) o.preset = fx.preset;
@@ -198,11 +194,7 @@ export function serializeFunction(fx) {
 export function parseFunction(o) {
   return {
     id: o.id, name: o.name || '函数对象', center: (o.center || [0, 0, 0]).slice(0, 3),
-    setup: o.setup != null ? String(o.setup) : '',
-    tick: o.tick != null ? String(o.tick) : '',
-    process: o.process != null ? String(o.process) : '',
-    processParam: (o.pp != null && String(o.pp).trim()) ? String(o.pp).trim() : 'delta',
-    funcs: o.funcs != null ? String(o.funcs) : '',
+    source: o.source != null ? String(o.source) : '',
     seed: Number.isInteger(o.seed) ? o.seed : 0,
     vars: parseVars(o.vars),
     duration: o.duration || 0,

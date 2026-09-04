@@ -123,21 +123,14 @@ count × {
 count                       varint
 count × {
   center                    3 × float32：[x,y,z]
-  setupLen                  varint
-  setup                     setupLen 字节 UTF-8（func setup() 代码体，原样保留）
-  processLen                varint
-  process                   processLen 字节 UTF-8（func process(param) 代码体，原样保留）
-  tickLen                   varint
-  tick                      tickLen 字节 UTF-8（func tick() 代码体，原样保留）
-  processParamLen           varint
-  processParam              processParamLen 字节 UTF-8（process 参数名，默认 "delta"）
+  sourceLen                 varint
+  source                    sourceLen 字节 UTF-8（完整脚本源码：func setup/tick/process + 自定义函数）
   seed                      varint：随机种子（有符号截断后按 int 解释）
   duration                  varint：tick
   st                        varint：入场 tick
   flags                     1 byte：bit0=hasEnt, bit1=hasUV, bit2=fastMath, bit3=hasFuncs, bit4=spinLocal, bit5=rotLocal
   [ent]                     仅 flags.hasEnt 时存在：见 §3.2
   [uv]                      仅 flags.hasUV 时存在：见 §3.1
-  [funcs]                   仅 flags.hasFuncs 时存在：funcsLen varint + funcs 字节 UTF-8（顶层函数定义）
   varCount                  varint
   varCount × {
     nameLen                 varint
@@ -149,7 +142,7 @@ count × {
 }
 ```
 
-函数对象 id 不存储；解码时按顺序合成为 `fx0, fx1, …`。派生粒子由脚本在运行期 spawn（v11 spawn 模型），不再编码 `count`。
+函数对象 id 不存储；解码时按顺序合成为 `fx0, fx1, …`。派生粒子由脚本在运行期 spawn（v11 spawn 模型）。
 
 > 函数对象脚本语法见 `docs/script-lang-spec.md`；变量使用**数值基值 + 关键帧**模型。
 

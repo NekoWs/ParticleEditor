@@ -1,7 +1,7 @@
 /* =========================================================================
- * 函数对象：spawn 运行时（v12）
+ * 函数对象：spawn 运行时（v12，fx.source 单一源码）
  * 职责：
- *   1) 脚本编译缓存（setup / tick / process / funcs → AST）
+ *   1) 脚本编译缓存（fx.source → AST）
  *   2) 运行时粒子列表管理（spawn / kill / 寿命递减）
  *   3) 帧调度：补跑 tick() → 跑一次 process(deltaMs)
  *   4) 预设应用与函数对象增删改
@@ -20,6 +20,7 @@ import { parseProgram, createObjectState, runSetup, runTick, runProcessFrame } f
 const TICKS_PER_SEC = 20;
 const DT_PER_TICK = 1 / TICKS_PER_SEC;
 
+// 把各代码段组装成完整源码（拼图关闭时写回 fx.source 使用）。
 export function buildScriptSource(setup, process, tick, funcs, processParam) {
   const parts = [];
   const st = (setup || '').trim();
@@ -38,23 +39,10 @@ export function buildScriptSource(setup, process, tick, funcs, processParam) {
  * ---------------------------------------------------------------------- */
 
 export function getProgram(fx) {
-  const setup = (fx.setup || '').trim();
-  const tick = (fx.tick || '').trim();
-  const process = (fx.process || '').trim();
-  const funcs = (fx.funcs || '').trim();
-  const processParam = (fx.processParam || 'delta');
-  if (fx._program === undefined ||
-      fx._programSrcSetup !== setup ||
-      fx._programSrcTick !== tick ||
-      fx._programSrcProcess !== process ||
-      fx._programSrcFuncs !== funcs ||
-      fx._programSrcProcessParam !== processParam) {
-    fx._program = parseProgram(buildScriptSource(setup, process, tick, funcs, processParam));
-    fx._programSrcSetup = setup;
-    fx._programSrcTick = tick;
-    fx._programSrcProcess = process;
-    fx._programSrcFuncs = funcs;
-    fx._programSrcProcessParam = processParam;
+  const src = (fx.source || '').trim();
+  if (fx._program === undefined || fx._programSrc !== src) {
+    fx._program = parseProgram(src);
+    fx._programSrc = src;
   }
   return fx._program;
 }
@@ -82,11 +70,28 @@ export function buildEnv(vars, ctx) {
 }
 
 /* -------------------------------------------------------------------------
+ * 终端输出
+ * ---------------------------------------------------------------------- */
+
+export function fxTerminalClear(fx) {
+  if (fx) fx._terminal = [];
+}
+
+export function fxTerminalPush(fx, line) {
+  if (!fx) return;
+  if (!Array.isArray(fx._terminal)) fx._terminal = [];
+  fx._terminal.push(String(line));
+}
+
+/* -------------------------------------------------------------------------
  * 粒子存储与运行时
  * ---------------------------------------------------------------------- */
 
 function markFxError(fx, e) {
-  if (fx) fx._error = (e && e.message) ? e.message : String(e);
+  if (fx) {
+    fx._error = (e && e.message) ? e.message : String(e);
+    fxTerminalPush(fx, '[error] ' + fx._error);
+  }
 }
 
 function newParticleWrapper(fx, runtime) {
@@ -208,6 +213,7 @@ function ensureRuntime(fx) {
     vars: varsAt(fx, st),
     particles: runtime.particles,
     spawn,
+    print: line => fxTerminalPush(fx, line),
   });
   for (const w of runtime.particles) {
     if (w._p) syncParticleState(w._p);
@@ -224,6 +230,7 @@ function makeCtx(fx, runtime, T, deltaMs) {
     spawn: () => spawnFor(fx, runtime),
     deltaMs: deltaMs || 0,
     fastMath: !!fx.fastMath,
+    print: line => fxTerminalPush(fx, line),
   };
 }
 
@@ -301,7 +308,9 @@ export function evaluateFxFrame(fx, T, deltaMs) {
 
 export function rebuildFunctionObject(fx) {
   fx._program = undefined;
+  fx._programSrc = undefined;
   fx._error = null;
+  fxTerminalClear(fx);
   dropAllParticles(fx);
   fx._runtime = null;
   try {
@@ -315,14 +324,10 @@ export function rebuildFunctionObject(fx) {
   setDirty(true);
 }
 
-/* 校验脚本但不改动任何粒子/轨道状态；成功返回 null，失败返回 Error。 */
-export function validateFunctionScript(fx, setupOverride, processOverride, funcsOverride, tickOverride, processParamOverride) {
-  const setup = (setupOverride != null ? setupOverride : (fx.setup || '')).trim();
-  const process = (processOverride != null ? processOverride : (fx.process || '')).trim();
-  const funcs = (funcsOverride != null ? funcsOverride : (fx.funcs || '')).trim();
-  const tick = (tickOverride != null ? tickOverride : (fx.tick || '')).trim();
-  const processParam = (processParamOverride != null ? processParamOverride : (fx.processParam || 'delta'));
-  const program = parseProgram(buildScriptSource(setup, process, tick, funcs, processParam));
+/* 校验源码但不改动任何粒子/轨道状态；成功返回 null，失败返回 Error。 */
+export function validateFunctionScript(fx, sourceOverride) {
+  const src = (sourceOverride != null ? sourceOverride : (fx.source || '')).trim();
+  const program = parseProgram(src);
   const objState = createObjectState(fx.seed | 0);
   const st = fx.st || 0;
   const particles = [];
@@ -337,7 +342,7 @@ export function validateFunctionScript(fx, setupOverride, processOverride, funcs
     particles.push(w);
     return w;
   };
-  const env = { t: st, duration: maxTick(), vars: varsAt(fx, st), particles, spawn };
+  const env = { t: st, duration: maxTick(), vars: varsAt(fx, st), particles, spawn, print: () => {} };
   runSetup(program, objState, env);
   if (program.tick) runTick(program, objState, env);
   if (program.process) runProcessFrame(program, objState, { ...env, deltaMs: 0 });
@@ -348,17 +353,12 @@ export function validateFunctionScript(fx, setupOverride, processOverride, funcs
  * 预设
  * ---------------------------------------------------------------------- */
 
-// 预设：按参数生成 setup/tick/process + 变量。
 export function applyPresetBuild(fx) {
   const preset = FUNCTION_PRESETS[fx.preset];
   if (!preset) return;
   const built = preset.build(fx.params || {});
   fx.vars = { ...built.vars };
-  fx.setup = built.setup || '';
-  fx.tick = built.tick || '';
-  fx.process = built.process || '';
-  fx.processParam = built.processParam || 'delta';
-  fx.funcs = '';
+  fx.source = built.source || '';
 }
 
 export function applyPreset(fx, presetId) {
@@ -375,11 +375,7 @@ export function createFunctionObject(presetId) {
   const fx = {
     id: nextFunctionId(), name: presetId ? t('fx.preset.' + presetId) : t('fx.defaultName'),
     center: [0, 0, 0],
-    setup: '',
-    tick: '',
-    process: '',
-    funcs: '',
-    processParam: 'delta',
+    source: '',
     seed: 0,
     vars: {},
     duration: 100,

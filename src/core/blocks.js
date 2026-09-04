@@ -513,8 +513,8 @@ function emitStmt(s, level, spans, lineStart) {
     }
     case 'repeat_n': {
       const body = emitList(s.body || [], level + 1, spans, start + 1);
-      // 循环变量 _rep 与代码解析端约定一致，保证往返稳定。
-      return pad + 'for (_rep = 0; _rep < ' + exprToCode(s.count, 0) + '; _rep = _rep + 1) {\n' + body + '\n' + pad + '}';
+      // 循环变量 rep 与代码解析端约定一致，保证往返稳定。
+      return pad + 'for (rep = 0; rep < ' + exprToCode(s.count, 0) + '; rep = rep + 1) {\n' + body + '\n' + pad + '}';
     }
     case 'repeat_until': {
       const body = emitList(s.body || [], level + 1, spans, start + 1);
@@ -912,9 +912,9 @@ export function stmtToNode(stmt) {
     if (bClose < 0) throw new Error(_et('err.stmtNeedBrace'));
     const body = codeToStatements(rest.slice(bOpen + 1, bClose));
     const init = parts[0] || '', cond = parts[1] || '', inc = parts[2] || '';
-    // 识别「重复执行 N 次」生成的 for (_rep = 0; _rep < N; _rep = _rep + 1) 模式。
-    const repN = /^_rep\s*<\s*([\s\S]+)$/.exec(cond.trim());
-    if (init.trim() === '_rep = 0' && inc.trim() === '_rep = _rep + 1' && repN) {
+    // 识别「重复执行 N 次」生成的 for (rep = 0; rep < N; rep = rep + 1) 模式。
+    const repN = /^rep\s*<\s*([\s\S]+)$/.exec(cond.trim());
+    if (init.trim() === 'rep = 0' && inc.trim() === 'rep = rep + 1' && repN) {
       return { kind: 'repeat_n', count: parseExpr(repN[1].trim()), body };
     }
     return { kind: 'for', init, cond, inc, body };
