@@ -77,8 +77,8 @@ const PAL_LEFT = 10, PAL_TOP = 8, PAL_GAP = 8;
 const VARS_H = 108;
 const VARS_PAD = 10, VARS_GAP = 8, VARS_ROW_H = 30;
 
-const CTL_KINDS = new Set(['if', 'repeat', 'repeat_n', 'repeat_until', 'while', 'for', 'do']);
-const SIMPLE_CTL = new Set(['global', 'static', 'break', 'continue', 'return']);
+const CTL_KINDS = new Set(['if', 'repeat', 'repeat_n', 'repeat_until', 'for_of', 'while', 'for', 'do']);
+const SIMPLE_CTL = new Set(['global', 'break', 'continue', 'return']);
 
 const CLS_COLORS = {
   'blk-pos': '#1f9d55',
@@ -762,6 +762,9 @@ function stmtParts(s) {
       } } },
     ];
   }
+  if (s.kind === 'spawn') {
+    return [{ text: t(STMT_BLOCKS.spawn.label) }];
+  }
   const label = t(STMT_BLOCKS[s.kind].label) + ' ';
   const slotType = (s.kind === 'pos_vec' || s.kind === 'vel_vec') ? T_VEC : T_SCALAR;
   const getExpr = () => s.expr;
@@ -872,6 +875,8 @@ function ctlHeaderParts(s) {
     P.push({ text: t('blk.stmt.do') + ' ' });
   } else if (s.kind === 'repeat') {
     P.push({ text: t(STMT_BLOCKS.repeat.label) + ' ' });
+  } else if (s.kind === 'for_of') {
+    P.push({ text: t(STMT_BLOCKS.for_of.label) + ' ' });
   } else if (s.kind === 'repeat_n') {
     P.push({ text: t(STMT_BLOCKS.repeat_n.label) + ' ' });
     P.push({ slot: { ref: slotRef(() => s.count, v => { s.count = v; }, T_SCALAR), type: T_SCALAR, label: '' } });

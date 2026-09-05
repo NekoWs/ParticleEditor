@@ -232,6 +232,8 @@ export const STMT_BLOCKS = {
   repeat: { label: 'blk.stmt.repeat.label', group: 'logic', desc: 'blk.stmt.repeat.desc' },
   repeat_n: { label: 'blk.stmt.repeat_n.label', group: 'logic', desc: 'blk.stmt.repeat_n.desc' },
   repeat_until: { label: 'blk.stmt.repeat_until.label', group: 'logic', desc: 'blk.stmt.repeat_until.desc' },
+  for_of: { label: 'blk.stmt.for_of.label', group: 'logic', desc: 'blk.stmt.for_of.desc' },
+  spawn: { label: 'blk.stmt.spawn.label', group: 'pos', desc: 'blk.stmt.spawn.desc' },
 };
 
 /* —— 调色板分组（顺序即显示顺序；label 为 i18n 键 blk.pal.<id>） —— */
@@ -356,8 +358,9 @@ export function stmtComplete(s) {
     case 'repeat': return true;
     case 'repeat_n': return exprComplete(s.count);
     case 'repeat_until': return exprComplete(s.cond);
+    case 'for_of': case 'spawn': return true;
     case 'func': return String(s.name || '').trim() !== '';
-    case 'global': case 'static':
+    case 'global':
       return String(s.name || '').trim() !== '' && (s.expr == null || exprComplete(s.expr));
     default: return true;
   }
@@ -460,16 +463,17 @@ function emitStmt(s, level, spans, lineStart) {
   const pad = indentPad(level);
   const start = lineStart || 1;
   switch (s.kind) {
-    case 'pos': return pad + 'this.position = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
-    case 'pos_vec': return pad + 'this.position = ' + exprToCode(s.expr, 0);
-    case 'vel': return pad + 'this.velocity = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
-    case 'vel_vec': return pad + 'this.velocity = ' + exprToCode(s.expr, 0);
-    case 'col': return pad + 'this.color = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
-    case 'scl': return pad + 'this.scale = ' + exprToCode(s.expr, 0);
-    case 'glow': return pad + 'this.glow = ' + (s.on ? '1' : '0');
-    case 'light': return pad + 'this.light = ' + exprToCode(s.expr, 0);
-    case 'attr': return pad + 'this.' + s.name + ' = ' + exprToCode(s.expr, 0);
+    case 'pos': return pad + 'p.position = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
+    case 'pos_vec': return pad + 'p.position = ' + exprToCode(s.expr, 0);
+    case 'vel': return pad + 'p.velocity = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
+    case 'vel_vec': return pad + 'p.velocity = ' + exprToCode(s.expr, 0);
+    case 'col': return pad + 'p.color = [' + s.slots.map(x => exprToCode(x, 0)).join(', ') + ']';
+    case 'scl': return pad + 'p.scale = ' + exprToCode(s.expr, 0);
+    case 'glow': return pad + 'p.glow = ' + (s.on ? '1' : '0');
+    case 'light': return pad + 'p.light = ' + exprToCode(s.expr, 0);
+    case 'attr': return pad + 'p.' + s.name + ' = ' + exprToCode(s.expr, 0);
     case 'set': return pad + s.name + ' = ' + exprToCode(s.expr, 0);
+    case 'spawn': return pad + (s.name || 'p') + ' = this.spawn();';
     case 'expr': return pad + exprToCode(s.expr, 0) + ';';
     case 'raw': return s.text || '';
     case 'comment': return emitComment(s, pad);
@@ -507,6 +511,10 @@ function emitStmt(s, level, spans, lineStart) {
       const body = emitList(s.body || [], level + 1, spans, start + 1);
       return pad + 'for (' + (s.init || '') + '; ' + (s.cond || '') + '; ' + (s.inc || '') + ') {\n' + body + '\n' + pad + '}';
     }
+    case 'for_of': {
+      const body = emitList(s.body || [], level + 1, spans, start + 1);
+      return pad + 'for (const ' + (s.name || 'p') + ' of this.particles) {\n' + body + '\n' + pad + '}';
+    }
     case 'repeat': {
       const body = emitList(s.body || [], level + 1, spans, start + 1);
       return pad + 'while (true) {\n' + body + '\n' + pad + '}';
@@ -526,7 +534,7 @@ function emitStmt(s, level, spans, lineStart) {
       const body = emitList(s.body || [], level + 1, spans, start + 1);
       return pad + 'func ' + s.name + '(' + (s.params || []).join(', ') + ') {\n' + body + '\n' + pad + '}';
     }
-    case 'global': case 'static': return pad + s.kind + ' ' + s.name + (s.expr ? ' = ' + exprToCode(s.expr, 0) : '') + ';';
+    case 'global': return pad + 'global ' + s.name + (s.expr ? ' = ' + exprToCode(s.expr, 0) : '') + ';';
     default: throw new Error(_etf('err.unknownStmt', s.kind));
   }
 }
@@ -905,12 +913,16 @@ export function stmtToNode(stmt) {
     const open = s.indexOf('(');
     const close = matchDelim(s, open, '(', ')');
     if (close < 0) throw new Error(_et('err.stmtNeedParen'));
-    const parts = splitTopSemicolons(s.slice(open + 1, close));
+    const header = s.slice(open + 1, close).trim();
     const rest = s.slice(close + 1).trim();
     const bOpen = rest.indexOf('{');
     const bClose = matchDelim(rest, bOpen, '{', '}');
     if (bClose < 0) throw new Error(_et('err.stmtNeedBrace'));
     const body = codeToStatements(rest.slice(bOpen + 1, bClose));
+    // 新 spawn 模型：for (const p of this.particles) → 对每个粒子循环块。
+    const ofMatch = /^(?:const\s+)?([A-Za-z_][A-Za-z0-9_]*)\s+of\s+this\.particles$/.exec(header);
+    if (ofMatch) return { kind: 'for_of', name: ofMatch[1], body };
+    const parts = splitTopSemicolons(header);
     const init = parts[0] || '', cond = parts[1] || '', inc = parts[2] || '';
     // 识别「重复执行 N 次」生成的 for (rep = 0; rep < N; rep = rep + 1) 模式。
     const repN = /^rep\s*<\s*([\s\S]+)$/.exec(cond.trim());
@@ -945,12 +957,11 @@ export function stmtToNode(stmt) {
     if (bClose < 0) throw new Error(_et('err.stmtNeedBrace'));
     return { kind: 'func', name, params, body: codeToStatements(rest.slice(bOpen + 1, bClose)) };
   }
-  if (/^(global|static)\s+/.test(s)) {
-    const kind = s.startsWith('global') ? 'global' : 'static';
-    const after = s.slice(kind.length).trim();
+  if (/^global\s+/.test(s)) {
+    const after = s.slice('global'.length).trim();
     const eq = after.indexOf('=');
-    if (eq < 0) return { kind, name: after.replace(/;$/, '').trim(), expr: null };
-    return { kind, name: after.slice(0, eq).trim(), expr: parseExpr(after.slice(eq + 1).replace(/;$/, '').trim()) };
+    if (eq < 0) return { kind: 'global', name: after.replace(/;$/, '').trim(), expr: null };
+    return { kind: 'global', name: after.slice(0, eq).trim(), expr: parseExpr(after.slice(eq + 1).replace(/;$/, '').trim()) };
   }
 
   const eq = s.indexOf('=');
@@ -965,7 +976,10 @@ export function stmtToNode(stmt) {
     // 旧 [x,y,z]=... 属性打包语法已移除；作为 raw 保留。
     throw new Error(_etf('err.unknownPack', stmt));
   }
-  if (lhs === 'this.position') {
+  const PROP = /^(this|p)\.position$/;
+  const VEL = /^(this|p)\.velocity$/;
+  const COL = /^(this|p)\.color$/;
+  if (PROP.test(lhs)) {
     if (rhs.startsWith('[')) {
       const exprs = parseExprList(rhs).map(e => parseExpr(e));
       if (exprs.length !== 3) throw new Error(_etf('err.assignCount2', stmt));
@@ -973,7 +987,7 @@ export function stmtToNode(stmt) {
     }
     return { kind: 'pos_vec', expr: parseExpr(rhs) };
   }
-  if (lhs === 'this.velocity') {
+  if (VEL.test(lhs)) {
     if (rhs.startsWith('[')) {
       const exprs = parseExprList(rhs).map(e => parseExpr(e));
       if (exprs.length !== 3) throw new Error(_etf('err.assignCount2', stmt));
@@ -981,7 +995,7 @@ export function stmtToNode(stmt) {
     }
     return { kind: 'vel_vec', expr: parseExpr(rhs) };
   }
-  if (lhs === 'this.color') {
+  if (COL.test(lhs)) {
     if (rhs.startsWith('[')) {
       const exprs = parseExprList(rhs).map(e => parseExpr(e));
       if (exprs.length !== 4) throw new Error(_etf('err.assignCount2', stmt));
@@ -989,15 +1003,18 @@ export function stmtToNode(stmt) {
     }
     throw new Error(_etf('err.unknownUnpack', stmt));
   }
-  if (lhs === 'this.scale') return { kind: 'scl', expr: parseExpr(rhs) };
-  if (lhs === 'this.glow') {
+  if (/^(this|p)\.scale$/.test(lhs)) return { kind: 'scl', expr: parseExpr(rhs) };
+  if (/^(this|p)\.glow$/.test(lhs)) {
     const e = parseExpr(rhs);
     if (e.kind === 'num' && (e.value === 1 || e.value === 0)) return { kind: 'glow', on: e.value === 1 };
     throw new Error(_etf('err.glowBinary', stmt));
   }
-  if (lhs === 'this.light') return { kind: 'light', expr: parseExpr(rhs) };
-  if (/^this\.(position|velocity|color)\.(x|y|z|r|g|b|a|w)$/.test(lhs)) {
-    return { kind: 'attr', name: lhs.slice('this.'.length), expr: parseExpr(rhs) };
+  if (/^(this|p)\.light$/.test(lhs)) return { kind: 'light', expr: parseExpr(rhs) };
+  if (/^(this|p)\.(position|velocity|color)\.(x|y|z|r|g|b|a|w)$/.test(lhs)) {
+    return { kind: 'attr', name: lhs.slice(lhs.indexOf('.') + 1), expr: parseExpr(rhs) };
+  }
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(lhs) && rhs.replace(/;$/, '').trim() === 'this.spawn()') {
+    return { kind: 'spawn', name: lhs };
   }
   return { kind: 'set', name: lhs, expr: parseExpr(rhs) };
 }

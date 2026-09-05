@@ -330,8 +330,10 @@ export function newStmtNode(kind) {
     case 'repeat': return { kind: 'repeat', body: [] };
     case 'repeat_n': return { kind: 'repeat_n', count: null, body: [] };
     case 'repeat_until': return { kind: 'repeat_until', cond: null, body: [] };
+    case 'for_of': return { kind: 'for_of', name: 'p', body: [] };
+    case 'spawn': return { kind: 'spawn', name: 'p' };
     case 'func': return { kind: 'func', name: freshFuncName(), params: [], body: [] };
-    case 'global': case 'static': return { kind, name: '', expr: null };
+    case 'global': return { kind: 'global', name: '', expr: null };
     case 'comment': return { kind: 'comment', text: '' };
     case 'break': return { kind: 'break' };
     case 'continue': return { kind: 'continue' };
@@ -427,12 +429,13 @@ export function buildPaletteGroup(g) {
       }
     }
   } else if (g.id === 'props') {
+    items.push({ key: 'stmt:spawn', type: 'stmt', kind: 'spawn', label: t(STMT_BLOCKS.spawn.label), info: t(STMT_BLOCKS.spawn.desc) });
     ['pos_vec', 'vel_vec'].forEach(k => items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: t(STMT_BLOCKS[k].label), info: t(STMT_BLOCKS[k].desc) }));
     items.push({ key: 'stmt:col', type: 'stmt', kind: 'col', label: t(STMT_BLOCKS.col.label), info: t(STMT_BLOCKS.col.desc) });
     ['scl', 'glow', 'light'].forEach(k => items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: t(STMT_BLOCKS[k].label), info: t(STMT_BLOCKS[k].desc) }));
     items.push({ key: 'stmt:attr', type: 'stmt', kind: 'attr', label: t(STMT_BLOCKS.attr.label), info: t(STMT_BLOCKS.attr.desc) });
   } else if (g.id === 'logic') {
-    ['if', 'repeat_n', 'repeat', 'repeat_until', 'while', 'do', 'break', 'continue', 'return', 'global', 'static'].forEach(k => {
+    ['if', 'repeat_n', 'repeat', 'repeat_until', 'for_of', 'while', 'do', 'break', 'continue', 'return', 'global'].forEach(k => {
       items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: t(STMT_BLOCKS[k] ? STMT_BLOCKS[k].label : 'blk.stmt.' + k), info: t(STMT_BLOCKS[k] ? STMT_BLOCKS[k].desc : 'blk.stmt.' + k) });
     });
     items.push({ key: 'if-branch:else', type: 'if-branch', branch: 'else', label: t('blk.stmt.else'), info: t('blk.stmt.else.desc') });
@@ -463,7 +466,7 @@ export function buildPaletteGroup(g) {
     items.push({ key: 'dd:array', type: 'method-dd', selection: 'push', label: t('blk.dd.array'), info: t('blk.dd.array.desc') });
   } else if (g.id === 'var') {
     items.push({ key: 'stmt:set', type: 'stmt', kind: 'set', label: t(STMT_BLOCKS.set.label), info: t(STMT_BLOCKS.set.desc) });
-    items.push({ key: 'dd:context', type: 'ctx-dd', selection: 'this.index', label: t('blk.dd.context'), info: t('blk.dd.context.desc') });
+    items.push({ key: 'dd:context', type: 'ctx-dd', selection: 'this.time', label: t('blk.dd.context'), info: t('blk.dd.context.desc') });
     for (const name of availableVars()) items.push({ key: 'var:' + name, type: 'expr', template: { kind: 'var', name }, label: name, info: t('blk.var') });
   } else if (g.id === 'const') {
     items.push({ key: 'expr:num', type: 'expr', template: { kind: 'num', value: 1 }, label: t('blk.type.scalar'), info: t('blk.constNum') });
@@ -850,6 +853,15 @@ export function openBlockDrawer(fx) {
     setupChain = sExtract.rest;
     tickChain = tExtract.rest;
     funcStmts = funcStmts.concat(cExtract.funcs, sExtract.funcs, tExtract.funcs);
+    // 迁移旧 per-particle process（this.position/this.color 等）：整体包进 for (const p of this.particles)，
+    // 使拼图生成的新代码满足 spawn 模型。
+    const PROPERTY_KINDS = new Set(['pos', 'pos_vec', 'vel', 'vel_vec', 'col', 'scl', 'glow', 'light', 'attr']);
+    const hasForOf = chain.some(s => s.kind === 'for_of');
+    let hasProperty = false;
+    walkStatements(chain, s => { if (PROPERTY_KINDS.has(s.kind)) hasProperty = true; });
+    if (chain.length && hasProperty && !hasForOf) {
+      chain = [{ kind: 'for_of', name: 'p', body: chain }];
+    }
   }
   catch (e) { modalAlert(t('blk.openFailTitle'), tf('blk.parseFail', e.message)); return; }
   const varExprs = {};
