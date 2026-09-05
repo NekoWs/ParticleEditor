@@ -300,12 +300,12 @@ export const FUNCTION_PRESETS = {
       source: `func setup() {
   for (i = 0; i < 200; i++) {
     p = this.spawn();
+    p.f = p.index / 200 - 0.5;
   }
 }
 func process(delta) {
   for (const p of this.particles) {
-    xx = (p.index / 200 - 0.5) * wid;
-    p.position = [xx, amp * sin(freq * pi * (p.index / 200 - 0.5)), 0];
+    p.position = [p.f * wid, amp * sin(freq * pi * p.f), 0];
   }
 }`,
     }),
@@ -320,13 +320,13 @@ func process(delta) {
       source: `func setup() {
   for (i = 0; i < 200; i++) {
     p = this.spawn();
+    p.th = acos(1 - 2 * (p.index + 0.5) / 200);
+    p.ph = p.index * pi * (3 - sqrt(5));
   }
 }
 func process(delta) {
   for (const p of this.particles) {
-    th = acos(1 - 2 * (p.index + 0.5) / 200);
-    ph = p.index * pi * (3 - sqrt(5));
-    p.position = [rad * sin(th) * cos(ph), rad * cos(th), rad * sin(th) * sin(ph)];
+    p.position = [rad * sin(p.th) * cos(p.ph), rad * cos(p.th), rad * sin(p.th) * sin(p.ph)];
   }
 }`,
     }),
@@ -475,12 +475,12 @@ func process(delta) {
       source: `func setup() {
   for (i = 0; i < 200; i++) {
     p = this.spawn();
+    p.ang = p.index / 200 * 2 * pi;
   }
 }
 func process(delta) {
   for (const p of this.particles) {
-    ang = p.index / 200 * 2 * pi;
-    p.position = [rad * cos(ang), 0, rad * sin(ang)];
+    p.position = [rad * cos(p.ang), 0, rad * sin(p.ang)];
   }
 }`,
     }),
@@ -495,13 +495,13 @@ func process(delta) {
       source: `func setup() {
   for (i = 0; i < 400; i++) {
     p = this.spawn();
+    p.rf = sqrt(p.index / 400);
+    p.th = p.index * pi * (3 - sqrt(5));
   }
 }
 func process(delta) {
   for (const p of this.particles) {
-    rf = sqrt(p.index / 400);
-    th = p.index * pi * (3 - sqrt(5));
-    p.position = [diskR * rf * cos(th), 0, diskR * rf * sin(th)];
+    p.position = [diskR * p.rf * cos(p.th), 0, diskR * p.rf * sin(p.th)];
   }
 }`,
     }),
@@ -514,16 +514,18 @@ func process(delta) {
     build: p => ({
       vars: { rad: { base: Number(p.rad), kf: [] } },
       source: `func setup() {
+  m = floor(pow(2000, 0.5));
   for (i = 0; i < 2000; i++) {
     p = this.spawn();
+    p.a = floor(p.index / m) * 2 * pi / m;
+    p.b = (p.index % m) * pi / m - pi / 2;
   }
 }
 func process(delta) {
   for (const p of this.particles) {
-    m = floor(pow(2000, 0.5));
-    p.position.x = rad * pow(cos(floor(p.index / m) * 2 * pi / m) * cos((p.index % m) * pi / m - pi / 2), 3);
-    p.position.y = rad * pow(sin(floor(p.index / m) * 2 * pi / m) * cos((p.index % m) * pi / m - pi / 2), 3);
-    p.position.z = rad * pow(sin((p.index % m) * pi / m - pi / 2), 3);
+    p.position.x = rad * pow(cos(p.a) * cos(p.b), 3);
+    p.position.y = rad * pow(sin(p.a) * cos(p.b), 3);
+    p.position.z = rad * pow(sin(p.b), 3);
   }
 }`,
     })

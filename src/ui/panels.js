@@ -8,6 +8,7 @@
 
 
 import { t } from '../core/i18n.js';
+import { localizeScriptError } from '../core/script-error-i18n.js';
 import { state, getFunction, isDerivedParticle } from '../core/constants.js';
 import { currentVisual, rotVectorAt, spinVectorAt, orbitCenterAt } from '../core/animation.js';
 import { currentSelected, selectedGroupName, fxPosDeltaAt, fxScaleValuesAt } from '../interaction/interaction.js';
@@ -332,7 +333,7 @@ export function commitFunctionRebuild(fx, opts) {
     fx._error = null;
   } catch (e) {
     fx._error = e.message;
-    if (!(opts && opts.silent)) modalAlert(t('fx.exprError'), e.message);
+    if (!(opts && opts.silent)) modalAlert(t('fx.exprError'), localizeScriptError(e.message));
   }
   refreshFxTerminal(fx);
 }
@@ -516,9 +517,20 @@ export function refreshFxTerminal(fx) {
   if (!wrap) return;
   const term = wrap.querySelector('.fx-terminal');
   if (!term) return;
-  const lines = Array.isArray(fx && fx._terminal) ? fx._terminal : [];
-  term.textContent = lines.join('\n');
-  term.style.display = lines.length ? 'block' : 'none';
+  const entries = Array.isArray(fx && fx._terminal) ? fx._terminal : [];
+  term.textContent = '';
+  term.style.display = entries.length ? 'block' : 'none';
+  if (!entries.length) return;
+
+  for (const e of entries) {
+    const kind = e && e.kind === 'error' ? 'error' : 'info';
+    const text = String(e && e.text != null ? e.text : e);
+    const count = e && e.count > 1 ? ` (x${e.count})` : '';
+    const line = document.createElement('div');
+    line.className = kind === 'error' ? 'fx-terminal-line fx-terminal-err' : 'fx-terminal-line';
+    line.textContent = (kind === 'error' ? '[error] ' : '[info] ') + text + count;
+    term.appendChild(line);
+  }
 }
 
 // 实时同步「有关键帧」变量输入框显示的当前帧插值值（不重建面板）

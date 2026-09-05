@@ -1,4 +1,4 @@
-import { EditorView, keymap } from '@codemirror/view';
+import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import {
   StreamLanguage,
@@ -20,6 +20,7 @@ import { indentWithTab, insertNewlineAndIndent } from '@codemirror/commands';
 import { linter } from '@codemirror/lint';
 import { highlightSelectionMatches } from '@codemirror/search';
 import { parseProgram, ARRAY_METHOD_NAMES } from '../core/script-lang.js';
+import { localizeScriptError } from '../core/script-error-i18n.js';
 
 /**
  * .pdraw 脚本语言（v12：func setup/tick/process + 自定义函数）的 CodeMirror 编辑器封装：
@@ -59,7 +60,7 @@ export const scriptLanguage = StreamLanguage.define({
     function: tags.function(tags.variableName),
   },
   startState() {
-    return { inBlockComment: false, afterDot: false, afterThisDot: false, lastWord: '' };
+    return { inBlockComment: false, afterDot: false, afterThisDot: false, lastWord: '', afterFunc: false };
   },
   token(stream, state) {
     if (state.inBlockComment) {
@@ -119,6 +120,13 @@ export const scriptLanguage = StreamLanguage.define({
       }
 
       state.lastWord = word;
+
+      // func 关键字后紧跟的函数名（setup/tick/process/自定义函数）按函数名着色。
+      if (state.afterFunc) {
+        state.afterFunc = false;
+        return 'function';
+      }
+      if (word === 'func') { state.afterFunc = true; return 'keyword'; }
       if (word === 'this') return 'keyword';
       if (KEYWORD_SET.has(word)) return 'keyword';
       if (word === 'pi' || word === 'true' || word === 'false') return 'atom';
@@ -186,6 +194,7 @@ const scriptTheme = EditorView.theme({
     backgroundColor: PALETTE.selection,
   },
   '.cm-gutters': { backgroundColor: PALETTE.gutter, color: PALETTE.gutterText, border: 'none' },
+  '.cm-lineNumbers .cm-gutterElement': { padding: '0 8px 0 6px', minWidth: '24px' },
   '.cm-activeLine': { backgroundColor: PALETTE.activeLine },
   '.cm-activeLineGutter': { backgroundColor: PALETTE.activeLine },
   '.cm-matchingBracket': { backgroundColor: PALETTE.selection, outline: `1px solid ${PALETTE.text}` },
@@ -513,12 +522,12 @@ export function scriptLintSource(fx) {
       const loc = parseErrorLocation(e.message);
       const doc = view.state.doc;
       if (!loc) {
-        return [{ from: 0, to: doc.length, severity: 'error', message: e.message }];
+        return [{ from: 0, to: doc.length, severity: 'error', message: localizeScriptError(e.message) }];
       }
       const lineNo = Math.max(1, Math.min(doc.lines, loc.line));
       const line = doc.line(lineNo);
       const from = Math.min(line.from + Math.max(0, loc.col - 1), line.to);
-      const message = (e.message || '').replace(/\s*\(line \d+, col \d+\)$/, '');
+      const message = localizeScriptError((e.message || '').replace(/\s*\(line \d+, col \d+\)$/, ''));
       return [{ from, to: from, severity: 'error', message }];
     }
   });
@@ -537,6 +546,7 @@ export function createScriptEditor(parent, opts) {
     extensions: [
       scriptLanguage,
       syntaxHighlighting(scriptHighlightStyle),
+      lineNumbers(),
       bracketMatching(),
       highlightSelectionMatches(),
       indentUnit.of('  '),

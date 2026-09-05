@@ -15,6 +15,7 @@ import { pushUndo } from '../state/undo.js';
 import { rebuildPoints, maxTick } from './animation.js';
 import { refreshFunctionPanel } from '../ui/panels.js';
 import { parseProgram, createObjectState, runSetup, runTick, runProcessFrame } from './script-lang.js';
+import { localizeScriptError } from './script-error-i18n.js';
 
 // 主循环中 1 秒 = 20 tick（见 main.js）。
 const TICKS_PER_SEC = 20;
@@ -77,10 +78,22 @@ export function fxTerminalClear(fx) {
   if (fx) fx._terminal = [];
 }
 
-export function fxTerminalPush(fx, line) {
+// 终端输出：每条为一行 { kind:'info'|'error', text, count }。
+// 连续相同的行在写入时即合并（count 递增），避免播放期无限增长，
+// 渲染端据此显示 `[info] xxx (x2)` 形式的折叠行。
+export function fxTerminalPush(fx, line, kind) {
   if (!fx) return;
   if (!Array.isArray(fx._terminal)) fx._terminal = [];
-  fx._terminal.push(String(line));
+  const k = kind === 'error' ? 'error' : 'info';
+  const text = String(line == null ? '' : line);
+  for (const part of text.split('\n')) {
+    const last = fx._terminal[fx._terminal.length - 1];
+    if (last && last.kind === k && last.text === part) {
+      last.count = (last.count || 1) + 1;
+    } else {
+      fx._terminal.push({ kind: k, text: part, count: 1 });
+    }
+  }
 }
 
 /* -------------------------------------------------------------------------
@@ -90,7 +103,7 @@ export function fxTerminalPush(fx, line) {
 function markFxError(fx, e) {
   if (fx) {
     fx._error = (e && e.message) ? e.message : String(e);
-    fxTerminalPush(fx, '[error] ' + fx._error);
+    fxTerminalPush(fx, localizeScriptError(fx._error), 'error');
   }
 }
 
@@ -213,7 +226,7 @@ function ensureRuntime(fx) {
     vars: varsAt(fx, st),
     particles: runtime.particles,
     spawn,
-    print: line => fxTerminalPush(fx, line),
+    print: line => fxTerminalPush(fx, line, 'info'),
   });
   for (const w of runtime.particles) {
     if (w._p) syncParticleState(w._p);
@@ -230,7 +243,7 @@ function makeCtx(fx, runtime, T, deltaMs) {
     spawn: () => spawnFor(fx, runtime),
     deltaMs: deltaMs || 0,
     fastMath: !!fx.fastMath,
-    print: line => fxTerminalPush(fx, line),
+    print: line => fxTerminalPush(fx, line, 'info'),
   };
 }
 
