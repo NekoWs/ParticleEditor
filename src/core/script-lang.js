@@ -64,7 +64,7 @@ const CTX_OUT_FIELDS = new Set(['position', 'color', 'velocity', 'scale', 'glow'
 const CTX_VEC_FIELDS = new Set(['position', 'color', 'velocity']);
 
 // this 字段 → 字节码编号（只读 + 输出共用）。
-const CTX_FIELD_NAMES = ['index', 'count', 'time', 'delta', 'duration', 'uv', 'life', 'position', 'color', 'velocity', 'scale', 'glow', 'light'];
+const CTX_FIELD_NAMES = ['index', 'count', 'time', 'delta', 'duration', 'uv', 'life', 'position', 'color', 'velocity', 'scale', 'glow', 'light', 'particles'];
 const CTX_FIELD_CODE = {};
 CTX_FIELD_NAMES.forEach((n, i) => { CTX_FIELD_CODE[n] = i; });
 const CTX_FIELD_BY_CODE = CTX_FIELD_NAMES;
@@ -98,7 +98,9 @@ const vec4 = (x, y, z, w) => ({ t: 'vec4', x, y, z, w });
 const mat3 = (m) => ({ t: 'mat3', m });
 const mat4 = (m) => ({ t: 'mat4', m });
 // 粒子句柄 / 粒子列表（v12 spawn 模型）。w 为宿主侧粒子存储对象。
-const particleValue = (w) => ({ t: 'particle', w });
+// 句柄对象按 w 缓存复用：process 的 for-of 每帧每粒子都会取一次句柄，
+// 逐次新建 {t:'particle',w} 会产生大量短命对象并拖累 GC。
+const particleValue = (w) => (w._pv || (w._pv = { t: 'particle', w }));
 const particleList = (list) => ({ t: 'particleList', list });
 
 const isNum = (v) => typeof v === 'number';
@@ -1119,6 +1121,7 @@ class Runtime {
     this.env = env || null;
     this.ctx = ctx || null;
     this.scopes = [];
+    this.scopePool = [];
     this.funcDepth = 0;
     this.inFunction = false;
 
@@ -1129,8 +1132,17 @@ class Runtime {
     }
   }
 
-  pushScope(map) { this.scopes.push(map || new Map()); }
-  popScope() { this.scopes.pop(); }
+  pushScope(map) {
+    if (map) { this.scopes.push(map); return; }
+    // 块作用域是 process 热路径：每粒子每帧会进出多个块作用域（for-of 体、if/else 分支），
+    // 逐次 new Map() 造成巨量分配与 GC 抖动。复用空 Map 池，出栈时清空归还。
+    const s = this.scopePool.length > 0 ? this.scopePool.pop() : new Map();
+    this.scopes.push(s);
+  }
+  popScope() {
+    const s = this.scopes.pop();
+    if (s && this.scopePool.length < 128) { s.clear(); this.scopePool.push(s); }
+  }
   currentScope() { return this.scopes[this.scopes.length - 1]; }
 
   /* -- 名称查找 -- */
@@ -1724,8 +1736,10 @@ function particleGetField(pv, field, node) {
     case 'light': return w.light;
     case 'life': return w.life;
     case 'index': return w.index;
-    default:
-      return (w.fields && w.fields.has(field)) ? w.fields.get(field) : 0;
+    default: {
+      const cf = w.cf;
+      return (cf && cf[field] !== undefined) ? cf[field] : 0;
+    }
   }
 }
 
@@ -1764,10 +1778,11 @@ function particleSetField(pv, field, value, node) {
     }
     case 'index':
       throw runtimeError('particle.index is read-only', node);
-    default:
-      if (!w.fields) w.fields = new Map();
-      w.fields.set(field, value);
+    default: {
+      if (!w.cf) w.cf = Object.create(null);
+      w.cf[field] = value;
       return;
+    }
   }
 }
 
@@ -2605,6 +2620,9 @@ const OP = {
   JUMP: 21, JUMP_IF_FALSE: 22, JUMP_IF_TRUE: 23,
   CALL_BUILTIN: 24, CALL_USER: 25, CALL_VALUE: 26, METHOD: 27,
   ENTER_SCOPE: 28, EXIT_SCOPE: 29, RETURN: 30, LOOP_GUARD: 31,
+  LOAD_MEMBER: 32, STORE_MEMBER: 33, STORE_MEMBER_COMP: 34,
+  ITER_BEGIN: 35, ITER_NEXT: 36, SPAWN: 37,
+  LOAD_LOCAL: 38, STORE_LOCAL: 39,
 };
 
 const UNARY_OPS = ['-', '!'];
@@ -2638,7 +2656,7 @@ for (const name of BUILTIN_TABLE.keys()) {
 function makeLoc(line, col) { return { line, col }; }
 
 class Compiler {
-  constructor(program, varNames) {
+  constructor(program, varNames, globalNames) {
     this.program = program;
     this.code = [];
     this.locs = [];
@@ -2655,6 +2673,11 @@ class Compiler {
     this.loopCounters = 0;
     this.phase = 'process';     // 'process'（顶层，可烘焙属性/内置读）| 'func'
     this.varNames = varNames;
+    this.globalNames = globalNames || [];
+    this.syntheticSeq = 0;
+    // 寄存器式局部变量：作用域栈（每帧 name -> slot）+ 槽位分配器。
+    this.scopeStack = [new Map()];
+    this.slotCount = 0;
 
     // 预注册用户函数（便于前向引用）
     for (const [fname, fn] of program.functions) {
@@ -2692,6 +2715,26 @@ class Compiler {
   patchJump(instrIdx, target) { this.code[instrIdx + 1] = target; }
   pc() { return this.code.length; }
   allocLoopCounter() { return this.loopCounters++; }
+  // 编译器内部合成名（for-of 迭代器存储）：用 \u0000 前缀保证与用户标识符不冲突。
+  synthName() { return '\u0000it' + (this.syntheticSeq++); }
+
+  /* ---------- 局部变量槽位（寄存器式，热路径绕开 Map 作用域查找） ---------- */
+
+  allocSlot() { return this.slotCount++; }
+  lookupLocal(name) {
+    for (let i = this.scopeStack.length - 1; i >= 0; i--) {
+      const s = this.scopeStack[i];
+      if (s.has(name)) return s.get(name);
+    }
+    return -1;
+  }
+  declareLocal(name) {
+    const slot = this.allocSlot();
+    this.scopeStack[this.scopeStack.length - 1].set(name, slot);
+    return slot;
+  }
+  pushScopeFrame() { this.scopeStack.push(new Map()); }
+  popScopeFrame() { this.scopeStack.pop(); }
 
   /* ---------- 表达式 ---------- */
 
@@ -2707,21 +2750,31 @@ class Compiler {
         }
         if (this.hoisted.has(name)) {
           this.emit2(OP.LOAD_UNIFORM, this.hoisted.get(name), node);
-        } else if (CONSTANTS.has(name)) {
+          return;
+        }
+        if (CONSTANTS.has(name)) {
           this.emit2(OP.CONST, this.internConst(CONSTANTS.get(name)), node);
+          return;
+        }
+        const slot = this.lookupLocal(name);
+        if (slot >= 0) {
+          this.emit2(OP.LOAD_LOCAL, slot, node);
         } else {
           this.emit2(OP.LOAD, this.internName(name), node);
         }
         return;
       }
       case 'member': {
-        if (node.object.type !== 'var' || node.object.name !== CTX_NAME) {
-          throw parseError(`only this has fields '.${node.field}'`, node.line, node.col);
+        if (node.object.type === 'var' && node.object.name === CTX_NAME) {
+          if (!CTX_FIELD_CODE.hasOwnProperty(node.field)) {
+            throw parseError(`unknown this field '.${node.field}'`, node.line, node.col);
+          }
+          this.emit2(OP.LOAD_CTX_FIELD, CTX_FIELD_CODE[node.field], node);
+          return;
         }
-        if (!CTX_FIELD_CODE.hasOwnProperty(node.field)) {
-          throw parseError(`unknown this field '.${node.field}'`, node.line, node.col);
-        }
-        this.emit2(OP.LOAD_CTX_FIELD, CTX_FIELD_CODE[node.field], node);
+        // 粒子句柄字段（p.foo / p.position 等）：运行时按 particle 类型校验。
+        this.compileExpr(node.object);
+        this.emit2(OP.LOAD_MEMBER, this.internName(node.field), node);
         return;
       }
       case 'array': {
@@ -2787,9 +2840,14 @@ class Compiler {
         this.compileCall(node);
         return;
       case 'method': {
+        if (node.object.type === 'var' && node.object.name === CTX_NAME && node.method === 'spawn') {
+          for (const a of node.args) this.compileExpr(a);
+          this.emit2(OP.SPAWN, node.args.length, node);
+          return;
+        }
         this.compileExpr(node.object);
         for (const a of node.args) this.compileExpr(a);
-        this.emit3(OP.METHOD, METHOD_CODE[node.method], node.args.length, node);
+        this.emit3(OP.METHOD, this.internName(node.method), node.args.length, node);
         return;
       }
       default:
@@ -2818,20 +2876,35 @@ class Compiler {
 
   compileTarget(target) {
     switch (target.type) {
-      case 'var':
-        if (target.name === CTX_NAME) {
+      case 'var': {
+        const name = target.name;
+        if (name === CTX_NAME) {
           throw parseError(`cannot assign to 'this'; use this.<field> = ...`, target.line, target.col);
         }
-        this.emit2(OP.STORE, this.internName(target.name), target);
+        const slot = this.lookupLocal(name);
+        if (slot >= 0) {
+          this.emit2(OP.STORE_LOCAL, slot, target);
+          return;
+        }
+        // 非局部名（global / fx.var / 常量）：交给 Runtime 处理（只读报错、函数遮蔽等）。
+        if (this.globalNames.includes(name) || this.varNames.includes(name) || CONSTANTS.has(name)) {
+          this.emit2(OP.STORE, this.internName(name), target);
+          return;
+        }
+        // 新隐式局部：分配槽位（含对 builtin / 函数名的遮蔽，与 AST 语义一致）。
+        this.emit2(OP.STORE_LOCAL, this.declareLocal(name), target);
         return;
+      }
       case 'member': {
-        if (target.object.type !== 'var' || target.object.name !== CTX_NAME) {
-          throw parseError(`only this has fields '.${target.field}'`, target.line, target.col);
+        if (target.object.type === 'var' && target.object.name === CTX_NAME) {
+          if (!CTX_FIELD_CODE.hasOwnProperty(target.field)) {
+            throw parseError(`unknown this field '.${target.field}'`, target.line, target.col);
+          }
+          this.emit2(OP.STORE_CTX_FIELD, CTX_FIELD_CODE[target.field], target);
+          return;
         }
-        if (!CTX_FIELD_CODE.hasOwnProperty(target.field)) {
-          throw parseError(`unknown this field '.${target.field}'`, target.line, target.col);
-        }
-        this.emit2(OP.STORE_CTX_FIELD, CTX_FIELD_CODE[target.field], target);
+        this.compileExpr(target.object);
+        this.emit2(OP.STORE_MEMBER, this.internName(target.field), target);
         return;
       }
       case 'index':
@@ -2846,15 +2919,21 @@ class Compiler {
           this.emit2(OP.COMP_STORE, COMP_CODE[COMP_ALIAS[target.comp]], target);
           this.emit2(OP.STORE, this.internName(inner.name), target);
         } else if (inner.type === 'member') {
-          if (inner.object.type !== 'var' || inner.object.name !== CTX_NAME) {
-            throw parseError(`only this has fields '.${inner.field}'`, inner.line, inner.col);
+          if (inner.object.type === 'var' && inner.object.name === CTX_NAME) {
+            if (!CTX_FIELD_CODE.hasOwnProperty(inner.field)) {
+              throw parseError(`unknown this field '.${inner.field}'`, inner.line, inner.col);
+            }
+            this.emit2(OP.LOAD_CTX_FIELD, CTX_FIELD_CODE[inner.field], inner);
+            this.emit2(OP.COMP_STORE, COMP_CODE[COMP_ALIAS[target.comp]], target);
+            this.emit2(OP.STORE_CTX_FIELD, CTX_FIELD_CODE[inner.field], target);
+          } else {
+            // 粒子字段分量赋值：p.position.x = v
+            // 栈序：先 DUP 出对象句柄供写回，LOAD_MEMBER 消费一份读旧值。
+            this.compileExpr(inner.object);
+            this.emit1(OP.DUP, inner);
+            this.emit2(OP.LOAD_MEMBER, this.internName(inner.field), inner);
+            this.emit3(OP.STORE_MEMBER_COMP, this.internName(inner.field), COMP_CODE[COMP_ALIAS[target.comp]], target);
           }
-          if (!CTX_FIELD_CODE.hasOwnProperty(inner.field)) {
-            throw parseError(`unknown this field '.${inner.field}'`, inner.line, inner.col);
-          }
-          this.emit2(OP.LOAD_CTX_FIELD, CTX_FIELD_CODE[inner.field], inner);
-          this.emit2(OP.COMP_STORE, COMP_CODE[COMP_ALIAS[target.comp]], target);
-          this.emit2(OP.STORE_CTX_FIELD, CTX_FIELD_CODE[inner.field], target);
         } else if (inner.type === 'index') {
           this.compileExpr(inner.target);
           this.compileExpr(inner.index);
@@ -2888,9 +2967,11 @@ class Compiler {
   compileStmt(st) {
     switch (st.type) {
       case 'block':
+        this.pushScopeFrame();
         this.emit1(OP.ENTER_SCOPE, st);
         for (const s of st.body) this.compileStmt(s);
         this.emit1(OP.EXIT_SCOPE, st);
+        this.popScopeFrame();
         return;
       case 'if': {
         this.compileExpr(st.cond);
@@ -2942,6 +3023,7 @@ class Compiler {
       case 'for': {
         const loop = { breaks: [], continues: [] };
         this.loopStack.push(loop);
+        this.pushScopeFrame();
         this.emit1(OP.ENTER_SCOPE, st);
         if (st.init) this.compileForPart(st.init);
         const start = this.pc();
@@ -2960,6 +3042,36 @@ class Compiler {
         if (jf != null) this.patchJump(jf, end);
         for (const p of loop.breaks) this.patchJump(p, end);
         this.emit1(OP.EXIT_SCOPE, st);
+        this.popScopeFrame();
+        this.loopStack.pop();
+        return;
+      }
+      case 'forof': {
+        const loop = { breaks: [], continues: [] };
+        this.loopStack.push(loop);
+        this.pushScopeFrame();
+        this.emit1(OP.ENTER_SCOPE, st);
+        this.compileExpr(st.iter);
+        this.emit1(OP.ITER_BEGIN, st);
+        const itSlot = this.declareLocal(this.synthName());
+        this.emit2(OP.STORE_LOCAL, itSlot, st);
+        const varSlot = this.declareLocal(st.name);
+        const start = this.pc();
+        this.emit2(OP.LOAD_LOCAL, itSlot, st);
+        this.emit1(OP.ITER_NEXT, st);
+        this.emit2(OP.STORE_LOCAL, itSlot, st);
+        const jf = this.emit2(OP.JUMP_IF_FALSE, 0, st);
+        this.emit2(OP.STORE_LOCAL, varSlot, st);
+        this.emit2(OP.LOOP_GUARD, this.allocLoopCounter(), st);
+        this.compileStmt(st.body);
+        const contTarget = this.pc();
+        for (const p of loop.continues) this.patchJump(p, contTarget);
+        this.emit2(OP.JUMP, start, st);
+        const end = this.pc();
+        this.patchJump(jf, end);
+        for (const p of loop.breaks) this.patchJump(p, end);
+        this.emit1(OP.EXIT_SCOPE, st);
+        this.popScopeFrame();
         this.loopStack.pop();
         return;
       }
@@ -3085,9 +3197,29 @@ function collectStaticNames(processStmts) {
     if (node.type === 'while') { walk(node.body); return; }
     if (node.type === 'do') { walk(node.body); return; }
     if (node.type === 'for') { if (node.init) walk(node.init); if (node.inc) walk(node.inc); walk(node.body); }
+    if (node.type === 'forof') { walk(node.body); }
   }
   processStmts.forEach(walk);
   return [...out];
+}
+
+// 字节码 VM 尚未实现 break/continue 的跨块作用域清理（会留下未弹出的块作用域），
+// 含 break/continue 的 process 回退 AST 解释执行（语义正确，仅性能略低）。
+function containsBreakOrContinue(stmts) {
+  let found = false;
+  function walk(node) {
+    if (!node || found) return;
+    if (node.type === 'break' || node.type === 'continue') { found = true; return; }
+    if (node.type === 'block') { node.body.forEach(walk); return; }
+    if (node.type === 'if') { walk(node.then); if (node.els) walk(node.els); return; }
+    if (node.type === 'while') { walk(node.body); return; }
+    if (node.type === 'do') { walk(node.body); return; }
+    if (node.type === 'for') { if (node.init) walk(node.init); if (node.inc) walk(node.inc); walk(node.body); return; }
+    if (node.type === 'forof') { walk(node.body); return; }
+    if (node.type === 'return') { if (node.expr) return; return; }
+  }
+  stmts.forEach(walk);
+  return found;
 }
 
 // 返回可提升的顶层无条件单次赋值列表（按源顺序）。
@@ -3208,7 +3340,8 @@ const NATIVE_BUILTINS = {
 const FAIL = Symbol('native-fail');
 
 function compileNativeProcess(program, varNames, globalNames) {
-  const stmts = program.process;
+  const stmts = program.process && program.process.body ? program.process.body.body : [];
+  if (stmts.length === 0) return null;
   const staticNamesSet = new Set(collectStaticNames(stmts));
   const varNamesSet = new Set(varNames);
   const globalNamesSet = new Set(globalNames);
@@ -3532,11 +3665,20 @@ return out;`;
 }
 
 function compileProgram(program, varNames, globalNames) {
-  const c = new Compiler(program, varNames);
-  const staticNames = collectStaticNames(program.process);
+  const processStmts = program.process && program.process.body ? program.process.body.body : [];
+  if (containsBreakOrContinue(processStmts)) {
+    throw new Error('unsupported: break/continue in process');
+  }
+  const c = new Compiler(program, varNames, globalNames);
+  // 注册 process 参数为局部槽（编译器作用域栈顶层，通常为 0）。
+  let paramSlot = -1;
+  if (program.process && program.process.params && program.process.params[0]) {
+    paramSlot = c.declareLocal(program.process.params[0]);
+  }
+  const staticNames = collectStaticNames(processStmts);
 
   // 1) 分析并编译 uniform prelude（先于主代码，共享常量/名字表与 hoisted 槽位）
-  const hoisted = findHoistedAssignments(program.process, varNames, globalNames, staticNames, program);
+  const hoisted = findHoistedAssignments(processStmts, varNames, globalNames, staticNames, program);
   const prelude = [];
   const preludeLocs = [];
   const savedCode = c.code;
@@ -3568,7 +3710,7 @@ function compileProgram(program, varNames, globalNames) {
   // 3) 编译 process 主代码（跳过已提升赋值）
   c.phase = 'process';
   const mainStart = c.pc();
-  for (const st of program.process) {
+  for (const st of processStmts) {
     if (st.type === 'assign' && st.target.type === 'var' && c.hoisted.has(st.target.name)) continue;
     c.compileStmt(st);
   }
@@ -3579,8 +3721,9 @@ function compileProgram(program, varNames, globalNames) {
     funcs: c.funcs, funcAddr, funcIdxByName: c.funcIdxByName,
     prelude, preludeLocs, uniformCount: hoisted.length,
     loopCounterCount: c.loopCounters,
+    localCount: c.slotCount, paramSlot,
     mainStart, codeEnd, program,
-    native: compileNativeProcess(program, varNames, globalNames),
+    native: null, // v12 对象级 process 不再走逐粒子原生快路径（保留字段以免调用方解构失败）
   };
 }
 
@@ -3615,6 +3758,7 @@ class Vm {
     this.inFunctionStack = [];
     this.scopeDepthStack = [];
     this.loopCounters = new Array(compiled.loopCounterCount || 0).fill(0);
+    this.locals = new Array(compiled.localCount || 0).fill(0);
     this.rt = new Runtime('process', compiled.program, objState, statics, null, ctx);
     this.topScope = new Map();
     this.rt.pushScope(this.topScope);
@@ -3633,6 +3777,7 @@ class Vm {
     this.inFunctionStack.length = 0;
     this.scopeDepthStack.length = 0;
     this.loopCounters.fill(0);
+    this.locals.fill(0);
     const rt = this.rt;
     rt.statics = statics;
     rt.ctx = ctx;
@@ -3676,6 +3821,8 @@ class Vm {
           this.rt.assignName(name, stack.pop(), node);
           break;
         }
+        case OP.LOAD_LOCAL: stack.push(this.locals[code[this.pc++]]); break;
+        case OP.STORE_LOCAL: this.locals[code[this.pc++]] = stack.pop(); break;
         case OP.LOAD_CTX_FIELD: {
           const field = CTX_FIELD_BY_CODE[code[this.pc++]];
           stack.push(ctxRead(field, this.rt, node));
@@ -3719,8 +3866,15 @@ class Vm {
         case OP.INDEX: {
           const idx = stack.pop();
           const arr = stack.pop();
-          if (!Array.isArray(arr)) throw runtimeError(`index access requires an array, got ${typeName(arr)}`, node);
-          const n = expectInt(idx, 'array index', node);
+          const n = expectInt(idx, 'index', node);
+          if (isParticleList(arr)) {
+            if (n < 0 || n >= arr.list.length) {
+              throw runtimeError(`particle list index ${n} out of bounds (size ${arr.list.length})`, node);
+            }
+            stack.push(particleValue(arr.list[n]));
+            break;
+          }
+          if (!Array.isArray(arr)) throw runtimeError(`index access requires an array or particle list, got ${typeName(arr)}`, node);
           if (n < 0 || n >= arr.length) throw runtimeError(`array index ${n} out of bounds (size ${arr.length})`, node);
           stack.push(arr[n]);
           break;
@@ -3833,14 +3987,97 @@ class Vm {
           break;
         }
         case OP.METHOD: {
-          const midx = code[this.pc++];
+          const nameIdx = code[this.pc++];
           const argCount = code[this.pc++];
+          const method = this.names[nameIdx];
           const args = [];
           for (let i = 0; i < argCount; i++) args.push(stack.pop());
           args.reverse();
           const obj = stack.pop();
-          if (!Array.isArray(obj)) throw runtimeError(`method '.${METHOD_BY_CODE[midx]}()' requires an array, got ${typeName(obj)}`, node);
-          stack.push(applyArrayMethod(obj, METHOD_BY_CODE[midx], args, this.rt, node));
+          if (isParticle(obj)) {
+            if (method === 'kill') {
+              if (args.length !== 0) throw runtimeError("'kill' takes no arguments", node);
+              particleKill(obj, node);
+              stack.push(0);
+            } else {
+              throw runtimeError(`particle has no method '.${method}()'`, node);
+            }
+          } else if (isParticleList(obj)) {
+            if (method === 'size') stack.push(obj.list.length);
+            else throw runtimeError(`particle list has no method '.${method}()'`, node);
+          } else if (Array.isArray(obj)) {
+            stack.push(applyArrayMethod(obj, method, args, this.rt, node));
+          } else {
+            throw runtimeError(`method '.${method}()' requires an array, particle or particle list, got ${typeName(obj)}`, node);
+          }
+          break;
+        }
+        case OP.LOAD_MEMBER: {
+          const field = this.names[code[this.pc++]];
+          const obj = stack.pop();
+          if (!isParticle(obj)) throw runtimeError(`only particles have fields '.${field}'`, node);
+          stack.push(particleGetField(obj, field, node));
+          break;
+        }
+        case OP.STORE_MEMBER: {
+          const field = this.names[code[this.pc++]];
+          const obj = stack.pop();
+          const value = stack.pop();
+          if (!isParticle(obj)) throw runtimeError(`only particles have fields '.${field}'`, node);
+          particleSetField(obj, field, value, node);
+          break;
+        }
+        case OP.STORE_MEMBER_COMP: {
+          const fieldIdx = code[this.pc++];
+          const comp = COMP_BY_CODE[code[this.pc++]];
+          const field = this.names[fieldIdx];
+          const old = stack.pop();
+          const obj = stack.pop();
+          const nv = stack.pop();
+          if (!isParticle(obj)) throw runtimeError(`only particles have fields '.${field}'`, node);
+          if (!isVec(old)) throw runtimeError('component assignment target is not a vector', node);
+          if ((old.t === 'vec2' && (comp === 'z' || comp === 'w')) || (old.t === 'vec3' && comp === 'w')) {
+            throw runtimeError(`${old.t} has no component '${comp}'`, node);
+          }
+          particleSetField(obj, field, setVecComp(old, comp, expectNum(nv, 'component value', node)), node);
+          break;
+        }
+        case OP.ITER_BEGIN: {
+          const iterable = stack.pop();
+          if (isParticleList(iterable)) {
+            stack.push({ arr: iterable.list.slice(), i: 0, wrap: true });
+          } else if (Array.isArray(iterable)) {
+            stack.push({ arr: iterable.slice(), i: 0, wrap: false });
+          } else {
+            throw runtimeError(`for-of requires a particle list or array, got ${typeName(iterable)}`, node);
+          }
+          break;
+        }
+        case OP.ITER_NEXT: {
+          const it = stack.pop();
+          if (!it || !Array.isArray(it.arr)) throw runtimeError('invalid iterator state', node);
+          if (it.i >= it.arr.length) {
+            stack.push(0);
+            stack.push(it);
+          } else {
+            const raw = it.arr[it.i];
+            it.i++;
+            stack.push(it.wrap ? particleValue(raw) : raw);
+            stack.push(1);
+            stack.push(it);
+          }
+          break;
+        }
+        case OP.SPAWN: {
+          const argCount = code[this.pc++];
+          const args = [];
+          for (let i = 0; i < argCount; i++) args.push(stack.pop());
+          args.reverse();
+          const fx = fxRuntime(this.rt);
+          if (!fx || typeof fx.spawn !== 'function') throw runtimeError('this.spawn is not available here', node);
+          const w = fx.spawn();
+          if (!w) throw runtimeError('spawn failed', node);
+          stack.push(particleValue(w));
           break;
         }
         case OP.ENTER_SCOPE: this.rt.pushScope(new Map()); break;
@@ -3925,8 +4162,8 @@ export function runTick(program, objState, ctx) {
 
 // 执行 process（每渲染帧一次）。ctx: { t, duration, vars, particles, spawn, deltaMs }。
 // process 的参数名由 program.process.params[0] 决定，delta 值为 ctx.deltaMs（毫秒）。
-export function runProcessFrame(program, objState, ctx) {
-  if (!program.process) return;
+// AST 解释执行 process（字节码编译失败/不支持时的回退路径，保留原错误语义）。
+function runProcessAst(program, objState, ctx) {
   const rt = new Runtime('process', program, objState, null, null, ctx || null);
   rt.pushScope(new Map());
   try {
@@ -3936,6 +4173,37 @@ export function runProcessFrame(program, objState, ctx) {
   } finally {
     rt.popScope();
   }
+}
+
+// 字节码 VM 执行 process：先跑 uniform prelude（提升的顶层不变量），再跑主代码。
+function runProcessVm(compiled, program, objState, ctx) {
+  const statics = new Map(); // v12 无 static 语句，空表即可
+  const uniforms = new Array(compiled.uniformCount);
+  const vm = new Vm(compiled, objState, statics, ctx || null, uniforms, compiled.prelude, compiled.preludeLocs, 0);
+  const delta = ctx && ctx.deltaMs != null ? ctx.deltaMs : 0;
+  vm.run(); // prelude → 填充 uniforms
+  vm.code = compiled.code;
+  vm.locs = compiled.locs;
+  vm.resetForRun(statics, ctx || null, uniforms, compiled.mainStart);
+  if (compiled.paramSlot >= 0) vm.locals[compiled.paramSlot] = delta;
+  vm.run(); // 主代码
+}
+
+export function runProcessFrame(program, objState, ctx) {
+  if (!program.process) return;
+  if (program._vmUnsupported) { runProcessAst(program, objState, ctx); return; }
+  let compiled;
+  try {
+    const varNames = Object.keys((ctx && ctx.vars) || {});
+    const globalNames = objState && objState.globals ? [...objState.globals.keys()] : [];
+    compiled = getCompiledProgram(program, varNames, globalNames);
+  } catch (e) {
+    // 编译器不支持（或脚本非法）→ 回退 AST，由 AST 给出规范错误/语义。
+    program._vmUnsupported = true;
+    runProcessAst(program, objState, ctx);
+    return;
+  }
+  runProcessVm(compiled, program, objState, ctx);
 }
 
 /* =========================================================================

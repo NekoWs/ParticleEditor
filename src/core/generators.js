@@ -118,7 +118,7 @@ function newParticleWrapper(fx, runtime) {
     light: 0,
     life: -1,
     index: serial,
-    fields: new Map(),
+    cf: Object.create(null),
     alive: true,
     _spawnTick: runtime.curTick,
     _p: null,
@@ -349,7 +349,7 @@ export function validateFunctionScript(fx, sourceOverride) {
     const w = {
       pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0],
       scale: 1, glow: false, light: 0, life: -1,
-      index: serial++, fields: new Map(), alive: true, _spawnTick: st,
+      index: serial++, cf: Object.create(null), alive: true, _spawnTick: st,
       kill() { this.alive = false; },
     };
     particles.push(w);
