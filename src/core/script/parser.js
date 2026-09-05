@@ -1,0 +1,695 @@
+/* =========================================================================
+ * 脚本语言解析器：tokenizer + 递归下降 parser → AST
+ * 纯逻辑，无 DOM/THREE 依赖。词法常量从 ./lexical.js 引入。
+ * ======================================================================= */
+
+import { KEYWORDS, CTX_NAME, LIFECYCLE_FUNCS, CONSTANTS, COMP_NAMES, BUILTIN_FUNCTIONS, parseError } from './lexical.js';
+
+/* =========================================================================
+ * Tokenizer
+ * ======================================================================= */
+
+function isDigit(c) { return c >= '0' && c <= '9'; }
+function isIdentStart(c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c === '_'; }
+function isIdentPart(c) { return isIdentStart(c) || isDigit(c); }
+
+function tokenize(source) {
+  const tokens = [];
+  const src = String(source == null ? '' : source);
+  const len = src.length;
+  let i = 0;
+  let line = 1;
+  let col = 1;
+
+  const advance = () => {
+    const c = src[i++];
+    if (c === '\n') { line++; col = 1; } else { col++; }
+    return c;
+  };
+
+  while (i < len) {
+    const c = src[i];
+
+    // 空白
+    if (c === ' ' || c === '\t' || c === '\r' || c === '\n') { advance(); continue; }
+
+    // 行注释
+    if (c === '/' && src[i + 1] === '/') {
+      while (i < len && src[i] !== '\n') advance();
+      continue;
+    }
+
+    // 块注释
+    if (c === '/' && src[i + 1] === '*') {
+      const startLine = line, startCol = col;
+      advance(); advance();
+      let closed = false;
+      while (i < len) {
+        if (src[i] === '*' && src[i + 1] === '/') { advance(); advance(); closed = true; break; }
+        advance();
+      }
+      if (!closed) throw parseError('unterminated block comment', startLine, startCol);
+      continue;
+    }
+
+    // 数字：123、1.5、.5、1e3（负号由一元 - 处理）
+    if (isDigit(c) || (c === '.' && isDigit(src[i + 1]))) {
+      const startLine = line, startCol = col;
+      const m = /^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?/.exec(src.slice(i));
+      const text = m[0];
+      for (let k = 0; k < text.length; k++) advance();
+      tokens.push({ type: 'num', value: parseFloat(text), line: startLine, col: startCol });
+      continue;
+    }
+
+    // 字符串
+    if (c === '"') {
+      const startLine = line, startCol = col;
+      advance();
+      let out = '';
+      let closed = false;
+      while (i < len) {
+        const ch = src[i];
+        if (ch === '"') { advance(); closed = true; break; }
+        if (ch === '\\') {
+          advance();
+          const esc = src[i];
+          if (esc === 'n') { out += '\n'; advance(); }
+          else if (esc === 'r') { out += '\r'; advance(); }
+          else if (esc === 't') { out += '\t'; advance(); }
+          else if (esc === '"') { out += '"'; advance(); }
+          else if (esc === '\\') { out += '\\'; advance(); }
+          else { out += esc; advance(); }
+          continue;
+        }
+        out += ch;
+        advance();
+      }
+      if (!closed) throw parseError('unterminated string literal', startLine, startCol);
+      tokens.push({ type: 'str', value: out, line: startLine, col: startCol });
+      continue;
+    }
+
+    // 标识符 / 关键字
+    if (isIdentStart(c)) {
+      const startLine = line, startCol = col;
+      let name = '';
+      while (i < len && isIdentPart(src[i])) name += advance();
+      // pi / e 是数值字面量保留名（§13）
+      if (name === 'pi') tokens.push({ type: 'num', value: Math.PI, line: startLine, col: startCol });
+      else if (name === 'e') tokens.push({ type: 'num', value: Math.E, line: startLine, col: startCol });
+      else tokens.push({ type: 'ident', value: name, line: startLine, col: startCol });
+      continue;
+    }
+
+    // 两字符运算符
+    if ((c === '=' || c === '!' || c === '<' || c === '>') && src[i + 1] === '=') {
+      const startLine = line, startCol = col;
+      let op;
+      if (c === '=') op = '==';
+      else if (c === '!') op = '!=';
+      else if (c === '<') op = '<=';
+      else op = '>=';
+      advance(); advance();
+      tokens.push({ type: 'punct', value: op, line: startLine, col: startCol });
+      continue;
+    }
+    if ((c === '&' && src[i + 1] === '&') || (c === '|' && src[i + 1] === '|')) {
+      const startLine = line, startCol = col;
+      const op = c === '&' ? '&&' : '||';
+      advance(); advance();
+      tokens.push({ type: 'punct', value: op, line: startLine, col: startCol });
+      continue;
+    }
+    if ((c === '+' && src[i + 1] === '+') || (c === '-' && src[i + 1] === '-')) {
+      const startLine = line, startCol = col;
+      const op = c === '+' ? '++' : '--';
+      advance(); advance();
+      tokens.push({ type: 'punct', value: op, line: startLine, col: startCol });
+      continue;
+    }
+
+    // 单字符运算符 / 分隔符
+    if ('+-*/%^!?:=<>()[]{},;.'.includes(c)) {
+      const startLine = line, startCol = col;
+      advance();
+      tokens.push({ type: 'punct', value: c, line: startLine, col: startCol });
+      continue;
+    }
+
+    throw parseError(`unexpected character '${c}'`, line, col);
+  }
+
+  tokens.push({ type: 'eof', value: '<eof>', line, col });
+  return tokens;
+}
+
+/* =========================================================================
+ * Parser（递归下降）
+ * ======================================================================= */
+
+function toLValue(expr, tok) {
+  switch (expr.type) {
+    case 'var':
+      return { type: 'var', name: expr.name, line: expr.line, col: expr.col };
+    case 'index':
+      return { type: 'index', target: expr.target, index: expr.index, line: expr.line, col: expr.col };
+    case 'comp':
+      return { type: 'comp', target: expr.target, comp: expr.comp, line: expr.line, col: expr.col };
+    case 'member':
+      return { type: 'member', object: expr.object, field: expr.field, line: expr.line, col: expr.col };
+    case 'array': {
+      const names = [];
+      for (const item of expr.items) {
+        if (item.type !== 'var') {
+          throw parseError('destructuring assignment names must be identifiers', item.line, item.col);
+        }
+        names.push(item.name);
+      }
+      return { type: 'unpack', names, line: expr.line, col: expr.col };
+    }
+    default:
+      throw parseError('invalid assignment target', tok.line, tok.col);
+  }
+}
+
+class Parser {
+  constructor(source) {
+    this.tokens = tokenize(source);
+    this.pos = 0;
+    this.phase = null;     // 'setup' | 'process' | 'func'（当前顶层区块）
+    this.loopDepth = 0;
+  }
+
+  peek(offset = 0) {
+    return this.tokens[Math.min(this.pos + offset, this.tokens.length - 1)];
+  }
+
+  next() {
+    const tok = this.tokens[this.pos];
+    if (tok.type !== 'eof') this.pos++;
+    return tok;
+  }
+
+  check(value) {
+    const tok = this.peek();
+    return tok.value === value;
+  }
+
+  match(value) {
+    if (this.check(value)) { this.next(); return true; }
+    return false;
+  }
+
+  matchKw(kw) {
+    const tok = this.peek();
+    if (tok.type === 'ident' && tok.value === kw) { this.next(); return true; }
+    return false;
+  }
+
+  atEnd() { return this.peek().type === 'eof'; }
+
+  errorAt(tok, msg) { throw parseError(msg, tok.line, tok.col); }
+
+  expect(value, what) {
+    const tok = this.peek();
+    if (tok.value !== value) {
+      throw parseError(`expected '${value}'${what ? ' ' + what : ''}, got '${tok.value}'`, tok.line, tok.col);
+    }
+    return this.next();
+  }
+
+  expectIdent() {
+    const tok = this.peek();
+    if (tok.type !== 'ident') {
+      throw parseError(`expected identifier, got '${tok.value}'`, tok.line, tok.col);
+    }
+    return this.next();
+  }
+
+  expectKw(kw) {
+    const tok = this.peek();
+    if (tok.type !== 'ident' || tok.value !== kw) {
+      throw parseError(`expected '${kw}', got '${tok.value}'`, tok.line, tok.col);
+    }
+    return this.next();
+  }
+
+  /* -- 顶层 -- */
+
+  parseProgram() {
+    const lifecycle = { setup: null, tick: null, process: null };
+    const functions = new Map();
+
+    while (!this.atEnd()) {
+      this.expectKw('func');
+      const nameTok = this.expectIdent();
+      this.expect('(');
+      const params = this.parseParamList();
+      this.expect(')');
+      this.phase = LIFECYCLE_FUNCS.has(nameTok.value) ? nameTok.value : 'func';
+      const body = this.parseBlock();
+      this.phase = null;
+
+      const fn = {
+        type: 'func', name: nameTok.value, params, body,
+        line: nameTok.line, col: nameTok.col,
+      };
+
+      if (LIFECYCLE_FUNCS.has(fn.name)) {
+        if (lifecycle[fn.name]) {
+          this.errorAt(nameTok, `duplicate lifecycle function '${fn.name}'`);
+        }
+        this.validateLifecycleSignature(nameTok, fn);
+        lifecycle[fn.name] = fn;
+      } else {
+        this.validateFuncName(nameTok);
+        if (functions.has(fn.name)) {
+          this.errorAt(nameTok, `duplicate function name '${fn.name}'`);
+        }
+        functions.set(fn.name, fn);
+      }
+    }
+
+    return { setup: lifecycle.setup, tick: lifecycle.tick, process: lifecycle.process, functions };
+  }
+
+  validateLifecycleSignature(tok, fn) {
+    if (fn.name === 'setup' || fn.name === 'tick') {
+      if (fn.params.length !== 0) {
+        this.errorAt(tok, `'${fn.name}' must not take parameters`);
+      }
+    } else if (fn.name === 'process') {
+      if (fn.params.length !== 1) {
+        this.errorAt(tok, `'process' must take exactly one parameter (delta milliseconds)`);
+      }
+    }
+  }
+
+  validateFuncName(tok) {
+    const name = tok.value;
+    if (KEYWORDS.has(name) || name === CTX_NAME || CONSTANTS.has(name) || BUILTIN_FUNCTIONS.has(name)) {
+      this.errorAt(tok, `reserved name cannot be used as function name: '${name}'`);
+    }
+  }
+
+  parseParamList() {
+    const params = [];
+    if (!this.check(')')) {
+      const tok = this.expectIdent();
+      this.validateParamName(tok);
+      params.push(tok.value);
+      while (this.match(',')) {
+        const t2 = this.expectIdent();
+        this.validateParamName(t2);
+        params.push(t2.value);
+      }
+    }
+    return params;
+  }
+
+  validateParamName(tok) {
+    const name = tok.value;
+    if (KEYWORDS.has(name) || name === CTX_NAME || CONSTANTS.has(name)) {
+      this.errorAt(tok, `reserved name cannot be used as parameter: '${name}'`);
+    }
+  }
+
+  parseBlock() {
+    const open = this.expect('{');
+    const body = [];
+    while (!this.check('}') && !this.atEnd()) body.push(this.parseStatement());
+    this.expect('}');
+    return { type: 'block', body, line: open.line, col: open.col };
+  }
+
+  /* -- 语句 -- */
+
+  parseStatement() {
+    const tok = this.peek();
+
+    if (tok.type === 'punct' && tok.value === '{') return this.parseBlock();
+
+    if (tok.type === 'ident') {
+      switch (tok.value) {
+        case 'if': return this.parseIf();
+        case 'while': return this.parseWhile();
+        case 'do': return this.parseDoWhile();
+        case 'for': return this.parseFor();
+        case 'break': return this.parseBreak(tok);
+        case 'continue': return this.parseContinue(tok);
+        case 'return': return this.parseReturn(tok);
+        case 'global': return this.parseGlobal(tok);
+        default: break;
+      }
+    }
+
+    return this.parseAssignOrExprStatement();
+  }
+
+  parseIf() {
+    const start = this.next(); // 'if'
+    this.expect('(');
+    const cond = this.parseTernary();
+    this.expect(')');
+    const then = this.parseStatement();
+    let els = null;
+    if (this.matchKw('else')) els = this.parseStatement();
+    return { type: 'if', cond, then, els, line: start.line, col: start.col };
+  }
+
+  parseWhile() {
+    const start = this.next();
+    this.expect('(');
+    const cond = this.parseTernary();
+    this.expect(')');
+    this.loopDepth++;
+    const body = this.parseStatement();
+    this.loopDepth--;
+    return { type: 'while', cond, body, line: start.line, col: start.col };
+  }
+
+  parseDoWhile() {
+    const start = this.next();
+    this.loopDepth++;
+    const body = this.parseStatement();
+    this.loopDepth--;
+    this.expectKw('while');
+    this.expect('(');
+    const cond = this.parseTernary();
+    this.expect(')');
+    this.expect(';');
+    return { type: 'do', body, cond, line: start.line, col: start.col };
+  }
+
+  parseFor() {
+    const start = this.next();
+    this.expect('(');
+
+    // for-of：for (const name of expr) 或 for (name of expr)
+    const saved = this.pos;
+    if (this.matchKw('const')) {
+      const nameTok = this.expectIdent();
+      this.validateForVarName(nameTok);
+      this.expectKw('of');
+      const iter = this.parseTernary();
+      this.expect(')');
+      this.loopDepth++;
+      const body = this.parseStatement();
+      this.loopDepth--;
+      return { type: 'forof', name: nameTok.value, iter, body, line: start.line, col: start.col };
+    }
+    if (this.peek().type === 'ident' && this.peek(1).type === 'ident' && this.peek(1).value === 'of') {
+      const nameTok = this.expectIdent();
+      this.validateForVarName(nameTok);
+      this.expectKw('of');
+      const iter = this.parseTernary();
+      this.expect(')');
+      this.loopDepth++;
+      const body = this.parseStatement();
+      this.loopDepth--;
+      return { type: 'forof', name: nameTok.value, iter, body, line: start.line, col: start.col };
+    }
+    this.pos = saved;
+
+    let init = null;
+    if (!this.check(';')) init = this.parseAssignExpr();
+    this.expect(';');
+    let cond = null;
+    if (!this.check(';')) cond = this.parseTernary();
+    this.expect(';');
+    let inc = null;
+    if (!this.check(')')) inc = this.parseAssignExpr();
+    this.expect(')');
+    this.loopDepth++;
+    const body = this.parseStatement();
+    this.loopDepth--;
+    return { type: 'for', init, cond, inc, body, line: start.line, col: start.col };
+  }
+
+  validateForVarName(tok) {
+    if (KEYWORDS.has(tok.value) || tok.value === CTX_NAME || CONSTANTS.has(tok.value)) {
+      this.errorAt(tok, `reserved name cannot be used as loop variable: '${tok.value}'`);
+    }
+  }
+
+  parseBreak(tok) {
+    if (this.loopDepth === 0) this.errorAt(tok, "'break' outside loop");
+    this.next();
+    this.expect(';');
+    return { type: 'break', line: tok.line, col: tok.col };
+  }
+
+  parseContinue(tok) {
+    if (this.loopDepth === 0) this.errorAt(tok, "'continue' outside loop");
+    this.next();
+    this.expect(';');
+    return { type: 'continue', line: tok.line, col: tok.col };
+  }
+
+  parseReturn(tok) {
+    if (!this.phase) this.errorAt(tok, "'return' only allowed inside a function");
+    this.next();
+    let expr = null;
+    if (!this.check(';')) expr = this.parseTernary();
+    this.expect(';');
+    return { type: 'return', expr, line: tok.line, col: tok.col };
+  }
+
+  parseGlobal(tok) {
+    if (this.phase !== 'setup') this.errorAt(tok, "'global' only allowed inside setup");
+    return this.parseGlobalStaticBody(tok, 'global');
+  }
+
+  parseGlobalStaticBody(tok, type) {
+    this.next();
+    const nameTok = this.expectIdent();
+    this.validateGlobalStaticName(nameTok);
+    let init = null;
+    if (this.match('=')) init = this.parseTernary();
+    this.expect(';');
+    return { type, name: nameTok.value, init, line: tok.line, col: tok.col };
+  }
+
+  validateGlobalStaticName(tok) {
+    const name = tok.value;
+    if (KEYWORDS.has(name) || name === CTX_NAME || CONSTANTS.has(name)) {
+      this.errorAt(tok, `reserved name cannot be declared: '${name}'`);
+    }
+  }
+
+  parseAssignOrExprStatement() {
+    const start = this.peek();
+    const expr = this.parseAssignExpr();
+    if (expr.type === 'assign') {
+      this.expect(';');
+      return expr;
+    }
+    this.expect(';');
+    if (expr.type !== 'call' && expr.type !== 'method' && expr.type !== 'preinc' && expr.type !== 'postinc') {
+      this.errorAt(start, 'expression statement must be a function call');
+    }
+    return { type: 'expr', expr, line: start.line, col: start.col };
+  }
+
+  // 语句层赋值：= 右结合，且只在此处出现（§5 优先级 1）。
+  parseAssignExpr() {
+    const start = this.peek();
+    const left = this.parseTernary();
+    if (this.match('=')) {
+      const target = toLValue(left, start);
+      const value = this.parseAssignExpr();
+      return { type: 'assign', target, value, line: start.line, col: start.col };
+    }
+    return left;
+  }
+
+  /* -- 表达式 -- */
+
+  parseTernary() {
+    const cond = this.parseOr();
+    if (this.match('?')) {
+      const qTok = this.tokens[this.pos - 1];
+      const thenExpr = this.parseTernary();
+      this.expect(':');
+      const elseExpr = this.parseTernary();
+      return { type: 'ternary', cond, thenExpr, elseExpr, line: qTok.line, col: qTok.col };
+    }
+    return cond;
+  }
+
+  parseOr() {
+    let left = this.parseAnd();
+    while (this.match('||')) {
+      const opTok = this.tokens[this.pos - 1];
+      const right = this.parseAnd();
+      left = { type: 'binary', op: '||', left, right, line: opTok.line, col: opTok.col };
+    }
+    return left;
+  }
+
+  parseAnd() {
+    let left = this.parseEquality();
+    while (this.match('&&')) {
+      const opTok = this.tokens[this.pos - 1];
+      const right = this.parseEquality();
+      left = { type: 'binary', op: '&&', left, right, line: opTok.line, col: opTok.col };
+    }
+    return left;
+  }
+
+  parseEquality() {
+    let left = this.parseComparison();
+    while (this.check('==') || this.check('!=')) {
+      const opTok = this.next();
+      const right = this.parseComparison();
+      left = { type: 'binary', op: opTok.value, left, right, line: opTok.line, col: opTok.col };
+    }
+    return left;
+  }
+
+  parseComparison() {
+    let left = this.parseAdditive();
+    while (this.check('<') || this.check('<=') || this.check('>') || this.check('>=')) {
+      const opTok = this.next();
+      const right = this.parseAdditive();
+      left = { type: 'binary', op: opTok.value, left, right, line: opTok.line, col: opTok.col };
+    }
+    return left;
+  }
+
+  parseAdditive() {
+    let left = this.parseMultiplicative();
+    while (this.check('+') || this.check('-')) {
+      const opTok = this.next();
+      const right = this.parseMultiplicative();
+      left = { type: 'binary', op: opTok.value, left, right, line: opTok.line, col: opTok.col };
+    }
+    return left;
+  }
+
+  parseMultiplicative() {
+    let left = this.parsePower();
+    while (this.check('*') || this.check('/') || this.check('%')) {
+      const opTok = this.next();
+      const right = this.parsePower();
+      left = { type: 'binary', op: opTok.value, left, right, line: opTok.line, col: opTok.col };
+    }
+    return left;
+  }
+
+  // 幂：优先级高于一元（§5），右结合。
+  parsePower() {
+    let left = this.parseUnary();
+    while (this.match('^')) {
+      const opTok = this.tokens[this.pos - 1];
+      const right = this.parsePower();
+      left = { type: 'binary', op: '^', left, right, line: opTok.line, col: opTok.col };
+    }
+    return left;
+  }
+
+  parseUnary() {
+    if (this.check('-') || this.check('!')) {
+      const opTok = this.next();
+      const operand = this.parseUnary();
+      return { type: 'unary', op: opTok.value, operand, line: opTok.line, col: opTok.col };
+    }
+    if (this.check('++') || this.check('--')) {
+      const opTok = this.next();
+      const target = this.parseUnary();
+      toLValue(target, opTok); // 校验为可赋值目标
+      return { type: 'preinc', op: opTok.value, target, line: opTok.line, col: opTok.col };
+    }
+    return this.parsePostfix();
+  }
+
+  parsePostfix() {
+    let expr = this.parsePrimary();
+    while (true) {
+      if (this.match('(')) {
+        const args = this.parseArgs();
+        expr = { type: 'call', callee: expr, args, line: expr.line, col: expr.col };
+      } else if (this.match('[')) {
+        const idx = this.parseTernary();
+        this.expect(']');
+        expr = { type: 'index', target: expr, index: idx, line: expr.line, col: expr.col };
+      } else if (this.match('.')) {
+        const nameTok = this.expectIdent();
+        if (this.match('(')) {
+          const args = this.parseArgs();
+          expr = { type: 'method', object: expr, method: nameTok.value, args, line: expr.line, col: expr.col };
+        } else if (COMP_NAMES.has(nameTok.value)) {
+          expr = { type: 'comp', target: expr, comp: nameTok.value, line: expr.line, col: expr.col };
+        } else {
+          expr = { type: 'member', object: expr, field: nameTok.value, line: nameTok.line, col: nameTok.col };
+        }
+      } else if (this.check('++') || this.check('--')) {
+        const opTok = this.next();
+        toLValue(expr, opTok); // 校验为可赋值目标
+        expr = { type: 'postinc', op: opTok.value, target: expr, line: opTok.line, col: opTok.col };
+      } else {
+        break;
+      }
+    }
+    return expr;
+  }
+
+  parseArgs() {
+    const args = [];
+    if (!this.check(')')) {
+      args.push(this.parseTernary());
+      while (this.match(',')) args.push(this.parseTernary());
+    }
+    this.expect(')');
+    return args;
+  }
+
+  parsePrimary() {
+    const tok = this.peek();
+
+    if (tok.type === 'num') { this.next(); return { type: 'num', value: tok.value, line: tok.line, col: tok.col }; }
+    if (tok.type === 'str') { this.next(); return { type: 'str', value: tok.value, line: tok.line, col: tok.col }; }
+
+    if (tok.type === 'ident') {
+      this.next();
+      if (tok.value === 'true' || tok.value === 'false') {
+        return { type: 'bool', value: tok.value === 'true', line: tok.line, col: tok.col };
+      }
+      return { type: 'var', name: tok.value, line: tok.line, col: tok.col };
+    }
+
+    if (tok.type === 'punct' && tok.value === '(') {
+      this.next();
+      const expr = this.parseTernary();
+      this.expect(')');
+      return expr;
+    }
+
+    if (tok.type === 'punct' && tok.value === '[') {
+      this.next();
+      const items = [];
+      if (!this.check(']')) {
+        items.push(this.parseTernary());
+        while (this.match(',')) items.push(this.parseTernary());
+      }
+      this.expect(']');
+      return { type: 'array', items, line: tok.line, col: tok.col };
+    }
+
+    this.errorAt(tok, `unexpected token '${tok.value}'`);
+  }
+}
+
+export function parseProgram(source) {
+  return new Parser(source).parseProgram();
+}
+export function parseExpression(source) {
+  const p = new Parser(source);
+  const node = p.parseTernary();
+  const extra = p.peek();
+  if (extra.type !== 'eof') {
+    throw parseError(`unexpected '${extra.value}' after expression`, extra.line, extra.col);
+  }
+  return node;
+}
