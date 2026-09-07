@@ -1,47 +1,12 @@
-/* =========================================================================
- * 脚本语言运行时（setup / tick / process）+ 字节码编译器与 VM
- * -------------------------------------------------------------------------
- * 职责：
- *   1) AST 解释器 —— setup / tick 与（回退路径）process
- *   2) 字节码编译器 + 寄存器式 VM —— process 主路径
- *   3) 值类型 / 内建函数 / 单表达式求值
- * 词法常量见 src/core/script/lexical.js；tokenizer / parser 见
- * src/core/script/parser.js。
- *
- * 设计约束：
- *   - 纯逻辑 ESM：不依赖 DOM / THREE / 浏览器 API，可在 Node/Vitest 直接 import。
- *   - 值与对象形态：
- *       num   → JS number
- *       bool  → JS boolean
- *       vec2  → { t:'vec2', x, y }
- *       vec3  → { t:'vec3', x, y, z }
- *       mat3  → { t:'mat3', m:[[r0c0,r0c1,r0c2],[...],[...]] }（行主序）
- *       mat4  → { t:'mat4', m:[[...] x4] }（行主序）
- *       array → JS Array
- *       func  → { t:'func', name }
- *   - 错误一律抛 Error，消息含行列号 / 语句上下文（本模块使用英文消息文本）。
- *
- * 跨端一致性（Kotlin 端会照此实现，算法必须可精确复刻）：
- *   PRNG
- *     mulberry32：见 mulberry32()。rand() 使用对象级 PRNG 状态（对象 setup 时
- *     创建，每次 rand() 推进）；rand(seed) = mulberry32(seed|0) 的下一个值，
- *     不共享对象状态。
- *   3D Simplex
- *     标准 Gustavson 3D simplex：Grad3 梯度表 + 256 排列表。排列表由种子生成：
- *     先构造 [0..255] identity permutation，再用 mulberry32(seed) 做
- *     Fisher-Yates shuffle（固定顺序：i 从 255 递减到 1，j = floor(rng()*(i+1))，
- *     交换 p[i]、p[j]），最后按标准做法复制到 perm / permMod12（各 512 长）。
- *     noise(x,y,z) 使用 fx.seed 生成排列表；noise(x,y,z,seed) 使用显式 seed。
- *     标准结果 = 32 * 四角贡献和（理论范围约 [-1,1]）；为消除浮点误差越界，
- *     额外 clamp 到 [-1,1]（归一化说明见 noise3D()，Kotlin 端照做）。
- *   fbm
- *     octaves 至少 1；lacunarity = 2.0，gain = 0.5；累加后除以幅度和，
- *     再 clamp 到 [-1,1]。
- * ======================================================================= */
-
-/* -------------------------------------------------------------------------
- * 导入：词法常量与解析器已拆分到 src/core/script/
- * ---------------------------------------------------------------------- */
+// 脚本语言运行时（setup / tick / process）+ process 字节码编译器与 VM。
+// 词法常量见 script/lexical.js，tokenizer / parser 见 script/parser.js。
+// 纯逻辑 ESM，不依赖 DOM/THREE/浏览器 API；错误一律抛 Error，消息含行列号（本模块用英文）。
+//
+// 跨端一致性（Kotlin 端照此实现，算法必须可精确复刻）：
+//   PRNG：mulberry32；rand() 用对象级状态，rand(seed)=mulberry32(seed|0) 的下一个值，不共享对象状态。
+//   3D Simplex：标准 Gustavson；排列表由 mulberry32(seed) 对 [0..255] 做 Fisher-Yates 生成。
+//   fbm：octaves ≥1，lacunarity=2.0，gain=0.5，累加后除以幅度和再 clamp 到 [-1,1]。
+//   值形态：num/bool 是 JS 原生；vec/mat 是 { t, x,y,z... } / { t, m }；array 是 JS Array。
 
 import { FAST_MATH } from './fastmath.js';
 import { CTX_NAME, CONSTANTS, COMP_ALIAS, BUILTIN_FUNCTIONS, parseError } from './script/lexical.js';
@@ -62,24 +27,22 @@ const CTX_FIELD_CODE = {};
 CTX_FIELD_NAMES.forEach((n, i) => { CTX_FIELD_CODE[n] = i; });
 const CTX_FIELD_BY_CODE = CTX_FIELD_NAMES;
 
-// 常量（§13）。pi / e 在 tokenizer 中直接变成数值字面量，这里保留以防查表。
+// 常量。pi / e 在 tokenizer 里直接变成数值字面量，这里保留以防查表。
 
-// 向量分量访问名：r/g/b 分别是 x/y/z 的别名，a 是 w 的别名（§5 后缀）。
+// 向量分量访问名：r/g/b 是 x/y/z 的别名，a 是 w 的别名。
 
-const MAX_LOOP_ITERATIONS = 100000; // §14
-const MAX_RECURSION_DEPTH = 64;     // §14
-const EQ_TOLERANCE = 1e-6;          // 数组 find/includes/unique 相等容差（§10）
+const MAX_LOOP_ITERATIONS = 100000;
+const MAX_RECURSION_DEPTH = 64;
+const EQ_TOLERANCE = 1e-6;          // 数组 find/includes/unique 相等容差
 
-/* -------------------------------------------------------------------------
- * 值类型构造与判定
- * ---------------------------------------------------------------------- */
+// —— 值类型构造与判定 ——
 
 const vec2 = (x, y) => ({ t: 'vec2', x, y });
 const vec3 = (x, y, z) => ({ t: 'vec3', x, y, z });
 const vec4 = (x, y, z, w) => ({ t: 'vec4', x, y, z, w });
 const mat3 = (m) => ({ t: 'mat3', m });
 const mat4 = (m) => ({ t: 'mat4', m });
-// 粒子句柄 / 粒子列表（v12 spawn 模型）。w 为宿主侧粒子存储对象。
+// 粒子句柄 / 粒子列表。w 为宿主侧粒子存储对象。
 // 句柄对象按 w 缓存复用：process 的 for-of 每帧每粒子都会取一次句柄，
 // 逐次新建 {t:'particle',w} 会产生大量短命对象并拖累 GC。
 const particleValue = (w) => (w._pv || (w._pv = { t: 'particle', w }));
@@ -115,9 +78,7 @@ function typeName(v) {
   return 'unknown';
 }
 
-/* -------------------------------------------------------------------------
- * 错误
- * ---------------------------------------------------------------------- */
+// —— 错误 ——
 
 
 function runtimeError(msg, node) {
@@ -150,18 +111,9 @@ function sameDimVec(a, b, node) {
   if (vecDim(a) !== vecDim(b)) throw runtimeError('vector dimension mismatch', node);
 }
 
-/* =========================================================================
- * PRNG —— mulberry32
- * -------------------------------------------------------------------------
- * 标准 mulberry32：
- *   state 为 32 位有符号整数，初始 state = seed | 0。
- *   每步：
- *     state = (state + 0x6D2B79F5) | 0
- *     t = Math.imul(state ^ (state >>> 15), 1 | state)
- *     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
- *     return ((t ^ (t >>> 14)) >>> 0) / 4294967296      // [0, 1)
- * Kotlin 端用 Int/Long 模拟 32 位回绕即可精确复刻。
- * ======================================================================= */
+// —— PRNG：mulberry32 ——
+// 标准 mulberry32：state 为 32 位有符号整数，初始 state = seed|0。
+// Kotlin 端用 Int/Long 模拟 32 位回绕即可精确复刻。
 function mulberry32(seed) {
   let a = seed | 0;
   return function next() {
@@ -172,22 +124,9 @@ function mulberry32(seed) {
   };
 }
 
-/* =========================================================================
- * 3D Simplex 噪声（标准 Gustavson 实现 + 种子排列表）
- * -------------------------------------------------------------------------
- * Grad3 梯度表（12 个方向，标准表）：
- *   [1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],
- *   [1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],
- *   [0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1]
- * 排列表生成（见 makePermutation）：
- *   p = [0..255] identity
- *   用 mulberry32(seed) 做 Fisher-Yates：for i = 255 down to 1:
- *     j = floor(rng() * (i + 1)); swap(p[i], p[j])
- *   perm[i] = p[i & 255]（i in 0..511）
- *   permMod12[i] = perm[i] % 12
- * 结果归一化：标准结果 32 * sum 理论范围约 [-1,1]。为避免极少数浮点越界
- * （>1 或 <-1 的误差量级 < 1e-12），返回时 clamp 到 [-1,1]。Kotlin 端照做。
- * ======================================================================= */
+// —— 3D Simplex 噪声（标准 Gustavson + 种子排列表）——
+// Grad3 用标准 12 方向梯度表；排列表由 mulberry32(seed) 对 [0..255] 做 Fisher-Yates 生成。
+// 结果 32*sum 理论范围约 [-1,1]，为避免极少数浮点越界（误差量级 <1e-12），返回时 clamp 到 [-1,1]。
 
 const GRAD3 = [
   [1, 1, 0], [-1, 1, 0], [1, -1, 0], [-1, -1, 0],
@@ -291,11 +230,9 @@ function noise3D(xin, yin, zin, seed) {
 }
 
 
-/* =========================================================================
- * 相等比较 / 排序比较
- * ======================================================================= */
+// —— 相等比较 / 排序比较 ——
 
-// §7 ==/!= ：精确比较（无容差）。
+// ==/!=：精确比较（无容差）。
 function eqExact(a, b) {
   if (isNum(a) && isNum(b)) return a === b;
   if (isBool(a) && isBool(b)) return a === b;
@@ -323,7 +260,7 @@ function eqExact(a, b) {
   return false;
 }
 
-// §10 find/includes/unique 相等：数值与向量/矩阵分量按 1e-6 容差，布尔精确，数组递归。
+// find/includes/unique 相等：数值与向量/矩阵分量按 1e-6 容差，布尔精确，数组递归。
 function eqTol(a, b) {
   if (isNum(a) && isNum(b)) return Math.abs(a - b) <= EQ_TOLERANCE;
   if (isBool(a) && isBool(b)) return a === b;
@@ -360,7 +297,7 @@ function eqTol(a, b) {
   return false;
 }
 
-// §11 默认升序排序比较。返回 -1 / 0 / 1。混合类型直接抛错。
+// 默认升序排序比较。返回 -1 / 0 / 1。混合类型直接抛错。
 function defaultCompare(a, b, node) {
   const ta = typeName(a);
   const tb = typeName(b);
@@ -397,9 +334,7 @@ function defaultCompare(a, b, node) {
   throw runtimeError(`values of type ${ta} are not sortable`, node);
 }
 
-/* =========================================================================
- * 控制流信号（return / break / continue）
- * ======================================================================= */
+// —— 控制流信号（return / break / continue）——
 
 class Flow {
   constructor(kind, value) {
@@ -408,9 +343,7 @@ class Flow {
   }
 }
 
-/* =========================================================================
- * 运行时（解释器）
- * ======================================================================= */
+// —— 运行时（解释器）——
 
 class Runtime {
   constructor(phase, program, objState, statics, env, ctx) {
@@ -445,7 +378,7 @@ class Runtime {
   }
   currentScope() { return this.scopes[this.scopes.length - 1]; }
 
-  /* -- 名称查找 -- */
+  /* —— 名称查找 —— */
 
   lookupName(name, node) {
     // this 不是值，只能通过 this.field 访问。
@@ -468,7 +401,7 @@ class Runtime {
     throw runtimeError(`unknown variable '${name}'`, node);
   }
 
-  /* -- 赋值 -- */
+  /* —— 赋值 —— */
 
   assignName(name, value, node) {
     if (name === CTX_NAME) {
@@ -548,7 +481,7 @@ class Runtime {
     throw runtimeError(`invalid assignment target '${target.type}'`, node);
   }
 
-  /* -- 语句执行 -- */
+  /* —— 语句执行 —— */
 
   execStmt(node) {
     switch (node.type) {
@@ -706,7 +639,7 @@ class Runtime {
     }
   }
 
-  /* -- 表达式求值 -- */
+  /* —— 表达式求值 —— */
 
   evalExpr(node) {
     switch (node.type) {
@@ -828,7 +761,7 @@ class Runtime {
     throw runtimeError(`only this / particle have fields '.${field}'`, node);
   }
 
-  // 读取可赋值目标（供 ++/-- 使用）。
+  // 读取可赋值目标（++/-- 用）
   evalLValue(target) {
     if (target.type === 'var') return this.lookupName(target.name, target);
     if (target.type === 'member') return this.evalMember(target);
@@ -918,7 +851,7 @@ class Runtime {
   }
 }
 
-/* -- 粒子 / this 字段读取写入（v12 spawn 模型） -- */
+/* —— 粒子 / this 字段读取写入 —— */
 
 function ensureOut(ctx) {
   if (!ctx) ctx = {};
@@ -1142,9 +1075,7 @@ function incDecValue(v, op, node) {
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
 const clampNum = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 
-/* =========================================================================
- * 运算（§7）
- * ======================================================================= */
+// —— 运算 ——
 
 function binaryOp(op, a, b, node) {
   switch (op) {
@@ -1296,9 +1227,7 @@ function matVecMul(m, v, node) {
   );
 }
 
-/* =========================================================================
- * 数组方法与集合内建
- * ======================================================================= */
+// —— 数组方法与集合内建 ——
 
 function sliceIndex(n, size) {
   let k = Math.trunc(n);
@@ -1400,9 +1329,7 @@ function applyArrayMethod(arr, method, args, rt, node) {
   }
 }
 
-/* =========================================================================
- * 向量 / 矩阵内建函数
- * ======================================================================= */
+// —— 向量 / 矩阵内建函数 ——
 
 function normalizeVec3(v, node) {
   const l = Math.hypot(v.x, v.y, v.z);
@@ -1465,9 +1392,7 @@ function clampImpl(v, lo, hi, node) {
   throw runtimeError(`clamp not supported for ${typeName(v)}`, node);
 }
 
-/* =========================================================================
- * 内建函数表
- * ======================================================================= */
+// —— 内建函数表 ——
 
 
 function builtin(name, minArgs, maxArgs, impl) {
@@ -1877,9 +1802,7 @@ function lookAtMat4(eye, target, up, node) {
   ]);
 }
 
-/* =========================================================================
- * 值格式化（print）
- * ======================================================================= */
+// —— 值格式化（print）——
 
 function formatValue(v) {
   if (typeof v === 'number') return String(v);
@@ -1899,12 +1822,8 @@ function formatValue(v) {
   return String(v);
 }
 
-/* =========================================================================
- * 字节码编译器 + 栈式虚拟机（process 专用）
- * -------------------------------------------------------------------------
- * setup 继续走上面的 AST Runtime；process 编译为扁平指令流执行，减少 AST
- * 递归分发开销。名称查找/赋值复用 Runtime 的语义（含保留字放宽与遮蔽规则）。
- * ======================================================================= */
+// —— 字节码编译器 + 栈式虚拟机（process 专用）——
+// setup 走上面的 AST Runtime；process 编译成扁平指令流执行。名称查找/赋值复用 Runtime 语义。
 
 const OP = {
   CONST: 0, POP: 1, DUP: 2,
@@ -1934,7 +1853,7 @@ for (const name of BUILTIN_TABLE.keys()) {
 }
 
 const METHOD_NAMES = ['push', 'insert', 'remove', 'slice', 'size', 'find', 'includes', 'sort', 'unique', 'reverse'];
-/** 数组方法名（供编辑器补全等复用，保持单一事实来源）。 */
+/** 数组方法名（编辑器补全等复用）。 */
 export const ARRAY_METHOD_NAMES = METHOD_NAMES;
 const METHOD_CODE = {};
 METHOD_NAMES.forEach((n, i) => { METHOD_CODE[n] = i; });
@@ -2016,7 +1935,7 @@ class Compiler {
   // 编译器内部合成名（for-of 迭代器存储）：用 \u0000 前缀保证与用户标识符不冲突。
   synthName() { return '\u0000it' + (this.syntheticSeq++); }
 
-  /* ---------- 局部变量槽位（寄存器式，热路径绕开 Map 作用域查找） ---------- */
+  /* —— 局部变量槽位（寄存器式，热路径绕开 Map 查找）—— */
 
   allocSlot() { return this.slotCount++; }
   lookupLocal(name) {
@@ -2034,7 +1953,7 @@ class Compiler {
   pushScopeFrame() { this.scopeStack.push(new Map()); }
   popScopeFrame() { this.scopeStack.pop(); }
 
-  /* ---------- 表达式 ---------- */
+  /* —— 表达式 —— */
 
   compileExpr(node) {
     switch (node.type) {
@@ -2170,7 +2089,7 @@ class Compiler {
     this.emit2(OP.CALL_VALUE, node.args.length, node);
   }
 
-  /* ---------- 赋值目标（值已压栈） ---------- */
+  /* —— 赋值目标（值已压栈）—— */
 
   compileTarget(target) {
     switch (target.type) {
@@ -2226,7 +2145,7 @@ class Compiler {
             this.emit2(OP.STORE_CTX_FIELD, CTX_FIELD_CODE[inner.field], target);
           } else {
             // 粒子字段分量赋值：p.position.x = v
-            // 栈序：先 DUP 出对象句柄供写回，LOAD_MEMBER 消费一份读旧值。
+            // 栈序：先 DUP 出对象句柄用于写回，LOAD_MEMBER 消费一份读旧值。
             this.compileExpr(inner.object);
             this.emit1(OP.DUP, inner);
             this.emit2(OP.LOAD_MEMBER, this.internName(inner.field), inner);
@@ -2260,7 +2179,7 @@ class Compiler {
     }
   }
 
-  /* ---------- 语句 ---------- */
+  /* —— 语句 —— */
 
   compileStmt(st) {
     switch (st.type) {
@@ -2419,7 +2338,7 @@ class Compiler {
   }
 }
 
-/* ---------- 不变式分析（仅 process 顶层无条件赋值） ---------- */
+/* —— 不变式分析（仅 process 顶层无条件赋值）—— */
 
 function walkExpr(node, cb) {
   if (!node) return;
@@ -2587,14 +2506,9 @@ function findHoistedAssignments(processStmts, varNames, globalNames, staticNames
   return out;
 }
 
-/* -------------------------------------------------------------------------
- * 原生 JS 快路径编译器（process 直线标量代码）
- * -------------------------------------------------------------------------
- * 把「仅由标量赋值/拆包组成、无循环/分支/向量/矩阵/用户函数」的 process 编译为
- * `new Function` 原生 JS，每个粒子只执行算术与数组读取，不再经过栈式 VM 的
- * 逐指令分发、Map 作用域查找与值装箱。任何不支持的结构返回 null，调用方回退 VM。
- * 保持与 Runtime 相同的：属性写入钳制、glow 阈值、light/life 取整、除零/越界报错。
- * ======================================================================= */
+// —— 原生 JS 快路径编译器（process 直线标量代码）——
+// 把「只有标量赋值/拆包、无循环/分支/向量/矩阵/用户函数」的 process 编译成 new Function；
+// 不支持的结构返回 null，调用方回退 VM。属性钳制/glow 阈值/light/life 取整/除零报错与 VM 一致。
 
 // 支持直接映射到 JS 标量运算的内建函数；其余（noise/fbm/rand/random/向量/矩阵/集合）回退 VM。
 const NATIVE_BUILTINS = {
@@ -3021,7 +2935,7 @@ function compileProgram(program, varNames, globalNames) {
     loopCounterCount: c.loopCounters,
     localCount: c.slotCount, paramSlot,
     mainStart, codeEnd, program,
-    native: null, // v12 对象级 process 不再走逐粒子原生快路径（保留字段以免调用方解构失败）
+    native: null, // 对象级 process 不再走逐粒子原生快路径（保留字段以免调用方解构失败）
   };
 }
 
@@ -3034,7 +2948,7 @@ function getCompiledProgram(program, varNames, globalNames) {
   return compiled;
 }
 
-/* ---------- 栈式虚拟机 ---------- */
+/* —— 栈式虚拟机 —— */
 
 class Vm {
   constructor(compiled, objState, statics, ctx, uniforms, codeArr, locsArr, startPc) {
@@ -3424,9 +3338,7 @@ class Vm {
   }
 }
 
-/* =========================================================================
- * 导出 API
- * ======================================================================= */
+// —— 导出 API ——
 
 // 创建对象级状态：{ globals: Map, rand: prngState }。
 export function createObjectState(seed) {
@@ -3504,13 +3416,8 @@ export function runProcessFrame(program, objState, ctx) {
   runProcessVm(compiled, program, objState, ctx);
 }
 
-/* =========================================================================
- * 单表达式求值（UV 字段 / 预设 countExpr 等标量表达式）
- * -------------------------------------------------------------------------
- * 裸表达式按 script-lang 表达式语法解析（this.<field>、内建函数、变量查表均可）。
- * ctx 与 process 的 this 上下文同构：{ i,n,t,dt,duration,life,uv_x,uv_y,vars,out }。
- * 返回标量（number）；表达式结果不是 number 时抛错。
- * ======================================================================= */
+// —— 单表达式求值（UV 字段 / 预设 countExpr 等标量表达式）——
+// 裸表达式按 script-lang 语法解析；ctx 与 process 的 this 上下文同构，返回 number，非 number 抛错。
 
 
 // 通用表达式求值：返回任意值（number/vec/mat/bool/array）。低频路径。
@@ -3526,7 +3433,7 @@ export function evalExpressionValue(expr, ctx) {
   }
 }
 
-// 低频求值：每调用一次新建 Runtime/Map（供 countExpr 等非热路径使用）。
+// 低频求值：每调用一次新建 Runtime/Map（countExpr 等非热路径用）。
 // 仅接受标量结果；否则抛错。
 export function evalExpression(expr, ctx) {
   const v = evalExpressionValue(expr, ctx);
@@ -3562,13 +3469,8 @@ export function createExpressionRunner(expr) {
   };
 }
 
-/* =========================================================================
- * 共享迁移 API（替代 easing.js 旧迷你引擎的数学/解析工具）
- * -------------------------------------------------------------------------
- * 值形态统一为本模块的 vec3/mat3：{ t:'vec3', x,y,z } / { t:'mat3', m:[[...]] }。
- * 优先级表与 Parser 的 parseOr/parseAnd/.../parsePower 实际层级一致：
- * || < && < ==/!= < 比较 < 加减 < 乘除模 < 幂。一元 -/! 高于幂。
- * ======================================================================= */
+// —— 共享迁移 API（替代 easing.js 旧迷你引擎的数学/解析工具）——
+// 值形态统一为本模块的 vec3/mat3；优先级与 Parser 一致：|| < && < ==/!= < 比较 < 加减 < 乘除模 < 幂。
 
 export const SCRIPT_FUNCTION_NAMES = Object.freeze([...BUILTIN_FUNCTIONS]);
 

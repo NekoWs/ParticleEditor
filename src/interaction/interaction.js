@@ -1,7 +1,5 @@
-/* =========================================================================
- * 交互：Blender 式操作
- * 职责：视口点选/框选、移动/旋转/缩放拖拽、绘制工具、剪贴板、快捷键与绘制数量编辑。
- * ======================================================================= */
+// 交互：Blender 式操作。视口点选/框选、移动/旋转/缩放拖拽、绘制工具、剪贴板、
+// 快捷键与绘制数量编辑。
 
 import * as THREE from 'three';
 import { t } from '../core/i18n.js';
@@ -28,12 +26,11 @@ export let modal = null;
 export let boxSel = null;
 export const lastMouse = { x: 0, y: 0 };
 
-/* ---------------- 触屏手势协调 ----------------
- * OrbitControls 在 renderer.domElement 上以 bubble 阶段监听 pointerdown，
- * 而本模块的选择/绘制逻辑也监听同一元素。为避免触屏上「编辑手势」与
- * 「OrbitControls 旋转」同时触发，这里在捕获阶段预判：若本次触控应由
- * 编辑器处理（点选/拖 gizmo/绘制），先禁用 controls，再由 bubble 逻辑接管；
- * 否则原样放行给 OrbitControls（单指旋转、双指平移缩放）。 */
+// —— 触屏手势协调 ——
+// OrbitControls 在 renderer.domElement 上以 bubble 阶段监听 pointerdown，本模块的选择/绘制逻辑
+// 也监听同一元素。为避免触屏上「编辑手势」与「OrbitControls 旋转」同时触发，这里在捕获阶段
+// 预判：这次触控该由编辑器处理（点选/拖 gizmo/绘制）就先禁用 controls，再由 bubble 逻辑接管；
+// 否则放行给 OrbitControls（单指旋转、双指平移缩放）。
 const activeTouchIds = new Set();
 const gatedTouchIds = new Set();
 let touchPending = null; // 触屏选择工具：点中粒子后待命，拖动超过阈值才进入移动
@@ -399,7 +396,7 @@ export function enterRotate(clientX, clientY, axis) {
   controls.enabled = false;
 }
 
-/* ---------------- 视图旋转（外部白色圆环：绕视线方向旋转） ---------------- */
+// —— 视图旋转（外部白色圆环：绕视线方向旋转） ——
 
 export function viewAxisOf(c) {
   // 视线轴：从选中对象指向摄像头（摄像头相对于选中对象的轴），白圈绕该轴旋转
@@ -1031,7 +1028,7 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
     // 空白：框选（三种变换工具共用）
     if (!handled) {
       boxSel = { x0: ev.clientX, y0: ev.clientY, x1: ev.clientX, y1: ev.clientY, shift: ev.shiftKey };
-      renderer.domElement.setPointerCapture(ev.pointerId); // 确保左键在画布外松开也能结束框选
+      renderer.domElement.setPointerCapture(ev.pointerId); // 左键在画布外松开也要能结束框选
       document.getElementById('box-overlay').style.display = 'block';
       updateBoxOverlay();
     }
@@ -1279,7 +1276,7 @@ export function promoteGroupSelection() {
 export function resolveSelectionPriority() {
   state.selectedFunction = null;
   state.selectedGroup = null;
-  // 1. 函数对象：选中集合覆盖某函数对象的全部派生粒子 → 选中该函数对象
+  // 先看函数对象：选中集合覆盖某函数对象的全部派生粒子 → 选中该函数对象
   for (const fx of state.functions) {
     const ids = state.particles.filter(p => p.fx === fx.id).map(p => p.id);
     if (ids.length > 0 && ids.every(id => state.selected.has(id))) {
@@ -1287,7 +1284,7 @@ export function resolveSelectionPriority() {
       return;
     }
   }
-  // 2. 组：选中集合恰好等于某组全部成员 → 提升为选中该组
+  // 再看组：选中集合恰好等于某组全部成员 → 提升为选中该组
   promoteGroupSelection();
 }
 
@@ -1322,9 +1319,7 @@ export function applyBoxSelection() {
   if (state.selectedFunction) refreshFunctionPanel(); // 选中函数对象时刷新其属性面板
 }
 
-/* =========================================================================
- * 绘制粒子数量交互：右键短按弹编辑框 + range，拖动时滚轮增减数量
- * ======================================================================= */
+// —— 绘制粒子数量交互：右键短按弹编辑框 + range，拖动时滚轮增减数量 ——
 
 export const DRAW_TOOLS = ['pencil', 'line', 'circle', 'rect', 'freehand'];
 export const DRAW_COUNT_MAX = 1000;
@@ -1366,7 +1361,7 @@ export function showDrawCountEditor(cx, cy) {
   drawCountDismiss = (e) => {
     if (!box.contains(e.target)) closeDrawCountEditor();
   };
-  // 延迟注册，避免本次右键 pointerup 事件立即触发关闭
+  // 延迟注册，免得这次右键的 pointerup 立刻触发关闭
   setTimeout(() => document.addEventListener('pointerdown', drawCountDismiss), 0);
 }
 export function clampCount(v) { return Math.max(2, Math.min(DRAW_COUNT_MAX, Math.round(parseInt(v) || 30))); }

@@ -1,10 +1,4 @@
-/* =========================================================================
- * 编辑：分量级关键帧写入与粒子/组增删改
- * 职责：
- *   1) 关键帧创建/更新/删除（setComponentKeyframe / editComponentValue / removeKeyframe）
- *   2) 批量编辑热路径（setValuesAtTime / editParticles / editSelectionUniform）
- *   3) 粒子与组的基础操作（addParticle / autoGroup / rename / move / remove）
- * ======================================================================= */
+// 分量级关键帧写入与粒子/组增删改。
 
 
 import { TRACK_COMPS, PARTICLE_SCALE_COMPS, COMP_INDEX, compPr, state, getParticle, getFunction, getCamera, isDerivedParticle, nextId, nextGroupName, indexParticle } from './constants.js';
@@ -115,7 +109,7 @@ export function editBaseValue(ids, prop, values) {
 
 // 批量：为多个粒子在同一时间写关键帧（每个粒子独立值）
 // 性能优化：直接用 p._tr 分量轨道数组访问轨道（跳过 findTrackByPr 的 Map 查询与 compPr 拼接），
-// 供拖动 5w 粒子等热点路径使用。语义与 setComponentKeyframe 完全一致。
+// 给拖动 5w 粒子等热点路径用，语义与 setComponentKeyframe 完全一致。
 export function setValuesAtTime(entries, prop) {
   const t = Math.round(state.time);
   const comps = particleComps(prop);
@@ -268,9 +262,7 @@ export function removeKeyframe(id, pr, t) {
 
 }
 
-/* =========================================================================
- * 组 / 函数对象：向量级便捷写入（内部拆分量）
- * ======================================================================= */
+// —— 组 / 函数对象：向量级便捷写入（内部拆分量）——
 
 function setTrackValues(prefix, prop, mode, time, values) {
   const comps = TRACK_COMPS[prop];
@@ -287,9 +279,7 @@ export function setFunctionTrackValue(fxId, prop, mode, time, values) {
   setTrackValues('f:' + fxId, prop, mode, time, values);
 }
 
-/* =========================================================================
- * 粒子 / 组 操作
- * ======================================================================= */
+// —— 粒子 / 组 操作 ——
 
 export function addParticle(base) {
   const p = Object.assign({ id: nextId(), color: [1, 1, 1, 1], scale: [1, 1, 1], glow: false, lightLevel: 0, pos: [0, 0, 0], vel: [0, 0, 0], life: 20 }, base);

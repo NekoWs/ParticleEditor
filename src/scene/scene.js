@@ -1,6 +1,4 @@
-/* =========================================================================
- * Three.js 场景
- * ======================================================================= */
+// Three.js 场景：渲染器、相机、轨道控制、粒子材质、gizmo 与摄像机可视化等场景级对象的构建。
 
 
 import * as THREE from 'three';
@@ -58,7 +56,7 @@ export const grid = (function makeGrid() {
 grid.position.y = 0;
 scene.add(grid);
 
-// ---- 底部世界三轴指示器（无限长，双向） ----
+// —— 底部世界三轴指示器（无限长，双向） ——
 // 默认只显示 X/Z（与底部网格同面）；操作 Y 轴（移动/旋转拖拽）时才显示 Y。
 // 平时 depthTest:true 正常被遮挡（不穿透）；操作中由 setWorldAxisGlow 改为穿透显示。
 export const WORLD_AXIS_LEN = 3000; // 半长：轴向从 -3000 延伸到 +3000
@@ -229,7 +227,7 @@ export const pointsMaterial = new THREE.ShaderMaterial({
   blending: THREE.NormalBlending,
 });
 
-/* ---- 贴图图集（atlas）：把所有贴图拼成一张大图，粒子用 per-point UV 采样 ---- */
+// —— 贴图图集（atlas）：把所有贴图拼成一张大图，粒子用 per-point UV 采样 ——
 export let texAtlasMap = {};
 export let texAtlasTexture = null;
 
@@ -350,12 +348,9 @@ export const GIZMO_RING_RENDER_ORDER = 50;
 export const GIZMO_FACE_RENDER_ORDER = 51;
 export const GIZMO_ARROW_RENDER_ORDER = 52;
 
-/* =========================================================================
- * 旋转控制器（Blender 风格，世界朝向，移除局部坐标系）
- * - 三个轴的圆环由分段弧组成，仅显示「从相机能看到」的一半（半圆环，
- *   渲染效果类似在此处放了一个球体，环是球面上的可见部分）
- * - 外部白色圆环：绕视线方向旋转
- * ======================================================================= */
+// —— 旋转控制器（Blender 风格，世界朝向） ——
+// 三个轴的圆环用分段弧拼成，只显示「从相机能看到」的一半（渲染上像放了个球体，环是球面的可见部分）；
+// 外面的白色圆环绕视线方向旋转。
 export const AXIS_RING_COLORS = { X: 0xff5555, Y: 0x55ff55, Z: 0x5588ff };
 // 各轴环的环面法线 = 旋转轴方向（世界朝向）
 export const RING_NORMALS = { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1] };
@@ -397,11 +392,8 @@ gizmoViewRing.renderOrder = GIZMO_RING_RENDER_ORDER - 1;
 gizmoViewRing.userData.view = true;
 gizmoGroup.add(gizmoViewRing);
 
-/* =========================================================================
- * 面移动器：三轴之间的矩形，悬浮于该面上，始终正对相机（billboard）
- * ======================================================================= */
-// 面移动器：三轴之间的矩形，固定朝向该面（法线沿该面正对的轴），
-// 颜色 = 该面正对的轴的颜色（如 XZ 面正对 Y 轴 → 绿色）
+// —— 面移动器：三轴之间的矩形，悬浮在该面上，始终正对相机（billboard） ——
+// 矩形固定朝向该面（法线沿该面正对的轴），颜色 = 该面正对的轴的颜色（如 XZ 面正对 Y 轴 → 绿色）
 export const GIZMO_FACE_DEFS = {
   XY: { pos: [0.38, 0.38, 0], normal: [0, 0, 1], color: 0x5588ff },    // 正对 Z → 蓝，位于 XY 面（z=0）
   XZ: { pos: [0.38, 0, 0.38], normal: [0, 1, 0], color: 0x55ff55 },    // 正对 Y → 绿，位于 XZ 面（y=0）
@@ -470,13 +462,10 @@ export let planePulse = null; // 绘制平面切换时的轴线发光动画 { ax
 export function setCamTransition(v) { camTransition = v; }
 export function setPlanePulse(v) { planePulse = v; }
 
-/* =========================================================================
- * 摄像机可视化（Blender 风格线框：机身 + 顶部把手 + 视锥线）
- * - 每个用户新建的摄像机一个 widget，局部坐标「前向 = -Z」（与 THREE 相机一致），
- *   姿态由 render.js 的 updateCameraWidgets 按 cameraPoseAt 每帧写入（position + 四元数）。
- * - 视锥张角随 fov 变化，远端取景框宽高随 fov / 视口宽高比变化（见 render.js）。
- * - 普通青色（与时间轴树 .tt-camera 一致）；当前激活的摄像机橙色高亮。
- * ======================================================================= */
+// —— 摄像机可视化（Blender 风格线框：机身 + 顶部把手 + 视锥线） ——
+// 每个用户新建的摄像机一个 widget，局部坐标「前向 = -Z」（与 THREE 相机一致），姿态由 render.js 的
+// updateCameraWidgets 按 cameraPoseAt 每帧写入；视锥张角随 fov 变化，远端取景框随 fov/视口宽高比变化。
+// 普通青色，当前激活的摄像机橙色高亮。
 export const CAM_WIDGET_COLOR = 0x63c9a1;        // 普通摄像机线框
 export const CAM_WIDGET_ACTIVE_COLOR = 0xff9940; // 激活摄像机高亮（与选中粒子描边橙一致）
 

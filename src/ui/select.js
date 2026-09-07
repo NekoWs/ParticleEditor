@@ -1,11 +1,7 @@
-/* =========================================================================
- * 触屏自定义下拉框：替换原生 <select>（移动端会弹全屏滚轮/系统面板）。
- * - 仅在 (pointer: coarse) 下启用；桌面仍用原生 select。
- * - 保留原生 select 在 DOM 中（隐藏），选项选择后写回 select.value 并派发 change，
- *   因此已有代码读取 .value / 监听 change 的路径全部保持不变。
- * - 下拉列表是单例并挂在 body 下（避免侧栏/抽屉的 transform 或 overflow 裁剪，
- *   同时保证 fixed 定位相对视口）。
- * ======================================================================= */
+// 触屏自定义下拉框：替换原生 <select>（移动端会弹全屏滚轮/系统面板）。只在 (pointer: coarse)
+// 下启用，桌面仍用原生 select。原生 select 留在 DOM 里（隐藏），选完写回 select.value 并派发
+// change，所以已有代码读 .value / 监听 change 的路径都不变。下拉列表是单例挂在 body 下，
+// 避免被侧栏/抽屉的 transform 或 overflow 裁掉，也保证 fixed 定位相对视口。
 
 import { hasCoarsePointer } from '../core/device.js';
 

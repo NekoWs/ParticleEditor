@@ -1,20 +1,5 @@
-/* =========================================================================
- * 拼图代码块：积木树数据模型 + 代码文本 ↔ 积木树 双向转换 + 类型系统
- * 纯逻辑模块，无 DOM 依赖（可在 node 下测试）。
- *
- * 积木树：
- *   代码块 = 有序语句列表 [ statement, ... ]
- *   statement ：
- *     { kind:'pos'|'pos_vec'|'vel'|'vel_vec'|'col'|'scl'|'glow'|'light'|'set', ... }
- *   表达式节点 expr：
- *     { kind:'num', value }                    数字（可为负）
- *     { kind:'var', name }                     变量引用（i/n/t / 函数变量 / 临时变量）
- *     { kind:'func', name, args:[expr,...] }   函数调用
- *     { kind:'op', op:'+|-|*|/|%|^', a, b }    二元运算
- *     { kind:'chain', terms:[expr...], ops:[op...] } 动态算式（从左到右：t0 op0 t1 op1 t2 ...）
- *     { kind:'comp', axis:'x'|'y'|'z', target } 向量分量访问（后缀 .x/.y/.z）
- *     { kind:'neg', a }                        一元负号（仅用于 -x 等非数字；-数字合并进 num）
- * ======================================================================= */
+// 拼图代码块：积木树数据模型 + 代码文本 ↔ 积木树双向转换 + 类型系统。纯逻辑，无 DOM。
+// 积木树：代码块是有序语句列表；表达式节点有 num/var/func/op/chain/comp/neg 等 kind。
 
 
 import { _et, _etf } from './i18n.js';
@@ -254,9 +239,7 @@ export const PALETTE_GROUPS = [
 export const OP_SYMBOLS = ['+', '-', '*', '/', '%', '^'];
 export const OP_LABELS = { '+': 'blk.op.add', '-': 'blk.op.sub', '*': 'blk.op.mul', '/': 'blk.op.div', '%': 'blk.op.mod', '^': 'blk.op.pow', '==': 'blk.op.eq', '!=': 'blk.op.ne', '<': 'blk.op.lt', '<=': 'blk.op.le', '>': 'blk.op.gt', '>=': 'blk.op.ge', '&&': 'blk.op.and', '||': 'blk.op.or' };
 
-/* =========================================================================
- * 类型
- * ======================================================================= */
+// —— 类型 ——
 
 export function typeAccepts(slotType, blockType) {
   if (slotType === T_ANY || blockType === T_ANY) return true;
@@ -366,9 +349,7 @@ export function stmtComplete(s) {
   }
 }
 
-/* =========================================================================
- * 代码生成（积木树 → 文本）
- * ======================================================================= */
+// —— 代码生成（积木树 → 文本）——
 
 export function fmtNum(v) {
   if (!Number.isFinite(v)) return '0';
@@ -570,9 +551,7 @@ export function statementsToCodeSpans(stmts, level) {
   return { code, spans };
 }
 
-/* =========================================================================
- * 代码解析（文本 → 积木树）
- * ======================================================================= */
+// —— 代码解析（文本 → 积木树）——
 
 /**
  * 拼图专用分词：与 script-lang 表达式语法对齐，但 pi/e 保留为标识符
@@ -1115,7 +1094,7 @@ export function splitStatements(code) {
   return out;
 }
 
-/** 代码文本 → 语句列表。无法用积木表达的语句保留为 raw 文本块，确保往返不丢代码。 */
+/** 代码文本 → 语句列表。无法用积木表达的语句保留为 raw 文本块，往返时不丢代码。 */
 export function codeToStatements(code) {
   return splitStatements(code).map(stmt => {
     try { return stmtToNode(stmt); }

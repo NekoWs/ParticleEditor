@@ -1,8 +1,6 @@
-/* =========================================================================
- * 贴图编辑器 + 取色板 + 贴图文件管理 + UV 面板
- * 贴图数据：state.textures = { name: { width, height, data(Uint8ClampedArray RGBA) } }
- * UV 参数：继承覆盖（函数对象 fx.uv > 组 state.groupUV[gname] > 粒子 p.uv）
- * ======================================================================= */
+// 贴图编辑器 + 取色板 + 贴图文件管理 + UV 面板。
+// 贴图数据：state.textures = { name: { width, height, data(Uint8ClampedArray RGBA) } }；
+// UV 参数按继承覆盖（函数对象 fx.uv > 组 state.groupUV[gname] > 粒子 p.uv）。
 
 
 import {t, tf} from '../core/i18n.js';
@@ -50,9 +48,7 @@ export let texActive = false; // 鼠标是否在贴图编辑器区域内（用�
 // 实时时间（秒），驱动 flipbook 帧（与 shader uTime 一致）
 export function texAnimTime() { return performance.now() / 1000; }
 
-/* =========================================================================
- * 贴图数据访问
- * ======================================================================= */
+// —— 贴图数据访问 ——
 
 export function getTexture(name) { return state.textures ? state.textures[name] : null; }
 export function getCurrentTexture() {
@@ -144,9 +140,7 @@ export function writeTargetUV(t, uv) {
   if (typeof rebuildPoints === 'function') rebuildPoints(false);
 }
 
-/* =========================================================================
- * 画布渲染
- * ======================================================================= */
+// —— 画布渲染 ——
 
 export const texCanvas = () => document.getElementById('tex-canvas');
 export const texCanvasWrap = () => document.getElementById('tex-canvas-wrap');
@@ -428,9 +422,7 @@ export function floodFill(px, py, target, apply) {
   return n;
 }
 
-/* =========================================================================
- * 编辑器交互（事件挂到 wrap，兼容灰色区域平移/缩放）
- * ======================================================================= */
+// —— 编辑器交互（事件挂到 wrap，兼容灰色区域平移/缩放） ——
 
 export let texDrag = null; // { mode: 'draw'|'pan'|'select'|'selmove'|'erase', last }
 
@@ -441,9 +433,7 @@ const texTouch = { pointers: new Map(), pinch: null };
 let texFwin = null;
 let texFwinMoved = null;
 
-/* =========================================================================
- * 画笔放大镜：铅笔绘制时在编辑器下方显示当前像素及邻域
- * ======================================================================= */
+// —— 画笔放大镜：铅笔绘制时在编辑器下方显示当前像素及邻域 ——
 const TEX_MAG_RADIUS = 6;   // 邻域半径（总 13×13 像素）
 const TEX_MAG_CELL = 12;    // 每个源像素在放大镜中的 CSS px
 let magSrc = null, magSrcCtx = null;
@@ -589,9 +579,7 @@ window.addEventListener('keydown', (e) => { if (e.key === 'Alt' && texActive) { 
 window.addEventListener('keyup', (e) => { if (e.key === 'Alt') { e.preventDefault(); texAltPreview(false); } });
 window.addEventListener('blur', () => texAltPreview(false));
 
-/* =========================================================================
- * 贴图编辑器全屏窗口：把编辑器（除 UV 面板外）移入悬浮窗
- * ======================================================================= */
+// —— 贴图编辑器全屏窗口：把编辑器（除 UV 面板外）移入悬浮窗 ——
 function texFullscreenParts() {
   const pane = document.getElementById('pane-texture');
   if (!pane) return [];
@@ -968,9 +956,7 @@ export function paintAt(p, mode) {
   setDirty(true);
 }
 
-/* =========================================================================
- * 取色板（HSV + alpha）
- * ======================================================================= */
+// —— 取色板（HSV + alpha） ——
 
 export function rgbaToCss(rgba) {
   return 'rgba(' + rgba[0] + ',' + rgba[1] + ',' + rgba[2] + ',' + (rgba[3] / 255).toFixed(3) + ')';
@@ -1069,7 +1055,7 @@ export function openColorPicker(x, y, rgba, onCommit) {
 
   box.appendChild(sv); box.appendChild(hue); box.appendChild(alpha); box.appendChild(row);
   document.body.appendChild(box);
-  // 移动端/窄屏下用实际尺寸双向钳制，确保整个取色板都落在屏幕内。
+  // 移动端/窄屏下按实际尺寸双向钳制，让整个取色板都落在屏幕内。
   const pad = 8;
   const bw = box.offsetWidth || 210;
   const bh = box.offsetHeight || 250;
@@ -1104,9 +1090,7 @@ export function hsvToRgb(hsv) {
   return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
 }
 
-/* =========================================================================
- * 文件：上传 / 新建 / 保存
- * ======================================================================= */
+// —— 文件：上传 / 新建 / 保存 ——
 
 export function makeTexture(name, w, h, data) {
   const t = { name, width: w, height: h, data: data || new Uint8ClampedArray(w * h * 4) };
@@ -1188,9 +1172,7 @@ export function resizeTexture(name, w, h) {
   refreshTexAfterChange();
 }
 
-/* =========================================================================
- * 贴图改名 / 删除（右键菜单，复用 tree.js 的 showContextMenu）
- * ======================================================================= */
+// —— 贴图改名 / 删除（右键菜单，复用 tree.js 的 showContextMenu） ——
 
 // 把全部对象 UV 里对 oldName 的贴图引用改为 newName（newName 为 null = 清空为无贴图）
 export function replaceTextureRef(oldName, newName) {
@@ -1238,9 +1220,7 @@ export async function deleteTextureItem(name) {
   refreshTexAfterChange();
 }
 
-/* =========================================================================
- * 贴图列表（文件管理器预留区域）
- * ======================================================================= */
+// —— 贴图列表（文件管理器预留区域） ——
 
 export function refreshTexList() {
   const box = document.getElementById('tex-list');
@@ -1283,7 +1263,7 @@ export function refreshTexList() {
   }
 }
 
-/* ---- 修改大小悬浮框：悬停在贴图条目下方（同曲线编辑器风格），外部点击关闭 ---- */
+// —— 修改大小悬浮框：悬停在贴图条目下方（同曲线编辑器风格），外部点击关闭 ——
 export let texResizePop = null;
 export function closeTexResizePop() {
   if (texResizePop) { texResizePop.remove(); texResizePop = null; }
@@ -1335,9 +1315,7 @@ export function openTexResizePop(item, name) {
   setTimeout(() => document.addEventListener('pointerdown', (e) => { if (!box.contains(e.target)) closeTexResizePop(); }), 0);
 }
 
-/* =========================================================================
- * UV 面板
- * ======================================================================= */
+// —— UV 面板 ——
 
 export function refreshTexturePanel() {
   // 自动选中当前对象使用的贴图

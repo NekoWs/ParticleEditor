@@ -1,12 +1,6 @@
-/* =========================================================================
- * 拼图代码块 UI（数据流层）
- * 渲染与交互全部委托给 puzzle-canvas.js（canvas），本文件只负责：
- *   - bctx 工作区数据模型与生命周期（open/close/preview/undo）
- *   - 积木数据模型工具（克隆 / 类型 / 调色板 / 查找 / 重命名）
- *   - 工作区持久化（localStorage）
- *   - 悬浮窗（场景 / 代码回显）与顶层 DOM 骨架
- * 依赖 blocks.js、float-window.js、easing.js、constants.js、undo.js、panels.js、generators.js
- * ======================================================================= */
+// 拼图代码块 UI（数据流层）。渲染与交互全部交给 puzzle-canvas.js（canvas），这里只管
+// bctx 工作区数据模型与生命周期（open/close/preview/undo）、积木数据模型工具（克隆/类型/
+// 调色板/查找/重命名）、工作区持久化（localStorage），以及悬浮窗（场景/代码回显）与顶层 DOM 骨架。
 
 import {_etf, t, tf} from '../core/i18n.js';
 import { isNarrowLayout } from '../core/device.js';
@@ -60,9 +54,7 @@ export let bctx = null;
 export let puzzleWin = null;
 export let viewportOrigin = null;
 
-/* =========================================================================
- * 节点工具
- * ======================================================================= */
+// —— 节点工具 ——
 
 export function cloneExprNode(n) {
   if (!n) return n;
@@ -134,7 +126,7 @@ export function ctxInfo(field) {
   return (CTX_VAR_INFO[key] && t(CTX_VAR_INFO[key])) || '';
 }
 
-/** 供 puzzle-canvas 构建下拉列表的条目（value / label / info）。 */
+/** 给 puzzle-canvas 构建下拉列表用的条目（value / label / info）。 */
 export function funcDropdownItems(group) {
   const spec = FUNC_DROPDOWNS[group];
   if (!spec) return [];
@@ -173,16 +165,14 @@ export function applyMethodSelection(node, method) {
   return true;
 }
 
-/** 用新节点替换表达式树中的旧节点（供上下文等下拉切换使用）。 */
+// 用新节点替换表达式树中的旧节点，给上下文等下拉切换用。
 export function replaceExprNode(oldNode, newNode) {
   const ref = findSlotRefByNode(findAllStmts(), oldNode);
   if (ref) { ref.set(newNode); return true; }
   return false;
 }
 
-/* =========================================================================
- * 槽位引用与查找
- * ======================================================================= */
+// —— 槽位引用与查找 ——
 
 export function freshTempName() {
   let k = 0;
@@ -306,9 +296,7 @@ export function removeChainOp(chain, index) {
   }
 }
 
-/* =========================================================================
- * 默认值
- * ======================================================================= */
+// —— 默认值 ——
 
 export const NVEC = () => ({ kind: 'func', name: 'vec', args: [N0(), N0(), N0()] });
 
@@ -366,9 +354,7 @@ export function defaultExprFor(type) {
   return null;
 }
 
-/* =========================================================================
- * 调色板
- * ======================================================================= */
+// —— 调色板 ——
 
 export function funcInfo(name) {
   const f = FUNC_BLOCKS[name];
@@ -476,9 +462,7 @@ export function buildPaletteGroup(g) {
   return items;
 }
 
-/* =========================================================================
- * 重命名
- * ======================================================================= */
+// —— 重命名 ——
 
 export function renameRefsInAll(oldName, newName) {
   renameRefsInStmts([...bctx.chain, ...bctx.setupChain, ...bctx.tickChain, ...bctx.frags.flatMap(f => f.stmts), ...bctx.funcs.map(f => f.stmt)], oldName, newName);
@@ -517,9 +501,7 @@ export function renameVarGlobal(oldName, newName) {
   renameRefsInAll(oldName, newName);
 }
 
-/* =========================================================================
- * 语句组定位 / 移动
- * ======================================================================= */
+// —— 语句组定位 / 移动 ——
 
 function findStmtInList(list, target) {
   for (let i = 0; i < list.length; i++) {
@@ -608,16 +590,12 @@ export function canPlaceIntoTarget(slotType, source) {
   return false;
 }
 
-/* =========================================================================
- * 渲染入口（委托 canvas）
- * ======================================================================= */
+// —— 渲染入口（委托 canvas） ——
 
 export function renderPalette() { puzzleCanvasRender(); }
 export function renderChain() { puzzleCanvasRender(); }
 
-/* =========================================================================
- * 生命周期
- * ======================================================================= */
+// —— 生命周期 ——
 
 function makePuzzleHost() {
   return {
@@ -1020,7 +998,7 @@ export function refreshCodeEcho() {
   puzzleCanvasRender();
 }
 
-/* —— 错误定位（把 script-lang 的 line/col 映射回积木） —— */
+// —— 错误定位（把 script-lang 的 line/col 映射回积木） ——
 function lineCountOf(str) { return (str === '') ? 0 : str.split('\n').length; }
 
 function parseErrorLine(msg) {
@@ -1108,9 +1086,7 @@ export function blockPreview() {
   }
 }
 
-/* =========================================================================
- * 撤销
- * ======================================================================= */
+// —— 撤销 ——
 
 export function bctxPushUndo() {
   if (!bctx) return;
@@ -1160,9 +1136,7 @@ export function bctxRedo() {
   refreshCodeEcho();
 }
 
-/* =========================================================================
- * 工作区持久化（localStorage）
- * ======================================================================= */
+// —— 工作区持久化（localStorage） ——
 
 export const WS_KEY = 'particledrawing.workspace';
 

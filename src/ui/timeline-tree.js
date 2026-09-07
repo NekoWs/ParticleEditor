@@ -1,11 +1,7 @@
-/* =========================================================================
- * 底部时间轴左侧标签轨（与 #tl-layers-canvas 的 lane 行一一对应）
- *
- * - 本模块只渲染 HTML 标签/三角形/数值输入/添加关键帧按钮；
- * - 关键帧菱形、播放头、刻度统一由 timeline-layers.js 在 canvas 上绘制；
- * - tlTreeState.expanded 是展开状态的唯一来源；
- * - tlTreeFlatRows() 输出与 HTML 完全一致的扁平行列表，供 canvas 读取。
- * ======================================================================= */
+// 底部时间轴左侧标签轨（与 #tl-layers-canvas 的 lane 行一一对应）。
+// 这里只渲染 HTML 标签/三角形/数值输入/添加关键帧按钮；关键帧菱形、播放头、刻度由
+// timeline-layers.js 在 canvas 上画。tlTreeState.expanded 是展开状态的唯一来源，
+// tlTreeFlatRows() 输出与 HTML 完全一致的扁平行列表，给 canvas 读。
 
 import { t, tf, LANG } from '../core/i18n.js';
 import { hasTouch } from '../core/device.js';
@@ -44,9 +40,7 @@ let eventsBound = false;
 const VAR_IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const VAR_RESERVED = new Set(['this', 'cx', 'cy', 'cz', 'out', 'pi', 'e', ...SCRIPT_FUNCTION_NAMES]);
 
-/* =========================================================================
- * 小工具
- * ======================================================================= */
+// —— 小工具 ——
 
 function el(tag, cls) {
   const node = document.createElement(tag);
@@ -161,9 +155,7 @@ function structureSignature() {
   return parts.join(';');
 }
 
-/* =========================================================================
- * 扁平行列表（HTML 与 canvas lane 的唯一行模型）
- * ======================================================================= */
+// —— 扁平行列表（HTML 与 canvas lane 的唯一行模型） ——
 
 function pushPropRows(rows, id, prop, depth, readOnly) {
   const key = id + '|' + prop;
@@ -250,9 +242,7 @@ export function tlTreeFlatRows() {
   return rows;
 }
 
-/* =========================================================================
- * HTML 行渲染
- * ======================================================================= */
+// —— HTML 行渲染 ——
 
 function renderFlatRow(row) {
   const div = el('div', 'tt-row tt-' + row.kind);
@@ -473,9 +463,7 @@ function renderFlatRow(row) {
   return div;
 }
 
-/* =========================================================================
- * 刷新 / 初始化
- * ======================================================================= */
+// —— 刷新 / 初始化 ——
 
 // 轻刷新：仅更新数值输入框（不重建 DOM、不画 canvas）
 export function drawTimelineTree() {
@@ -553,9 +541,7 @@ export function initTimelineTree() {
   refreshTimelineTree();
 }
 
-/* =========================================================================
- * 交互
- * ======================================================================= */
+// —— 交互 ——
 
 function onTreeClick(ev) {
   const arrow = ev.target.closest('.tt-arrow');
@@ -721,7 +707,7 @@ function onTreeDblClick(ev) {
   toggleKey(tlkey);
 }
 
-// 轻量同步树的选中高亮（供视口选区变化等跨模块路径调用）。
+// 轻量同步树的选中高亮，给视口选区变化等跨模块路径调用。
 export function syncSelectionClasses() {
   const root = document.getElementById('tl-tree');
   if (!root) return;

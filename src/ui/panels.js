@@ -1,10 +1,5 @@
-/* =========================================================================
- * 属性面板 / 底部时间轴标尺 / 函数对象属性面板
- * 职责：
- *   1) 右侧属性面板回显与写入（updatePropPanel / setScaleInputs）
- *   2) 底部播放进度标尺与 scrub 自动平移（drawTimeline / scrubAutoPan）
- *   3) 函数对象属性面板与变量关键帧编辑（buildFunctionPanel / syncFunctionVarValues）
- * ======================================================================= */
+// 属性面板 / 底部时间轴标尺 / 函数对象属性面板：右侧属性面板回显与写入、
+// 底部播放进度标尺与 scrub 自动平移、函数对象属性面板与变量关键帧编辑。
 
 
 import { t } from '../core/i18n.js';
@@ -179,9 +174,7 @@ export function updatePropPanel() {
 
 export { rgbToHex, hexToRgb };
 
-/* =========================================================================
- * 时间轴（底部：仅播放进度）
- * ======================================================================= */
+// —— 时间轴（底部：仅播放进度） ——
 
 export let TL_PX_PER_TICK = 4;   // 每 tick 像素（可缩放，见 setTLPxPerTick）
 export function setTLPxPerTick(v) { TL_PX_PER_TICK = Math.max(0.25, Math.min(128, v)); }
@@ -259,19 +252,14 @@ export function timelineXToTick(clientX) {
   return timelineViewStart + (clientX - rect.left) / TL_PX_PER_TICK;
 }
 
-/**
- * scrub 播放头拖动：AE 式「滞后自动平移」。
- * 入参 drag 为拖动状态对象（本函数读写 drag.edge/edgeVs/peakOut，用于跨帧记忆追赶方向与峰值）；
- * clientX 为当前指针 screenX；rect 为时间轴 canvas 的 getBoundingClientRect() 结果；
- * pinMarginPx 为钉边缘时播放头留在可视区内的距离（像素），保证游标不被边缘裁掉/因亚像素宽度差而消失。
- * 返回 { viewStart, time }，调用方写回 viewStart 变量与 state.time。
- *
- * 语义：
- *  - 指针在可视区内：播放头 1:1 跟随指针，视图不动。
- *  - 指针越出右缘/左缘：视图单向往外追赶（播放头钉在边缘内侧 pinMarginPx 处）。
- *  - 滞后：指针反向但仍停留在可视区外时，视图不回缩（播放头继续钉边缘）；
- *    只有指针重新进入可视区后，才恢复 1:1 跟随。
- */
+// scrub 播放头拖动：AE 式「滞后自动平移」。
+// drag 是拖动状态对象（本函数读写 drag.edge/edgeVs/peakOut，跨帧记住追赶方向与峰值）；
+// clientX 是当前指针 screenX；rect 是时间轴 canvas 的 getBoundingClientRect() 结果；
+// pinMarginPx 是钉边缘时播放头留在可视区内的距离（像素），免得游标被边缘裁掉。
+// 返回 { viewStart, time }，调用方写回 viewStart 变量与 state.time。
+//
+// 指针在可视区内时播放头 1:1 跟随、视图不动；越过右/左缘后视图单向往外追赶（播放头钉在
+// 边缘内侧 pinMarginPx 处）；指针反向但仍停在可视区外时视图不回缩，只有重新进入可视区才恢复跟随。
 export function scrubAutoPan(drag, clientX, rect, viewStart, time, pxPerTick, minStart, pinMarginPx) {
   const W = rect.width;
   const x = clientX - rect.left;         // 相对画布左缘（可 <0 或 >W）
@@ -314,9 +302,7 @@ export function scrubAutoPan(drag, clientX, rect, viewStart, time, pxPerTick, mi
   return { viewStart, time: Math.max(0, viewStart + x / pxPerTick) };
 }
 
-/* =========================================================================
- * 函数对象属性面板
- * ======================================================================= */
+// —— 函数对象属性面板 ——
 
 export function refreshFunctionPanel() {
   const box = document.getElementById('fx-panel');

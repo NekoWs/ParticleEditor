@@ -1,8 +1,5 @@
-/* =========================================================================
- * 移动端 / 平板布局控制
- * 职责：小屏时切换「视口优先 + 抽屉式面板」布局，管理面板/时间轴抽屉开关，
- *       在断点变化时同步 body 状态与时间轴行高。
- * ======================================================================= */
+// 移动端 / 平板布局控制：小屏时切到「视口优先 + 抽屉式面板」布局，管理面板/时间轴抽屉开关，
+// 断点变化时同步 body 状态与时间轴行高。
 
 import { isNarrowLayout, NARROW_MQ } from '../core/device.js';
 import { TL_TREE_ROW_H, updateTLTreeRowH, refreshTimelineTree } from './timeline-tree.js';
@@ -51,7 +48,7 @@ function syncLayout() {
 }
 
 // 时间轴抽屉关闭时的高度 = .tl-controls 实际高度 + 时间轴自身上下内边距。
-// 写入 --tl-controls-h 供 CSS 使用（关闭态高度）。仅在关闭态更新。
+// 写入 --tl-controls-h 给 CSS 用（关闭态高度）。仅在关闭态更新。
 // 测量时临时把 timeline 设为 height:auto，让控件按自然高度换行（避免被固定高度压缩后测小）。
 function syncTimelineControlsHeight() {
   const timeline = document.querySelector('.timeline');

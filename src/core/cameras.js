@@ -1,13 +1,6 @@
-/* =========================================================================
- * 摄像机对象运行时
- * 职责：
- *   1) 摄像机对象（位置/看向目标/翻滚角/FOV）与应用/读回换算
- *   2) 摄像机属性关键帧求值（pos/target/fov 走轨道，id 前缀 c:camId）
- *   3) 切换摄像机：把某时刻的摄像机姿态应用到视口相机
- *
- * 朝向模型（v9 起）：摄像机不再直接存欧拉角 rot，而是存「看向目标点」 target。
- *   pitch/yaw 由 lookAt(pos, target) 自动计算，roll 单独存（绕视线方向的翻滚角）。
- * ======================================================================= */
+// 摄像机对象运行时：位置/看向目标/翻滚角/FOV 的应用与读回，关键帧求值（pos/target/fov
+// 走轨道，id 前缀 c:camId），以及切到某摄像机时把该时刻姿态应用到视口相机。
+// 朝向模型：摄像机存「看向目标点」target（不直接存欧拉角），pitch/yaw 由 lookAt 自动算，roll 单独存。
 
 
 import * as THREE from 'three';
@@ -109,7 +102,7 @@ export function camLookQuaternion(pos, target, roll) {
   return _orbitQ.clone();
 }
 
-// 摄像机在 T 时刻的朝向四元数（最终姿态：公转已应用；供旋转 gizmo 局部环朝向使用）。
+// 摄像机在 T 时刻的朝向四元数（最终姿态：公转已应用；给旋转 gizmo 局部环朝向用）。
 export function camOrientationQuaternion(camId, T) {
   const pose = cameraPoseAt(camId, T);
   if (!pose) return null;
@@ -224,5 +217,5 @@ export function defaultCameraSnapshot() {
   return snapshotCamera();
 }
 
-// 旧格式 rot→target 换算在 cam-math.js（纯数学模块，供 io.js 等无 DOM 环境引入）
+// 旧格式 rot→target 换算在 cam-math.js（纯数学模块，给 io.js 等无 DOM 环境引入用）
 export { rotToTarget } from './cam-math.js';

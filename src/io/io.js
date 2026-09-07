@@ -1,7 +1,5 @@
-/* =========================================================================
- * 导出 / 导入 / 文件
- * 职责：.pdraw/.json 序列化与解析、贴图 base64、File System Access 保存/打开、新建与导出流程。
- * ======================================================================= */
+// 导出 / 导入 / 文件：.pdraw/.json 序列化与解析、贴图 base64、File System Access 保存/打开、
+// 新建与导出流程。
 
 import { t } from '../core/i18n.js';
 import { state, setDirty, DEFAULT_EASING, UV_MODES, PROP_LABELS, splitCompPr, nextId, clearObjectState } from '../core/constants.js';
@@ -20,7 +18,7 @@ export const r3 = x => Math.round(x * 1000) / 1000;
 export const roundArr = a => a.map(r3);
 export function encodeEasing(e) { return Array.isArray(e) ? e.map(r3) : e; }
 
-/* 解析 .pdraw 工程中的密钥；无效/缺失返回 null。 */
+// 解析 .pdraw 工程里的密钥；无效/缺失返回 null。
 export function parseProjectKey(k) {
   if (k && k.alg === KEY_ALG && typeof k.private === 'string' && typeof k.public === 'string') {
     return { alg: KEY_ALG, private: k.private, public: k.public };
@@ -28,7 +26,7 @@ export function parseProjectKey(k) {
   return null;
 }
 
-/* 确保 state.key 存在：已有有效密钥直接返回 true；否则生成，失败返回 false。 */
+// state.key 缺失时补一个：已有有效密钥直接返回 true；否则生成，失败返回 false。
 export async function ensureProjectKey() {
   if (state.key && state.key.alg === KEY_ALG && state.key.private && state.key.public) return true;
   try {
@@ -40,7 +38,7 @@ export async function ensureProjectKey() {
   }
 }
 
-/* 应用工程密钥：有则采用；无则自动生成并返回 true（调用方据此标记未保存）。 */
+// 应用工程密钥：有则采用；无则自动生成并返回 true（调用方据此标记未保存）。
 export async function applyProjectKey(obj) {
   const existing = parseProjectKey(obj.key);
   if (existing) { state.key = existing; return false; }
@@ -152,7 +150,7 @@ export function serializeParticle(pt) {
   return o;
 }
 
-/* —— 函数对象 序列化 —— */
+// —— 函数对象序列化 ——
 export function serializeVars(vars) {
   const o = {};
   for (const [name, v] of Object.entries(vars || {})) {
@@ -241,8 +239,8 @@ export function exportProject() {
   const result = { v: 12, loop: state.loop, g, p, t, f, tex, guv };
   if (Object.keys(gss).length > 0) result.gss = gss;
   if (Object.keys(grs).length > 0) result.grs = grs;
-  // 摄像机对象（v8 新增；默认摄像机不持久化，仅存用户新建的摄像机）
-  // v9 起：朝向改为 target 目标点 + roll 翻滚角（pitch/yaw 由 lookAt 自动计算）
+  // 默认摄像机不持久化，只存用户新建的摄像机
+  // 朝向存 target 目标点 + roll 翻滚角（pitch/yaw 由 lookAt 自动算）
   if (state.cameras.length > 0) {
     result.cam = state.cameras.map(c => ({
       id: c.id, name: c.name,
@@ -292,7 +290,7 @@ export function parseParticlesTracks(obj) {
   state.loop = !!obj.loop;
   state.cameras = (obj.cam || []).map(c => {
     const pos = (c.pos || [0, 0, 0]).map(Number).slice(0, 3);
-    // v9 起存 target + roll；旧 v8 存 rot 欧拉角时反推 target（roll = 旧 rot[2]）
+    // 新格式存 target + roll；旧格式存 rot 欧拉角时反推 target（roll = 旧 rot[2]）
     let target = (c.target || null);
     let roll = Number.isFinite(Number(c.roll)) ? Number(c.roll) : 0;
     if (!target && Array.isArray(c.rot)) {
@@ -329,7 +327,7 @@ export async function importProject(obj) {
   for (const fx of state.functions) {
     try { rebuildFunctionObject(fx); fx._error = null; } catch (e) { fx._error = e.message; console.warn('函数对象求值失败：' + fx.id + ' ' + e.message); }
   }
-  // 内嵌贴图（v4+）
+  // 内嵌贴图（base64 PNG）
   if (obj.texData && typeof obj.texData === 'object') {
     const pending = [];
     for (const [name, b64] of Object.entries(obj.texData)) {
@@ -453,7 +451,7 @@ export async function saveFileAs() {
   });
 }
 
-// 导出动画（.pdrawc 二进制，供模组 /pdraw play 播放），不改变当前工程 fileHandle
+// 导出动画（.pdrawc 二进制，给模组 /pdraw play 播放），不改变当前工程 fileHandle
 export async function exportAnimation() {
   const hasKey = await ensureProjectKey();
   if (!hasKey) {

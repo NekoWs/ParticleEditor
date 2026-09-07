@@ -1,8 +1,5 @@
-/* =========================================================================
- * 渲染缓冲组装
- * 职责：把 animation-eval.js 求出的分量值写进 THREE BufferAttribute，并在 rebuildPoints
- *       中统筹索引重建、UV 计算、gizmo/面板/树刷新。
- * ======================================================================= */
+// 渲染缓冲组装：把 animation-eval.js 求出的分量值写进 THREE BufferAttribute，
+// 并在 rebuildPoints 里统筹索引重建、UV 计算、gizmo/面板/树刷新。
 
 import {PARTICLE_SIZE_FACTOR, state, functionIndexCache} from '../core/constants.js';
 import { points, selectedPoints, previewPoints, pointsPick, makeParticleQuadGeometry, texAtlasMap, camera, cameraWidgetMap, buildCameraWidget, removeCameraWidget } from './scene.js';
@@ -15,9 +12,7 @@ import { evalUVInto, hasUvExpressions, evaledAutoFrames, evaledEffMaxFrame } fro
 import { buildParticleIndex, buildTrackIndex, buildGroupIndex, buildOpDeltaCache, buildGroupXforms, buildFxSclTrackCache, currentVisual, velOffsetAt, trackValueAt, trackIntegral, trVersion, groupMemberIndexCache, groupXformCache, fxOpDeltaCache, fxSclTrackCache, invalidateMaxTickCache, maxTick, fxParticleVisible, particleValueAt, spinVectorAt, rotVectorAt } from '../core/animation-eval.js';
 import { evaluateFxFrame } from '../core/generators.js';
 import * as THREE from "three";
-/* =========================================================================
- * 渲染
- * ======================================================================= */
+// —— 渲染 ——
 
 // 把拾取用点集的 position attribute 指向渲染实例的同一份 Float32Array，
 // 让 Raycaster 的 Points 阈值拾取与 instanced quad 渲染完全同源（零拷贝）。
@@ -88,7 +83,7 @@ export function ensurePointsGeometry(pts, n) {
 
 export let rpPos = null, rpCol = null, rpSize = null, rpSelPos = null, rpSelCol = null, rpSelSize = null;
 export let rpUV = null, rpUVScale = null, rpUVAnim = null, rpUVTex = null, rpUVMode = null;
-// 动画贴图粒子缓存的「已求值 UV 字段」，供 updateAnimatedUV 在空闲墙钟推进时复用（避免逐帧重算表达式）。
+// 动画贴图粒子缓存的「已求值 UV 字段」，给 updateAnimatedUV 在空闲墙钟推进时复用（避免逐帧重算表达式）。
 export let rpAnimStart = null, rpAnimStep = null, rpAnimFps = null, rpAnimMax = null;
 // 粒子 UV 求值的复用输出（fill 模式下强制全图采样）
 export const UVOUT = { mode: 0, au0: 0, av0: 0, au1: 0, av1: 0, sx: 0, sy: 0, sw: 16, sh: 16, stepx: 16, stepy: 0, fps: 1, maxFrame: 1, tw: 16, th: 16 };
@@ -122,12 +117,9 @@ export function computeParticleUVFrom(uv, tex, evaled, out) {
   return uv;
 }
 
-/**
- * 动画贴图 UV 帧的时间驱动源（秒）。
- * 播放或拖动时间轴时，帧应由当前时间轴刻度决定（所有粒子同步到时间轴，供预览整体动画流程）；
- * 暂停空闲时，则退回墙钟循环播放，供单独预览贴图动画。
- * state.time 为「刻度」单位（20 刻度 = 1 秒），故除以 20 换算成秒。
- */
+// 动画贴图 UV 帧的时间驱动源（秒）。播放或拖动时间轴时，帧由当前时间轴刻度决定（所有粒子同步到
+// 时间轴，方便预览整体动画流程）；暂停空闲时退回墙钟循环播放，方便单独预览贴图动画。
+// state.time 是「刻度」单位（20 刻度 = 1 秒），所以除以 20 换算成秒。
 export function uvDriveSeconds() {
   if (state.playing || state.scrubbing) return state.time / 20;
   return performance.now() / 1000;
@@ -491,13 +483,10 @@ export function setPreview(positions) {
 
 export function clearPreview() { setPointsGeometry(previewPoints, new Float32Array(0), new Float32Array(0), new Float32Array(0)); }
 
-/* =========================================================================
- * 摄像机可视化更新（每帧）
- * - 同步 widget 增删（新增摄像机建 widget，删除的摄像机销毁 widget），
- *   因此新建/删除/导入/清空无需在各自调用点显式重建，主循环每帧自动对齐。
- * - 按 cameraPoseAt(id, T) 写入姿态（position + 四元数），并随 fov 更新视锥张角。
- * - 当前激活摄像机橙色高亮，其余青色。
- * ======================================================================= */
+// —— 摄像机可视化更新（每帧） ——
+// 同步 widget 增删：新建摄像机建 widget，删除的销毁 widget，所以新建/删除/导入/清空都不用
+// 各自显式重建，主循环每帧自动对齐；再按 cameraPoseAt(id, T) 写入姿态并随 fov 更新视锥张角。
+// 当前激活的摄像机橙色高亮，其余青色。
 const CAM_WIDGET_FRUSTUM_LEN = 2;   // 视锥从机身前端向前延伸的世界单位
 const CAM_WIDGET_NEAR_Z = -0.2;     // 机身前端（视锥近端）z
 const CAM_WIDGET_NEAR_HW = 0.12;    // 视锥近端半宽

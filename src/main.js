@@ -1,9 +1,6 @@
-/* =========================================================================
- * UI 初始化与主循环
- * 职责：绑定菜单 / 工具栏 / 属性面板 / 时间轴事件，初始化应用并运行渲染主循环，
- *       处理工作区拖拽缩放、文件拖放打开、页面关闭前的未保存提示。
- * 依赖：本文件最后加载，可直接调用前面所有脚本定义的全局函数。
- * ======================================================================= */
+// UI 初始化与主循环：绑定菜单 / 工具栏 / 属性面板 / 时间轴事件，跑渲染主循环，
+// 并处理工作区拖拽缩放、文件拖放打开、页面关闭前的未保存提示。本文件最后加载，
+// 可以直接调用前面脚本定义的全局函数。
 
 import { t, applyI18nDom, setLanguage } from './core/i18n.js';
 import { hasCoarsePointer } from './core/device.js';
@@ -211,7 +208,7 @@ function handleCameraTabDblClick(ev) {
 
 export function initUI() {
   applyI18nDom();
-  ensureProjectKey(); // 启动即确保密钥存在：未点「新建」直接编辑保存也能带私钥
+  ensureProjectKey(); // 启动时就把密钥建好，没点「新建」直接编辑保存也能带私钥
   initTooltip();
   initMobileUI();
   initImportMenu();
@@ -527,7 +524,7 @@ export function applyCenterFromInputs() {
   if (v) editSelectionRotationUniform('center', v);
 }
 
-/* 右侧栏拖拽调整大小（左侧粒子列表已移除，仅保留时间轴粒子列表） */
+// 右侧栏拖拽调整大小（左侧粒子列表已移除，只剩时间轴粒子列表）
 (function setupPanelResizeAndDrop() {
   const handleR = document.getElementById('resize-handle-r');
   if (!handleR) return;

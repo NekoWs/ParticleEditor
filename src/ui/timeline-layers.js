@@ -1,13 +1,7 @@
-/* =========================================================================
- * 底部时间轴 · lane 画布（与左侧 HTML 标签轨共用 tlTreeFlatRows）
- *
- * - 行模型完全来自 timeline-tree.js 的 tlTreeFlatRows()；
- * - 顶层对象行（组/粒子/函数对象）保留 st/life 拖拽条；
- * - 属性/分量/变量行绘制关键帧菱形（隐藏 0t 默认关键帧）；
- * - 播放头与刻度横跨整块画布，与上方 #timeline 标尺共享
- *   timelineViewStart / TL_PX_PER_TICK；
- * - 垂直滚动由 #tl-tree 的 scrollTop 驱动（tlLayerState.scroll）。
- * ======================================================================= */
+// 底部时间轴 · lane 画布（与左侧 HTML 标签轨共用 tlTreeFlatRows）。
+// 行模型完全来自 timeline-tree.js 的 tlTreeFlatRows()；顶层对象行（组/粒子/函数对象）保留
+// st/life 拖拽条；属性/分量/变量行画关键帧菱形（隐藏 0t 默认关键帧）；播放头与刻度横跨整块
+// 画布，与上方 #timeline 标尺共享 timelineViewStart / TL_PX_PER_TICK；垂直滚动由 #tl-tree 驱动。
 
 import { t } from '../core/i18n.js';
 import { addLongPress, hasTouch } from '../core/device.js';
@@ -312,10 +306,9 @@ export function tlInitLayerEvents() {
   const canvas = document.getElementById('tl-layers-canvas');
   if (!canvas) return;
 
-  // 触屏手势（移动端优化）：
-  // - 单指在空白处拖动 = 平移时间轴视图（与 #timeline 中键拖动一致，不再 scrub）；
-  // - 双指捏合 = 以两指中点为锚点缩放每 tick 像素，双指中点移动同步平移。
-  // 关键帧/寿命条拖拽与鼠标左键 scrub 行为保持不变。
+  // 触屏手势（移动端优化）：单指在空白处拖动 = 平移时间轴视图（与 #timeline 中键拖动一致，
+  // 不再 scrub）；双指捏合 = 以两指中点为锚点缩放每 tick 像素，双指中点移动同步平移。
+  // 关键帧/寿命条拖拽与鼠标左键 scrub 行为不变。
   const touchGest = { pointers: new Map(), mode: null, panStart: null, pinch: null };
 
   const beginTouchPinch = () => {

@@ -1,9 +1,6 @@
-/* =========================================================================
- * 组操作 / 右键菜单 / 重命名 / 关键帧编辑弹窗 / 数据查询
- * 左侧粒子树 UI 已移除；本文件保留组操作、右键菜单、关键帧编辑弹窗，
- * 以及组质心 / 目标分量值等数据查询工具。旧的粒子树节点渲染与
- * .comp-timeline 分量时间轴渲染已删除（由底部时间轴 timeline-layers.js 承担）。
- * ======================================================================= */
+// 组操作 / 右键菜单 / 重命名 / 关键帧编辑弹窗 / 数据查询。左侧粒子树 UI 已移除，
+// 这里保留组操作、右键菜单、关键帧编辑弹窗和组质心 / 目标分量值等查询工具；
+// 旧的粒子树节点渲染与 .comp-timeline 分量时间轴已删除（由 timeline-layers.js 承担）。
 
 import { t, tf } from '../core/i18n.js';
 import { state, COMP_LABELS, compPr, splitCompPr, getParticle, isDerivedParticle, nextGroupName } from '../core/constants.js';
@@ -16,9 +13,7 @@ import { makeEasingBtn, easingCurveSVG } from './easing-editor.js';
 import { r3 } from '../io/io.js';
 import { TL_PX_PER_TICK, compTimelineViewStart, commitFunctionRebuild } from './panels.js';
 
-/* =========================================================================
- * 组操作
- * ======================================================================= */
+// —— 组操作 ——
 
 export function createGroup() {
   if (state.selected.size < 1) { modalAlert(t('tree.hint'), t('tree.selectParticlesFirst')); return; }
@@ -41,9 +36,7 @@ export function deleteGroup(name) {
   rebuildPoints();
 }
 
-/* =========================================================================
- * 右键菜单
- * ======================================================================= */
+// —— 右键菜单 ——
 
 function closeContextMenu() {
   const m = document.getElementById('context-menu');
@@ -74,9 +67,7 @@ export function showContextMenu(x, y, items) {
 
 window.addEventListener('pointerdown', (e) => { if (!e.target.closest('#context-menu') && !e.target.closest('.kf-editor')) closeContextMenu(); });
 
-/* =========================================================================
- * 重命名
- * ======================================================================= */
+// —— 重命名 ——
 
 export function startRename(el, onCommit, onCancel) {
   const input = document.createElement('input');
@@ -109,9 +100,7 @@ function syncRenameWidth(input) {
   input.style.width = Math.ceil(contentW + 12) + 'px';   // 12 = 5*2 padding + 1*2 border
 }
 
-/* =========================================================================
- * 数据查询
- * ======================================================================= */
+// —— 数据查询 ——
 
 // 目标分量值（id 可为 'p0' | 'g:g0' | 'f:fx0' | 'c:cam1'）
 export function targetComponentValue(id, prop, comp, T) {
@@ -153,9 +142,7 @@ export function groupCurrentCentroid(name, prop) {
   return sum.map(v => r3(v / members.length));
 }
 
-/* =========================================================================
- * 关键帧编辑弹窗（底部时间轴 lane 复用）
- * ======================================================================= */
+// —— 关键帧编辑弹窗（底部时间轴 lane 复用） ——
 
 export function drawDiamond(ctx, x, y, r, color) {
   ctx.fillStyle = color;

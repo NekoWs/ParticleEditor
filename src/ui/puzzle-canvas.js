@@ -1,11 +1,6 @@
-/* =========================================================================
- * 拼图模式 Canvas 渲染器
- * 把拼图界面（调色板 / 工作区 / 底部变量区 / 代码回显）全部画到 canvas 上，
- * 命中检测与拖动/缩放/平移/编辑交互也走 canvas 坐标。
- *
- * 本模块不依赖 blocks-ui，避免循环 import。blocks-ui 通过 setPuzzleHost()
- * 注入数据访问与变更回调；本模块只负责布局、绘制、命中与输入。
- * ======================================================================= */
+// 拼图模式 Canvas 渲染器：把拼图界面（调色板 / 工作区 / 底部变量区 / 代码回显）全部画到
+// canvas 上，命中检测与拖动/缩放/平移/编辑交互也走 canvas 坐标。本模块不依赖 blocks-ui，免得
+// 循环 import；blocks-ui 通过 setPuzzleHost() 注入数据访问与变更回调，这里只做布局、绘制、命中与输入。
 
 import {t, tf, LANG} from '../core/i18n.js';
 import {getFunction} from '../core/constants.js';
@@ -44,12 +39,12 @@ function ctxExprForKey(key) {
   return { kind: 'member', obj: { kind: 'var', name: 'this' }, field };
 }
 
-/* ============================ host 注入 ============================ */
+// —— host 注入 ——
 
 let H = null;
 export function setPuzzleHost(host) { H = host; }
 
-/* ============================ 常量 ============================ */
+// —— 常量 ——
 
 const FONT = '13px "Segoe UI", "Microsoft YaHei", system-ui, sans-serif';
 const FONT_MONO = '12px Consolas, "SFMono-Regular", monospace';
@@ -63,7 +58,7 @@ const BUMP_H = 6, BUMP_SLANT = 6, BUMP_X = 14, BUMP_W = 26;
 const HAT_H = 34;
 const BODY_INDENT = 20;
 const CTL_PAD = 8;
-const CTL_MOUTH = 0;    // 左侧 C 形开口已按需求移除，子块仍缩进
+const CTL_MOUTH = 0;    // 左侧 C 形开口已移除，子块仍缩进
 const OP_W = 20, OP_H = 18;
 const APPEND_W = 22;
 const PARAM_ADD_W = 18;
@@ -98,7 +93,7 @@ const CLS_COLORS = {
   'blk-frag': '#7a6a3c',
 };
 
-/* ============================ 运行状态 ============================ */
+// —— 运行状态 ——
 
 const S = {
   palCanvas: null, workCanvas: null, echoCanvas: null, ghostCanvas: null, colorCanvas: null,
@@ -135,7 +130,7 @@ const S = {
   pinch: null,
 };
 
-/* ============================ 小工具 ============================ */
+// —— 小工具 ——
 
 function cssVar(name, fallback) {
   try {
@@ -232,7 +227,7 @@ function paletteItemNode(item) {
   return null;
 }
 
-/* ============================ 下拉列表（DOM 浮层） ============================ */
+// —— 下拉列表（DOM 浮层） ——
 
 const CAT_STATE_KEY = 'particledrawing.puzzle-categories';
 
@@ -402,7 +397,7 @@ function toggleCategory(id) {
 }
 function isExprNode(node) { return node && typeof node === 'object' && node.kind; }
 
-/* ============================ 路径 ============================ */
+// —— 路径 ——
 
 function rrPath(c, x, y, w, h, r) {
   const rr = Math.max(0, Math.min(r, w / 2, h / 2));
@@ -486,7 +481,7 @@ function hatPath(c, x, y, w, h) {
   c.closePath();
 }
 
-/* ============================ 布局：表达式 ============================ */
+// —— 布局：表达式 ——
 
 function layoutSlot(ref, slotType, label, x, y, out, ctx) {
   const cur = ref.get();
@@ -707,7 +702,7 @@ function layoutExpr(node, x, y, out, ctx) {
   return { w, h };
 }
 
-/* ============================ 布局：语句 ============================ */
+// —— 布局：语句 ——
 
 function stmtParts(s) {
   if (s.kind === 'expr') {
@@ -1096,7 +1091,7 @@ function layoutStmt(s, x, y, out, ctx, opts) {
   return layoutSimpleStmt(s, x, y, out, ctx, opts);
 }
 
-/* ============================ 布局：链 / 工作区 ============================ */
+// —— 布局：链 / 工作区 ——
 
 function layoutChain(arr, x, y, out, ctx, opts) {
   const isFrag = !!opts.frag;
@@ -1212,7 +1207,7 @@ function layoutWorkspace() {
   S.wsRegions = out;
 }
 
-/** 估算一条链（含起始块）的布局宽度，供默认位置向右平铺起始块时使用。 */
+// 估算一条链（含起始块）的布局宽度，给默认位置向右平铺起始块用。
 export function puzzleCanvasMeasureChain(stmts, title) {
   const ctx = S.workCtx;
   if (!ctx || !H || !H.getBctx) return { w: 220, h: 60 };
@@ -1229,7 +1224,7 @@ export function puzzleCanvasMeasureChain(stmts, title) {
   }
 }
 
-/* ============================ 布局：变量区 ============================ */
+// —— 布局：变量区 ——
 
 function layoutVars(cw) {
   const out = [];
@@ -1342,7 +1337,7 @@ function layoutVars(cw) {
   S.varsContentH = y + rowH + VARS_PAD;
 }
 
-/* ============================ 布局：调色板 ============================ */
+// —— 布局：调色板 ——
 
 function paletteItemSize(item, ctx) {
   const tmp = [];
@@ -1402,7 +1397,7 @@ function layoutPalette(contentW) {
   S.palContentW = PAL_SCALE * maxRight + PAL_LEFT;
 }
 
-/* ============================ 绘制 ============================ */
+// —— 绘制 ——
 
 function drawSegments(ctx, segs, color) {
   for (const s of segs || []) {
@@ -1862,7 +1857,7 @@ function drawPalItemRegion(ctx, r) {
   for (const reg of tmp) drawRegion(ctx, reg, null);
 }
 
-/* ============================ 渲染 ============================ */
+// —— 渲染 ——
 
 function clearCanvas(ctx, c, color) {
   if (!ctx || !c) return;
@@ -2186,7 +2181,7 @@ function renderGhost() {
   ctx.restore();
 }
 
-/* ============================ 命中检测 ============================ */
+// —— 命中检测 ——
 
 function contains(r, px, py) {
   return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
@@ -2295,7 +2290,7 @@ function worldToScreenRect(r) {
   };
 }
 
-/* ============================ 编辑浮层 ============================ */
+// —— 编辑浮层 ——
 
 let editBlinkTimer = null;
 function beginInlineEdit(region, editOverride) {
@@ -2463,7 +2458,7 @@ async function pasteText() {
   } catch (e) { /* 剪贴板不可用时忽略 */ }
 }
 
-/* —— 取色器（共享 canvas 取色器） —— */
+// —— 取色器（共享 canvas 取色器） ——
 
 function openColorEdit(region) {
   if (!region || !region.color || !H || !H.getBctx()) return;
@@ -2487,7 +2482,7 @@ function closeColorEdit() {
   if (S.colorPicker) { S.colorPicker = null; closeColorPicker(); }
 }
 
-/* ============================ 拖拽 ============================ */
+// —— 拖拽 ——
 
 function startGhostDrag(source, e, grabDx, grabDy, ghostScale) {
   S.drag = {
@@ -2740,7 +2735,7 @@ function updateDrag(e) {
     const group = H.detachStmtGroupNow(d.source.stmt);
     d.source.type = 'stmt-group';
     d.source.group = group || [];
-    // 记录原位，供工作区在链上渲染灰色拼图形占位。
+    // 记录原位，给工作区在链上渲染灰色拼图形占位。
     let gw = 0, gh = 0;
     for (const s of d.source.group) {
       try { const dd = layoutStmtHeight(s, S.workCtx); gh += dd; const tmp = []; const lw = layoutStmt(s, 0, 0, tmp, S.workCtx).w; gw = Math.max(gw, lw); } catch (e) {}
@@ -2980,7 +2975,7 @@ function endDrag(e) {
   puzzleCanvasRender();
 }
 
-/* ============================ 放大镜 ============================ */
+// —— 放大镜 ——
 
 function hoverInfoAt(e) {
   let info = '';
@@ -3028,7 +3023,7 @@ function clearAltHover() {
   if (S.palCanvas) S.palCanvas.style.cursor = '';
 }
 
-/* ============================ 指针事件 ============================ */
+// —— 指针事件 ——
 
 function onPalDown(e) {
   if (!H || !H.getBctx()) return;
@@ -3385,7 +3380,7 @@ function updateHover(e) {
   }
 }
 
-/* ============================ 初始化 ============================ */
+// —— 初始化 ——
 
 function fitCanvas(canvas, ctx) {
   if (!canvas || !ctx) return;

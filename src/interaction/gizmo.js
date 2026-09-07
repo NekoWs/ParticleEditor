@@ -1,9 +1,6 @@
-/* =========================================================================
- * 变换控制器（gizmo）与坐标工具
- * 职责：吸附、选中质心、移动/旋转 gizmo 的显示与命中检测、屏幕/世界坐标换算、
- *       形状绘制（line/circle/rect）。
- * 说明：gizmo 网格几何体在 scene.js 构建；本文件负责其显示更新与交互判定。
- * ======================================================================= */
+// 变换控制器（gizmo）与坐标工具：吸附、选中质心、移动/旋转 gizmo 的显示与命中检测、
+// 屏幕/世界坐标换算、形状绘制（line/circle/rect）。gizmo 网格几何体在 scene.js 构建，
+// 这里只管它的显示更新与交互判定。
 
 
 import * as THREE from 'three';
@@ -22,9 +19,7 @@ export function snapGrid(v) {
   return shiftHeld ? snapValue(v) : v;
 }
 
-/* =========================================================================
- * 变换方向轴
- * ======================================================================= */
+// —— 变换方向轴 ——
 
 export function selectionCentroid() {
   const sel = state.particles.filter(p => state.selected.has(p.id));
@@ -68,10 +63,8 @@ export function orbitGizmoTarget() {
   return null;
 }
 
-/* =========================================================================
- * 变换控制器（gizmo）：移动工具 = 三轴箭头 + 面移动器；旋转工具 = 三轴环 + 视图环
- * 使用世界坐标系（不随选中对象旋转）
- * ======================================================================= */
+// —— 变换控制器（gizmo） ——
+// 移动工具 = 三轴箭头 + 面移动器；旋转工具 = 三轴环 + 视图环；用世界坐标系（不随选中对象旋转）。
 export const GIZMO_SCREEN_SCALE = 0.14; // 屏幕恒定大小系数：世界缩放 = 视线深度 × 系数
 export const TRANSFORM_TOOLS = ['move', 'rotate']; // 仅移动/旋转工具显示 gizmo
 export const _gizmoTmp = new THREE.Vector3();
@@ -295,9 +288,7 @@ export function updateGizmoFrame() {
   }
 }
 
-/* =========================================================================
- * 坐标工具
- * ======================================================================= */
+// —— 坐标工具 ——
 
 export function screenToNdc(clientX, clientY) {
   const rect = renderer.domElement.getBoundingClientRect();

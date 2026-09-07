@@ -1,23 +1,16 @@
-/* =========================================================================
- * UV 字段表达式求值（纯逻辑，无 DOM / THREE）
- * -------------------------------------------------------------------------
- * UV 对象的 uvStart / uvSize / uvStep / fps / maxFrame 可分别配置 script-lang
- * 裸表达式（如 `this.index % 4`）。本模块负责：
- *   - 编译缓存（表达式字符串 → createExpressionRunner）
- *   - 逐粒子求值并回退：解析/运行错误或非有限数时，回退到 UV 对象中的数值字段
- *   - 记录错误消息供 UI 红字提示（uvExprError）
- * ======================================================================= */
+// UV 字段表达式求值：uvStart/uvSize/uvStep/fps/maxFrame 支持 script-lang 表达式。
+// 逐粒子求值，解析/运行错误或结果非有限数时回退到数值字段，错误消息记下来给面板红字提示。
 
 import { createExpressionRunner } from './script-lang.js';
 
 const runnerCache = new Map();   // expr -> { runner } | { error }
-const errorCache = new Map();    // expr -> 错误消息（供面板显示）
+const errorCache = new Map();    // expr -> 错误消息（面板显示用）
 
 export function uvExprError(expr) {
   return expr ? (errorCache.get(expr) || null) : null;
 }
 
-// 编译（解析）校验：返回错误消息或 null。供 UV 面板即时红字提示。
+// 解析校验：返回错误消息或 null，UV 面板据此即时红字提示。
 export function validateUvExpression(expr) {
   if (!expr) return null;
   const entry = runnerFor(expr);

@@ -1,11 +1,6 @@
-/* =========================================================================
- * 多语言支持（i18n）—— 薄加载器
- * 所有文本以固定键存储在语言文件 js/langs.js（window.LANGS = { zh: {...}, en: {...} }），
- * 加载时只读该语言文件；缺失键回退中文，再回退键名本身。
- * t(key)：取当前语言文本；tf(key, ...args)：支持 {0} {1} 占位符。
- * HTML 静态文本用 data-i18n / data-i18n-title / data-i18n-placeholder 标注固定键。
- * 语言持久化在 localStorage('pdraw-lang')，切换后原地重渲染。
- * ======================================================================= */
+// 多语言加载器：文本以固定键存在 langs.js（window.LANGS = { zh, en }）。
+// t(key) 取当前语言文本，tf(key, ...args) 替换 {0} {1} 占位符；缺键先回退中文再回退键名。
+// HTML 静态文本用 data-i18n / data-i18n-title / data-i18n-placeholder 标注；语言存 localStorage('pdraw-lang')。
 
 
 import { LANGS } from './langs.js';

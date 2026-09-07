@@ -1,11 +1,5 @@
-/* =========================================================================
- * 函数对象：spawn 运行时（v12，fx.source 单一源码）
- * 职责：
- *   1) 脚本编译缓存（fx.source → AST）
- *   2) 运行时粒子列表管理（spawn / kill / 寿命递减）
- *   3) 帧调度：补跑 tick() → 跑一次 process(deltaMs)
- *   4) 预设应用与函数对象增删改
- * ======================================================================= */
+// 函数对象 spawn 运行时（fx.source 单一源码）：脚本编译缓存、运行时粒子列表（spawn/kill/寿命递减）、
+// 帧调度（补跑 tick → 跑一次 process）、预设应用与函数对象增删改。
 
 import { t } from './i18n.js';
 import { FUNCTION_PRESETS, state, nextFunctionId, setDirty } from './constants.js';
@@ -35,9 +29,7 @@ export function buildScriptSource(setup, process, tick, funcs, processParam) {
   return parts.join('\n');
 }
 
-/* -------------------------------------------------------------------------
- * 脚本编译缓存
- * ---------------------------------------------------------------------- */
+// —— 脚本编译缓存 ——
 
 export function getProgram(fx) {
   const src = (fx.source || '').trim();
@@ -48,9 +40,7 @@ export function getProgram(fx) {
   return fx._program;
 }
 
-/* -------------------------------------------------------------------------
- * 变量（fx.vars，时间轴动画变量，只读注入）
- * ---------------------------------------------------------------------- */
+// —— 变量（fx.vars，时间轴动画变量，只读注入）——
 
 export function varValueAt(v, t) {
   const kf = v && v.kf ? v.kf : [];
@@ -70,9 +60,7 @@ export function buildEnv(vars, ctx) {
   return env;
 }
 
-/* -------------------------------------------------------------------------
- * 终端输出
- * ---------------------------------------------------------------------- */
+// —— 终端输出 ——
 
 export function fxTerminalClear(fx) {
   if (fx) fx._terminal = [];
@@ -96,9 +84,7 @@ export function fxTerminalPush(fx, line, kind) {
   }
 }
 
-/* -------------------------------------------------------------------------
- * 粒子存储与运行时
- * ---------------------------------------------------------------------- */
+// —— 粒子存储与运行时 ——
 
 function markFxError(fx, e) {
   if (fx) {
@@ -247,13 +233,11 @@ function makeCtx(fx, runtime, T, deltaMs) {
   };
 }
 
-/* -------------------------------------------------------------------------
- * 帧调度：把函数对象推进到时间 T。
- *  - T < st：仅保证 setup 已执行（初始粒子存在但由渲染层按 st 隐藏）
- *  - 超过 duration：不再运行 tick/process（粒子保留、渲染层隐藏）
- *  - 正常：补跑 (lastTick, floor(T)] 的 tick()，再跑一次 process(deltaMs)
- *  - 向后 seek：重建运行时（清空粒子、重跑 setup、重置 tick 游标）
- * ---------------------------------------------------------------------- */
+// —— 帧调度：把函数对象推进到时间 T ——
+// T < st：只保证 setup 已执行（初始粒子存在，渲染层按 st 隐藏）。
+// 超过 duration：不再跑 tick/process（粒子保留，渲染层隐藏）。
+// 正常：补跑 (lastTick, floor(T)] 的 tick()，再跑一次 process(deltaMs)。
+// 向后 seek：重建运行时（清空粒子、重跑 setup、重置 tick 游标）。
 
 export function evaluateFxFrame(fx, T, deltaMs) {
   const st = fx.st || 0;
@@ -315,9 +299,7 @@ export function evaluateFxFrame(fx, T, deltaMs) {
   }
 }
 
-/* -------------------------------------------------------------------------
- * 函数对象重建
- * ---------------------------------------------------------------------- */
+// —— 函数对象重建 ——
 
 export function rebuildFunctionObject(fx) {
   fx._program = undefined;
@@ -362,9 +344,7 @@ export function validateFunctionScript(fx, sourceOverride) {
   return null;
 }
 
-/* -------------------------------------------------------------------------
- * 预设
- * ---------------------------------------------------------------------- */
+// —— 预设 ——
 
 export function applyPresetBuild(fx) {
   const preset = FUNCTION_PRESETS[fx.preset];

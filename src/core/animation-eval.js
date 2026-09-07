@@ -1,8 +1,5 @@
-/* =========================================================================
- * 动画状态查询（分量级数据模型）
- * 数据模型：分量级轨道（pr：pos.x / ... / col.a / scl），kf 值为标量。
- * 本模块只做求值与索引缓存，不接触 DOM / THREE 渲染对象；渲染缓冲见 render.js。
- * ======================================================================= */
+// 分量级轨道求值与索引缓存（纯逻辑，不碰 DOM / THREE）。
+// 渲染缓冲见 render.js。
 
 import { COMP_INDEX, compPr, DEG2RAD, RAD2DEG, state, getParticle, getFunction, particleIndexCache, setParticleIndex, setFunctionIndex, setPlainParticles } from './constants.js';
 import { easeVal } from './easing.js';
@@ -196,7 +193,7 @@ export function findSetTrackFor(id, prop, comp) {
   return null;
 }
 
-// 预计算 op 轨道在时间 T 的增量（按组/函数对象聚合到分量 pr），供 compOpDelta 直接查表，
+// 预计算 op 轨道在时间 T 的增量（按组/函数对象聚合到分量 pr），给 compOpDelta 直接查表用，
 // 避免每个粒子重复遍历 opTracksCache 与 trackValueAt。
 export function buildOpDeltaCache(T) {
   const gMap = new Map();
@@ -223,7 +220,7 @@ export function buildOpDeltaCache(T) {
 }
 
 // 预计算每个组的变换（rot 轨道引用 / set 轨道引用 / op 增量数组 / 质心），
-// 供组-only 粒子（无自身轨道、单组）走快路径，绕过 findSetTrackFor 的重复 Map 查询。
+// 组-only 粒子（无自身轨道、单组）走快路径，绕过 findSetTrackFor 的重复 Map 查询。
 export function buildGroupXforms(T) {
   const xforms = new Map();
   for (const gname of Object.keys(state.groups)) {
@@ -285,7 +282,7 @@ export function buildGroupXforms(T) {
   groupXformCache = xforms;
 }
 
-// 预计算函数对象的整体 scl 轨道（pr 为 scl.x/scl.y/scl.z），供 currentVisualDerived 快速路径查询
+// 预计算函数对象的整体 scl 轨道（pr 为 scl.x/scl.y/scl.z），给 currentVisualDerived 快速路径查询用
 export function buildFxSclTrackCache() {
   const map = new Map();
   for (const tr of state.tracks) {

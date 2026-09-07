@@ -1,13 +1,9 @@
-/* =========================================================================
- * 脚本语言解析器：tokenizer + 递归下降 parser → AST
- * 纯逻辑，无 DOM/THREE 依赖。词法常量从 ./lexical.js 引入。
- * ======================================================================= */
+// 脚本语言解析器：tokenizer + 递归下降 parser → AST。纯逻辑，无 DOM/THREE 依赖。
+// 词法常量从 ./lexical.js 引入。
 
 import { KEYWORDS, CTX_NAME, LIFECYCLE_FUNCS, CONSTANTS, COMP_NAMES, BUILTIN_FUNCTIONS, parseError } from './lexical.js';
 
-/* =========================================================================
- * Tokenizer
- * ======================================================================= */
+// —— Tokenizer ——
 
 function isDigit(c) { return c >= '0' && c <= '9'; }
 function isIdentStart(c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c === '_'; }
@@ -144,9 +140,7 @@ function tokenize(source) {
   return tokens;
 }
 
-/* =========================================================================
- * Parser（递归下降）
- * ======================================================================= */
+// —— Parser（递归下降）——
 
 function toLValue(expr, tok) {
   switch (expr.type) {

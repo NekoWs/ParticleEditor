@@ -1,7 +1,4 @@
-/* =========================================================================
- * 动画模块（barrel）：统一对外 re-export 求值与渲染缓冲。
- * 详细实现见 animation-eval.js 与 render.js。
- * ======================================================================= */
+// 动画模块 barrel：re-export 求值（animation-eval.js）与渲染缓冲（render.js）。
 
 export * from './animation-eval.js';
 export * from '../scene/render.js';

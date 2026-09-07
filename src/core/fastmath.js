@@ -1,13 +1,7 @@
-/* =========================================================================
- * 快速标量数学近似（仅 process 且 fx.fastMath 开启时使用）
- * -------------------------------------------------------------------------
- * 目标精度：
- *   - sin/cos/tan 最大绝对误差 ≤ 1e-4
- *   - asin/acos/atan/atan2/exp/log/ln/pow 相对误差 ≤ 1e-4
- * 跨端约束：Kotlin 端（ScriptFastMath.kt）必须用完全相同的公式与运算顺序，
- * 双精度 IEEE 754 运算下保证逐位一致。
- * 退化/越界输入（如负底数 pow、subnormal log）回退到精确实现。
- * ======================================================================= */
+// 快速标量数学近似：仅 process 且 fx.fastMath 开启时使用。
+// 目标精度：sin/cos/tan 绝对误差 ≤1e-4，其余相对误差 ≤1e-4。
+// 跨端约束：Kotlin（ScriptFastMath.kt）用完全相同的公式与运算顺序，保证逐位一致；
+// 退化/越界输入（负底数 pow、subnormal log）回退精确实现。
 
 const PI = Math.PI;
 const HALF_PI = Math.PI / 2;
@@ -194,7 +188,7 @@ export function fastAcos(x) {
   return HALF_PI - fastAsin(x);
 }
 
-// 内建函数名 → 快速实现（供运行时按 fx.fastMath 分派）
+// 内建函数名 → 快速实现（运行时按 fx.fastMath 分派用）
 export const FAST_MATH = {
   sin: fastSin,
   cos: fastCos,

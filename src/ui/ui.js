@@ -1,6 +1,4 @@
-/* =========================================================================
- * UI 弹窗：替代浏览器原生 prompt / alert / confirm，符合主题风格
- * ======================================================================= */
+// UI 弹窗：替代浏览器原生 prompt / alert / confirm，风格跟着主题走。
 
 import { t } from '../core/i18n.js';
 
@@ -37,7 +35,7 @@ export let uiModalOverlay = null;
 export let uiModalClosePromise = Promise.resolve();
 
 // 关闭当前弹窗：播放消失动画，动画结束后再移除 DOM。
-// 返回的 Promise 在移除后 resolve（供 buildModal 等待，避免新弹窗与旧弹窗动画重叠）。
+// 返回的 Promise 在移除后 resolve，buildModal 靠它等待，避免新旧弹窗动画重叠。
 export function closeUIModal() {
   if (!uiModalOverlay) return Promise.resolve();
   const ov = uiModalOverlay;

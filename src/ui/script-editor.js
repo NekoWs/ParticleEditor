@@ -22,10 +22,8 @@ import { highlightSelectionMatches } from '@codemirror/search';
 import { parseProgram, ARRAY_METHOD_NAMES } from '../core/script-lang.js';
 import { localizeScriptError } from '../core/script-error-i18n.js';
 
-/**
- * .pdraw 脚本语言（v12：func setup/tick/process + 自定义函数）的 CodeMirror 编辑器封装：
- * 语法高亮 + 自动补全 + 解析错误诊断。fx.source 为唯一源码字段。
- */
+// .pdraw 脚本语言（func setup/tick/process + 自定义函数）的 CodeMirror 编辑器封装：
+// 语法高亮 + 自动补全 + 解析错误诊断。fx.source 是唯一源码字段。
 
 export const SCRIPT_KEYWORDS = [
   'this', 'setup', 'process', 'tick', 'func', 'global', 'of', 'const',
@@ -224,9 +222,7 @@ export function parseErrorLocation(message) {
   return { line: parseInt(m[1], 10), col: parseInt(m[2], 10) };
 }
 
-/* -------------------------------------------------------------------------
- * 轻量类型推断
- * ---------------------------------------------------------------------- */
+// —— 轻量类型推断 ——
 
 const THIS_FIELD_TYPES = {
   time: 'num', duration: 'num', particles: 'particleList', spawn: 'func',

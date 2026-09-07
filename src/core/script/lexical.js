@@ -1,8 +1,5 @@
-/* =========================================================================
- * 脚本语言词法常量（与 script-lang.js / script/parser.js 共享）
- * 仅含：关键字、上下文名、生命周期函数名、常量、向量分量名、内建函数名、parseError。
- * 不依赖任何运行时，避免 parser ↔ runtime 循环依赖。
- * ======================================================================= */
+// 脚本语言词法常量（script-lang.js / script/parser.js 共享）：关键字、上下文名、生命周期
+// 函数名、常量、向量分量名、内建函数名、parseError。不依赖运行时，避免 parser ↔ runtime 循环依赖。
 
 export const KEYWORDS = new Set([
   'setup', 'process', 'tick', 'func', 'return', 'if', 'else', 'while', 'do', 'for', 'of', 'const',

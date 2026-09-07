@@ -1,7 +1,5 @@
-/* =========================================================================
- * ParticleDrawing 粒子动画编辑器
- * 依赖 npm three 与 three/examples 的 OrbitControls
- * ======================================================================= */
+// 编辑器常量与全局 state：缓动预设、平面、轨道/UV 模型、函数对象预设。
+// 依赖 npm three 与 three/examples 的 OrbitControls。
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -11,9 +9,7 @@ import { EASING_NONE } from './easing-constants.js';
 export { OrbitControls };
 export { EASING_NONE };
 
-/* =========================================================================
- * 常量
- * ======================================================================= */
+// —— 常量 ——
 
 // 缓动预设：关键帧 kf[2] 可用 EASINGS 下标（0..13）、自定义贝塞尔数组，
 // 或 EASING_NONE（无缓动 / 阶跃，见 easing-constants.js）。
@@ -40,11 +36,8 @@ export const PLANES = {
   YZ: { axes: ['Y', 'Z'], constant: 'X', normal: new THREE.Vector3(1, 0, 0), toWorld: (u, v, o) => [o, u, v] },
 };
 
-/* ========================================================================
- * 轨道属性与分量（分量级数据模型）
- * 轨道 pr 编码：多分量属性为「属性.分量」（如 pos.x / rot.y / col.a），
- * 单分量属性（scl）直接用「scl」。关键帧值（kf[1]）为标量。
- * ======================================================================== */
+// —— 轨道属性与分量 ——
+// 轨道 pr 编码：多分量属性为「属性.分量」（pos.x / rot.y / col.a），单分量属性直接「scl」；关键帧值是标量。
 
 // 属性 → 分量键列表
 export const TRACK_COMPS = {
@@ -89,10 +82,8 @@ export function splitCompPr(pr) { const i = pr.indexOf('.'); return i < 0 ? [pr,
 
 export const DEFAULT_EASING = 3;
 
-/* =========================================================================
- * 贴图 / UV（静态属性，非关键帧；作用域 f > g > p 继承覆盖）
- * UV 坐标一律使用贴图像素；贴图大小(texSize)为粒子贴图显示尺寸（像素），仅参与采样拉伸。
- * ======================================================================= */
+// —— 贴图 / UV ——
+// 静态属性（非关键帧），作用域 f > g > p 继承覆盖；UV 坐标用贴图像素，texSize 是显示尺寸，只参与采样拉伸。
 
 export const UV_MODES = { static: '静态', fill: '填充', animated: '动画' };
 
@@ -147,16 +138,13 @@ export const RAD2DEG = 180 / Math.PI;
 export const ROT_SNAP = 45; // 按住 Shift 时旋转吸附的步长（角度）
 export const PARTICLE_SIZE_FACTOR = 0.2; // 编辑器点整宽因子；游戏端 quad 半宽因子为其一半（EDITOR_TO_MC_SCALE=0.1）
 
-/* =========================================================================
- * 状态
- * ======================================================================= */
+// —— 状态 ——
 
 /**
- * 全局状态（单一数据源）。
- * 数据模型约定：
+ * 全局状态。数据模型：
  * - particle: { id, color:[r,g,b,a], scale:[sx,sy,sz], glow, lightLevel,
  *              pos:[x,y,z], vel:[vx,vy,vz], life, st, ent, uv, fx? }
- *   派生粒子 id 固定为 `${fxId}:p${spawn序号}`，由函数对象脚本在运行期 spawn（v12）。
+ *   派生粒子 id 固定为 `${fxId}:p${spawn序号}`，由函数对象脚本在运行期 spawn。
  * - track: { pr:'pos.x'|'scl'|..., m:'set'|'op', ids:[...], kf:[[tick,value,easing],...], fx? }
  * - group: state.groups[组名] = [粒子id...]；组级 UV 在 state.groupUV[组名]。
  * - function object: { id:'fxN', name, center:[x,y,z], source, vars:{name:{base,kf}},
@@ -254,15 +242,15 @@ export const DEFAULT_CAMERA_ID = '__default__';
 export function getFunction(id) { return functionIndexCache ? functionIndexCache.get(id) : state.functions.find(f => f.id === id); }
 // 粒子是否由函数对象派生（基础属性只读）
 export function isDerivedParticle(p) { return p != null && !!p.fx; }
-// 粒子索引（animation.js 的 buildParticleIndex 在 rebuildPoints 时重建，供 getParticle O(1) 查找）
+// 粒子索引（animation.js 的 buildParticleIndex 在 rebuildPoints 时重建，给 getParticle 做 O(1) 查找用）
 export let particleIndexCache = null;
-export let functionIndexCache = null; // 函数对象索引（buildParticleIndex 时重建，供 getFunction O(1) 查找）
+export let functionIndexCache = null; // 函数对象索引（buildParticleIndex 时重建，给 getFunction 做 O(1) 查找用）
 export let plainParticleCache = [];   // 非派生粒子数组（时间轴树/签名用，避免每帧扫描 20w 派生粒子）
-// 索引缓存由 animation.js 的 buildParticleIndex 重建；这里提供 setter 供其写入（ESM 导入绑定不可重新赋值）。
+// 索引缓存由 animation.js 的 buildParticleIndex 重建；这里提供 setter 给它写（ESM 导入绑定不能重新赋值）。
 export function setParticleIndex(map) { particleIndexCache = map; }
 export function setFunctionIndex(map) { functionIndexCache = map; }
 export function setPlainParticles(arr) { plainParticleCache = arr; }
-// 供 nextId / addParticle 在批量添加期间维护索引，避免 nextId 退化为 O(N²)。
+// 给 nextId / addParticle 在批量添加期间维护索引用，避免 nextId 退化为 O(N²)。
 function ensureParticleIndex() {
   if (!particleIndexCache) {
     const map = new Map();
@@ -274,10 +262,8 @@ function ensureParticleIndex() {
 export function indexParticle(p) { if (particleIndexCache) particleIndexCache.set(p.id, p); }
 export function getParticle(id) { return particleIndexCache ? particleIndexCache.get(id) : state.particles.find(p => p.id === id); }
 
-/* =========================================================================
- * 函数对象：预设形状模板（参数面板 + 脚本视图）
- * 上下文通过 this 对象访问：this.index / this.count / this.time 等（详见 docs/script-lang-spec.md）
- * ======================================================================= */
+// —— 函数对象预设形状模板（参数面板 + 脚本视图）——
+// 上下文通过 this 对象访问：this.index / this.count / this.time 等（见 docs/script-lang-spec.md）。
 
 export const FUNCTION_PRESETS = {
   blank: {

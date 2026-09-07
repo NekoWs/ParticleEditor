@@ -1,8 +1,5 @@
-/* =========================================================================
- * .pdrawc 二进制播放格式：编码 / 解码 / 签名 / 验签（纯逻辑，无 DOM）
- * 规范见 docs/pdrawc-format.md。
- * v2：body 使用 raw DEFLATE 极限压缩（签名覆盖压缩后的完整字节）。
- * ======================================================================= */
+// .pdrawc 二进制播放格式：编码/解码/签名/验签（纯逻辑）。规范见 docs/pdrawc-format.md。
+// body 用 raw DEFLATE 压缩，签名覆盖压缩后的完整字节。
 
 import { base64ToBytes, bytesToBase64, signData, verifyData } from './crypto.js';
 import { EASING_NONE } from './easing-constants.js';
@@ -29,7 +26,7 @@ export const PR_BY_ENUM = Object.fromEntries(Object.entries(PR_ENUM).map(([k, v]
 const UV_MODE = { static: 0, fill: 1, animated: 2 };
 const UV_MODE_BY = ['static', 'fill', 'animated'];
 
-/* ============================ raw DEFLATE ============================ */
+// —— raw DEFLATE ——
 
 async function deflateRaw(bytes) {
   if (typeof CompressionStream === 'undefined') throw new Error('CompressionStream unavailable');
@@ -43,7 +40,7 @@ async function inflateRaw(bytes) {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-/* ============================ 字节写入 / 读取 ============================ */
+// —— 字节写入 / 读取 ——
 
 class ByteWriter {
   constructor() { this.parts = []; this.len = 0; }
@@ -110,7 +107,7 @@ class ByteReader {
   }
 }
 
-/* ============================ 子结构编码 ============================ */
+// —— 子结构编码 ——
 
 function uvExprString(v) { return (v == null || v === '') ? null : String(v); }
 function uvExprArray(v) { return Array.isArray(v) ? [uvExprString(v[0]), uvExprString(v[1])] : [null, null]; }
@@ -189,7 +186,7 @@ function writeRef(w, kind, index) {
   w.varint(index);
 }
 
-/* ============================ body 编码 ============================ */
+// —— body 编码 ——
 
 function encodeBody(state, texPngOf) {
   const w = new ByteWriter();
@@ -351,7 +348,7 @@ function encodeBody(state, texPngOf) {
   return w.toUint8Array();
 }
 
-/* ============================ 编码 / 组装 / 签名 ============================ */
+// —— 编码 / 组装 / 签名 ——
 
 /**
  * 编码未签名部分：magic + version + pubkey + raw-deflate(body)。
@@ -386,7 +383,7 @@ export async function buildPdrawc(state, texPngOf) {
   return assemblePdrawc(unsigned, signature);
 }
 
-/* ============================ 解码（回环测试 / 校验用） ============================ */
+// —— 解码（回环测试 / 校验用）——
 
 function readUV(r) {
   const uv = {
