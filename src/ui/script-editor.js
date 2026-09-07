@@ -314,7 +314,8 @@ function inferExprType(node, env) {
     case 'bool': return 'bool';
     case 'array': return 'array';
     case 'var': {
-      if (env.has(node.name)) return env.get(node.name);
+      const t = lookupType(env, node.name);
+      if (t != null) return t;
       if (node.name === 'pi' || node.name === 'e') return 'num';
       return 'unknown';
     }
@@ -370,71 +371,185 @@ function truncateIncomplete(code, pos) {
   return cut + '}'.repeat(Math.max(0, depth));
 }
 
-// 遍历语句收集变量类型（含 for-of 循环变量）。
-function collectTypes(stmts, env) {
-  for (const st of stmts) {
+// —— 作用域链与类型查找 ——
+
+function childScope(scope) {
+  const child = new Map();
+  child.parent = scope;
+  return child;
+}
+
+/** 沿作用域链由内向外查找名字类型。 */
+function lookupType(scope, name) {
+  let cur = scope;
+  while (cur) {
+    if (cur.has(name)) return cur.get(name);
+    cur = cur.parent;
+  }
+  return null;
+}
+
+/** 赋值：沿作用域链更新最近已有绑定；不存在则在当前作用域新建。 */
+function assignType(scope, name, type) {
+  let cur = scope;
+  while (cur) {
+    if (cur.has(name)) { cur.set(name, type); return; }
+    cur = cur.parent;
+  }
+  scope.set(name, type);
+}
+
+/** 1 起行列号 → 0 起字符偏移。 */
+function lineColToOffset(src, line, col) {
+  let off = 0;
+  let curLine = 1;
+  while (curLine < line && off < src.length) {
+    if (src[off] === '\n') curLine++;
+    off++;
+  }
+  return off + Math.max(0, (col || 1) - 1);
+}
+
+/** 找到 openOffset 处 `{` 的匹配 `}` 偏移（跳过字符串与注释）。 */
+function matchingBraceOffset(src, openOffset) {
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = openOffset; i < src.length; i++) {
+    const c = src[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === '\\') esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; continue; }
+    if (c === '/' && src[i + 1] === '/') { while (i < src.length && src[i] !== '\n') i++; continue; }
+    if (c === '/' && src[i + 1] === '*') {
+      i += 2;
+      while (i < src.length && !(src[i] === '*' && src[i + 1] === '/')) i++;
+      i++;
+      continue;
+    }
+    if (c === '{') depth++;
+    else if (c === '}') { depth--; if (depth === 0) return i; }
+  }
+  return src.length;
+}
+
+function bodyList(body) {
+  if (Array.isArray(body)) return body;
+  if (body && Array.isArray(body.body)) return body.body;
+  return body ? [body] : [];
+}
+
+/** 语句体若为 `{...}` 块，返回其 `{` 偏移，否则 null。 */
+function bodyBraceOffset(bodyStmt, src) {
+  if (bodyStmt && bodyStmt.type === 'block') return lineColToOffset(src, bodyStmt.line, bodyStmt.col);
+  return null;
+}
+
+/** 收集 setup 顶层的 global 声明（对象级全局，跨函数可见）。 */
+function collectGlobals(stmts, globals) {
+  for (const st of stmts || []) {
     if (!st) continue;
     if (st.type === 'global') {
-      env.set(st.name, st.init ? inferExprType(st.init, env) : 'unknown');
-    } else if (st.type === 'assign' && st.target && st.target.type === 'var') {
-      env.set(st.target.name, inferExprType(st.value, env));
-    } else if (st.type === 'forof') {
-      const iterT = inferExprType(st.iter, env);
-      env.set(st.name, iterT === 'particleList' ? 'particle' : 'unknown');
-      if (Array.isArray(st.body)) collectTypes(st.body, env);
-      else if (st.body && Array.isArray(st.body.body)) collectTypes(st.body.body, env);
-    } else if (st.type === 'block' && Array.isArray(st.body)) {
-      collectTypes(st.body, env);
-    } else if (st.type === 'if') {
-      if (st.then) collectTypes(Array.isArray(st.then) ? st.then : [st.then], env);
-      if (st.els) collectTypes(Array.isArray(st.els) ? st.els : [st.els], env);
-    } else if (st.type === 'while' || st.type === 'do' || st.type === 'for') {
-      if (st.body) collectTypes(Array.isArray(st.body) ? st.body : [st.body], env);
+      globals.set(st.name, st.init ? inferExprType(st.init, globals) : 'unknown');
     }
   }
 }
 
-/** 解析当前完整源码（必要时截断未完成语句），返回各函数环境。 */
+/** 光标位于 if/else-if/else 链的哪个分支就进入该分支，否则返回 null。 */
+function walkIfAtPos(st, scope, cursor, src) {
+  const thenOpen = bodyBraceOffset(st.then, src);
+  if (thenOpen != null && thenOpen <= cursor && cursor < matchingBraceOffset(src, thenOpen)) {
+    return walkScopeAtPos(bodyList(st.then), childScope(scope), cursor, src);
+  }
+  const els = st.els;
+  if (!els) return null;
+  if (els.type === 'if') return walkIfAtPos(els, scope, cursor, src);
+  const elseOpen = bodyBraceOffset(els, src);
+  if (elseOpen != null && elseOpen <= cursor && cursor < matchingBraceOffset(src, elseOpen)) {
+    return walkScopeAtPos(bodyList(els), childScope(scope), cursor, src);
+  }
+  return null;
+}
+
+/** 沿语句顺序推进作用域，找到光标所在的最近作用域；块内局部变量不泄漏到块外。 */
+function walkScopeAtPos(stmts, scope, cursor, src) {
+  for (const st of stmts) {
+    if (!st) continue;
+    const start = lineColToOffset(src, st.line, st.col);
+    if (start > cursor) break;
+
+    if (st.type === 'global') {
+      assignType(scope, st.name, st.init ? inferExprType(st.init, scope) : 'unknown');
+    } else if (st.type === 'assign' && st.target && st.target.type === 'var') {
+      assignType(scope, st.target.name, inferExprType(st.value, scope));
+    } else if (st.type === 'block') {
+      if (cursor < matchingBraceOffset(src, start)) {
+        return walkScopeAtPos(st.body, childScope(scope), cursor, src);
+      }
+    } else if (st.type === 'forof') {
+      const child = childScope(scope);
+      child.set(st.name, inferExprType(st.iter, scope) === 'particleList' ? 'particle' : 'unknown');
+      const open = bodyBraceOffset(st.body, src);
+      if (open != null && open <= cursor && cursor < matchingBraceOffset(src, open)) {
+        return walkScopeAtPos(bodyList(st.body), child, cursor, src);
+      }
+    } else if (st.type === 'for') {
+      const child = childScope(scope);
+      if (st.init && st.init.type === 'assign' && st.init.target && st.init.target.type === 'var') {
+        child.set(st.init.target.name, inferExprType(st.init.value, child));
+      }
+      const open = bodyBraceOffset(st.body, src);
+      if (open != null && open <= cursor && cursor < matchingBraceOffset(src, open)) {
+        return walkScopeAtPos(bodyList(st.body), child, cursor, src);
+      }
+    } else if (st.type === 'while' || st.type === 'do') {
+      const open = bodyBraceOffset(st.body, src);
+      if (open != null && open <= cursor && cursor < matchingBraceOffset(src, open)) {
+        return walkScopeAtPos(bodyList(st.body), childScope(scope), cursor, src);
+      }
+    } else if (st.type === 'if') {
+      const inside = walkIfAtPos(st, scope, cursor, src);
+      if (inside) return inside;
+    }
+  }
+  return scope;
+}
+
+/** 解析源码（必要时截断未完成语句），返回光标处可见的作用域链。 */
 function buildScriptEnvs(fx, pos) {
-  const empty = { setup: new Map(), tick: new Map(), process: new Map(), funcs: new Map(), current: new Map() };
   const src = (fx && fx.source) || '';
   const code = pos != null ? truncateIncomplete(src, pos) : src;
   let program;
   try {
     program = parseProgram(code);
   } catch {
-    return empty;
+    return new Map();
   }
 
   const globals = new Map();
-  const setupEnv = new Map();
-  const tickEnv = new Map();
-  const processEnv = new Map();
-  const funcsEnv = new Map();
-  const seed = (env) => {
-    env.set('pi', 'num');
-    env.set('e', 'num');
-    for (const name of Object.keys(fx?.vars || {})) env.set(name, 'num');
-  };
-  seed(setupEnv); seed(tickEnv); seed(processEnv); seed(funcsEnv);
+  if (program.setup) collectGlobals(program.setup.body.body, globals);
 
-  if (program.setup) {
-    collectTypes(program.setup.body.body, setupEnv);
-    for (const [name, t] of setupEnv) if (name !== 'pi' && name !== 'e' && !(name in (fx?.vars || {}))) globals.set(name, t);
-  }
-  for (const [name, t] of globals) { tickEnv.set(name, t); processEnv.set(name, t); funcsEnv.set(name, t); }
-  if (program.tick) collectTypes(program.tick.body.body, tickEnv);
-  if (program.process) collectTypes(program.process.body.body, processEnv);
-  // 自定义函数参数
-  for (const [name, fn] of program.functions) {
-    const env = new Map(globals);
-    seed(env);
-    for (const p of fn.params) env.set(p, 'unknown');
-    collectTypes(fn.body.body, env);
-    funcsEnv.set(name, 'func');
-  }
+  const root = new Map(globals);
+  root.set('pi', 'num');
+  root.set('e', 'num');
+  for (const name of Object.keys(fx?.vars || {})) root.set(name, 'num');
 
-  return { setup: setupEnv, tick: tickEnv, process: processEnv, funcs: funcsEnv, current: processEnv };
+  if (pos == null) return root;
+
+  const cursor = Math.max(0, Math.min(pos, src.length));
+  const fnName = enclosingFuncName(src, cursor);
+  const fn = program.setup && program.setup.name === fnName ? program.setup
+    : program.tick && program.tick.name === fnName ? program.tick
+    : program.process && program.process.name === fnName ? program.process
+    : program.functions.get(fnName);
+  if (!fn) return root;
+
+  for (const p of fn.params || []) root.set(p, 'unknown');
+  return walkScopeAtPos(fn.body.body, root, cursor, src);
 }
 
 /** 找到光标所在的顶层函数名（setup/tick/process/自定义函数）。 */
@@ -450,10 +565,8 @@ function resolveDotReceiverType(name, before, matchIndex, fx, pos) {
   const prefix = before.slice(0, matchIndex);
   if (/this\s*\.\s*$/.test(prefix)) return THIS_FIELD_TYPES[name] || 'unknown';
 
-  const envs = buildScriptEnvs(fx, pos);
-  const fnName = enclosingFuncName(fx && fx.source, pos);
-  const env = fnName === 'setup' ? envs.setup : fnName === 'tick' ? envs.tick : fnName === 'process' ? envs.process : envs.funcs;
-  return env.get(name) || 'unknown';
+  const scope = buildScriptEnvs(fx, pos);
+  return lookupType(scope, name) || 'unknown';
 }
 
 /** 自动补全：关键字 + 内置函数 + this 字段 + 粒子/向量/数组成员 + 代码中已出现的标识符。 */
