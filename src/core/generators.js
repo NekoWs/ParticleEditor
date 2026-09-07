@@ -22,10 +22,12 @@ export function buildScriptSource(setup, process, tick, funcs, processParam) {
   const tk = (tick || '').trim();
   const pr = (process || '').trim();
   const fn = (funcs || '').trim();
+  // 函数体整体缩进一层，与拼图生成的 func 语句保持一致。
+  const indentBody = (text) => text ? text.split('\n').map(l => '  ' + l).join('\n') : '';
   if (fn) parts.push(fn);
-  if (st) parts.push('func setup() {\n' + st + '\n}');
-  if (tk) parts.push('func tick() {\n' + tk + '\n}');
-  if (pr) parts.push('func process(' + (processParam || 'delta') + ') {\n' + pr + '\n}');
+  if (st) parts.push('func setup() {\n' + indentBody(st) + '\n}');
+  if (tk) parts.push('func tick() {\n' + indentBody(tk) + '\n}');
+  if (pr) parts.push('func process(' + (processParam || 'delta') + ') {\n' + indentBody(pr) + '\n}');
   return parts.join('\n');
 }
 
