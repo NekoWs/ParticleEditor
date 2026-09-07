@@ -16,7 +16,7 @@ import {
   closeBrackets,
   closeBracketsKeymap,
 } from '@codemirror/autocomplete';
-import { indentWithTab, insertNewlineAndIndent } from '@codemirror/commands';
+import { indentWithTab, insertNewlineAndIndent, history, historyKeymap, defaultKeymap } from '@codemirror/commands';
 import { linter } from '@codemirror/lint';
 import { highlightSelectionMatches } from '@codemirror/search';
 import { parseProgram, ARRAY_METHOD_NAMES } from '../core/script-lang.js';
@@ -546,6 +546,7 @@ export function createScriptEditor(parent, opts) {
       bracketMatching(),
       highlightSelectionMatches(),
       indentUnit.of('  '),
+      history(),
       closeBrackets(),
       indentOnInput(),
       scriptTheme,
@@ -561,11 +562,10 @@ export function createScriptEditor(parent, opts) {
         { key: 'Tab', run: acceptCompletion },
         indentWithTab,
         { key: 'Enter', run: insertNewlineAndIndent },
-        // 显式放行删除键：报错/lint/补全弹层存在时也保证可删除。
-        { key: 'Backspace', run: () => false },
-        { key: 'Delete', run: () => false },
         ...closeBracketsKeymap,
         ...completionKeymap,
+        ...defaultKeymap,
+        ...historyKeymap,
       ]),
       scriptLintSource(fx),
       EditorView.theme({
