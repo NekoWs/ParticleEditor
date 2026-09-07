@@ -332,7 +332,12 @@ function inferExprType(node, env) {
       return a === b ? a : 'unknown';
     }
     case 'call': return inferCallType(node, env);
-    case 'method': return ARRAY_METHOD_RETURN_TYPES[node.method] || 'unknown';
+    case 'method': {
+      if (node.object && node.object.type === 'var' && node.object.name === 'this' && node.method === 'spawn') {
+        return 'particle';
+      }
+      return ARRAY_METHOD_RETURN_TYPES[node.method] || 'unknown';
+    }
     case 'comp': return 'num';
     case 'member': {
       if (node.object && node.object.type === 'var' && node.object.name === 'this') {
@@ -354,7 +359,7 @@ function truncateIncomplete(code, pos) {
   let cut = '';
   for (let i = upto.length - 1; i >= 0; i--) {
     const ch = upto[i];
-    if (ch === ';' || ch === '{' || ch === '}') { cut = text.slice(0, i + 1); break; }
+    if (ch === ';' || ch === '{' || ch === '}' || ch === '\n') { cut = text.slice(0, i + 1); break; }
   }
   if (!cut) return '';
   let depth = 0;
