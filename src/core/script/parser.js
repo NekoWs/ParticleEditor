@@ -382,18 +382,8 @@ class Parser {
 
     // for-of：for (const name of expr) 或 for (name of expr)
     const saved = this.pos;
-    if (this.matchKw('const')) {
-      const nameTok = this.expectIdent();
-      this.validateForVarName(nameTok);
-      this.expectKw('of');
-      const iter = this.parseTernary();
-      this.expect(')');
-      this.loopDepth++;
-      const body = this.parseStatement();
-      this.loopDepth--;
-      return { type: 'forof', name: nameTok.value, iter, body, line: start.line, col: start.col };
-    }
-    if (this.peek().type === 'ident' && this.peek(1).type === 'ident' && this.peek(1).value === 'of') {
+    if (this.matchKw('const') ||
+        (this.peek().type === 'ident' && this.peek(1).type === 'ident' && this.peek(1).value === 'of')) {
       const nameTok = this.expectIdent();
       this.validateForVarName(nameTok);
       this.expectKw('of');
