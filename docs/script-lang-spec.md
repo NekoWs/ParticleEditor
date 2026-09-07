@@ -66,13 +66,13 @@ func tick() { ... }
 func process(delta) { ... }     // 参数名可自定义，恰好一个
 func name(p1, p2, ...) { ... }  // 自定义函数，不可命名 setup/tick/process
 return expr;
-if / else / while / do / for(init;cond;inc) / for (const x of collection) / break / continue
+if / else / while / do / for(init;cond;inc) / for (const x of collection) / for (x of collection) / break / continue
 global name = expr;             // 仅 setup 顶层可写；tick/process/函数内只读
 ```
 
 ## 7. 表达式与运算
 
-与旧版一致：算术、比较、逻辑短路、三元、向量/矩阵运算、内建数学/噪声/PRNG 函数、数组方法与下标。`for...of` 可迭代 `particleList` 与 `array`（迭代快照：循环内 spawn/kill 不影响本次迭代）。
+与旧版一致：算术、比较、逻辑短路、三元、向量/矩阵运算、内建数学/噪声/PRNG 函数、数组方法与下标。`for...of` 可迭代 `particleList` 与 `array`（迭代快照：循环内 spawn/kill 不影响本次迭代）。`for...of` 的循环变量 `const` 可省略，两种写法等价，循环变量始终是循环体作用域内的新局部变量。
 
 ## 8. 错误处理
 
