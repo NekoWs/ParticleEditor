@@ -16,11 +16,19 @@ function tokenize(source) {
   let i = 0;
   let line = 1;
   let col = 1;
+  let nlSeen = false;
 
   const advance = () => {
     const c = src[i++];
-    if (c === '\n') { line++; col = 1; } else { col++; }
+    if (c === '\n') { line++; col = 1; nlSeen = true; } else { col++; }
     return c;
+  };
+
+  // 每个 token 记录「前一个 token 之后是否出现过换行」，供解析器做换行断句判定。
+  const push = (tok) => {
+    tok.nl = nlSeen;
+    nlSeen = false;
+    tokens.push(tok);
   };
 
   while (i < len) {
@@ -54,7 +62,7 @@ function tokenize(source) {
       const m = /^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?/.exec(src.slice(i));
       const text = m[0];
       for (let k = 0; k < text.length; k++) advance();
-      tokens.push({ type: 'num', value: parseFloat(text), line: startLine, col: startCol });
+      push({ type: 'num', value: parseFloat(text), line: startLine, col: startCol });
       continue;
     }
 
@@ -82,7 +90,7 @@ function tokenize(source) {
         advance();
       }
       if (!closed) throw parseError('unterminated string literal', startLine, startCol);
-      tokens.push({ type: 'str', value: out, line: startLine, col: startCol });
+      push({ type: 'str', value: out, line: startLine, col: startCol });
       continue;
     }
 
@@ -92,9 +100,9 @@ function tokenize(source) {
       let name = '';
       while (i < len && isIdentPart(src[i])) name += advance();
       // pi / e 是数值字面量保留名（§13）
-      if (name === 'pi') tokens.push({ type: 'num', value: Math.PI, line: startLine, col: startCol });
-      else if (name === 'e') tokens.push({ type: 'num', value: Math.E, line: startLine, col: startCol });
-      else tokens.push({ type: 'ident', value: name, line: startLine, col: startCol });
+      if (name === 'pi') push({ type: 'num', value: Math.PI, line: startLine, col: startCol });
+      else if (name === 'e') push({ type: 'num', value: Math.E, line: startLine, col: startCol });
+      else push({ type: 'ident', value: name, line: startLine, col: startCol });
       continue;
     }
 
@@ -107,21 +115,21 @@ function tokenize(source) {
       else if (c === '<') op = '<=';
       else op = '>=';
       advance(); advance();
-      tokens.push({ type: 'punct', value: op, line: startLine, col: startCol });
+      push({ type: 'punct', value: op, line: startLine, col: startCol });
       continue;
     }
     if ((c === '&' && src[i + 1] === '&') || (c === '|' && src[i + 1] === '|')) {
       const startLine = line, startCol = col;
       const op = c === '&' ? '&&' : '||';
       advance(); advance();
-      tokens.push({ type: 'punct', value: op, line: startLine, col: startCol });
+      push({ type: 'punct', value: op, line: startLine, col: startCol });
       continue;
     }
     if ((c === '+' && src[i + 1] === '+') || (c === '-' && src[i + 1] === '-')) {
       const startLine = line, startCol = col;
       const op = c === '+' ? '++' : '--';
       advance(); advance();
-      tokens.push({ type: 'punct', value: op, line: startLine, col: startCol });
+      push({ type: 'punct', value: op, line: startLine, col: startCol });
       continue;
     }
 
@@ -129,14 +137,14 @@ function tokenize(source) {
     if ('+-*/%^!?:=<>()[]{},;.'.includes(c)) {
       const startLine = line, startCol = col;
       advance();
-      tokens.push({ type: 'punct', value: c, line: startLine, col: startCol });
+      push({ type: 'punct', value: c, line: startLine, col: startCol });
       continue;
     }
 
     throw parseError(`unexpected character '${c}'`, line, col);
   }
 
-  tokens.push({ type: 'eof', value: '<eof>', line, col });
+  push({ type: 'eof', value: '<eof>', line, col });
   return tokens;
 }
 
@@ -202,6 +210,19 @@ class Parser {
   }
 
   atEnd() { return this.peek().type === 'eof'; }
+
+  // 当前待消费 token 之前是否有换行：行首运算符不续接上一行，语句在换行处结束。
+  nlBefore() { return this.peek().nl === true; }
+
+  // 语句结尾：`;`、换行、`}` 或 EOF 均可结束语句；`;` 用于同行写多条语句。
+  statementEnd() {
+    const tok = this.peek();
+    if (tok.type === 'eof' || tok.value === ';' || tok.value === '}' || tok.nl) {
+      if (tok.value === ';') this.next();
+      return;
+    }
+    throw parseError(`expected ';' or newline after statement, got '${tok.value}'`, tok.line, tok.col);
+  }
 
   errorAt(tok, msg) { throw parseError(msg, tok.line, tok.col); }
 
@@ -372,7 +393,7 @@ class Parser {
     this.expect('(');
     const cond = this.parseTernary();
     this.expect(')');
-    this.expect(';');
+    this.statementEnd();
     return { type: 'do', body, cond, line: start.line, col: start.col };
   }
 
@@ -420,14 +441,14 @@ class Parser {
   parseBreak(tok) {
     if (this.loopDepth === 0) this.errorAt(tok, "'break' outside loop");
     this.next();
-    this.expect(';');
+    this.statementEnd();
     return { type: 'break', line: tok.line, col: tok.col };
   }
 
   parseContinue(tok) {
     if (this.loopDepth === 0) this.errorAt(tok, "'continue' outside loop");
     this.next();
-    this.expect(';');
+    this.statementEnd();
     return { type: 'continue', line: tok.line, col: tok.col };
   }
 
@@ -435,8 +456,8 @@ class Parser {
     if (!this.phase) this.errorAt(tok, "'return' only allowed inside a function");
     this.next();
     let expr = null;
-    if (!this.check(';')) expr = this.parseTernary();
-    this.expect(';');
+    if (!this.check(';') && !this.atEnd() && !this.nlBefore()) expr = this.parseTernary();
+    this.statementEnd();
     return { type: 'return', expr, line: tok.line, col: tok.col };
   }
 
@@ -450,8 +471,8 @@ class Parser {
     const nameTok = this.expectIdent();
     this.validateGlobalStaticName(nameTok);
     let init = null;
-    if (this.match('=')) init = this.parseTernary();
-    this.expect(';');
+    if (!this.nlBefore() && this.match('=')) init = this.parseTernary();
+    this.statementEnd();
     return { type, name: nameTok.value, init, line: tok.line, col: tok.col };
   }
 
@@ -466,10 +487,10 @@ class Parser {
     const start = this.peek();
     const expr = this.parseAssignExpr();
     if (expr.type === 'assign') {
-      this.expect(';');
+      this.statementEnd();
       return expr;
     }
-    this.expect(';');
+    this.statementEnd();
     if (expr.type !== 'call' && expr.type !== 'method' && expr.type !== 'preinc' && expr.type !== 'postinc') {
       this.errorAt(start, 'expression statement must be a function call');
     }
@@ -480,7 +501,7 @@ class Parser {
   parseAssignExpr() {
     const start = this.peek();
     const left = this.parseTernary();
-    if (this.match('=')) {
+    if (!this.nlBefore() && this.match('=')) {
       const target = toLValue(left, start);
       const value = this.parseAssignExpr();
       return { type: 'assign', target, value, line: start.line, col: start.col };
@@ -492,7 +513,7 @@ class Parser {
 
   parseTernary() {
     const cond = this.parseOr();
-    if (this.match('?')) {
+    if (!this.nlBefore() && this.match('?')) {
       const qTok = this.tokens[this.pos - 1];
       const thenExpr = this.parseTernary();
       this.expect(':');
@@ -504,7 +525,7 @@ class Parser {
 
   parseOr() {
     let left = this.parseAnd();
-    while (this.match('||')) {
+    while (!this.nlBefore() && this.match('||')) {
       const opTok = this.tokens[this.pos - 1];
       const right = this.parseAnd();
       left = { type: 'binary', op: '||', left, right, line: opTok.line, col: opTok.col };
@@ -514,7 +535,7 @@ class Parser {
 
   parseAnd() {
     let left = this.parseEquality();
-    while (this.match('&&')) {
+    while (!this.nlBefore() && this.match('&&')) {
       const opTok = this.tokens[this.pos - 1];
       const right = this.parseEquality();
       left = { type: 'binary', op: '&&', left, right, line: opTok.line, col: opTok.col };
@@ -524,7 +545,7 @@ class Parser {
 
   parseEquality() {
     let left = this.parseComparison();
-    while (this.check('==') || this.check('!=')) {
+    while (!this.nlBefore() && (this.check('==') || this.check('!='))) {
       const opTok = this.next();
       const right = this.parseComparison();
       left = { type: 'binary', op: opTok.value, left, right, line: opTok.line, col: opTok.col };
@@ -534,7 +555,7 @@ class Parser {
 
   parseComparison() {
     let left = this.parseAdditive();
-    while (this.check('<') || this.check('<=') || this.check('>') || this.check('>=')) {
+    while (!this.nlBefore() && (this.check('<') || this.check('<=') || this.check('>') || this.check('>='))) {
       const opTok = this.next();
       const right = this.parseAdditive();
       left = { type: 'binary', op: opTok.value, left, right, line: opTok.line, col: opTok.col };
@@ -544,7 +565,7 @@ class Parser {
 
   parseAdditive() {
     let left = this.parseMultiplicative();
-    while (this.check('+') || this.check('-')) {
+    while (!this.nlBefore() && (this.check('+') || this.check('-'))) {
       const opTok = this.next();
       const right = this.parseMultiplicative();
       left = { type: 'binary', op: opTok.value, left, right, line: opTok.line, col: opTok.col };
@@ -554,7 +575,7 @@ class Parser {
 
   parseMultiplicative() {
     let left = this.parsePower();
-    while (this.check('*') || this.check('/') || this.check('%')) {
+    while (!this.nlBefore() && (this.check('*') || this.check('/') || this.check('%'))) {
       const opTok = this.next();
       const right = this.parsePower();
       left = { type: 'binary', op: opTok.value, left, right, line: opTok.line, col: opTok.col };
@@ -565,7 +586,7 @@ class Parser {
   // 幂：优先级高于一元（§5），右结合。
   parsePower() {
     let left = this.parseUnary();
-    while (this.match('^')) {
+    while (!this.nlBefore() && this.match('^')) {
       const opTok = this.tokens[this.pos - 1];
       const right = this.parsePower();
       left = { type: 'binary', op: '^', left, right, line: opTok.line, col: opTok.col };
@@ -591,14 +612,14 @@ class Parser {
   parsePostfix() {
     let expr = this.parsePrimary();
     while (true) {
-      if (this.match('(')) {
+      if (!this.nlBefore() && this.match('(')) {
         const args = this.parseArgs();
         expr = { type: 'call', callee: expr, args, line: expr.line, col: expr.col };
-      } else if (this.match('[')) {
+      } else if (!this.nlBefore() && this.match('[')) {
         const idx = this.parseTernary();
         this.expect(']');
         expr = { type: 'index', target: expr, index: idx, line: expr.line, col: expr.col };
-      } else if (this.match('.')) {
+      } else if (!this.nlBefore() && this.match('.')) {
         const nameTok = this.expectIdent();
         if (this.match('(')) {
           const args = this.parseArgs();
@@ -608,7 +629,7 @@ class Parser {
         } else {
           expr = { type: 'member', object: expr, field: nameTok.value, line: nameTok.line, col: nameTok.col };
         }
-      } else if (this.check('++') || this.check('--')) {
+      } else if (!this.nlBefore() && (this.check('++') || this.check('--'))) {
         const opTok = this.next();
         toLValue(expr, opTok); // 校验为可赋值目标
         expr = { type: 'postinc', op: opTok.value, target: expr, line: opTok.line, col: opTok.col };

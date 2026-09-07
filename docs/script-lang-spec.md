@@ -65,10 +65,12 @@ func setup() { ... }
 func tick() { ... }
 func process(delta) { ... }     // 参数名可自定义，恰好一个
 func name(p1, p2, ...) { ... }  // 自定义函数，不可命名 setup/tick/process
-return expr;
+return expr
 if / else / while / do / for(init;cond;inc) / for (const x of collection) / for (x of collection) / break / continue
-global name = expr;             // 仅 setup 顶层可写；tick/process/函数内只读
+global name = expr              // 仅 setup 顶层可写；tick/process/函数内只读
 ```
+
+语句以 `;`、换行或 `}` 结尾，三者均可；`;` 可省略，仅用于同行写多条语句。多行表达式需把运算符写在行尾续行，或靠未闭合的括号续行；行首的运算符 / `.` / `(` / `[` 不续接上一行，而是开启新语句。C 风格 `for(init;cond;inc)` 中的两个 `;` 是分隔符，仍必填。旧脚本带 `;` 的写法解析结果不变。
 
 ## 7. 表达式与运算
 

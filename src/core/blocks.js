@@ -426,13 +426,6 @@ export function exprToCode(node, parentPrec) {
 function indentPad(level) { return '  '.repeat(Math.max(0, level || 0)); }
 function lineCount(str) { return (str === '') ? 0 : str.split('\n').length; }
 
-function stmtNeedsSemi(code) {
-  const t = (code || '').trim();
-  if (!t) return false;
-  if (t.endsWith('}') || t.endsWith(';') || t.endsWith('*/')) return false;
-  return !t.startsWith('//');
-}
-
 function emitComment(s, pad) {
   const text = String(s.text || '');
   if (!text.includes('\n')) return pad + '// ' + text;
@@ -454,13 +447,13 @@ function emitStmt(s, level, spans, lineStart) {
     case 'light': return pad + 'p.light = ' + exprToCode(s.expr, 0);
     case 'attr': return pad + 'p.' + s.name + ' = ' + exprToCode(s.expr, 0);
     case 'set': return pad + s.name + ' = ' + exprToCode(s.expr, 0);
-    case 'spawn': return pad + (s.name || 'p') + ' = this.spawn();';
-    case 'expr': return pad + exprToCode(s.expr, 0) + ';';
+    case 'spawn': return pad + (s.name || 'p') + ' = this.spawn()';
+    case 'expr': return pad + exprToCode(s.expr, 0);
     case 'raw': return s.text || '';
     case 'comment': return emitComment(s, pad);
-    case 'break': return pad + 'break;';
-    case 'continue': return pad + 'continue;';
-    case 'return': return pad + (s.expr ? 'return ' + exprToCode(s.expr, 0) + ';' : 'return;');
+    case 'break': return pad + 'break';
+    case 'continue': return pad + 'continue';
+    case 'return': return pad + (s.expr ? 'return ' + exprToCode(s.expr, 0) : 'return');
     case 'if': {
       const cond = exprToCode(s.cond, 0);
       const body = emitList(s.body || [], level + 1, spans, start + 1);
@@ -486,7 +479,7 @@ function emitStmt(s, level, spans, lineStart) {
     }
     case 'do': {
       const body = emitList(s.body || [], level + 1, spans, start + 1);
-      return pad + 'do {\n' + body + '\n' + pad + '} while (' + exprToCode(s.cond, 0) + ');';
+      return pad + 'do {\n' + body + '\n' + pad + '} while (' + exprToCode(s.cond, 0) + ')';
     }
     case 'for': {
       const body = emitList(s.body || [], level + 1, spans, start + 1);
@@ -515,7 +508,7 @@ function emitStmt(s, level, spans, lineStart) {
       const body = emitList(s.body || [], level + 1, spans, start + 1);
       return pad + 'func ' + s.name + '(' + (s.params || []).join(', ') + ') {\n' + body + '\n' + pad + '}';
     }
-    case 'global': return pad + 'global ' + s.name + (s.expr ? ' = ' + exprToCode(s.expr, 0) : '') + ';';
+    case 'global': return pad + 'global ' + s.name + (s.expr ? ' = ' + exprToCode(s.expr, 0) : '');
     default: throw new Error(_etf('err.unknownStmt', s.kind));
   }
 }
@@ -526,7 +519,6 @@ function emitList(list, level, spans, startLine) {
   for (const s of list || []) {
     let code = emitStmt(s, level, spans, line);
     if (code == null || code === '') continue;
-    if (stmtNeedsSemi(code)) code += ';';
     const n = lineCount(code);
     if (spans) spans.push({ stmt: s, start: line, end: line + n - 1 });
     if (out) out += '\n';
@@ -851,7 +843,7 @@ export function stmtToNode(stmt) {
   }
   if (s === 'break;' || s === 'break') return { kind: 'break' };
   if (s === 'continue;' || s === 'continue') return { kind: 'continue' };
-  if (s === 'return;') return { kind: 'return', expr: null };
+  if (s === 'return;' || s === 'return') return { kind: 'return', expr: null };
   if (/^return\b/.test(s)) return { kind: 'return', expr: parseExpr(s.slice(6).replace(/;$/, '').trim()) };
 
   if (/^if\s*\(/.test(s)) {
@@ -998,6 +990,13 @@ export function stmtToNode(stmt) {
   return { kind: 'set', name: lhs, expr: parseExpr(rhs) };
 }
 
+/** 行尾是运算符/分隔符时视为表达式未完，可跨行续接（与解析器的换行断句规则一致）。 */
+function stmtLooksIncomplete(code) {
+  const t = (code || '').trim();
+  if (!t) return false;
+  return /[+\-*/%^=<>!&|?.,:]$/.test(t);
+}
+
 /** 把代码文本拆成顶层语句（尊重字符串 / 括号 / 花括号 / 注释，避免在 if/for/while 体内误拆）。 */
 export function splitStatements(code) {
   const out = [];
@@ -1084,6 +1083,14 @@ export function splitStatements(code) {
     }
     if (c === ';' && depth === 0) {
       pushCur();
+      i++;
+      continue;
+    }
+    if (c === '\n' && depth === 0) {
+      // 顶层换行视为语句边界；行尾运算符续行，`}` 结尾的块语句交由上方分支处理。
+      const t = cur.trim();
+      if (t && !t.endsWith('}') && !stmtLooksIncomplete(cur)) pushCur();
+      else if (t) cur += c;
       i++;
       continue;
     }
