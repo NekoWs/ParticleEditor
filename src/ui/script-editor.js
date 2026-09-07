@@ -7,6 +7,7 @@ import {
   bracketMatching,
   indentOnInput,
   indentUnit,
+  indentService,
 } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 import {
@@ -213,6 +214,41 @@ const scriptTheme = EditorView.theme({
   },
   '.cm-completionMatchedText': { color: PALETTE.highlight, textDecoration: 'none' },
   '.cm-completionDetail': { color: PALETTE.comment, fontStyle: 'normal' },
+});
+
+/** 统计 [0, endPos) 内未闭合的 `{` 数量（跳过字符串与注释）。 */
+function braceDepthIn(doc, endPos) {
+  const text = doc.sliceString(0, endPos);
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === '\\') esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; continue; }
+    if (c === '/' && text[i + 1] === '/') { while (i < text.length && text[i] !== '\n') i++; continue; }
+    if (c === '/' && text[i + 1] === '*') {
+      i += 2;
+      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
+      i++;
+      continue;
+    }
+    if (c === '{') depth++;
+    else if (c === '}') depth = Math.max(0, depth - 1);
+  }
+  return depth;
+}
+
+/** 基于花括号深度的缩进：新行按未闭合 `{` 深度缩进，`}` 行退回一层。 */
+export const scriptIndentService = indentService.of((context, pos) => {
+  const level = braceDepthIn(context.state.doc, pos)
+    - (context.simulatedBreak === pos ? 0 : (/^\s*}/.test(context.lineAt(pos, 1).text) ? 1 : 0));
+  return Math.max(0, level * context.unit);
 });
 
 /** 从解析错误消息中提取 (line, col)，均为 1 起。 */
@@ -664,6 +700,7 @@ export function createScriptEditor(parent, opts) {
       bracketMatching(),
       highlightSelectionMatches(),
       indentUnit.of('  '),
+      scriptIndentService,
       history(),
       closeBrackets(),
       indentOnInput(),
