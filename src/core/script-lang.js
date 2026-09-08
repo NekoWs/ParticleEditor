@@ -565,13 +565,15 @@ class Runtime {
   }
 
   execDeclare(node) {
-    // 同作用域重复声明（let/const 与参数）报错。
-    if (this.currentScope().has(node.name)) {
-      throw runtimeError(`duplicate declaration '${node.name}'`, node);
+    // 同作用域重复声明（let/const 与参数）报错；多声明按声明顺序求值。
+    for (const d of node.decls) {
+      if (this.currentScope().has(d.name)) {
+        throw runtimeError(`duplicate declaration '${d.name}'`, d);
+      }
+      const v = d.init ? this.evalExpr(d.init) : undefined;
+      this.currentScope().set(d.name, v);
+      if (node.kind === 'const') this.markConst(d.name);
     }
-    const v = node.init ? this.evalExpr(node.init) : undefined;
-    this.currentScope().set(node.name, v);
-    if (node.kind === 'const') this.markConst(node.name);
   }
 
   execWhile(node) {
@@ -2246,15 +2248,17 @@ class Compiler {
   compileStmt(st) {
     switch (st.type) {
       case 'declare': {
-        if (this.hasLocalInCurrentScope(st.name)) {
-          throw parseError(`duplicate declaration '${st.name}'`, st.line, st.col);
+        for (const d of st.decls) {
+          if (this.hasLocalInCurrentScope(d.name)) {
+            throw parseError(`duplicate declaration '${d.name}'`, d.line, d.col);
+          }
+          const slot = this.declareLocal(d.name);
+          if (st.kind === 'const') this.constSlots.set(slot, d.name);
+          if (d.init) this.compileExpr(d.init);
+          else this.emit2(OP.CONST, this.internConst(undefined), d);
+          // 初始化赋值对 const 合法：绕过只读检查（与 for-of 的 const 循环变量一致）。
+          this.emit2(st.kind === 'const' ? OP.STORE_LOCAL_FORCE : OP.STORE_LOCAL, slot, d);
         }
-        const slot = this.declareLocal(st.name);
-        if (st.kind === 'const') this.constSlots.set(slot, st.name);
-        if (st.init) this.compileExpr(st.init);
-        else this.emit2(OP.CONST, this.internConst(undefined), st);
-        // 初始化赋值对 const 合法：绕过只读检查（与 for-of 的 const 循环变量一致）。
-        this.emit2(st.kind === 'const' ? OP.STORE_LOCAL_FORCE : OP.STORE_LOCAL, slot, st);
         return;
       }
       case 'block':
@@ -2445,7 +2449,7 @@ function walkStmtExprs(node, cb) {
     case 'forof': walkExpr(node.iter, cb); walkStmtExprs(node.body, cb); return;
     case 'expr': walkExpr(node.expr, cb); return;
     case 'assign': if (node.target.type === 'unpack') {} else walkExpr(node.value, cb); return;
-    case 'declare': if (node.init) walkExpr(node.init, cb); return;
+    case 'declare': for (const d of node.decls) if (d.init) walkExpr(d.init, cb); return;
     case 'static': if (node.init) walkExpr(node.init, cb); return;
     case 'return': if (node.expr) walkExpr(node.expr, cb); return;
     default: return;
@@ -3412,12 +3416,14 @@ export function runTopLevel(program, objState, env) {
   rt.pushScope(new Map());
   try {
     for (const d of globals) {
-      if (objState.globals.has(d.name)) {
-        throw runtimeError(`duplicate global '${d.name}'`, d);
+      for (const dec of d.decls) {
+        if (objState.globals.has(dec.name)) {
+          throw runtimeError(`duplicate global '${dec.name}'`, dec);
+        }
+        const v = dec.init ? rt.evalExpr(dec.init) : undefined;
+        objState.globals.set(dec.name, v);
+        if (d.kind === 'const') objState.constGlobals.add(dec.name);
       }
-      const v = d.init ? rt.evalExpr(d.init) : undefined;
-      objState.globals.set(d.name, v);
-      if (d.kind === 'const') objState.constGlobals.add(d.name);
     }
   } finally {
     rt.popScope();

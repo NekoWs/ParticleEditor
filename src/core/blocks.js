@@ -1103,12 +1103,62 @@ export function splitStatements(code) {
   return out;
 }
 
+/** 按顶层逗号拆分（尊重字符串/括号/注释），用于 let/const 多声明展开。 */
+function splitTopCommas(s) {
+  const parts = [];
+  let cur = '';
+  let depth = 0;
+  let inStr = false, esc = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) {
+      cur += c;
+      if (esc) esc = false;
+      else if (c === '\\') esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; cur += c; continue; }
+    if (c === '/' && s[i + 1] === '/') { while (i < s.length && s[i] !== '\n') { cur += s[i]; i++; } i--; continue; }
+    if (c === '/' && s[i + 1] === '*') {
+      const start = i;
+      i += 2;
+      while (i < s.length && !(s[i] === '*' && s[i + 1] === '/')) i++;
+      i += 2;
+      cur += s.slice(start, i);
+      i--;
+      continue;
+    }
+    if (c === '(' || c === '[' || c === '{') depth++;
+    else if (c === ')' || c === ']' || c === '}') depth--;
+    if (c === ',' && depth === 0) { parts.push(cur.trim()); cur = ''; }
+    else cur += c;
+  }
+  if (cur.trim()) parts.push(cur.trim());
+  return parts;
+}
+
+/** let/const 多声明语句按顶层逗号展开为多条单声明语句。 */
+function expandDeclarations(stmt) {
+  const m = /^(let|const)\s+/.exec(stmt);
+  if (!m) return [stmt];
+  const head = m[1];
+  const rest = stmt.slice(m[0].length).trim().replace(/;$/, '');
+  const parts = splitTopCommas(rest);
+  if (parts.length <= 1) return [stmt];
+  return parts.map(p => head + ' ' + p);
+}
+
 /** 代码文本 → 语句列表。无法用积木表达的语句保留为 raw 文本块，往返时不丢代码。 */
 export function codeToStatements(code) {
-  return splitStatements(code).map(stmt => {
-    try { return stmtToNode(stmt); }
-    catch (e) { return { kind: 'raw', text: stmt }; }
-  });
+  const out = [];
+  for (const stmt of splitStatements(code)) {
+    for (const s of expandDeclarations(stmt)) {
+      try { out.push(stmtToNode(s)); }
+      catch (e) { out.push({ kind: 'raw', text: s }); }
+    }
+  }
+  return out;
 }
 
 /** 收集语句列表里的临时变量名（set 块）。 */

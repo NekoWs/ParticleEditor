@@ -66,6 +66,7 @@
 ```text
 let x = expr / let x;          // 声明局部变量（块级作用域；let x; 初始 undefined）
 const x = expr                 // 声明只读变量（必须带初始值；重新赋值报错）
+let a = 1, b = 2, c = 3        // 一条语句声明多个变量；const 同理，每个声明都必须带初始值
 func setup() { ... }
 func tick() { ... }            // 每 50ms 执行一次（绝对毫秒 50 倍数且 ≥ fx.st）
 func process() { ... }          // 每帧一次，不接受参数

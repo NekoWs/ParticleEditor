@@ -490,7 +490,9 @@ function bodyBraceOffset(bodyStmt, src) {
 function collectGlobals(decls, globals) {
   for (const d of decls || []) {
     if (!d) continue;
-    globals.set(d.name, d.init ? inferExprType(d.init, globals) : 'unknown');
+    for (const dec of d.decls || []) {
+      globals.set(dec.name, dec.init ? inferExprType(dec.init, globals) : 'unknown');
+    }
   }
 }
 
@@ -518,7 +520,9 @@ function walkScopeAtPos(stmts, scope, cursor, src) {
     if (start > cursor) break;
 
     if (st.type === 'declare') {
-      assignType(scope, st.name, st.init ? inferExprType(st.init, scope) : 'unknown');
+      for (const d of st.decls) {
+        assignType(scope, d.name, d.init ? inferExprType(d.init, scope) : 'unknown');
+      }
     } else if (st.type === 'assign' && st.target && st.target.type === 'var') {
       assignType(scope, st.target.name, inferExprType(st.value, scope));
     } else if (st.type === 'block') {
@@ -535,7 +539,9 @@ function walkScopeAtPos(stmts, scope, cursor, src) {
     } else if (st.type === 'for') {
       const child = childScope(scope);
       if (st.init && st.init.type === 'declare') {
-        child.set(st.init.name, st.init.init ? inferExprType(st.init.init, child) : 'unknown');
+        for (const d of st.init.decls) {
+          child.set(d.name, d.init ? inferExprType(d.init, child) : 'unknown');
+        }
       } else if (st.init && st.init.type === 'assign' && st.init.target && st.init.target.type === 'var') {
         child.set(st.init.target.name, inferExprType(st.init.value, child));
       }
@@ -668,8 +674,10 @@ export function staticScriptDiagnostics(program, fx) {
   const globalNames = new Set();
   const globalConst = new Set();
   for (const d of program.globals || []) {
-    globalNames.add(d.name);
-    if (d.kind === 'const') globalConst.add(d.name);
+    for (const dec of d.decls || []) {
+      globalNames.add(dec.name);
+      if (d.kind === 'const') globalConst.add(dec.name);
+    }
   }
   const varNames = new Set(Object.keys(fx?.vars || {}));
   const funcNames = new Set(program.functions.keys());
@@ -736,11 +744,13 @@ export function staticScriptDiagnostics(program, fx) {
         return;
       }
       case 'declare': {
-        if (scope.names.has(node.name)) {
-          diags.push({ line: node.line, col: node.col, msg: `duplicate declaration '${node.name}'` });
+        for (const d of node.decls) {
+          if (scope.names.has(d.name)) {
+            diags.push({ line: d.line, col: d.col, msg: `duplicate declaration '${d.name}'` });
+          }
+          scope.names.set(d.name, node.kind);
+          if (d.init) expr(d.init, scope);
         }
-        scope.names.set(node.name, node.kind);
-        if (node.init) expr(node.init, scope);
         return;
       }
       case 'assign': expr(node.value, scope); checkAssignTarget(node.target, scope); return;
@@ -770,7 +780,9 @@ export function staticScriptDiagnostics(program, fx) {
 
   {
     const s = new Scope(null);
-    for (const d of program.globals || []) if (d.init) expr(d.init, s);
+    for (const d of program.globals || []) {
+      for (const dec of d.decls || []) if (dec.init) expr(dec.init, s);
+    }
   }
   for (const fn of [program.setup, program.tick, program.process]) {
     if (!fn) continue;

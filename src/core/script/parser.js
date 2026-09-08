@@ -496,13 +496,19 @@ class Parser {
 
   parseDeclare(tok, kind, noStatementEnd) {
     this.next(); // let / const
-    const nameTok = this.expectIdent();
-    this.validateDeclName(nameTok);
-    let init = null;
-    if (!this.nlBefore() && this.match('=')) init = this.parseTernary();
-    else if (kind === 'const') this.errorAt(nameTok, "'const' must have an initializer");
+    const decls = [];
+    for (;;) {
+      const nameTok = this.expectIdent();
+      this.validateDeclName(nameTok);
+      let init = null;
+      if (!this.nlBefore() && this.match('=')) init = this.parseTernary();
+      else if (kind === 'const') this.errorAt(nameTok, "'const' must have an initializer");
+      decls.push({ name: nameTok.value, init, line: nameTok.line, col: nameTok.col });
+      if (this.check(',') && !this.nlBefore()) { this.next(); continue; }
+      break;
+    }
     if (!noStatementEnd) this.statementEnd();
-    return { type: 'declare', kind, name: nameTok.value, init, line: tok.line, col: tok.col };
+    return { type: 'declare', kind, decls, line: tok.line, col: tok.col };
   }
 
   validateDeclName(tok) {

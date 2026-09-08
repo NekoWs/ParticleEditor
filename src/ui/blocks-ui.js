@@ -817,8 +817,9 @@ function parsePuzzleSource(fx) {
   const globals = [];
   for (const stmt of splitStatements(src)) {
     if (!/^(?:global|let|const)\s+/.test(stmt)) continue;
-    const nodes = codeToStatements(stmt);
-    if (nodes.length === 1 && nodes[0].kind === 'global') globals.push(nodes[0]);
+    for (const n of codeToStatements(stmt)) {
+      if (n.kind === 'global') globals.push(n);
+    }
   }
   return { setupBody, tickBody, processBody, funcStmts, globals };
 }
