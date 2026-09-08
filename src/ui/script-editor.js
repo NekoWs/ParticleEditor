@@ -663,7 +663,7 @@ export function scriptCompletionSource(fx) {
 }
 
 /** 静态作用域诊断：未声明变量 / const 重新赋值 / 重复声明（英文源文，展示前走 localizeScriptError）。 */
-function staticScriptDiagnostics(program, fx) {
+export function staticScriptDiagnostics(program, fx) {
   const diags = [];
   const globalNames = new Set();
   const globalConst = new Set();
@@ -672,6 +672,7 @@ function staticScriptDiagnostics(program, fx) {
     if (d.kind === 'const') globalConst.add(d.name);
   }
   const varNames = new Set(Object.keys(fx?.vars || {}));
+  const funcNames = new Set(program.functions.keys());
   const known = (name) => CONSTANTS.has(name) || BUILTIN_SET.has(name) || varNames.has(name) || globalNames.has(name);
 
   function Scope(parent) { this.names = new Map(); this.parent = parent || null; }
@@ -684,7 +685,7 @@ function staticScriptDiagnostics(program, fx) {
     if (!node) return;
     switch (node.type) {
       case 'var': {
-        if (node.name !== 'this' && !scope.lookup(node.name) && !known(node.name)) {
+        if (node.name !== 'this' && !scope.lookup(node.name) && !known(node.name) && !funcNames.has(node.name)) {
           diags.push({ line: node.line, col: node.col, msg: `unknown variable '${node.name}'` });
         }
         return;
