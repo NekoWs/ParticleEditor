@@ -1,12 +1,12 @@
 // 渲染缓冲组装：把 animation-eval.js 求出的分量值写进 THREE BufferAttribute，
 // 并在 rebuildPoints 里统筹索引重建、UV 计算、gizmo/面板/树刷新。
 
-import {PARTICLE_SIZE_FACTOR, state, functionIndexCache} from '../core/constants.js';
+import {PARTICLE_SIZE_FACTOR, state, functionIndexCache, getFunction} from '../core/constants.js';
 import { points, selectedPoints, previewPoints, pointsPick, makeParticleQuadGeometry, texAtlasMap, camera, cameraWidgetMap, buildCameraWidget, removeCameraWidget } from './scene.js';
 import { cameraPoseAt } from '../core/cameras.js';
 import { resolveUV, refreshUVPanel } from '../ui/texture-editor.js';
 import { updateGizmo } from '../interaction/gizmo.js';
-import { drawTimeline, updatePropPanel } from '../ui/panels.js';
+import { drawTimeline, updatePropPanel, refreshFxTerminal } from '../ui/panels.js';
 import { evalUVInto, hasUvExpressions, evaledAutoFrames, evaledEffMaxFrame } from '../core/uv-eval.js';
 
 import { buildParticleIndex, buildTrackIndex, buildGroupIndex, buildOpDeltaCache, buildGroupXforms, buildFxSclTrackCache, currentVisual, velOffsetAt, trackValueAt, trackIntegral, trVersion, groupMemberIndexCache, groupXformCache, fxOpDeltaCache, fxSclTrackCache, invalidateMaxMsCache, maxMs, fxParticleVisible, particleValueAt, spinVectorAt, rotVectorAt } from '../core/animation-eval.js';
@@ -246,6 +246,8 @@ function writePointBuffers(full) {
   for (const fx of state.functions) {
     evaluateFxFrame(fx, T);
   }
+  // 脚本可能在 tick/process 中 print：同步当前函数面板的终端显示（无新输出时内部跳过）。
+  refreshFxTerminal(getFunction(state.selectedFunction));
   // UV 表达式求值复用的 this 上下文（仅对含表达式的粒子填写，避免每粒子分配）。
   const uvCtxOut = { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0, life: -1 };
   const uvCtx = { i: 0, n, t: T, dt: 0, duration: maxMs(), life: -1, uv_x: 0, uv_y: 0, vars: {}, out: uvCtxOut };

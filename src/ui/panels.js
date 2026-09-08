@@ -518,15 +518,20 @@ export function buildFunctionPanel(fx) {
   return wrap;
 }
 
-/** 把 fx._terminal（print 输出与错误）渲染到函数面板的终端区域。 */
+/** 把 fx._terminal（print 输出与错误）渲染到函数面板的终端区域。
+ *  用 fx._terminalRev 判断是否真的变化：播放期每帧都会调用，未产生新输出时跳过 DOM 重建。 */
 export function refreshFxTerminal(fx) {
   const wrap = document.querySelector('.fx-panel');
   if (!wrap) return;
   const term = wrap.querySelector('.fx-terminal');
   if (!term) return;
   const entries = Array.isArray(fx && fx._terminal) ? fx._terminal : [];
+  const rev = (fx && fx._terminalRev) || 0;
+  if (term._renderedRev === rev && term._renderedCount === entries.length) return;
   term.textContent = '';
   term.style.display = entries.length ? 'block' : 'none';
+  term._renderedRev = rev;
+  term._renderedCount = entries.length;
   if (!entries.length) return;
 
   for (const e of entries) {

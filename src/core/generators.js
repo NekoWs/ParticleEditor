@@ -62,13 +62,19 @@ export function buildEnv(vars, ctx) {
 
 // —— 终端输出 ——
 
+// 动态值（如 this.time）每帧都会产生新行，播放期必须封顶，避免 DOM 与内存无限增长。
+const MAX_TERMINAL_LINES = 200;
+
 export function fxTerminalClear(fx) {
-  if (fx) fx._terminal = [];
+  if (fx) {
+    fx._terminal = [];
+    fx._terminalRev = (fx._terminalRev || 0) + 1;
+  }
 }
 
 // 终端输出：每条为一行 { kind:'info'|'error', text, count }。
-// 连续相同的行在写入时即合并（count 递增），避免播放期无限增长，
-// 渲染端据此显示 `[info] xxx (x2)` 形式的折叠行。
+// 连续相同的行在写入时即合并（count 递增），渲染端据此显示 `[info] xxx (x2)` 形式的折叠行。
+// 每次写入推进 _terminalRev，供渲染端判断是否需要重建终端 DOM。
 export function fxTerminalPush(fx, line, kind) {
   if (!fx) return;
   if (!Array.isArray(fx._terminal)) fx._terminal = [];
@@ -82,6 +88,10 @@ export function fxTerminalPush(fx, line, kind) {
       fx._terminal.push({ kind: k, text: part, count: 1 });
     }
   }
+  if (fx._terminal.length > MAX_TERMINAL_LINES) {
+    fx._terminal.splice(0, fx._terminal.length - MAX_TERMINAL_LINES);
+  }
+  fx._terminalRev = (fx._terminalRev || 0) + 1;
 }
 
 // —— 粒子存储与运行时 ——
