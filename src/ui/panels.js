@@ -543,6 +543,8 @@ export function refreshFxTerminal(fx) {
     line.textContent = (kind === 'error' ? '[error] ' : '[info] ') + text + count;
     term.appendChild(line);
   }
+  // 有新输出时自动滚到底部，始终显示最新一行。
+  term.scrollTop = term.scrollHeight;
 }
 
 // 实时同步「有关键帧」变量输入框显示的当前帧插值值（不重建面板）
