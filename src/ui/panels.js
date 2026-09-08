@@ -206,9 +206,9 @@ export function drawTimeline() {
   ctx.fillStyle = '#1f222a'; ctx.fillRect(0, 0, w, h);
   ctx.strokeStyle = '#3a3f4b'; ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
 
-  // 缩放自适应的刻度：主刻度带数字；主刻度 ≥ 1s 时按秒显示，更细时按毫秒显示。
+  // 缩放自适应的刻度：主刻度带数字；主刻度 ≥ 100ms 时按秒显示，更细（50ms 档）时按毫秒显示。
   const major = tlNiceStep(pxPerMs, 40);
-  const unit = major >= 1000 ? 's' : 'ms';
+  const unit = major >= 100 ? 's' : 'ms';
   const minor = major / 5;
   const start = Math.max(0, Math.floor(timelineViewStart / minor) * minor);
   const count = Math.ceil((viewEnd - start) / minor) + 1;
