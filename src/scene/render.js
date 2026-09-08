@@ -9,7 +9,7 @@ import { updateGizmo } from '../interaction/gizmo.js';
 import { drawTimeline, updatePropPanel } from '../ui/panels.js';
 import { evalUVInto, hasUvExpressions, evaledAutoFrames, evaledEffMaxFrame } from '../core/uv-eval.js';
 
-import { buildParticleIndex, buildTrackIndex, buildGroupIndex, buildOpDeltaCache, buildGroupXforms, buildFxSclTrackCache, currentVisual, velOffsetAt, trackValueAt, trackIntegral, trVersion, groupMemberIndexCache, groupXformCache, fxOpDeltaCache, fxSclTrackCache, invalidateMaxTickCache, maxTick, fxParticleVisible, particleValueAt, spinVectorAt, rotVectorAt } from '../core/animation-eval.js';
+import { buildParticleIndex, buildTrackIndex, buildGroupIndex, buildOpDeltaCache, buildGroupXforms, buildFxSclTrackCache, currentVisual, velOffsetAt, trackValueAt, trackIntegral, trVersion, groupMemberIndexCache, groupXformCache, fxOpDeltaCache, fxSclTrackCache, invalidateMaxMsCache, maxMs, fxParticleVisible, particleValueAt, spinVectorAt, rotVectorAt } from '../core/animation-eval.js';
 import { evaluateFxFrame } from '../core/generators.js';
 import * as THREE from "three";
 // —— 渲染 ——
@@ -119,9 +119,9 @@ export function computeParticleUVFrom(uv, tex, evaled, out) {
 
 // 动画贴图 UV 帧的时间驱动源（秒）。播放或拖动时间轴时，帧由当前时间轴刻度决定（所有粒子同步到
 // 时间轴，方便预览整体动画流程）；暂停空闲时退回墙钟循环播放，方便单独预览贴图动画。
-// state.time 是「刻度」单位（20 刻度 = 1 秒），所以除以 20 换算成秒。
+// state.time 是毫秒，所以除以 1000 换算成秒。
 export function uvDriveSeconds() {
-  if (state.playing || state.scrubbing) return state.time / 20;
+  if (state.playing || state.scrubbing) return state.time / 1000;
   return performance.now() / 1000;
 }
 
@@ -194,7 +194,7 @@ export function setPointUVAttributes(geo, uvs) {
 }
 
 function rebuildIndexes() {
-  invalidateMaxTickCache();
+  invalidateMaxMsCache();
   buildParticleIndex();
   buildTrackIndex();
   buildGroupIndex();
@@ -219,7 +219,7 @@ function readDerivedVisual(p, T) {
           v.scale[0], v.scale[1]];
 }
 
-function writePointBuffers(full, deltaMs) {
+function writePointBuffers(full) {
   buildOpDeltaCache(state.time);
   buildGroupXforms(state.time);
   const n = state.particles.length;
@@ -244,11 +244,11 @@ function writePointBuffers(full, deltaMs) {
   hasAnimatedTex = false; // 主循环顺带统计动画贴图粒子，避免额外整表扫描
   // 先推进每个函数对象的 tick/process（脚本直接写粒子存储值）。
   for (const fx of state.functions) {
-    evaluateFxFrame(fx, T, deltaMs || 0);
+    evaluateFxFrame(fx, T);
   }
   // UV 表达式求值复用的 this 上下文（仅对含表达式的粒子填写，避免每粒子分配）。
   const uvCtxOut = { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0, life: -1 };
-  const uvCtx = { i: 0, n, t: T, dt: 0, duration: maxTick(), life: -1, uv_x: 0, uv_y: 0, vars: {}, out: uvCtxOut };
+  const uvCtx = { i: 0, n, t: T, dt: 0, duration: maxMs(), life: -1, uv_x: 0, uv_y: 0, vars: {}, out: uvCtxOut };
   for (let i = 0; i < n; i++) {
     const p = state.particles[i];
     let px, py, pz, cr, cg, cb, ca, ssx, ssy;
@@ -453,15 +453,15 @@ function writePointBuffers(full, deltaMs) {
   }
 }
 
-// 结构变化后的完整刷新：重建索引并写缓冲。deltaMs 为本次 process 的毫秒增量（scrub/seek 传 0）。
-export function rebuildPoints(full, deltaMs) {
+// 结构变化后的完整刷新：重建索引并写缓冲。
+export function rebuildPoints(full) {
   rebuildIndexes();
-  writePointBuffers(full, deltaMs || 0);
+  writePointBuffers(full);
 }
 
 // 播放/拖动时间轴专用：结构未变、仅 time 变化，跳过索引重建以降低帧耗时。
-export function rebuildPointsTime(full, deltaMs) {
-  writePointBuffers(full, deltaMs || 0);
+export function rebuildPointsTime(full) {
+  writePointBuffers(full);
 }
 
 export function setPreview(positions) {

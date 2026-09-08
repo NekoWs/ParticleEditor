@@ -1243,33 +1243,6 @@ function layoutVars(cw) {
     out.push(region);
   };
 
-  // process 参数名（process(delta) 的 delta 可重命名）
-  {
-    const lab = t('blk.processParam');
-    const isEditing = S.edit && S.edit.space === 'var' && S.edit.regionKey === 'processParam';
-    const val = isEditing ? S.edit.buffer : (bctx.processParam || 'delta');
-    const lw = textW(ctx, lab, FONT);
-    const eqw = textW(ctx, ' = ', FONT);
-    const vw = textW(ctx, val, FONT) + 12;
-    const w = 14 + lw + eqw + vw + 8;
-    const row = { kind: 'var-row', shape: 'row', varRow: { kind: 'processParam' }, x, y, w, h: VARS_ROW_H, segments: [] };
-    place(row, w);
-    row.segments.push({ text: lab, x: row.x + 7, y: row.y + VARS_ROW_H / 2, font: FONT });
-    row.segments.push({ text: ' = ', x: row.x + 7 + lw, y: row.y + VARS_ROW_H / 2, font: FONT });
-    out.push({
-      kind: 'edit', shape: 'edit', space: 'var', editKey: 'processParam',
-      edit: { kind: 'text', ident: true, value: val, commit: (v) => {
-        const nn = String(v).trim();
-        if (!nn || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(nn) || nn === 'this') return false;
-        H.pushUndo();
-        bctx.processParam = nn;
-        return true;
-      } },
-      x: row.x + 7 + lw + eqw, y: row.y + (VARS_ROW_H - EDIT_H) / 2, w: vw, h: EDIT_H,
-      segments: [{ text: val, x: row.x + 7 + lw + eqw + 6, y: row.y + VARS_ROW_H / 2, font: FONT }],
-    });
-  }
-
   // 外部变量标题
   {
     const lab = t('blk.externalVars');
@@ -2036,10 +2009,9 @@ function echoCodeText() {
   const setupCode = bctx.layout.setup ? statementsToCode(bctx.setupChain) : '';
   const tickCode = bctx.layout.tick ? statementsToCode(bctx.tickChain) : '';
   const processCode = bctx.layout.chain ? statementsToCode(bctx.chain) : '';
-  const pp = (String(bctx.processParam || '').trim()) || 'delta';
   let out = '';
   if (funcsCode) out += '// ' + t('blk.pal.funcs') + '\n' + funcsCode + '\n\n';
-  out += '// ' + t('blk.setup') + '\n' + setupCode + '\n\n// ' + t('blk.tick') + '\n' + tickCode + '\n\n// process(' + pp + ')\n' + processCode;
+  out += '// ' + t('blk.setup') + '\n' + setupCode + '\n\n// ' + t('blk.tick') + '\n' + tickCode + '\n\n// process()\n' + processCode;
   return out;
 }
 

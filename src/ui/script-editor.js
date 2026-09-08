@@ -21,19 +21,20 @@ import { indentWithTab, insertNewlineAndIndent, history, historyKeymap, defaultK
 import { linter } from '@codemirror/lint';
 import { highlightSelectionMatches } from '@codemirror/search';
 import { parseProgram, ARRAY_METHOD_NAMES } from '../core/script-lang.js';
+import { CONSTANTS } from '../core/script/lexical.js';
 import { localizeScriptError } from '../core/script-error-i18n.js';
 
 // .pdraw 脚本语言（func setup/tick/process + 自定义函数）的 CodeMirror 编辑器封装：
 // 语法高亮 + 自动补全 + 解析错误诊断。fx.source 是唯一源码字段。
 
 export const SCRIPT_KEYWORDS = [
-  'this', 'setup', 'process', 'tick', 'func', 'global', 'of', 'const',
+  'this', 'setup', 'process', 'tick', 'func', 'of', 'const', 'let', 'undefined',
   'if', 'else', 'while', 'do', 'for', 'break', 'continue', 'return',
   'true', 'false',
 ];
 
 export const SCRIPT_THIS_FIELDS = [
-  'time', 'duration', 'particles',
+  'time', 'animTime', 'duration', 'particles',
 ];
 
 const THIS_FIELD_SET = new Set(SCRIPT_THIS_FIELDS);
@@ -88,7 +89,7 @@ export const scriptLanguage = StreamLanguage.define({
       return 'number';
     }
 
-    if (stream.match(/^(==|!=|<=|>=|&&|\|\||\+\+|--)/)) {
+    if (stream.match(/^(==|!=|<=|>=|&&|\|\||\+\+|--|\+=|-=|\*=|\/=|%=|\^=)/)) {
       state.afterDot = false;
       state.afterThisDot = false;
       return 'operator';
@@ -128,7 +129,7 @@ export const scriptLanguage = StreamLanguage.define({
       if (word === 'func') { state.afterFunc = true; return 'keyword'; }
       if (word === 'this') return 'keyword';
       if (KEYWORD_SET.has(word)) return 'keyword';
-      if (word === 'pi' || word === 'true' || word === 'false') return 'atom';
+      if (word === 'pi' || word === 'true' || word === 'false' || word === 'undefined') return 'atom';
       if (BUILTIN_SET.has(word)) return 'function';
       return 'variableName';
     }
@@ -485,13 +486,11 @@ function bodyBraceOffset(bodyStmt, src) {
   return null;
 }
 
-/** 收集 setup 顶层的 global 声明（对象级全局，跨函数可见）。 */
-function collectGlobals(stmts, globals) {
-  for (const st of stmts || []) {
-    if (!st) continue;
-    if (st.type === 'global') {
-      globals.set(st.name, st.init ? inferExprType(st.init, globals) : 'unknown');
-    }
+/** 收集顶层 let/const 声明（对象级全局，跨函数可见）。 */
+function collectGlobals(decls, globals) {
+  for (const d of decls || []) {
+    if (!d) continue;
+    globals.set(d.name, d.init ? inferExprType(d.init, globals) : 'unknown');
   }
 }
 
@@ -518,7 +517,7 @@ function walkScopeAtPos(stmts, scope, cursor, src) {
     const start = lineColToOffset(src, st.line, st.col);
     if (start > cursor) break;
 
-    if (st.type === 'global') {
+    if (st.type === 'declare') {
       assignType(scope, st.name, st.init ? inferExprType(st.init, scope) : 'unknown');
     } else if (st.type === 'assign' && st.target && st.target.type === 'var') {
       assignType(scope, st.target.name, inferExprType(st.value, scope));
@@ -535,7 +534,9 @@ function walkScopeAtPos(stmts, scope, cursor, src) {
       }
     } else if (st.type === 'for') {
       const child = childScope(scope);
-      if (st.init && st.init.type === 'assign' && st.init.target && st.init.target.type === 'var') {
+      if (st.init && st.init.type === 'declare') {
+        child.set(st.init.name, st.init.init ? inferExprType(st.init.init, child) : 'unknown');
+      } else if (st.init && st.init.type === 'assign' && st.init.target && st.init.target.type === 'var') {
         child.set(st.init.target.name, inferExprType(st.init.value, child));
       }
       const open = bodyBraceOffset(st.body, src);
@@ -567,7 +568,7 @@ function buildScriptEnvs(fx, pos) {
   }
 
   const globals = new Map();
-  if (program.setup) collectGlobals(program.setup.body.body, globals);
+  collectGlobals(program.globals, globals);
 
   const root = new Map(globals);
   root.set('pi', 'num');
@@ -661,16 +662,139 @@ export function scriptCompletionSource(fx) {
   };
 }
 
-/** 诊断：解析完整源码，把 parseProgram 错误映射为 CodeMirror 标记。 */
+/** 静态作用域诊断：未声明变量 / const 重新赋值 / 重复声明（英文源文，展示前走 localizeScriptError）。 */
+function staticScriptDiagnostics(program, fx) {
+  const diags = [];
+  const globalNames = new Set();
+  const globalConst = new Set();
+  for (const d of program.globals || []) {
+    globalNames.add(d.name);
+    if (d.kind === 'const') globalConst.add(d.name);
+  }
+  const varNames = new Set(Object.keys(fx?.vars || {}));
+  const known = (name) => CONSTANTS.has(name) || BUILTIN_SET.has(name) || varNames.has(name) || globalNames.has(name);
+
+  function Scope(parent) { this.names = new Map(); this.parent = parent || null; }
+  Scope.prototype.lookup = function (name) {
+    for (let s = this; s; s = s.parent) if (s.names.has(name)) return s.names.get(name);
+    return null;
+  };
+
+  function expr(node, scope) {
+    if (!node) return;
+    switch (node.type) {
+      case 'var': {
+        if (node.name !== 'this' && !scope.lookup(node.name) && !known(node.name)) {
+          diags.push({ line: node.line, col: node.col, msg: `unknown variable '${node.name}'` });
+        }
+        return;
+      }
+      case 'unary': expr(node.operand, scope); return;
+      case 'binary': expr(node.left, scope); expr(node.right, scope); return;
+      case 'ternary': expr(node.cond, scope); expr(node.thenExpr, scope); expr(node.elseExpr, scope); return;
+      case 'index': expr(node.target, scope); expr(node.index, scope); return;
+      case 'comp': expr(node.target, scope); return;
+      case 'member':
+        if (!(node.object.type === 'var' && node.object.name === 'this')) expr(node.object, scope);
+        return;
+      case 'call': expr(node.callee, scope); node.args.forEach((a) => expr(a, scope)); return;
+      case 'method': expr(node.object, scope); node.args.forEach((a) => expr(a, scope)); return;
+      case 'array': node.items.forEach((it) => expr(it, scope)); return;
+      case 'preinc': case 'postinc': checkAssignTarget(node.target, scope); return;
+      case 'num': case 'str': case 'bool': case 'undefined': return;
+    }
+  }
+
+  function checkAssignTarget(target, scope) {
+    if (target.type === 'var') {
+      if (target.name === 'this') return;
+      const kind = scope.lookup(target.name);
+      if (kind === 'const') diags.push({ line: target.line, col: target.col, msg: `cannot assign to const '${target.name}'` });
+      else if (!kind && !known(target.name)) diags.push({ line: target.line, col: target.col, msg: `undeclared variable '${target.name}'` });
+    } else if (target.type === 'comp') {
+      expr(target.target, scope);
+    } else if (target.type === 'index') {
+      expr(target.target, scope); expr(target.index, scope);
+    } else if (target.type === 'member') {
+      if (!(target.object.type === 'var' && target.object.name === 'this')) expr(target.object, scope);
+    } else if (target.type === 'unpack') {
+      for (const n of target.names) {
+        const kind = scope.lookup(n);
+        if (kind === 'const') diags.push({ line: target.line, col: target.col, msg: `cannot assign to const '${n}'` });
+        else if (!kind && !known(n)) diags.push({ line: target.line, col: target.col, msg: `undeclared variable '${n}'` });
+      }
+    }
+  }
+
+  function stmt(node, scope) {
+    if (!node) return;
+    switch (node.type) {
+      case 'block': {
+        const s = new Scope(scope);
+        for (const st of node.body) stmt(st, s);
+        return;
+      }
+      case 'declare': {
+        if (scope.names.has(node.name)) {
+          diags.push({ line: node.line, col: node.col, msg: `duplicate declaration '${node.name}'` });
+        }
+        scope.names.set(node.name, node.kind);
+        if (node.init) expr(node.init, scope);
+        return;
+      }
+      case 'assign': expr(node.value, scope); checkAssignTarget(node.target, scope); return;
+      case 'expr': expr(node.expr, scope); return;
+      case 'if': expr(node.cond, scope); stmt(node.then, scope); if (node.els) stmt(node.els, scope); return;
+      case 'while': expr(node.cond, scope); stmt(node.body, scope); return;
+      case 'do': stmt(node.body, scope); expr(node.cond, scope); return;
+      case 'for': {
+        const s = new Scope(scope);
+        if (node.init) stmt(node.init, s);
+        if (node.cond) expr(node.cond, s);
+        if (node.inc) stmt(node.inc, s);
+        stmt(node.body, s);
+        return;
+      }
+      case 'forof': {
+        const s = new Scope(scope);
+        s.names.set(node.name, node.kind === 'const' ? 'const' : 'let');
+        expr(node.iter, scope);
+        stmt(node.body, s);
+        return;
+      }
+      case 'return': if (node.expr) expr(node.expr, scope); return;
+      case 'break': case 'continue': return;
+    }
+  }
+
+  {
+    const s = new Scope(null);
+    for (const d of program.globals || []) if (d.init) expr(d.init, s);
+  }
+  for (const fn of [program.setup, program.tick, program.process]) {
+    if (!fn) continue;
+    const s = new Scope(null);
+    for (const p of fn.params || []) s.names.set(p, 'let');
+    stmt(fn.body, s);
+  }
+  for (const fn of (program.functions || new Map()).values()) {
+    const s = new Scope(null);
+    for (const p of fn.params) s.names.set(p, 'let');
+    stmt(fn.body, s);
+  }
+  return diags;
+}
+
+/** 诊断：解析完整源码，把 parseProgram 错误与静态作用域错误映射为 CodeMirror 标记。 */
 export function scriptLintSource(fx) {
   return linter((view) => {
     const code = view.state.doc.toString();
+    const doc = view.state.doc;
+    let program;
     try {
-      parseProgram(code);
-      return [];
+      program = parseProgram(code);
     } catch (e) {
       const loc = parseErrorLocation(e.message);
-      const doc = view.state.doc;
       if (!loc) {
         return [{ from: 0, to: doc.length, severity: 'error', message: localizeScriptError(e.message) }];
       }
@@ -680,6 +804,15 @@ export function scriptLintSource(fx) {
       const message = localizeScriptError((e.message || '').replace(/\s*\(line \d+, col \d+\)$/, ''));
       return [{ from, to: from, severity: 'error', message }];
     }
+
+    const out = [];
+    for (const d of staticScriptDiagnostics(program, fx)) {
+      const lineNo = Math.max(1, Math.min(doc.lines, d.line));
+      const line = doc.line(lineNo);
+      const from = Math.min(line.from + Math.max(0, d.col - 1), line.to);
+      out.push({ from, to: from, severity: 'error', message: localizeScriptError(d.msg) });
+    }
+    return out;
   });
 }
 

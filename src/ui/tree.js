@@ -11,7 +11,7 @@ import { cameraValueAt } from '../core/cameras.js';
 import { pushUndo, popUndo } from '../state/undo.js';
 import { makeEasingBtn, easingCurveSVG } from './easing-editor.js';
 import { r3 } from '../io/io.js';
-import { TL_PX_PER_TICK, compTimelineViewStart, commitFunctionRebuild } from './panels.js';
+import { TL_PX_PER_MS, compTimelineViewStart, commitFunctionRebuild } from './panels.js';
 
 // —— 组操作 ——
 
@@ -188,7 +188,7 @@ export function openKeyframeEditor(canvas, id, pr, tick, clientX, clientY) {
     positionFallback: (box) => {
       // 悬浮定位：水平对准关键帧菱形，垂直在其下方
       const rect = canvas.getBoundingClientRect();
-      const kfX = rect.left + (tick - compTimelineViewStart) * TL_PX_PER_TICK;
+      const kfX = rect.left + (tick - compTimelineViewStart) * TL_PX_PER_MS;
       box.style.left = Math.min(Math.max(8, kfX), window.innerWidth - box.offsetWidth - 8) + 'px';
       const top = rect.bottom + 6;
       box.style.top = (top + box.offsetHeight > window.innerHeight - 8 ? Math.max(8, rect.top - box.offsetHeight - 6) : top) + 'px';

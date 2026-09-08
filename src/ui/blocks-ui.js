@@ -14,6 +14,7 @@ import {
   FUNC_DROPDOWNS,
   codeToStatements,
   collectTemps,
+  exprToCode,
   exprType,
   FUNC_BLOCKS,
   METHOD_ARITY,
@@ -802,7 +803,6 @@ function parsePuzzleSource(fx) {
   const setupBody = program.setup ? extractFuncBody(src, 'setup') : '';
   const tickBody = program.tick ? extractFuncBody(src, 'tick') : '';
   const processBody = program.process ? extractFuncBody(src, 'process') : '';
-  const processParam = program.process ? (program.process.params[0] || 'delta') : 'delta';
   const funcStmts = [];
   for (const [name, fn] of program.functions) {
     const body = extractFuncBody(src, name);
@@ -810,19 +810,18 @@ function parsePuzzleSource(fx) {
     if (stmts.length === 1 && stmts[0].kind === 'func') funcStmts.push(stmts[0]);
     else funcStmts.push({ kind: 'func', name, params: fn.params.slice(), body: codeToStatements(body) });
   }
-  return { setupBody, tickBody, processBody, processParam, funcStmts };
+  return { setupBody, tickBody, processBody, funcStmts };
 }
 
 export function openBlockDrawer(fx) {
   ensurePuzzleDom();
-  let chain, setupChain, tickChain, funcStmts, processParam;
+  let chain, setupChain, tickChain, funcStmts;
   try {
     const parsed = parsePuzzleSource(fx);
     setupChain = codeToStatements(parsed.setupBody);
     tickChain = codeToStatements(parsed.tickBody);
     chain = codeToStatements(parsed.processBody);
     funcStmts = parsed.funcStmts;
-    processParam = parsed.processParam;
     // 兼容：setup/tick/process 体内若混入 func 定义，迁移为顶层函数。
     const cExtract = extractTopLevelFuncs(chain);
     const sExtract = extractTopLevelFuncs(setupChain);
@@ -880,7 +879,6 @@ export function openBlockDrawer(fx) {
     chain,
     setupChain,
     tickChain,
-    processParam: processParam || 'delta',
     funcs,
     frags: (saved.frags || []).map(f => ({ stmts: codeToStatements(f.code || ''), x: f.x, y: f.y })).filter(f => f.stmts.length > 0),
     varExprs, varOrder,
@@ -925,11 +923,21 @@ export function closeBlockDrawer(commit) {
   const fx = getFunction(bctx.fxId);
   if (commit && fx) {
     const newCode = bctx.layout.chain ? statementsToCode(bctx.chain) : '';
-    const setupText = bctx.layout.setup ? statementsToCode(bctx.setupChain) : '';
     const tickText = bctx.layout.tick ? statementsToCode(bctx.tickChain) : '';
     const funcsText = statementsToCode(bctx.funcs.map(f => f.stmt));
-    const paramText = (String(bctx.processParam || '').trim()) || 'delta';
-    const source = buildScriptSource(setupText, newCode, tickText, funcsText, paramText);
+    // 全局变量从 setup 链中抽出，生成顶层 let/const 声明（v13 起无 global 语句）。
+    const setupStmts = bctx.layout.setup ? (bctx.setupChain || []) : [];
+    const globals = [];
+    const setupBody = [];
+    for (const s of setupStmts) {
+      if (s && s.kind === 'global') globals.push(s);
+      else setupBody.push(s);
+    }
+    const setupText = bctx.layout.setup ? statementsToCode(setupBody) : '';
+    const globalsText = globals
+      .map(s => ((s.kind === 'const') ? 'const ' : 'let ') + s.name + (s.expr ? ' = ' + exprToCode(s.expr, 0) : ''))
+      .join('\n');
+    const source = buildScriptSource(setupText, newCode, tickText, funcsText, globalsText);
     fx.source = source;
     for (const name of bctx.varOrder) {
       if (name in bctx.varExprs) {
@@ -1047,8 +1055,7 @@ function computeBctxErrors() {
   const tickCode = bctx.layout.tick ? statementsToCode(bctx.tickChain) : '';
   const processCode = bctx.layout.chain ? statementsToCode(bctx.chain) : '';
   const funcsCode = statementsToCode(bctx.funcs.map(f => f.stmt));
-  const paramText = (String(bctx.processParam || '').trim()) || 'delta';
-  const source = buildScriptSource(setupCode, processCode, tickCode, funcsCode, paramText);
+  const source = buildScriptSource(setupCode, processCode, tickCode, funcsCode);
   let err = null;
   try { err = validateFunctionScript(fx, source); }
   catch (e) { err = e; }
@@ -1064,8 +1071,7 @@ export function blockPreview() {
   const setupText = bctx.layout.setup ? statementsToCode(bctx.setupChain) : '';
   const tickText = bctx.layout.tick ? statementsToCode(bctx.tickChain) : '';
   const funcsText = statementsToCode(bctx.funcs.map(f => f.stmt));
-  const paramText = (String(bctx.processParam || '').trim()) || 'delta';
-  const source = buildScriptSource(setupText, code, tickText, funcsText, paramText);
+  const source = buildScriptSource(setupText, code, tickText, funcsText);
   fx.source = source;
   for (const name of bctx.varOrder) {
     if (name in bctx.varExprs) {
@@ -1099,7 +1105,6 @@ export function snapBctx() {
     chain: cloneStmts(bctx.chain),
     setupChain: cloneStmts(bctx.setupChain),
     tickChain: cloneStmts(bctx.tickChain),
-    processParam: bctx.processParam,
     funcs: (bctx.funcs || []).map(f => ({ stmt: cloneStmt(f.stmt), x: f.x, y: f.y })),
     frags: bctx.frags.map(f => ({ stmts: cloneStmts(f.stmts), x: f.x, y: f.y })),
     varExprs: deepCloneVarExprs(bctx.varExprs),
@@ -1112,7 +1117,6 @@ export function restoreBctx(s) {
   bctx.chain = cloneStmts(s.chain);
   bctx.setupChain = cloneStmts(s.setupChain);
   bctx.tickChain = cloneStmts(s.tickChain || []);
-  bctx.processParam = s.processParam || 'delta';
   bctx.funcs = (s.funcs || []).map(f => ({ stmt: cloneStmt(f.stmt), x: f.x, y: f.y }));
   bctx.frags = s.frags.map(f => ({ stmts: cloneStmts(f.stmts), x: f.x, y: f.y }));
   bctx.varExprs = deepCloneVarExprs(s.varExprs);

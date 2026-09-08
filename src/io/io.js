@@ -236,7 +236,7 @@ export function exportProject() {
   for (const [name, space] of Object.entries(state.groupSpinSpace || {})) if (space === 'local') gss[name] = 1;
   const grs = {};
   for (const [name, space] of Object.entries(state.groupRotSpace || {})) if (space === 'local') grs[name] = 1;
-  const result = { v: 12, loop: state.loop, g, p, t, f, tex, guv };
+  const result = { v: 14, loop: state.loop, g, p, t, f, tex, guv };
   if (Object.keys(gss).length > 0) result.gss = gss;
   if (Object.keys(grs).length > 0) result.grs = grs;
   // 默认摄像机不持久化，只存用户新建的摄像机
@@ -325,7 +325,7 @@ export async function importProject(obj) {
   state.expandedParticles.clear(); state.expandedProps.clear();
   state.activeCamera = null;
   for (const fx of state.functions) {
-    try { rebuildFunctionObject(fx); fx._error = null; } catch (e) { fx._error = e.message; console.warn('函数对象求值失败：' + fx.id + ' ' + e.message); }
+    try { rebuildFunctionObject(fx); } catch (e) { fx._error = e.message; console.warn('函数对象求值失败：' + fx.id + ' ' + e.message); }
   }
   // 内嵌贴图（base64 PNG）
   if (obj.texData && typeof obj.texData === 'object') {
@@ -362,7 +362,7 @@ export async function loadFile(file) {
   const text = await file.text();
   const obj = JSON.parse(text);
   if (file.name.toLowerCase().endsWith('.pdraw') || obj.f || obj.v >= 2) {
-    if (obj.v !== 12) {
+    if (obj.v !== 14) {
       modalAlert(t('filePicker.oldVersionTitle'), t('filePicker.oldVersionMsg'));
       return;
     }

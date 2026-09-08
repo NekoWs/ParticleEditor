@@ -3,7 +3,8 @@
 
 export const KEYWORDS = new Set([
   'setup', 'process', 'tick', 'func', 'return', 'if', 'else', 'while', 'do', 'for', 'of', 'const',
-  'break', 'continue', 'global', 'true', 'false',
+  'let', 'undefined',
+  'break', 'continue', 'true', 'false',
 ]);
 
 // this 对象：唯一保留的上下文访问名。

@@ -660,7 +660,7 @@ export function currentVisual(p) {
   };
 }
 
-// 派生粒子读取存储值（v12：脚本在 tick/process 中已直接写入 p.pos/p.color/p.scale），
+// 派生粒子读取存储值（v13：脚本在 tick/process 中已直接写入 p.pos/p.color/p.scale），
 // 再按「组缩放 → 自转 → 函数对象 pos op → 公转 → 组 op」顺序叠加整体变换。
 // 返回的 scale 为三分量数组 [sx,sy,sz]（函数对象整体缩放可独立分轴）。
 export function currentVisualDerived(p, T) {
@@ -700,9 +700,9 @@ export function currentVisualDerived(p, T) {
 /**
  * 派生粒子可见性门控（编辑器与播放器共用语义）：
  * - `T < fx.st`：未出场，隐藏；
- * - 对象整体时长 `fx.duration`（tick）：`duration > 0` 且 `T - fx.st >= duration` 时隐藏；
+ * - 对象整体时长 `fx.duration`（毫秒）：`duration > 0` 且 `T - fx.st >= duration` 时隐藏；
  *   `duration <= 0` 视为无时长上限。
- * 逐粒子寿命由运行时在 tick 边界递减并移除到期粒子（v12 spawn 模型），此处不再二次判定。
+ * 逐粒子寿命由运行时按经过毫秒递减并移除到期粒子（v13 spawn 模型），此处不再二次判定。
  */
 export function fxParticleVisible(fx, T, life) {
   const st = (fx && fx.st) || 0;
@@ -713,15 +713,15 @@ export function fxParticleVisible(fx, T, life) {
 }
 
 // 结构变化（轨道/粒子/函数对象）时由 rebuildIndexes 失效；播放/拖动期间不失效。
-let _maxTickCache = 0;
-let _maxTickValid = false;
+let _maxMsCache = 0;
+let _maxMsValid = false;
 
-export function invalidateMaxTickCache() {
-  _maxTickValid = false;
+export function invalidateMaxMsCache() {
+  _maxMsValid = false;
 }
 
-export function maxTick() {
-  if (_maxTickValid) return _maxTickCache;
+export function maxMs() {
+  if (_maxMsValid) return _maxMsCache;
   let m = 0;
   for (const tr of state.tracks) for (const k of tr.kf) m = Math.max(m, k[0]);
   // 粒子起始时间与有限寿命计入时长；函数对象跨度 = st + extent（变量关键帧 或 依赖 t 时的 duration）
@@ -733,15 +733,15 @@ export function maxTick() {
     if (life >= 0 && s + life > m) m = s + life;
   }
   for (const fx of state.functions) {
-    // 函数对象跨度 = st + extent；extent = max(时长, 变量关键帧最大 tick)（与图层区 rowSpan 一致）
+    // 函数对象跨度 = st + extent；extent = max(时长, 变量关键帧最大毫秒)（与图层区 rowSpan 一致）
     let extent = fx.duration || 0;
     for (const v of Object.values(fx.vars)) for (const k of (v.kf || [])) if (k[0] > extent) extent = k[0];
     const end = (fx.st || 0) + extent;
     if (end > m) m = end;
   }
-  _maxTickCache = Math.ceil(m);
-  _maxTickValid = true;
-  return _maxTickCache;
+  _maxMsCache = Math.ceil(m);
+  _maxMsValid = true;
+  return _maxMsCache;
 }
 
 // 轨道分段积分（线性近似，忽略缓动）：trackValueAt 的常数段 + 线性段面积
@@ -750,7 +750,7 @@ export function trackIntegral(tr, time) {
   if (!kfs || kfs.length === 0) return 0;
   const first = kfs[0], last = kfs[kfs.length - 1];
   if (time <= first[0]) return first[1] * time;
-  let acc = first[1] * Math.max(0, first[0]); // [0, first.tick] 常数段
+  let acc = first[1] * Math.max(0, first[0]); // [0, first[0]] 常数段
   for (let i = 0; i < kfs.length - 1; i++) {
     const a = kfs[i], b = kfs[i + 1];
     if (a[0] >= time) break;

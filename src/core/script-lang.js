@@ -13,7 +13,8 @@ import { CTX_NAME, CONSTANTS, COMP_ALIAS, BUILTIN_FUNCTIONS, parseError } from '
 import { parseProgram, parseExpression } from './script/parser.js';
 export { parseProgram, parseExpression };
 
-// this 只读字段。setup 仅 count/time/duration；process 只读 index/count/time/delta/duration/uv（life 为输出字段）。
+// this 只读字段（setup/tick/process 通用）：
+//   time=对象本地毫秒（绝对−st）、animTime=全局播放毫秒、duration=对象时长毫秒（无上限回退动画总长）、particles=粒子列表。
 const CTX_SETUP_READ = new Set(['count', 'time', 'duration']);
 const CTX_PROCESS_READ = new Set(['index', 'count', 'time', 'delta', 'duration', 'uv']);
 
@@ -22,7 +23,7 @@ const CTX_OUT_FIELDS = new Set(['position', 'color', 'velocity', 'scale', 'glow'
 const CTX_VEC_FIELDS = new Set(['position', 'color', 'velocity']);
 
 // this 字段 → 字节码编号（只读 + 输出共用）。
-const CTX_FIELD_NAMES = ['index', 'count', 'time', 'delta', 'duration', 'uv', 'life', 'position', 'color', 'velocity', 'scale', 'glow', 'light', 'particles'];
+const CTX_FIELD_NAMES = ['index', 'count', 'time', 'animTime', 'delta', 'duration', 'uv', 'life', 'position', 'color', 'velocity', 'scale', 'glow', 'light', 'particles'];
 const CTX_FIELD_CODE = {};
 CTX_FIELD_NAMES.forEach((n, i) => { CTX_FIELD_CODE[n] = i; });
 const CTX_FIELD_BY_CODE = CTX_FIELD_NAMES;
@@ -69,6 +70,7 @@ const mkVec = (dim, comps) => {
 };
 
 function typeName(v) {
+  if (v === undefined) return 'undefined';
   if (typeof v === 'number') return 'num';
   if (typeof v === 'boolean') return 'bool';
   if (typeof v === 'string') return 'string';
@@ -234,6 +236,7 @@ function noise3D(xin, yin, zin, seed) {
 
 // ==/!=：精确比较（无容差）。
 function eqExact(a, b) {
+  if (a === undefined || b === undefined) return a === undefined && b === undefined;
   if (isNum(a) && isNum(b)) return a === b;
   if (isBool(a) && isBool(b)) return a === b;
   if (isVec(a) && isVec(b)) {
@@ -262,6 +265,7 @@ function eqExact(a, b) {
 
 // find/includes/unique 相等：数值与向量/矩阵分量按 1e-6 容差，布尔精确，数组递归。
 function eqTol(a, b) {
+  if (a === undefined || b === undefined) return a === undefined && b === undefined;
   if (isNum(a) && isNum(b)) return Math.abs(a - b) <= EQ_TOLERANCE;
   if (isBool(a) && isBool(b)) return a === b;
   if (isVec(a) && isVec(b)) {
@@ -355,6 +359,7 @@ class Runtime {
     this.ctx = ctx || null;
     this.scopes = [];
     this.scopePool = [];
+    this.constSets = [];
     this.funcDepth = 0;
     this.inFunction = false;
 
@@ -366,17 +371,25 @@ class Runtime {
   }
 
   pushScope(map) {
-    if (map) { this.scopes.push(map); return; }
+    if (map) { this.scopes.push(map); this.constSets.push(null); return; }
     // 块作用域是 process 热路径：每粒子每帧会进出多个块作用域（for-of 体、if/else 分支），
     // 逐次 new Map() 造成巨量分配与 GC 抖动。复用空 Map 池，出栈时清空归还。
     const s = this.scopePool.length > 0 ? this.scopePool.pop() : new Map();
     this.scopes.push(s);
+    this.constSets.push(null);
   }
   popScope() {
     const s = this.scopes.pop();
+    this.constSets.pop();
     if (s && this.scopePool.length < 128) { s.clear(); this.scopePool.push(s); }
   }
   currentScope() { return this.scopes[this.scopes.length - 1]; }
+  currentConstSet() { return this.constSets[this.constSets.length - 1]; }
+  markConst(name) {
+    let cs = this.constSets[this.constSets.length - 1];
+    if (!cs) { cs = new Set(); this.constSets[this.constSets.length - 1] = cs; }
+    cs.add(name);
+  }
 
   /* —— 名称查找 —— */
 
@@ -408,28 +421,33 @@ class Runtime {
       throw runtimeError(`cannot assign to 'this'; use this.<field> = ...`, node);
     }
 
-    // 局部作用域
+    // 局部作用域（含 const 只读检查）
     for (let i = this.scopes.length - 1; i >= 0; i--) {
       const s = this.scopes[i];
-      if (s.has(name)) { s.set(name, value); return; }
-    }
-
-    // global：setup 顶层可写，process / 函数内只读。
-    if (this.objState.globals.has(name)) {
-      if (this.phase === 'setup' && !this.inFunction) {
-        this.objState.globals.set(name, value);
+      if (s.has(name)) {
+        const cs = this.constSets[i];
+        if (cs && cs.has(name)) throw runtimeError(`cannot assign to const '${name}'`, node);
+        s.set(name, value);
         return;
       }
-      throw runtimeError(`global '${name}' is read-only here`, node);
     }
 
-    // 剩余只读名：fx.vars 与常量；函数名允许被变量遮蔽。
+    // 全局（顶层 let/const）：let 处处可写，const 只读。
+    if (this.objState.globals.has(name)) {
+      if (this.objState.constGlobals && this.objState.constGlobals.has(name)) {
+        throw runtimeError(`cannot assign to const '${name}'`, node);
+      }
+      this.objState.globals.set(name, value);
+      return;
+    }
+
+    // 只读名：fx.vars 与常量。
     if (this.varsMap.has(name) || CONSTANTS.has(name)) {
       throw runtimeError(`cannot assign to read-only name '${name}'`, node);
     }
 
-    // 隐式局部变量（当前块作用域）
-    this.currentScope().set(name, value);
+    // 不再隐式声明：赋值给未声明名报错。
+    throw runtimeError(`undeclared variable '${name}'`, node);
   }
 
   assignCtxField(target, value, node) {
@@ -468,6 +486,11 @@ class Runtime {
     }
     if (target.type === 'comp') {
       const v = this.evalExpr(target.target);
+      // particle 上 .x/.y/.z/.w/.r/.g/.b/.a 不是保留字段，按自定义字段存取（p.color.a 仍是颜色分量）。
+      if (isParticle(v)) {
+        particleSetField(v, target.comp, value, node);
+        return;
+      }
       if (!isVec(v)) throw runtimeError('component assignment target is not a vector', node);
       const comp = COMP_ALIAS[target.comp];
       if ((v.t === 'vec2' && (comp === 'z' || comp === 'w')) ||
@@ -498,12 +521,11 @@ class Runtime {
       case 'break': throw new Flow('break');
       case 'continue': throw new Flow('continue');
       case 'return': {
-        const v = node.expr ? this.evalExpr(node.expr) : 0;
+        const v = node.expr ? this.evalExpr(node.expr) : undefined;
         throw new Flow('return', v);
       }
-      case 'global': {
-        const v = node.init ? this.evalExpr(node.init) : 0;
-        this.objState.globals.set(node.name, v);
+      case 'declare': {
+        this.execDeclare(node);
         return;
       }
       case 'forof': return this.execForOf(node);
@@ -540,6 +562,16 @@ class Runtime {
       const v = this.evalExpr(node.value);
       this.assignTarget(node.target, v, node);
     }
+  }
+
+  execDeclare(node) {
+    // 同作用域重复声明（let/const 与参数）报错。
+    if (this.currentScope().has(node.name)) {
+      throw runtimeError(`duplicate declaration '${node.name}'`, node);
+    }
+    const v = node.init ? this.evalExpr(node.init) : undefined;
+    this.currentScope().set(node.name, v);
+    if (node.kind === 'const') this.markConst(node.name);
   }
 
   execWhile(node) {
@@ -605,6 +637,7 @@ class Runtime {
 
   execForPart(part) {
     if (part.type === 'assign') this.execAssign(part);
+    else if (part.type === 'declare') this.execDeclare(part);
     else this.evalExpr(part);
   }
 
@@ -619,12 +652,14 @@ class Runtime {
       throw runtimeError(`for-of requires a particle list or array, got ${typeName(iter)}`, node.iter);
     }
     this.pushScope(new Map());
+    if (node.kind === 'const') this.markConst(node.name);
     try {
       let idx = 0;
       for (const item of snapshot) {
         if (++idx > MAX_LOOP_ITERATIONS) {
           throw runtimeError(`loop iteration limit (${MAX_LOOP_ITERATIONS}) exceeded`, node);
         }
+        // 循环自身的每次迭代直接写回循环变量，不经过 assignName（const 循环变量不因此报错）。
         this.currentScope().set(node.name, isParticleList(iter) ? particleValue(item) : item);
         try {
           this.execStmt(node.body);
@@ -646,6 +681,7 @@ class Runtime {
       case 'num': return node.value;
       case 'str': return node.value;
       case 'bool': return node.value;
+      case 'undefined': return undefined;
       case 'var': return this.lookupName(node.name, node);
       case 'array': return node.items.map((it) => this.evalExpr(it));
       case 'unary': return this.evalUnary(node);
@@ -679,7 +715,7 @@ class Runtime {
   evalUnary(node) {
     const v = this.evalExpr(node.operand);
     if (node.op === '!') {
-      if (!isNum(v) && !isBool(v)) {
+      if (!isNum(v) && !isBool(v) && v !== undefined) {
         throw runtimeError(`'!' requires a num/bool, got ${typeName(v)}`, node);
       }
       return !truthy(v, node);
@@ -704,14 +740,14 @@ class Runtime {
       const l = this.evalExpr(node.left);
       if (!truthy(l, node.left)) return l;
       const r = this.evalExpr(node.right);
-      if (!isNum(r) && !isBool(r)) throw runtimeError(`'&&' requires num/bool operands, got ${typeName(r)}`, node);
+      if (!isNum(r) && !isBool(r) && r !== undefined) throw runtimeError(`'&&' requires num/bool operands, got ${typeName(r)}`, node);
       return r;
     }
     if (op === '||') {
       const l = this.evalExpr(node.left);
       if (truthy(l, node.left)) return l;
       const r = this.evalExpr(node.right);
-      if (!isNum(r) && !isBool(r)) throw runtimeError(`'||' requires num/bool operands, got ${typeName(r)}`, node);
+      if (!isNum(r) && !isBool(r) && r !== undefined) throw runtimeError(`'||' requires num/bool operands, got ${typeName(r)}`, node);
       return r;
     }
     const a = this.evalExpr(node.left);
@@ -740,6 +776,8 @@ class Runtime {
 
   evalComp(node) {
     const target = this.evalExpr(node.target);
+    // particle 上 .x/.y/.z/.w/.r/.g/.b/.a 不是保留字段，按自定义字段读取。
+    if (isParticle(target)) return particleGetField(target, node.comp, node);
     if (!isVec(target)) {
       throw runtimeError(`component access requires a vector, got ${typeName(target)}`, node);
     }
@@ -833,10 +871,10 @@ class Runtime {
 
     this.pushScope(new Map());
     for (let i = 0; i < fn.params.length; i++) {
-      this.currentScope().set(fn.params[i], i < args.length ? args[i] : 0);
+      this.currentScope().set(fn.params[i], i < args.length ? args[i] : undefined);
     }
 
-    let result = 0;
+    let result = undefined;
     try {
       this.execStmt(fn.body);
     } catch (f) {
@@ -898,9 +936,18 @@ function ctxRead(field, rt, node) {
     }
   }
 
+  if (rt.phase === 'toplevel') {
+    throw runtimeError(`this.${field} is not available here`, node);
+  }
   const fx = fxRuntime(rt) || null;
-  if (field === 'time') return fx && fx.t != null ? fx.t : 0;
-  if (field === 'duration') return fx && fx.duration != null ? fx.duration : 0;
+  const t = fx && fx.t != null ? fx.t : 0;
+  const st = fx && fx.st != null ? fx.st : 0;
+  if (field === 'time') return t - st;
+  if (field === 'animTime') return t;
+  if (field === 'duration') {
+    const d = fx && fx.duration != null ? fx.duration : 0;
+    return d > 0 ? d : (fx && fx.maxMs != null ? fx.maxMs : 0);
+  }
   if (field === 'particles') return particleList(fx && Array.isArray(fx.particles) ? fx.particles : []);
   throw runtimeError(`this.${field} is not available here`, node);
 }
@@ -971,7 +1018,7 @@ function particleGetField(pv, field, node) {
     case 'index': return w.index;
     default: {
       const cf = w.cf;
-      return (cf && cf[field] !== undefined) ? cf[field] : 0;
+      return (cf && cf[field] !== undefined) ? cf[field] : undefined;
     }
   }
 }
@@ -1062,6 +1109,7 @@ function unpackValues(v, count, node) {
 }
 
 function truthy(v, node) {
+  if (v === undefined) return false;
   if (isBool(v)) return v;
   if (isNum(v)) return v !== 0;
   throw runtimeError(`condition requires a num/bool, got ${typeName(v)}`, node);
@@ -1586,6 +1634,7 @@ const BUILTIN_TABLE = new Map([
   }),
   builtin('bool', 1, 1, (args, rt, node) => {
     const v = args[0];
+    if (v === undefined) return false;
     if (!isNum(v) && !isBool(v)) throw runtimeError(`bool requires a num/bool, got ${typeName(v)}`, node);
     return isBool(v) ? v : v !== 0;
   }),
@@ -1840,6 +1889,8 @@ const OP = {
   LOAD_MEMBER: 32, STORE_MEMBER: 33, STORE_MEMBER_COMP: 34,
   ITER_BEGIN: 35, ITER_NEXT: 36, SPAWN: 37,
   LOAD_LOCAL: 38, STORE_LOCAL: 39,
+  STORE_LOCAL_FORCE: 40,
+  STORE_LOCAL_COMP: 41,
 };
 
 const UNARY_OPS = ['-', '!'];
@@ -1859,8 +1910,10 @@ const METHOD_CODE = {};
 METHOD_NAMES.forEach((n, i) => { METHOD_CODE[n] = i; });
 const METHOD_BY_CODE = METHOD_NAMES;
 
-const COMP_CODE = { x: 0, y: 1, z: 2, w: 3 };
-const COMP_BY_CODE = ['x', 'y', 'z', 'w'];
+// 按原始别名编码分量，保留 r/g/b/a 与 x/y/z/w 的书写形式。
+// 向量运算用 COMP_ALIAS 归一化到 x/y/z/w；particle 上的分量回退为自定义字段时按原始别名存取。
+const COMP_CODE = { x: 0, y: 1, z: 2, w: 3, r: 4, g: 5, b: 6, a: 7 };
+const COMP_BY_CODE = ['x', 'y', 'z', 'w', 'r', 'g', 'b', 'a'];
 
 // 可安全提升为 uniform 的纯内建（无 PRNG/随机、无数组变异）。
 const PURE_BUILTINS = new Set();
@@ -1895,6 +1948,7 @@ class Compiler {
     // 寄存器式局部变量：作用域栈（每帧 name -> slot）+ 槽位分配器。
     this.scopeStack = [new Map()];
     this.slotCount = 0;
+    this.constSlots = new Map();
 
     // 预注册用户函数（便于前向引用）
     for (const [fname, fn] of program.functions) {
@@ -1950,6 +2004,9 @@ class Compiler {
     this.scopeStack[this.scopeStack.length - 1].set(name, slot);
     return slot;
   }
+  hasLocalInCurrentScope(name) {
+    return this.scopeStack[this.scopeStack.length - 1].has(name);
+  }
   pushScopeFrame() { this.scopeStack.push(new Map()); }
   popScopeFrame() { this.scopeStack.pop(); }
 
@@ -1959,6 +2016,9 @@ class Compiler {
     switch (node.type) {
       case 'num': case 'str': case 'bool':
         this.emit2(OP.CONST, this.internConst(node.value), node);
+        return;
+      case 'undefined':
+        this.emit2(OP.CONST, this.internConst(undefined), node);
         return;
       case 'var': {
         const name = node.name;
@@ -2050,7 +2110,7 @@ class Compiler {
       }
       case 'comp': {
         this.compileExpr(node.target);
-        this.emit2(OP.COMP, COMP_CODE[COMP_ALIAS[node.comp]], node);
+        this.emit2(OP.COMP, COMP_CODE[node.comp], node);
         return;
       }
       case 'call':
@@ -2103,13 +2163,8 @@ class Compiler {
           this.emit2(OP.STORE_LOCAL, slot, target);
           return;
         }
-        // 非局部名（global / fx.var / 常量）：交给 Runtime 处理（只读报错、函数遮蔽等）。
-        if (this.globalNames.includes(name) || this.varNames.includes(name) || CONSTANTS.has(name)) {
-          this.emit2(OP.STORE, this.internName(name), target);
-          return;
-        }
-        // 新隐式局部：分配槽位（含对 builtin / 函数名的遮蔽，与 AST 语义一致）。
-        this.emit2(OP.STORE_LOCAL, this.declareLocal(name), target);
+        // 非局部名（global / fx.var / 常量 / 未声明）：交给 Runtime 按名字处理（const/只读/未声明报错）。
+        this.emit2(OP.STORE, this.internName(name), target);
         return;
       }
       case 'member': {
@@ -2132,16 +2187,23 @@ class Compiler {
       case 'comp': {
         const inner = target.target;
         if (inner.type === 'var') {
-          this.emit2(OP.LOAD, this.internName(inner.name), inner);
-          this.emit2(OP.COMP_STORE, COMP_CODE[COMP_ALIAS[target.comp]], target);
-          this.emit2(OP.STORE, this.internName(inner.name), target);
+          const slot = this.lookupLocal(inner.name);
+          if (slot >= 0) {
+            this.emit2(OP.LOAD_LOCAL, slot, inner);
+            this.emit2(OP.COMP_STORE, COMP_CODE[target.comp], target);
+            this.emit2(OP.STORE_LOCAL_COMP, slot, target);
+          } else {
+            this.emit2(OP.LOAD, this.internName(inner.name), inner);
+            this.emit2(OP.COMP_STORE, COMP_CODE[target.comp], target);
+            this.emit2(OP.STORE, this.internName(inner.name), target);
+          }
         } else if (inner.type === 'member') {
           if (inner.object.type === 'var' && inner.object.name === CTX_NAME) {
             if (!CTX_FIELD_CODE.hasOwnProperty(inner.field)) {
               throw parseError(`unknown this field '.${inner.field}'`, inner.line, inner.col);
             }
             this.emit2(OP.LOAD_CTX_FIELD, CTX_FIELD_CODE[inner.field], inner);
-            this.emit2(OP.COMP_STORE, COMP_CODE[COMP_ALIAS[target.comp]], target);
+            this.emit2(OP.COMP_STORE, COMP_CODE[target.comp], target);
             this.emit2(OP.STORE_CTX_FIELD, CTX_FIELD_CODE[inner.field], target);
           } else {
             // 粒子字段分量赋值：p.position.x = v
@@ -2149,16 +2211,16 @@ class Compiler {
             this.compileExpr(inner.object);
             this.emit1(OP.DUP, inner);
             this.emit2(OP.LOAD_MEMBER, this.internName(inner.field), inner);
-            this.emit3(OP.STORE_MEMBER_COMP, this.internName(inner.field), COMP_CODE[COMP_ALIAS[target.comp]], target);
+            this.emit3(OP.STORE_MEMBER_COMP, this.internName(inner.field), COMP_CODE[target.comp], target);
           }
         } else if (inner.type === 'index') {
           this.compileExpr(inner.target);
           this.compileExpr(inner.index);
-          this.emit2(OP.COMP_STORE_INDEX, COMP_CODE[COMP_ALIAS[target.comp]], target);
+          this.emit2(OP.COMP_STORE_INDEX, COMP_CODE[target.comp], target);
         } else {
           // 嵌套 comp 等：与 AST 一致，求值后会在 COMP_STORE 处报「不是向量」。
           this.compileExpr(inner);
-          this.emit2(OP.COMP_STORE, COMP_CODE[COMP_ALIAS[target.comp]], target);
+          this.emit2(OP.COMP_STORE, COMP_CODE[target.comp], target);
         }
         return;
       }
@@ -2183,6 +2245,17 @@ class Compiler {
 
   compileStmt(st) {
     switch (st.type) {
+      case 'declare': {
+        if (this.hasLocalInCurrentScope(st.name)) {
+          throw parseError(`duplicate declaration '${st.name}'`, st.line, st.col);
+        }
+        const slot = this.declareLocal(st.name);
+        if (st.kind === 'const') this.constSlots.set(slot, st.name);
+        if (st.init) this.compileExpr(st.init);
+        else this.emit2(OP.CONST, this.internConst(undefined), st);
+        this.emit2(OP.STORE_LOCAL, slot, st);
+        return;
+      }
       case 'block':
         this.pushScopeFrame();
         this.emit1(OP.ENTER_SCOPE, st);
@@ -2273,12 +2346,13 @@ class Compiler {
         const itSlot = this.declareLocal(this.synthName());
         this.emit2(OP.STORE_LOCAL, itSlot, st);
         const varSlot = this.declareLocal(st.name);
+        if (st.kind === 'const') this.constSlots.set(varSlot, st.name);
         const start = this.pc();
         this.emit2(OP.LOAD_LOCAL, itSlot, st);
         this.emit1(OP.ITER_NEXT, st);
         this.emit2(OP.STORE_LOCAL, itSlot, st);
         const jf = this.emit2(OP.JUMP_IF_FALSE, 0, st);
-        this.emit2(OP.STORE_LOCAL, varSlot, st);
+        this.emit2(st.kind === 'const' ? OP.STORE_LOCAL_FORCE : OP.STORE_LOCAL, varSlot, st);
         this.emit2(OP.LOOP_GUARD, this.allocLoopCounter(), st);
         this.compileStmt(st.body);
         const contTarget = this.pc();
@@ -2333,8 +2407,9 @@ class Compiler {
 
   compileForPart(part) {
     if (part.type === 'assign') this.compileAssign(part);
+    else if (part.type === 'declare') this.compileStmt(part);
     else this.compileExpr(part);
-    this.emit1(OP.POP, part);
+    if (part.type !== 'declare') this.emit1(OP.POP, part);
   }
 }
 
@@ -2366,10 +2441,11 @@ function walkStmtExprs(node, cb) {
     case 'while': walkExpr(node.cond, cb); walkStmtExprs(node.body, cb); return;
     case 'do': walkStmtExprs(node.body, cb); walkExpr(node.cond, cb); return;
     case 'for': if (node.init) walkStmtExprs(node.init, cb); if (node.cond) walkExpr(node.cond, cb); if (node.inc) walkStmtExprs(node.inc, cb); walkStmtExprs(node.body, cb); return;
+    case 'forof': walkExpr(node.iter, cb); walkStmtExprs(node.body, cb); return;
     case 'expr': walkExpr(node.expr, cb); return;
     case 'assign': if (node.target.type === 'unpack') {} else walkExpr(node.value, cb); return;
+    case 'declare': if (node.init) walkExpr(node.init, cb); return;
     case 'static': if (node.init) walkExpr(node.init, cb); return;
-    case 'global': if (node.init) walkExpr(node.init, cb); return;
     case 'return': if (node.expr) walkExpr(node.expr, cb); return;
     default: return;
   }
@@ -2377,7 +2453,7 @@ function walkStmtExprs(node, cb) {
 
 function isInvariantExpr(node, invariant, varNames) {
   switch (node.type) {
-    case 'num': case 'str': case 'bool': return true;
+    case 'num': case 'str': case 'bool': case 'undefined': return true;
     case 'var': return invariant.has(node.name);
     case 'member': {
       if (node.object.type !== 'var' || node.object.name !== CTX_NAME) return false;
@@ -2439,71 +2515,11 @@ function containsBreakOrContinue(stmts) {
   return found;
 }
 
-// 返回可提升的顶层无条件单次赋值列表（按源顺序）。
-function findHoistedAssignments(processStmts, varNames, globalNames, staticNames, program) {
-  const invariant = new Set();
-  for (const n of varNames) invariant.add(n);
-
-  // 不动点：把所有「无条件顶层赋值且 RHS 不变」的普通变量名标为不变量。
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const st of processStmts) {
-      if (st.type !== 'assign' || st.target.type !== 'var') continue;
-      const name = st.target.name;
-      if (invariant.has(name) || !hoistCandidateName(name, varNames, globalNames, staticNames, program)) continue;
-      if (isInvariantExpr(st.value, invariant, varNames)) {
-        invariant.add(name);
-        changed = true;
-      }
-    }
-  }
-
-  // 整个 process 中每个候选名的「写入」次数（含嵌套语句；分量写入/拆包也算写入）。
-  const writes = new Map();
-  function addWrite(name) { writes.set(name, (writes.get(name) || 0) + 1); }
-  function countWrites(node) {
-    if (!node) return;
-    if (node.type === 'assign') {
-      if (node.target.type === 'var') addWrite(node.target.name);
-      else if (node.target.type === 'comp' && node.target.target.type === 'var') addWrite(node.target.target.name);
-      else if (node.target.type === 'unpack') node.target.names.forEach(addWrite);
-    }
-    if (node.type === 'block') { node.body.forEach(countWrites); return; }
-    if (node.type === 'if') { countWrites(node.then); if (node.els) countWrites(node.els); return; }
-    if (node.type === 'while') { countWrites(node.body); return; }
-    if (node.type === 'do') { countWrites(node.body); return; }
-    if (node.type === 'for') { if (node.init) countWrites(node.init); if (node.inc) countWrites(node.inc); countWrites(node.body); }
-  }
-  for (const st of processStmts) countWrites(st);
-
-  // 首次提及必须是赋值（源顺序），避免把「先读后写」的非法脚本静默改值。
-  const firstMention = new Map();
-  for (const st of processStmts) {
-    if (st.type === 'assign' && st.target.type === 'var') {
-      const name = st.target.name;
-      if (!firstMention.has(name)) firstMention.set(name, 'assign');
-      walkExpr(st.value, (e) => {
-        if (e.type === 'var' && !firstMention.has(e.name)) firstMention.set(e.name, 'read');
-      });
-    } else {
-      walkStmtExprs(st, (e) => {
-        if (e.type === 'var' && !firstMention.has(e.name)) firstMention.set(e.name, 'read');
-      });
-    }
-  }
-
-  const out = [];
-  for (const st of processStmts) {
-    if (st.type !== 'assign' || st.target.type !== 'var') continue;
-    const name = st.target.name;
-    if (!invariant.has(name)) continue;
-    if (varNames.includes(name)) continue;
-    if (writes.get(name) !== 1) continue;
-    if (firstMention.get(name) !== 'assign') continue;
-    out.push({ name, expr: st.value, node: st });
-  }
-  return out;
+// v13 起 process 是对象级执行（每帧一次而非每粒子），顶层不变式提升不再有收益；
+// 且 let/const 使「赋值即声明」的旧提升语义不再成立。保留空实现，避免误提升未声明变量
+// 而静默吞掉「未声明赋值」错误。
+function findHoistedAssignments() {
+  return [];
 }
 
 // —— 原生 JS 快路径编译器（process 直线标量代码）——
@@ -2882,11 +2898,6 @@ function compileProgram(program, varNames, globalNames) {
     throw new Error('unsupported: break/continue in process');
   }
   const c = new Compiler(program, varNames, globalNames);
-  // 注册 process 参数为局部槽（编译器作用域栈顶层，通常为 0）。
-  let paramSlot = -1;
-  if (program.process && program.process.params && program.process.params[0]) {
-    paramSlot = c.declareLocal(program.process.params[0]);
-  }
   const staticNames = collectStaticNames(processStmts);
 
   // 1) 分析并编译 uniform prelude（先于主代码，共享常量/名字表与 hoisted 槽位）
@@ -2933,7 +2944,8 @@ function compileProgram(program, varNames, globalNames) {
     funcs: c.funcs, funcAddr, funcIdxByName: c.funcIdxByName,
     prelude, preludeLocs, uniformCount: hoisted.length,
     loopCounterCount: c.loopCounters,
-    localCount: c.slotCount, paramSlot,
+    localCount: c.slotCount,
+    constSlots: c.constSlots,
     mainStart, codeEnd, program,
     native: null, // 对象级 process 不再走逐粒子原生快路径（保留字段以免调用方解构失败）
   };
@@ -2971,6 +2983,7 @@ class Vm {
     this.scopeDepthStack = [];
     this.loopCounters = new Array(compiled.loopCounterCount || 0).fill(0);
     this.locals = new Array(compiled.localCount || 0).fill(0);
+    this.constSlots = compiled.constSlots || null;
     this.rt = new Runtime('process', compiled.program, objState, statics, null, ctx);
     this.topScope = new Map();
     this.rt.pushScope(this.topScope);
@@ -3034,7 +3047,30 @@ class Vm {
           break;
         }
         case OP.LOAD_LOCAL: stack.push(this.locals[code[this.pc++]]); break;
-        case OP.STORE_LOCAL: this.locals[code[this.pc++]] = stack.pop(); break;
+        case OP.STORE_LOCAL: {
+          const slot = code[this.pc++];
+          const constName = this.constSlots && this.constSlots.get(slot);
+          if (constName !== undefined) {
+            throw runtimeError(`cannot assign to const '${constName}'`, node);
+          }
+          this.locals[slot] = stack.pop();
+          break;
+        }
+        case OP.STORE_LOCAL_FORCE: this.locals[code[this.pc++]] = stack.pop(); break;
+        case OP.STORE_LOCAL_COMP: {
+          const slot = code[this.pc++];
+          const value = stack.pop();
+          const constName = this.constSlots && this.constSlots.get(slot);
+          if (constName !== undefined) {
+            // 分量赋值写回：particle 就地变异时值仍是同一对象（合法），仅当换绑定时报 const 错误。
+            if (value !== this.locals[slot]) {
+              throw runtimeError(`cannot assign to const '${constName}'`, node);
+            }
+          } else {
+            this.locals[slot] = value;
+          }
+          break;
+        }
         case OP.LOAD_CTX_FIELD: {
           const field = CTX_FIELD_BY_CODE[code[this.pc++]];
           stack.push(ctxRead(field, this.rt, node));
@@ -3103,30 +3139,43 @@ class Vm {
           break;
         }
         case OP.COMP: {
-          const comp = COMP_BY_CODE[code[this.pc++]];
+          const raw = COMP_BY_CODE[code[this.pc++]];
           const v = stack.pop();
+          // particle 上 .x/.y/.z/.w/.r/.g/.b/.a 不是保留字段，按自定义字段读取（原始别名作为字段名）。
+          if (isParticle(v)) {
+            stack.push(particleGetField(v, raw, node));
+            break;
+          }
+          const comp = COMP_ALIAS[raw];
           if (!isVec(v)) throw runtimeError(`component access requires a vector, got ${typeName(v)}`, node);
           if ((v.t === 'vec2' && (comp === 'z' || comp === 'w')) ||
               (v.t === 'vec3' && comp === 'w')) {
-            throw runtimeError(`${v.t} has no component '${comp}'`, node);
+            throw runtimeError(`${v.t} has no component '${raw}'`, node);
           }
           stack.push(v[comp]);
           break;
         }
         case OP.COMP_STORE: {
-          const comp = COMP_BY_CODE[code[this.pc++]];
+          const raw = COMP_BY_CODE[code[this.pc++]];
           const old = stack.pop();
           const nv = stack.pop();
+          // particle 上 .x/.y/.z/.w/.r/.g/.b/.a 不是保留字段，按自定义字段写入。
+          if (isParticle(old)) {
+            particleSetField(old, raw, nv, node);
+            stack.push(old);
+            break;
+          }
+          const comp = COMP_ALIAS[raw];
           if (!isVec(old)) throw runtimeError('component assignment target is not a vector', node);
           if ((old.t === 'vec2' && (comp === 'z' || comp === 'w')) ||
               (old.t === 'vec3' && comp === 'w')) {
-            throw runtimeError(`${old.t} has no component '${comp}'`, node);
+            throw runtimeError(`${old.t} has no component '${raw}'`, node);
           }
           stack.push(setVecComp(old, comp, expectNum(nv, 'component value', node)));
           break;
         }
         case OP.COMP_STORE_INDEX: {
-          const comp = COMP_BY_CODE[code[this.pc++]];
+          const raw = COMP_BY_CODE[code[this.pc++]];
           const idx = stack.pop();
           const arr = stack.pop();
           const nv = stack.pop();
@@ -3134,10 +3183,16 @@ class Vm {
           const n = expectInt(idx, 'array index', node);
           if (n < 0 || n >= arr.length) throw runtimeError(`array index ${n} out of bounds (size ${arr.length})`, node);
           const old = arr[n];
+          if (isParticle(old)) {
+            particleSetField(old, raw, nv, node);
+            stack.push(old);
+            break;
+          }
+          const comp = COMP_ALIAS[raw];
           if (!isVec(old)) throw runtimeError('component assignment target is not a vector', node);
           if ((old.t === 'vec2' && (comp === 'z' || comp === 'w')) ||
               (old.t === 'vec3' && comp === 'w')) {
-            throw runtimeError(`${old.t} has no component '${comp}'`, node);
+            throw runtimeError(`${old.t} has no component '${raw}'`, node);
           }
           const updated = setVecComp(old, comp, expectNum(nv, 'component value', node));
           arr[n] = updated;
@@ -3241,15 +3296,16 @@ class Vm {
         }
         case OP.STORE_MEMBER_COMP: {
           const fieldIdx = code[this.pc++];
-          const comp = COMP_BY_CODE[code[this.pc++]];
+          const raw = COMP_BY_CODE[code[this.pc++]];
           const field = this.names[fieldIdx];
           const old = stack.pop();
           const obj = stack.pop();
           const nv = stack.pop();
           if (!isParticle(obj)) throw runtimeError(`only particles have fields '.${field}'`, node);
+          const comp = COMP_ALIAS[raw];
           if (!isVec(old)) throw runtimeError('component assignment target is not a vector', node);
           if ((old.t === 'vec2' && (comp === 'z' || comp === 'w')) || (old.t === 'vec3' && comp === 'w')) {
-            throw runtimeError(`${old.t} has no component '${comp}'`, node);
+            throw runtimeError(`${old.t} has no component '${raw}'`, node);
           }
           particleSetField(obj, field, setVecComp(old, comp, expectNum(nv, 'component value', node)), node);
           break;
@@ -3340,13 +3396,35 @@ class Vm {
 
 // —— 导出 API ——
 
-// 创建对象级状态：{ globals: Map, rand: prngState }。
+// 创建对象级状态：{ globals: Map, constGlobals: Set, rand: prngState }。
 export function createObjectState(seed) {
   const s = seed | 0;
-  return { globals: new Map(), rand: mulberry32(s), seed: s };
+  return { globals: new Map(), constGlobals: new Set(), rand: mulberry32(s), seed: s };
 }
 
-// 执行 setup（对象级，一次）。env: { t, duration, vars, particles, spawn }。返回 objState。
+// 执行顶层 let/const 声明（对象级，每次重建运行时先于 setup 执行一次）。
+// env: { t, duration, vars }（无 this/spawn/particles）。按源码顺序求值，引用靠后的全局名报错（TDZ）。
+export function runTopLevel(program, objState, env) {
+  const globals = program.globals || [];
+  if (globals.length === 0) return objState;
+  const rt = new Runtime('toplevel', program, objState, null, env || null, null);
+  rt.pushScope(new Map());
+  try {
+    for (const d of globals) {
+      if (objState.globals.has(d.name)) {
+        throw runtimeError(`duplicate global '${d.name}'`, d);
+      }
+      const v = d.init ? rt.evalExpr(d.init) : undefined;
+      objState.globals.set(d.name, v);
+      if (d.kind === 'const') objState.constGlobals.add(d.name);
+    }
+  } finally {
+    rt.popScope();
+  }
+  return objState;
+}
+
+// 执行 setup（对象级，一次）。env: { t, st, duration, maxMs, vars, particles, spawn }。返回 objState。
 export function runSetup(program, objState, env) {
   const rt = new Runtime('setup', program, objState, null, env || null, null);
   rt.pushScope(new Map());
@@ -3358,7 +3436,7 @@ export function runSetup(program, objState, env) {
   return objState;
 }
 
-// 执行 tick（每动画 tick 一次）。ctx: { t, duration, vars, particles, spawn }。
+// 执行 tick（每 50ms 一次）。ctx: { t, st, duration, maxMs, vars, particles, spawn }。
 export function runTick(program, objState, ctx) {
   if (!program.tick) return;
   const rt = new Runtime('tick', program, objState, null, null, ctx || null);
@@ -3370,15 +3448,12 @@ export function runTick(program, objState, ctx) {
   }
 }
 
-// 执行 process（每渲染帧一次）。ctx: { t, duration, vars, particles, spawn, deltaMs }。
-// process 的参数名由 program.process.params[0] 决定，delta 值为 ctx.deltaMs（毫秒）。
+// 执行 process（每渲染帧一次）。ctx: { t, st, duration, maxMs, vars, particles, spawn }。
 // AST 解释执行 process（字节码编译失败/不支持时的回退路径，保留原错误语义）。
 function runProcessAst(program, objState, ctx) {
   const rt = new Runtime('process', program, objState, null, null, ctx || null);
   rt.pushScope(new Map());
   try {
-    const paramName = program.process.params[0];
-    rt.currentScope().set(paramName, ctx && ctx.deltaMs != null ? ctx.deltaMs : 0);
     rt.execStmt(program.process.body);
   } finally {
     rt.popScope();
@@ -3390,12 +3465,10 @@ function runProcessVm(compiled, program, objState, ctx) {
   const statics = new Map(); // v12 无 static 语句，空表即可
   const uniforms = new Array(compiled.uniformCount);
   const vm = new Vm(compiled, objState, statics, ctx || null, uniforms, compiled.prelude, compiled.preludeLocs, 0);
-  const delta = ctx && ctx.deltaMs != null ? ctx.deltaMs : 0;
   vm.run(); // prelude → 填充 uniforms
   vm.code = compiled.code;
   vm.locs = compiled.locs;
   vm.resetForRun(statics, ctx || null, uniforms, compiled.mainStart);
-  if (compiled.paramSlot >= 0) vm.locals[compiled.paramSlot] = delta;
   vm.run(); // 主代码
 }
 
@@ -3423,7 +3496,7 @@ export function runProcessFrame(program, objState, ctx) {
 // 通用表达式求值：返回任意值（number/vec/mat/bool/array）。低频路径。
 export function evalExpressionValue(expr, ctx) {
   const node = parseExpression(expr);
-  const program = { setup: null, tick: null, process: null, functions: new Map() };
+  const program = { setup: null, tick: null, process: null, functions: new Map(), globals: [] };
   const rt = new Runtime('expr', program, createObjectState(0), null, null, ctx || null);
   rt.pushScope(new Map());
   try {
@@ -3448,7 +3521,7 @@ export function evalExpression(expr, ctx) {
 // 返回 { eval(ctx) }；ctx.vars 每次求值前重建，因此可安全复用。
 export function createExpressionRunner(expr) {
   const node = parseExpression(expr);
-  const program = { setup: null, tick: null, process: null, functions: new Map() };
+  const program = { setup: null, tick: null, process: null, functions: new Map(), globals: [] };
   const objState = createObjectState(0);
   const rt = new Runtime('expr', program, objState, null, null, null);
   rt.pushScope(new Map());

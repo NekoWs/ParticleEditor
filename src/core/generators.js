@@ -6,28 +6,26 @@ import { FUNCTION_PRESETS, state, nextFunctionId, setDirty } from './constants.j
 import { varKfValue } from './easing.js';
 import { modalAlert } from '../ui/ui.js';
 import { pushUndo } from '../state/undo.js';
-import { rebuildPoints, maxTick } from './animation.js';
+import { rebuildPoints, maxMs } from './animation.js';
 import { refreshFunctionPanel } from '../ui/panels.js';
-import { parseProgram, createObjectState, runSetup, runTick, runProcessFrame } from './script-lang.js';
+import { parseProgram, createObjectState, runSetup, runTick, runProcessFrame, runTopLevel } from './script-lang.js';
 import { localizeScriptError } from './script-error-i18n.js';
 
-// 主循环中 1 秒 = 20 tick（见 main.js）。
-const TICKS_PER_SEC = 20;
-const DT_PER_TICK = 1 / TICKS_PER_SEC;
-
 // 把各代码段组装成完整源码（拼图关闭时写回 fx.source 使用）。
-export function buildScriptSource(setup, process, tick, funcs, processParam) {
+export function buildScriptSource(setup, process, tick, funcs, globals) {
   const parts = [];
   const st = (setup || '').trim();
   const tk = (tick || '').trim();
   const pr = (process || '').trim();
   const fn = (funcs || '').trim();
+  const gl = (globals || '').trim();
   // 函数体整体缩进一层，与拼图生成的 func 语句保持一致。
   const indentBody = (text) => text ? text.split('\n').map(l => '  ' + l).join('\n') : '';
+  if (gl) parts.push(gl);
   if (fn) parts.push(fn);
   if (st) parts.push('func setup() {\n' + indentBody(st) + '\n}');
   if (tk) parts.push('func tick() {\n' + indentBody(tk) + '\n}');
-  if (pr) parts.push('func process(' + (processParam || 'delta') + ') {\n' + indentBody(pr) + '\n}');
+  if (pr) parts.push('func process() {\n' + indentBody(pr) + '\n}');
   return parts.join('\n');
 }
 
@@ -90,8 +88,14 @@ export function fxTerminalPush(fx, line, kind) {
 
 function markFxError(fx, e) {
   if (fx) {
-    fx._error = (e && e.message) ? e.message : String(e);
-    fxTerminalPush(fx, localizeScriptError(fx._error), 'error');
+    const msg = (e && e.message) ? e.message : String(e);
+    fx._error = msg;
+    // 同一错误只上报一次：rebuild 与后续帧调度可能对同一损坏状态重复求值，
+    // 避免终端把同一个 setup/process 错误合并成误导性的 (xN)。
+    if (fx._lastError !== msg) {
+      fx._lastError = msg;
+      fxTerminalPush(fx, localizeScriptError(msg), 'error');
+    }
   }
 }
 
@@ -108,7 +112,7 @@ function newParticleWrapper(fx, runtime) {
     index: serial,
     cf: Object.create(null),
     alive: true,
-    _spawnTick: runtime.curTick,
+    _spawnMs: runtime.curMs,
     _p: null,
     kill() { killParticle(fx, runtime, this); },
   };
@@ -176,18 +180,22 @@ function dropAllParticles(fx) {
   }
 }
 
-// 每个 tick 开始前递减剩余寿命；到期（或 life 已为 0）立即移除。
-// entry = max(spawnTick, fx.st)：setup 中 spawn 的粒子从 st 开始倒计时。
-function decrementLife(fx, runtime, tick) {
+// 按真实经过毫秒递减剩余寿命；到期（或 life 已为 0）立即移除。
+// entry = max(spawnMs, fx.st)：setup 中 spawn 的粒子从 st 开始倒计时。
+function decrementLifeMs(fx, runtime, fromMs, toMs) {
   const st = fx.st || 0;
+  if (!(toMs > fromMs)) return;
   for (let i = runtime.particles.length - 1; i >= 0; i--) {
     const w = runtime.particles[i];
-    const entry = Math.max(w._spawnTick, st);
-    if (w.life >= 0 && tick > entry) {
-      if (w.life <= 1) {
-        killParticle(fx, runtime, w);
-      } else {
-        w.life -= 1;
+    const entry = Math.max(w._spawnMs, st);
+    if (w.life >= 0 && toMs > entry) {
+      const elapsed = toMs - Math.max(entry, fromMs);
+      if (elapsed > 0) {
+        if (w.life <= elapsed) {
+          killParticle(fx, runtime, w);
+        } else {
+          w.life -= elapsed;
+        }
       }
     }
   }
@@ -201,47 +209,53 @@ function ensureRuntime(fx) {
   const runtime = {
     particles: [],
     spawnSerial: 0,
-    tickCursor: Math.floor(st) - 1,
-    curTick: st,
+    // 上一次已处理到的 50ms tick 边界（下一个边界 = cursorMs + 50）
+    cursorMs: Math.ceil(st / 50) * 50 - 50,
+    curMs: st,
     objState,
     program,
   };
   fx._runtime = runtime;
   const spawn = () => spawnFor(fx, runtime);
-  runSetup(program, objState, {
+  const setupEnv = {
     t: st,
-    duration: maxTick(),
+    st,
+    duration: fx.duration || 0,
+    maxMs: maxMs(),
     vars: varsAt(fx, st),
     particles: runtime.particles,
     spawn,
     print: line => fxTerminalPush(fx, line, 'info'),
-  });
+  };
+  runTopLevel(program, objState, setupEnv);
+  runSetup(program, objState, setupEnv);
   for (const w of runtime.particles) {
     if (w._p) syncParticleState(w._p);
   }
   return runtime;
 }
 
-function makeCtx(fx, runtime, T, deltaMs) {
+function makeCtx(fx, runtime, T) {
   return {
     t: T,
-    duration: maxTick(),
+    st: fx.st || 0,
+    duration: fx.duration || 0,
+    maxMs: maxMs(),
     vars: varsAt(fx, T),
     particles: runtime.particles,
     spawn: () => spawnFor(fx, runtime),
-    deltaMs: deltaMs || 0,
     fastMath: !!fx.fastMath,
     print: line => fxTerminalPush(fx, line, 'info'),
   };
 }
 
-// —— 帧调度：把函数对象推进到时间 T ——
+// —— 帧调度：把函数对象推进到时间 T（毫秒） ——
 // T < st：只保证 setup 已执行（初始粒子存在，渲染层按 st 隐藏）。
 // 超过 duration：不再跑 tick/process（粒子保留，渲染层隐藏）。
-// 正常：补跑 (lastTick, floor(T)] 的 tick()，再跑一次 process(deltaMs)。
-// 向后 seek：重建运行时（清空粒子、重跑 setup、重置 tick 游标）。
+// 正常：先按经过毫秒连续递减寿命，再补跑 (cursorMs, T] 内每个 50ms 边界的 tick()，最后跑一次 process()。
+// 向后 seek：重建运行时（清空粒子、重跑 setup、重置游标）。
 
-export function evaluateFxFrame(fx, T, deltaMs) {
+export function evaluateFxFrame(fx, T) {
   const st = fx.st || 0;
   const dur = fx.duration || 0;
   if (T < st) {
@@ -262,7 +276,7 @@ export function evaluateFxFrame(fx, T, deltaMs) {
   }
 
   // 向后 seek：确定性重算。
-  if (T < runtime.tickCursor) {
+  if (T < runtime.curMs) {
     dropAllParticles(fx);
     fx._runtime = null;
     try {
@@ -273,25 +287,28 @@ export function evaluateFxFrame(fx, T, deltaMs) {
     }
   }
 
-  const floorT = Math.floor(T);
-  while (runtime.tickCursor < floorT) {
-    runtime.tickCursor += 1;
-    runtime.curTick = runtime.tickCursor;
-    decrementLife(fx, runtime, runtime.tickCursor);
+  // 连续寿命递减 + 50ms 边界 tick()（先递减后 tick，与旧每 tick 顺序一致）。
+  let b = runtime.cursorMs + 50;
+  while (b <= T) {
+    decrementLifeMs(fx, runtime, runtime.curMs, b);
+    runtime.curMs = b;
+    runtime.cursorMs = b;
     if (runtime.program.tick) {
       try {
-        runTick(runtime.program, runtime.objState, makeCtx(fx, runtime, runtime.tickCursor, deltaMs));
+        runTick(runtime.program, runtime.objState, makeCtx(fx, runtime, b));
       } catch (e) {
         markFxError(fx, e);
         break;
       }
     }
+    b += 50;
   }
 
-  runtime.curTick = T;
+  decrementLifeMs(fx, runtime, runtime.curMs, T);
+  runtime.curMs = T;
   if (runtime.program.process) {
     try {
-      runProcessFrame(runtime.program, runtime.objState, makeCtx(fx, runtime, T, deltaMs));
+      runProcessFrame(runtime.program, runtime.objState, makeCtx(fx, runtime, T));
     } catch (e) {
       markFxError(fx, e);
     }
@@ -307,6 +324,7 @@ export function rebuildFunctionObject(fx) {
   fx._program = undefined;
   fx._programSrc = undefined;
   fx._error = null;
+  fx._lastError = null;
   fxTerminalClear(fx);
   dropAllParticles(fx);
   fx._runtime = null;
@@ -333,16 +351,17 @@ export function validateFunctionScript(fx, sourceOverride) {
     const w = {
       pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0],
       scale: 1, glow: false, light: 0, life: -1,
-      index: serial++, cf: Object.create(null), alive: true, _spawnTick: st,
+      index: serial++, cf: Object.create(null), alive: true, _spawnMs: st,
       kill() { this.alive = false; },
     };
     particles.push(w);
     return w;
   };
-  const env = { t: st, duration: maxTick(), vars: varsAt(fx, st), particles, spawn, print: () => {} };
+  const env = { t: st, st, duration: fx.duration || 0, maxMs: maxMs(), vars: varsAt(fx, st), particles, spawn, print: () => {} };
+  runTopLevel(program, objState, env);
   runSetup(program, objState, env);
   if (program.tick) runTick(program, objState, env);
-  if (program.process) runProcessFrame(program, objState, { ...env, deltaMs: 0 });
+  if (program.process) runProcessFrame(program, objState, env);
   return null;
 }
 
@@ -373,7 +392,7 @@ export function createFunctionObject(presetId) {
     source: '',
     seed: 0,
     vars: {},
-    duration: 100,
+    duration: 5000,
     preset: null,
     params: null,
     fastMath: false,

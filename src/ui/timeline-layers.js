@@ -1,13 +1,13 @@
 // 底部时间轴 · lane 画布（与左侧 HTML 标签轨共用 tlTreeFlatRows）。
 // 行模型完全来自 timeline-tree.js 的 tlTreeFlatRows()；顶层对象行（组/粒子/函数对象）保留
 // st/life 拖拽条；属性/分量/变量行画关键帧菱形（隐藏 0t 默认关键帧）；播放头与刻度横跨整块
-// 画布，与上方 #timeline 标尺共享 timelineViewStart / TL_PX_PER_TICK；垂直滚动由 #tl-tree 驱动。
+// 画布，与上方 #timeline 标尺共享 timelineViewStart / TL_PX_PER_MS；垂直滚动由 #tl-tree 驱动。
 
 import { t } from '../core/i18n.js';
 import { addLongPress, hasTouch } from '../core/device.js';
 import { state, propComps, compPr, getParticle } from '../core/constants.js';
-import { TL_PX_PER_TICK, timelineViewStart, setTimelineViewStart, setTLPxPerTick, drawTimeline, scrubAutoPan, tlNiceStep, commitFunctionRebuild } from './panels.js';
-import { rebuildPoints, maxTick, invalidateMaxTickCache } from '../core/animation.js';
+import { TL_PX_PER_MS, timelineViewStart, setTimelineViewStart, setTLPxPerMs, drawTimeline, scrubAutoPan, tlNiceStep, commitFunctionRebuild } from './panels.js';
+import { rebuildPoints, maxMs, invalidateMaxMsCache } from '../core/animation.js';
 import { findTrackByPr } from '../core/animation-eval.js';
 import { baseValueFor, removeKeyframe } from '../core/edit.js';
 import { saveWorkspaceState } from './blocks-ui.js';
@@ -32,8 +32,8 @@ export function particleLifeEnd(p) {
   return life < 0 ? Infinity : s + life;
 }
 
-/** 函数对象所有变量关键帧的最大 tick（约束对象时长的下限）。 */
-export function fxVarMaxTick(fx) {
+/** 函数对象所有变量关键帧的最大毫秒（约束对象时长的下限）。 */
+export function fxVarMaxMs(fx) {
   let max = 0;
   for (const v of Object.values(fx.vars || {})) {
     for (const k of (v.kf || [])) if (k[0] > max) max = k[0];
@@ -57,7 +57,7 @@ export function rowSpan(r) {
   }
   if (r.kind === 'fx') {
     const fx = r.fx;
-    let extent = Math.max(fx.duration || 0, fxVarMaxTick(fx));
+    let extent = Math.max(fx.duration || 0, fxVarMaxMs(fx));
     return [fx.st || 0, (fx.st || 0) + extent];
   }
   const s = r.p.st || 0, e = particleLifeEnd(r.p);
@@ -200,12 +200,12 @@ export function drawTimelineLayers() {
   ctx.fillStyle = '#181b22';
   ctx.fillRect(0, 0, w, h);
 
-  const pxPerTick = TL_PX_PER_TICK;
-  const X = t => (t - timelineViewStart) * pxPerTick;
-  const viewEnd = timelineViewStart + w / pxPerTick;
+  const pxPerMs = TL_PX_PER_MS;
+  const X = t => (t - timelineViewStart) * pxPerMs;
+  const viewEnd = timelineViewStart + w / pxPerMs;
 
-  // 与上方标尺同一缩放：主/次刻度随 TL_PX_PER_TICK 自适应（数字只在上方标尺显示）
-  const major = tlNiceStep(pxPerTick, 40);
+  // 与上方标尺同一缩放：主/次刻度随 TL_PX_PER_MS 自适应（数字只在上方标尺显示）
+  const major = tlNiceStep(pxPerMs, 40);
   const minor = major / 5;
   const start = Math.max(0, Math.floor(timelineViewStart / minor) * minor);
   const count = Math.ceil((viewEnd - start) / minor) + 1;
@@ -261,7 +261,7 @@ export function setRowStart(r, v) {
 }
 
 export function setParticleLife(p, v) {
-  p.life = Math.max(1, v);   // 拖拽调整的最小寿命 1 tick
+  p.life = Math.max(50, v);   // 拖拽调整的最小寿命 50ms
 }
 
 export function shiftGroup(r, delta) {
@@ -272,10 +272,10 @@ export function shiftGroup(r, delta) {
   }
 }
 
-export function timelineXToTickL(clientX) {
+export function timelineXToMsL(clientX) {
   const canvas = document.getElementById('tl-layers-canvas');
   const rect = canvas.getBoundingClientRect();
-  return timelineViewStart + (clientX - rect.left) / TL_PX_PER_TICK;
+  return timelineViewStart + (clientX - rect.left) / TL_PX_PER_MS;
 }
 
 function hitKeyframeAt(clientX, clientY) {
@@ -292,11 +292,11 @@ function hitKeyframeAt(clientX, clientY) {
 
 /** 轻刷新：st/life 改动后同步时长显示、标尺、lane 区与预览。 */
 export function refreshAllPanelsLight() {
-  // 先失效 maxTick 缓存：st/life/duration 改动会改变时间轴总长，必须在读取前失效，
+  // 先失效 maxMs 缓存：st/life/duration 改动会改变时间轴总长，必须在读取前失效，
   // 否则 #tl-max 与循环播放边界仍取到上一次的缓存值（rebuildPoints 内部的失效发生在读值之后）。
-  invalidateMaxTickCache();
+  invalidateMaxMsCache();
   const maxEl = document.getElementById('tl-max');
-  if (maxEl) maxEl.textContent = maxTick();
+  if (maxEl) maxEl.textContent = maxMs();
   if (typeof drawTimeline === 'function') drawTimeline();
   drawTimelineLayers();
   rebuildPoints(false);
@@ -307,7 +307,7 @@ export function tlInitLayerEvents() {
   if (!canvas) return;
 
   // 触屏手势（移动端优化）：单指在空白处拖动 = 平移时间轴视图（与 #timeline 中键拖动一致，
-  // 不再 scrub）；双指捏合 = 以两指中点为锚点缩放每 tick 像素，双指中点移动同步平移。
+  // 不再 scrub）；双指捏合 = 以两指中点为锚点缩放每毫秒像素，双指中点移动同步平移。
   // 关键帧/寿命条拖拽与鼠标左键 scrub 行为不变。
   const touchGest = { pointers: new Map(), mode: null, panStart: null, pinch: null };
 
@@ -321,9 +321,9 @@ export function tlInitLayerEvents() {
     touchGest.panStart = null;
     touchGest.pinch = {
       startDist: dist,
-      startPx: TL_PX_PER_TICK,
+      startPx: TL_PX_PER_MS,
       // 捏合锚点：手势开始时两指中点正对的 tick，缩放过程中保持该 tick 跟随中点
-      anchorTick: timelineViewStart + midX / TL_PX_PER_TICK,
+      anchorMs: timelineViewStart + midX / TL_PX_PER_MS,
     };
   };
 
@@ -335,9 +335,9 @@ export function tlInitLayerEvents() {
     const midX = (a.x + b.x) / 2 - canvas.getBoundingClientRect().left;
     const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
     const newPx = Math.max(0.25, Math.min(128, pinch.startPx * dist / pinch.startDist));
-    setTLPxPerTick(newPx);
-    // 中点移动会自然带动平移：锚点 tick 始终落在当前中点处
-    setTimelineViewStart(Math.max(0, pinch.anchorTick - midX / newPx));
+    setTLPxPerMs(newPx);
+    // 中点移动会自然带动平移：锚点毫秒始终落在当前中点处
+    setTimelineViewStart(Math.max(0, pinch.anchorMs - midX / newPx));
     drawTimeline();
     drawTimelineLayers();
   };
@@ -401,7 +401,7 @@ export function tlInitLayerEvents() {
       // 空白区域鼠标拖动：scrub 播放头（无关键帧/对象时也能拖动标尺）
       canvas.setPointerCapture(ev.pointerId);
       state.scrubbing = true;
-      state.time = Math.max(0, timelineXToTickL(ev.clientX));
+      state.time = Math.max(0, timelineXToMsL(ev.clientX));
       applyTimeChange();
       tlLayerState.drag = { kind: 'scrub' };
       drawTimeline();
@@ -411,7 +411,7 @@ export function tlInitLayerEvents() {
     const { hit, zone } = res;
     pushUndo();
     canvas.setPointerCapture(ev.pointerId);
-    const ptrTick = Math.round(timelineXToTickL(ev.clientX));
+    const ptrTick = Math.round(timelineXToMsL(ev.clientX));
     if (hit.r.kind === 'group') {
       if (zone === 'life') {
         // 组寿命终点手柄：整体拉长/缩短成员寿命
@@ -447,7 +447,7 @@ export function tlInitLayerEvents() {
       if (touchGest.mode === 'pinch') { updateTouchPinch(); return; }
       if (touchGest.mode === 'pan') {
         const dx = ev.clientX - touchGest.panStart.x;
-        setTimelineViewStart(Math.max(0, touchGest.panStart.viewStart - dx / TL_PX_PER_TICK));
+        setTimelineViewStart(Math.max(0, touchGest.panStart.viewStart - dx / TL_PX_PER_MS));
         drawTimeline();
         drawTimelineLayers();
         return;
@@ -466,7 +466,7 @@ export function tlInitLayerEvents() {
       return;
     }
     if (d.kind === 'kf') {
-      const t = Math.max(0, Math.round(timelineXToTickL(ev.clientX)));
+      const t = Math.max(0, Math.round(timelineXToMsL(ev.clientX)));
       if (t !== d.kf[0]) {
         if (!d.undoPushed) { pushUndo(); d.undoPushed = true; }
         d.kf[0] = t;
@@ -477,7 +477,7 @@ export function tlInitLayerEvents() {
       return;
     }
     if (d.kind === 'varkf') {
-      const t = Math.max(0, Math.round(timelineXToTickL(ev.clientX)));
+      const t = Math.max(0, Math.round(timelineXToMsL(ev.clientX)));
       if (t !== d.kf[0]) {
         if (!d.undoPushed) { pushUndo(); d.undoPushed = true; }
         d.kf[0] = t;
@@ -490,7 +490,7 @@ export function tlInitLayerEvents() {
     }
     if (d.kind === 'scrub') {
       const rect = canvas.getBoundingClientRect();
-      const r = scrubAutoPan(d, ev.clientX, rect, timelineViewStart, state.time, TL_PX_PER_TICK, 0, 0);
+      const r = scrubAutoPan(d, ev.clientX, rect, timelineViewStart, state.time, TL_PX_PER_MS, 0, 0);
       setTimelineViewStart(r.viewStart);
       state.time = r.time;
       applyTimeChange();
@@ -498,18 +498,18 @@ export function tlInitLayerEvents() {
       drawTimelineLayers();
       return;
     }
-    const ptrTick = timelineXToTickL(ev.clientX);
+    const ptrTick = timelineXToMsL(ev.clientX);
     if (d.kind === 'start') {
       setRowStart(d.r, Math.max(0, Math.round(ptrTick - d.grabOff)));
     } else if (d.kind === 'life') {
       setParticleLife(d.p, Math.max(1, Math.round(ptrTick - d.grabOff)));
     } else if (d.kind === 'fxdur') {
-      const minDur = Math.max(1, fxVarMaxTick(d.fx));
+      const minDur = Math.max(1, fxVarMaxMs(d.fx));
       d.fx.duration = Math.max(minDur, Math.round(ptrTick - d.grabOff));
       const durEl = document.getElementById('fx-duration');
-      if (durEl && document.activeElement !== durEl) durEl.value = d.fx.duration;
+      if (durEl && document.activeElement !== durEl) durEl.value = (d.fx.duration / 1000).toFixed(3);
       // duration 改变会 (1) 失效脚本/life 求值缓存 (2) 重建派生轨道采样范围；
-      // 否则缩短时长后 state.tracks 残留 tick > duration 的旧派生关键帧，maxTick() 仍取旧长度，
+      // 否则缩短时长后 state.tracks 残留毫秒 > duration 的旧派生关键帧，maxMs() 仍取旧长度，
       // 编辑器预览会「设置 50 却播放到 100」。与 varkf 分支一致地重建。
       commitFunctionRebuild(d.fx);
     } else if (d.kind === 'grouplife') {
@@ -567,7 +567,7 @@ export function tlInitLayerEvents() {
     const p = res.hit.r.p;
     pushUndo();
     if (particleLifeEnd(p) === Infinity) {
-      setParticleLife(p, Math.max(1, Math.round(timelineXToTickL(ev.clientX)) - (p.st || 0)));
+      setParticleLife(p, Math.max(1, Math.round(timelineXToMsL(ev.clientX)) - (p.st || 0)));
     } else {
       p.life = -1; // 无限
     }

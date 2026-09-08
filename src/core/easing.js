@@ -40,7 +40,7 @@ export function easeVal(t, easing) {
 
 export function easeInOut(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
 
-// 变量关键帧插值（kf: [tick, value, easing]，value 为标量）
+// 变量关键帧插值（kf: [ms, value, easing]，value 为标量）
 export function varKfValue(kf, t) {
   if (!kf || kf.length === 0) return 0;
   if (t <= kf[0][0]) return kf[0][1];

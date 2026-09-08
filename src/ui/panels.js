@@ -143,7 +143,7 @@ export function updatePropPanel() {
   if (lSame) { lInput.value = first.lightLevel; document.getElementById('light-val').textContent = first.lightLevel; }
   else { lInput.value = 0; document.getElementById('light-val').textContent = '-'; }
 
-  // 寿命（tick；-1=无限）
+  // 寿命（毫秒；-1=无限）
   const lifeEl = document.getElementById('prop-life');
   if (lifeEl) {
     const lifeSame = same(q => (typeof q.life === 'number' ? q.life : -1));
@@ -176,12 +176,12 @@ export { rgbToHex, hexToRgb };
 
 // —— 时间轴（底部：仅播放进度） ——
 
-export let TL_PX_PER_TICK = 4;   // 每 tick 像素（可缩放，见 setTLPxPerTick）
-export function setTLPxPerTick(v) { TL_PX_PER_TICK = Math.max(0.25, Math.min(128, v)); }
+export let TL_PX_PER_MS = 0.04;   // 每毫秒像素（可缩放，见 setTLPxPerMs）
+export function setTLPxPerMs(v) { TL_PX_PER_MS = Math.max(0.001, Math.min(4, v)); }
 export let timelineViewStart = 0;
-// 组件时间轴左侧负轴（负几个 tick）：tick 0 不贴画布左缘，
-// 配合钉边缘余量让播放头/关键帧能真正停在 0t 上
-export const COMP_TL_MIN_VIEW_START = -5;
+// 组件时间轴左侧负轴（负毫秒）：0ms 不贴画布左缘，
+// 配合钉边缘余量让播放头/关键帧能真正停在 0 上
+export const COMP_TL_MIN_VIEW_START = -250;
 export let compTimelineViewStart = COMP_TL_MIN_VIEW_START;
 // 跨模块写入（main / tree / timeline-layers 的平移与自动追赶）。
 export function setTimelineViewStart(v) { timelineViewStart = v; }
@@ -201,13 +201,14 @@ export function drawTimeline() {
   const ctx = canvas.getContext('2d');
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
-  const pxPerTick = TL_PX_PER_TICK;
-  const viewEnd = timelineViewStart + w / pxPerTick;
+  const pxPerMs = TL_PX_PER_MS;
+  const viewEnd = timelineViewStart + w / pxPerMs;
   ctx.fillStyle = '#1f222a'; ctx.fillRect(0, 0, w, h);
   ctx.strokeStyle = '#3a3f4b'; ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
 
-  // 缩放自适应的刻度：主刻度带数字（放大后自动细分到 0.5/0.2/0.1 tick）。
-  const major = tlNiceStep(pxPerTick, 40);
+  // 缩放自适应的刻度：主刻度带数字；主刻度 ≥ 1s 时按秒显示，更细时按毫秒显示。
+  const major = tlNiceStep(pxPerMs, 40);
+  const unit = major >= 1000 ? 's' : 'ms';
   const minor = major / 5;
   const start = Math.max(0, Math.floor(timelineViewStart / minor) * minor);
   const count = Math.ceil((viewEnd - start) / minor) + 1;
@@ -215,17 +216,17 @@ export function drawTimeline() {
   for (let i = 0; i < count; i++) {
     const t = start + i * minor;
     if (t < 0 || t > viewEnd + minor) continue;
-    const x = (t - timelineViewStart) * pxPerTick;
+    const x = (t - timelineViewStart) * pxPerMs;
     const isMajor = Math.abs(t / major - Math.round(t / major)) < 1e-6;
     ctx.strokeStyle = '#3a3f4b';
     ctx.beginPath();
     ctx.moveTo(x, h / 2 - (isMajor ? 8 : 4));
     ctx.lineTo(x, h / 2 + (isMajor ? 8 : 4));
     ctx.stroke();
-    if (isMajor) ctx.fillText(tlFormatTick(t), x + 2, 2);
+    if (isMajor) ctx.fillText(tlFormatMs(t, unit), x + 2, 2);
   }
 
-  const phx = Math.max(0, Math.min(w, (state.time - timelineViewStart) * pxPerTick));
+  const phx = Math.max(0, Math.min(w, (state.time - timelineViewStart) * pxPerMs));
   ctx.strokeStyle = '#ffcc55'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(phx, 0); ctx.lineTo(phx, h); ctx.stroke();
   ctx.fillStyle = '#ffcc55'; ctx.beginPath();
@@ -233,23 +234,27 @@ export function drawTimeline() {
   ctx.closePath(); ctx.fill();
 }
 
-/** 根据缩放选出「好看」的主刻度间隔（tick）。targetPx 为主刻度目标像素间距。 */
-export function tlNiceStep(pxPerTick, targetPx = 64) {
-  const rough = Math.max(0.001, targetPx / pxPerTick);
-  const steps = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
+/** 根据缩放选出「好看」的主刻度间隔（毫秒）。targetPx 为主刻度目标像素间距。 */
+export function tlNiceStep(pxPerMs, targetPx = 64) {
+  const rough = Math.max(0.001, targetPx / pxPerMs);
+  const steps = [50, 100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000, 15000, 30000, 60000, 120000, 300000, 600000];
   for (const s of steps) if (s >= rough - 1e-9) return s;
-  return 2000;
+  return 1200000;
 }
 
-export function tlFormatTick(v) {
-  if (Math.abs(v - Math.round(v)) < 1e-9) return String(Math.round(v));
-  return String(Math.round(v * 100) / 100);
+export function tlFormatMs(v, unit) {
+  const ms = Math.round(v);
+  if (unit === 's') {
+    const s = ms / 1000;
+    return (Number.isInteger(s) ? s : Math.round(s * 100) / 100) + 's';
+  }
+  return ms + 'ms';
 }
 
-export function timelineXToTick(clientX) {
+export function timelineXToMs(clientX) {
   const canvas = document.getElementById('timeline');
   const rect = canvas.getBoundingClientRect();
-  return timelineViewStart + (clientX - rect.left) / TL_PX_PER_TICK;
+  return timelineViewStart + (clientX - rect.left) / TL_PX_PER_MS;
 }
 
 // scrub 播放头拖动：AE 式「滞后自动平移」。
@@ -260,7 +265,7 @@ export function timelineXToTick(clientX) {
 //
 // 指针在可视区内时播放头 1:1 跟随、视图不动；越过右/左缘后视图单向往外追赶（播放头钉在
 // 边缘内侧 pinMarginPx 处）；指针反向但仍停在可视区外时视图不回缩，只有重新进入可视区才恢复跟随。
-export function scrubAutoPan(drag, clientX, rect, viewStart, time, pxPerTick, minStart, pinMarginPx) {
+export function scrubAutoPan(drag, clientX, rect, viewStart, time, pxPerMs, minStart, pinMarginPx) {
   const W = rect.width;
   const x = clientX - rect.left;         // 相对画布左缘（可 <0 或 >W）
   const m = Math.max(0, pinMarginPx || 0); // 钉边缘的可见余量（像素）
@@ -271,35 +276,35 @@ export function scrubAutoPan(drag, clientX, rect, viewStart, time, pxPerTick, mi
       drag.edge = 1;
       drag.edgeVs = viewStart;
       drag.peakOut = x - W;
-      return { viewStart, time: viewStart + (W - m) / pxPerTick };  // 钉右缘内侧
+      return { viewStart, time: viewStart + (W - m) / pxPerMs };  // 钉右缘内侧
     }
     if (x <= 0) {                        // 越过左缘 → 进入左追赶
       drag.edge = -1;
       drag.edgeVs = viewStart;
       drag.peakOut = -x;
-      return { viewStart, time: Math.max(0, viewStart + m / pxPerTick) };   // 钉左缘内侧
+      return { viewStart, time: Math.max(0, viewStart + m / pxPerMs) };   // 钉左缘内侧
     }
-    return { viewStart, time: Math.max(0, viewStart + x / pxPerTick) }; // 可视区内：跟随指针
+    return { viewStart, time: Math.max(0, viewStart + x / pxPerMs) }; // 可视区内：跟随指针
   }
 
   if (drag.edge === 1) {
     if (x >= W) {                        // 仍在右缘外：单调右追，反向不回缩
       drag.peakOut = Math.max(drag.peakOut, x - W);
-      const vs = drag.edgeVs + drag.peakOut / pxPerTick;
-      return { viewStart: vs, time: vs + (W - m) / pxPerTick };     // 钉右缘内侧
+      const vs = drag.edgeVs + drag.peakOut / pxPerMs;
+      return { viewStart: vs, time: vs + (W - m) / pxPerMs };     // 钉右缘内侧
     }
     drag.edge = 0;                       // 指针回到可视区 → 恢复跟随
-    return { viewStart, time: Math.max(0, viewStart + x / pxPerTick) };
+    return { viewStart, time: Math.max(0, viewStart + x / pxPerMs) };
   }
 
   // drag.edge === -1
   if (x <= 0) {                          // 仍在左缘外：单调左追，反向不回缩
     drag.peakOut = Math.max(drag.peakOut, -x);
-    const vs = Math.max(minStart, drag.edgeVs - drag.peakOut / pxPerTick);
-    return { viewStart: vs, time: Math.max(0, vs + m / pxPerTick) };          // 钉左缘内侧
+    const vs = Math.max(minStart, drag.edgeVs - drag.peakOut / pxPerMs);
+    return { viewStart: vs, time: Math.max(0, vs + m / pxPerMs) };          // 钉左缘内侧
   }
   drag.edge = 0;                         // 指针回到可视区 → 恢复跟随
-  return { viewStart, time: Math.max(0, viewStart + x / pxPerTick) };
+  return { viewStart, time: Math.max(0, viewStart + x / pxPerMs) };
 }
 
 // —— 函数对象属性面板 ——
@@ -316,7 +321,6 @@ export function refreshFunctionPanel() {
 export function commitFunctionRebuild(fx, opts) {
   try {
     rebuildFunctionObject(fx);
-    fx._error = null;
   } catch (e) {
     fx._error = e.message;
     if (!(opts && opts.silent)) modalAlert(t('fx.exprError'), localizeScriptError(e.message));
@@ -402,8 +406,8 @@ export function buildFunctionPanel(fx) {
   const durLabel = document.createElement('span'); durLabel.textContent = t('fx.duration');
   durRow.appendChild(durLabel);
   const durIn = document.createElement('input');
-  durIn.type = 'number'; durIn.min = '0'; durIn.id = 'fx-duration'; durIn.value = fx.duration; durIn.style.width = '52px';
-  durIn.onchange = () => { pushUndo(); fx.duration = Math.max(0, parseInt(durIn.value) || 0); commitFunctionRebuild(fx); };
+  durIn.type = 'number'; durIn.min = '0'; durIn.step = '0.001'; durIn.id = 'fx-duration'; durIn.value = (fx.duration / 1000).toFixed(3); durIn.style.width = '52px';
+  durIn.onchange = () => { pushUndo(); fx.duration = Math.max(0, Math.round((parseFloat(durIn.value) || 0) * 1000)); commitFunctionRebuild(fx); };
   durRow.appendChild(durIn);
   wrap.appendChild(durRow);
 

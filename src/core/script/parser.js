@@ -3,6 +3,9 @@
 
 import { KEYWORDS, CTX_NAME, LIFECYCLE_FUNCS, CONSTANTS, COMP_NAMES, BUILTIN_FUNCTIONS, parseError } from './lexical.js';
 
+// 复合赋值运算符 → 对应的二元运算符。
+const COMPOUND_ASSIGN = { '+=': '+', '-=': '-', '*=': '*', '/=': '/', '%=': '%', '^=': '^' };
+
 // —— Tokenizer ——
 
 function isDigit(c) { return c >= '0' && c <= '9'; }
@@ -133,6 +136,15 @@ function tokenize(source) {
       continue;
     }
 
+    // 复合赋值运算符：+= -= *= /= %= ^=
+    if ('+-*/%^'.includes(c) && src[i + 1] === '=') {
+      const startLine = line, startCol = col;
+      const op = c + '=';
+      advance(); advance();
+      push({ type: 'punct', value: op, line: startLine, col: startCol });
+      continue;
+    }
+
     // 单字符运算符 / 分隔符
     if ('+-*/%^!?:=<>()[]{},;.'.includes(c)) {
       const startLine = line, startCol = col;
@@ -255,8 +267,15 @@ class Parser {
   parseProgram() {
     const lifecycle = { setup: null, tick: null, process: null };
     const functions = new Map();
+    const globals = [];
 
     while (!this.atEnd()) {
+      const tok = this.peek();
+      if (tok.type === 'ident' && (tok.value === 'let' || tok.value === 'const')) {
+        globals.push(this.parseDeclare(tok, tok.value));
+        continue;
+      }
+
       this.expectKw('func');
       const nameTok = this.expectIdent();
       this.expect('(');
@@ -286,7 +305,7 @@ class Parser {
       }
     }
 
-    return { setup: lifecycle.setup, tick: lifecycle.tick, process: lifecycle.process, functions };
+    return { setup: lifecycle.setup, tick: lifecycle.tick, process: lifecycle.process, functions, globals };
   }
 
   validateLifecycleSignature(tok, fn) {
@@ -295,8 +314,8 @@ class Parser {
         this.errorAt(tok, `'${fn.name}' must not take parameters`);
       }
     } else if (fn.name === 'process') {
-      if (fn.params.length !== 1) {
-        this.errorAt(tok, `'process' must take exactly one parameter (delta milliseconds)`);
+      if (fn.params.length !== 0) {
+        this.errorAt(tok, `'process' must not take parameters`);
       }
     }
   }
@@ -354,7 +373,8 @@ class Parser {
         case 'break': return this.parseBreak(tok);
         case 'continue': return this.parseContinue(tok);
         case 'return': return this.parseReturn(tok);
-        case 'global': return this.parseGlobal(tok);
+        case 'let': return this.parseDeclare(tok, 'let');
+        case 'const': return this.parseDeclare(tok, 'const');
         default: break;
       }
     }
@@ -401,10 +421,20 @@ class Parser {
     const start = this.next();
     this.expect('(');
 
-    // for-of：for (const name of expr) 或 for (name of expr)
+    // for-of：for (const x of expr) / for (let x of expr) / for (x of expr)
     const saved = this.pos;
-    if (this.matchKw('const') ||
-        (this.peek().type === 'ident' && this.peek(1).type === 'ident' && this.peek(1).value === 'of')) {
+    let ofKind = null;
+    const looksLikeOf = () => this.peek().type === 'ident' && this.peek(1).type === 'ident' && this.peek(1).value === 'of';
+    if (this.matchKw('const')) {
+      ofKind = looksLikeOf() ? 'const' : null;
+      if (ofKind == null) this.pos = saved;
+    } else if (this.matchKw('let')) {
+      ofKind = looksLikeOf() ? 'let' : null;
+      if (ofKind == null) this.pos = saved;
+    } else if (looksLikeOf()) {
+      ofKind = 'let';
+    }
+    if (ofKind !== null) {
       const nameTok = this.expectIdent();
       this.validateForVarName(nameTok);
       this.expectKw('of');
@@ -413,12 +443,15 @@ class Parser {
       this.loopDepth++;
       const body = this.parseStatement();
       this.loopDepth--;
-      return { type: 'forof', name: nameTok.value, iter, body, line: start.line, col: start.col };
+      return { type: 'forof', name: nameTok.value, kind: ofKind, iter, body, line: start.line, col: start.col };
     }
     this.pos = saved;
 
     let init = null;
-    if (!this.check(';')) init = this.parseAssignExpr();
+    if (!this.check(';')) {
+      if (this.check('let')) init = this.parseDeclare(this.peek(), 'let', true);
+      else init = this.parseAssignExpr();
+    }
     this.expect(';');
     let cond = null;
     if (!this.check(';')) cond = this.parseTernary();
@@ -461,22 +494,18 @@ class Parser {
     return { type: 'return', expr, line: tok.line, col: tok.col };
   }
 
-  parseGlobal(tok) {
-    if (this.phase !== 'setup') this.errorAt(tok, "'global' only allowed inside setup");
-    return this.parseGlobalStaticBody(tok, 'global');
-  }
-
-  parseGlobalStaticBody(tok, type) {
-    this.next();
+  parseDeclare(tok, kind, noStatementEnd) {
+    this.next(); // let / const
     const nameTok = this.expectIdent();
-    this.validateGlobalStaticName(nameTok);
+    this.validateDeclName(nameTok);
     let init = null;
     if (!this.nlBefore() && this.match('=')) init = this.parseTernary();
-    this.statementEnd();
-    return { type, name: nameTok.value, init, line: tok.line, col: tok.col };
+    else if (kind === 'const') this.errorAt(nameTok, "'const' must have an initializer");
+    if (!noStatementEnd) this.statementEnd();
+    return { type: 'declare', kind, name: nameTok.value, init, line: tok.line, col: tok.col };
   }
 
-  validateGlobalStaticName(tok) {
+  validateDeclName(tok) {
     const name = tok.value;
     if (KEYWORDS.has(name) || name === CTX_NAME || CONSTANTS.has(name)) {
       this.errorAt(tok, `reserved name cannot be declared: '${name}'`);
@@ -498,13 +527,29 @@ class Parser {
   }
 
   // 语句层赋值：= 右结合，且只在此处出现（§5 优先级 1）。
+  // 复合赋值 a += b 等价于 a = a + b（左侧表达式作为读取值参与二元运算）。
   parseAssignExpr() {
     const start = this.peek();
     const left = this.parseTernary();
-    if (!this.nlBefore() && this.match('=')) {
-      const target = toLValue(left, start);
-      const value = this.parseAssignExpr();
-      return { type: 'assign', target, value, line: start.line, col: start.col };
+    if (!this.nlBefore()) {
+      const opTok = this.peek();
+      const binOp = COMPOUND_ASSIGN[opTok.value];
+      if (binOp) {
+        this.next();
+        const target = toLValue(left, start);
+        const value = this.parseTernary();
+        return {
+          type: 'assign', target,
+          value: { type: 'binary', op: binOp, left, right: value, line: opTok.line, col: opTok.col },
+          line: start.line, col: start.col,
+        };
+      }
+      if (opTok.value === '=') {
+        this.next();
+        const target = toLValue(left, start);
+        const value = this.parseAssignExpr();
+        return { type: 'assign', target, value, line: start.line, col: start.col };
+      }
     }
     return left;
   }
@@ -660,6 +705,9 @@ class Parser {
       this.next();
       if (tok.value === 'true' || tok.value === 'false') {
         return { type: 'bool', value: tok.value === 'true', line: tok.line, col: tok.col };
+      }
+      if (tok.value === 'undefined') {
+        return { type: 'undefined', line: tok.line, col: tok.col };
       }
       return { type: 'var', name: tok.value, line: tok.line, col: tok.col };
     }

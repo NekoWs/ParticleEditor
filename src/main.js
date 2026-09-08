@@ -12,13 +12,13 @@ import { easeInOut } from './core/easing.js';
 import { openEasingEditor, easingCurveSVG } from './ui/easing-editor.js';
 import { customSelect, refreshCustomSelect } from './ui/select.js';
 import { viewport, renderer, camera, controls, scene, pointsMaterial, camTransition, setCamTransition, planePulse, setPlanePulse, updateRenderScale } from './scene/scene.js';
-import { rebuildPoints, rebuildPointsTime, maxTick, updateAnimatedUV, updateCameraWidgets } from './core/animation.js';
+import { rebuildPoints, rebuildPointsTime, maxMs, updateAnimatedUV, updateCameraWidgets } from './core/animation.js';
 import { editSelectionUniform, editSelectionRotationUniform } from './core/edit.js';
 import { pushUndo, undo, redo, beginContinuous, endContinuous } from './state/undo.js';
 import { currentSelected, selectedGroupName, deleteSelected, selectAll } from './interaction/interaction.js';
 import { createGroup } from './ui/tree.js';
 import { createFunctionObject } from './core/generators.js';
-import { syncFunctionVarValues, drawTimeline, updateLoopIndicator, TL_PX_PER_TICK, setTLPxPerTick, timelineViewStart, setTimelineViewStart, scrubAutoPan, timelineXToTick, refreshFunctionPanel } from './ui/panels.js';
+import { syncFunctionVarValues, drawTimeline, updateLoopIndicator, TL_PX_PER_MS, setTLPxPerMs, timelineViewStart, setTimelineViewStart, scrubAutoPan, timelineXToMs, refreshFunctionPanel } from './ui/panels.js';
 import { drawTimelineLayers, tlInitLayerEvents, refreshAllPanelsLight } from './ui/timeline-layers.js';
 import { initTimelineTree, refreshTimelineTree, tlTreeState } from './ui/timeline-tree.js';
 import { initTextureEditor, syncTextureSelection, updateTexOverlay, texAnimOverlayActive, refreshTexturePanel } from './ui/texture-editor.js';
@@ -32,23 +32,20 @@ import { updateGizmo, updateGizmoFrame, restoreAxisColors, setAxisGlow } from '.
 import { getCamera, DEFAULT_CAMERA_ID } from './core/constants.js';
 import { lockCamera, unlockCamera, applyCameraPose } from './core/cameras.js';
 
-// 当前显示刷新率（由主循环估算），seek/scrub 时用于推测 process 的 delta 毫秒。
-let lastRefreshRate = 60;
-
 // 时间轴数值变化后的统一刷新：粒子状态、时间 UI、函数变量插值显示。
 // 多处 scrub / 播放头拖动路径共用，避免漏刷某一项。
 export function applyTimeChange() {
   updateTimeUI();
-  rebuildPoints(false, 1000 / lastRefreshRate);
+  rebuildPoints(false);
   syncFunctionVarValues();
 }
 
 export function updateTimeUI() {
   const timeEl = document.getElementById('tl-time');
-  const v = Math.round(state.time);
-  timeEl.value = v;
-  timeEl.size = Math.max(1, String(v).length);
-  document.getElementById('tl-max').textContent = maxTick();
+  const s = (Math.round(state.time) / 1000).toFixed(3);
+  timeEl.value = s;
+  timeEl.size = Math.max(1, s.length);
+  document.getElementById('tl-max').textContent = (maxMs() / 1000).toFixed(3);
 }
 
 export function syncPlayButton() {
@@ -58,8 +55,8 @@ export function syncPlayButton() {
 export function togglePlay() {
   if (!state.playing && !state.loop) {
     // 播放完毕（非循环）后 state.time 停在末尾，再点播放应立即从头重播，
-    // 否则下一帧会因 time 仍等于 maxTick 而立刻再次暂停。
-    const mx = maxTick();
+    // 否则下一帧会因 time 仍等于 maxMs 而立刻再次暂停。
+    const mx = maxMs();
     if (mx > 0 && state.time >= mx) {
       state.time = 0;
       updateTimeUI();
@@ -383,7 +380,7 @@ export function initUI() {
   // 时间轴
   document.getElementById('btn-play').addEventListener('click', togglePlay);
   document.getElementById('tl-speed').addEventListener('change', (ev) => { state.playSpeed = Math.max(0.1, parseFloat(ev.target.value) || 1); });
-  document.getElementById('tl-time').addEventListener('input', (ev) => { state.time = parseFloat(ev.target.value) || 0; state.scrubbing = true; applyTimeChange(); drawTimelineLayers(); });
+  document.getElementById('tl-time').addEventListener('input', (ev) => { state.time = (parseFloat(ev.target.value) || 0) * 1000; state.scrubbing = true; applyTimeChange(); drawTimelineLayers(); });
   document.getElementById('tl-time').addEventListener('change', () => { state.scrubbing = false; });
   document.getElementById('tl-loop').addEventListener('change', (ev) => { state.loop = ev.target.checked; updateLoopIndicator(); });
   tlInitLayerEvents();
@@ -414,36 +411,36 @@ export function initUI() {
     } else {
       tlDrag = { mode: 'scrub', lastX: ev.clientX };
       state.scrubbing = true;
-      state.time = Math.max(0, timelineXToTick(ev.clientX));
+      state.time = Math.max(0, timelineXToMs(ev.clientX));
       applyTimeChange();
     }
   });
   tlCanvas.addEventListener('pointermove', (ev) => {
     if (!tlDrag) return;
     if (tlDrag.mode === 'pan') {
-      setTimelineViewStart(Math.max(0, timelineViewStart - (ev.clientX - tlDrag.lastX) / TL_PX_PER_TICK));
+      setTimelineViewStart(Math.max(0, timelineViewStart - (ev.clientX - tlDrag.lastX) / TL_PX_PER_MS));
     } else {
       // scrub：AE 式滞后自动平移（越界时视图单向外追、游标钉边缘；反向时若指针仍在可视区外则视图不回缩）
-      const r = scrubAutoPan(tlDrag, ev.clientX, tlCanvas.getBoundingClientRect(), timelineViewStart, state.time, TL_PX_PER_TICK, 0);
+      const r = scrubAutoPan(tlDrag, ev.clientX, tlCanvas.getBoundingClientRect(), timelineViewStart, state.time, TL_PX_PER_MS, 0);
       setTimelineViewStart(r.viewStart);
       state.time = r.time;
       updateTimeUI();
     }
     tlDrag.lastX = ev.clientX;
     drawTimeline();
-    if (tlDrag.mode === 'scrub') { rebuildPoints(false, 1000 / lastRefreshRate); syncFunctionVarValues(); }
+    if (tlDrag.mode === 'scrub') { rebuildPoints(false); syncFunctionVarValues(); }
   });
   tlCanvas.addEventListener('pointerup', () => { tlDrag = null; state.scrubbing = false; });
   tlCanvas.addEventListener('pointerleave', () => { tlDrag = null; state.scrubbing = false; });
   tlCanvas.addEventListener('wheel', (ev) => {
     ev.preventDefault();
-    // 悬停上方标尺滚轮缩放：以指针位置为锚点，放大/缩小每 tick 像素
+    // 悬停上方标尺滚轮缩放：以指针位置为锚点，放大/缩小每毫秒像素
     const rect = tlCanvas.getBoundingClientRect();
     const mx = ev.clientX - rect.left;
-    const anchorTick = timelineViewStart + mx / TL_PX_PER_TICK;
+    const anchorMs = timelineViewStart + mx / TL_PX_PER_MS;
     const factor = ev.deltaY < 0 ? 1.2 : 1 / 1.2;
-    setTLPxPerTick(TL_PX_PER_TICK * factor);
-    setTimelineViewStart(Math.max(0, anchorTick - mx / TL_PX_PER_TICK));
+    setTLPxPerMs(TL_PX_PER_MS * factor);
+    setTimelineViewStart(Math.max(0, anchorMs - mx / TL_PX_PER_MS));
     drawTimeline();
     drawTimelineLayers();
   }, { passive: false });
@@ -583,7 +580,6 @@ export function animate(now) {
   let fps = Math.round(1000 / middleFrame);
 
   const refresh = snapToDisplayRefresh(fps);
-  lastRefreshRate = refresh;
   const fpsEl = document.getElementById('fps-counter');
   if (fpsEl) fpsEl.textContent = refresh + 'FPS';
 
@@ -609,14 +605,14 @@ export function animate(now) {
   }
 
   if (state.playing) {
-    state.time += dt * 20 * state.playSpeed;
-    const mx = maxTick();
+    state.time += dt * 1000 * state.playSpeed;
+    const mx = maxMs();
     if (state.time >= mx && mx > 0) {
       if (state.loop) { state.time = 0; }
       else { state.time = mx; state.playing = false; syncPlayButton(); }
     }
     updateTimeUI();
-    rebuildPointsTime(false, frameMs * state.playSpeed);
+    rebuildPointsTime(false);
     syncFunctionVarValues();
   }
   // 仅动画贴图粒子需要每帧随墙钟推进 UV 帧：轻量更新（只改 sx/sy），

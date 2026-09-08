@@ -191,7 +191,7 @@ async function importGifPrepared(prepared, cols, rows) {
   const firstColor = new Float32Array(gridCount * 4);
   const prev = new Float32Array(gridCount * 4);
   const lastVisible = new Int32Array(gridCount).fill(-1);
-  const frameDurTicks = new Int32Array(frameCount);
+  const frameDurMs = new Int32Array(frameCount);
   const changes = []; // [gridIndex, comp, frameIndex, value]
   const sampleBuf = new Float32Array(gridCount * 4); // 逐帧采样复用缓冲
 
@@ -199,7 +199,7 @@ async function importGifPrepared(prepared, cols, rows) {
     ctx.clearRect(0, 0, w, h);
     ctx.drawImage(videoFrame, 0, 0);
     const d = ctx.getImageData(0, 0, w, h).data;
-    frameDurTicks[frameIndex] = Math.max(1, Math.round((videoFrame.duration || 0) / 1000 / 50));
+    frameDurMs[frameIndex] = Math.max(1, Math.round((videoFrame.duration || 0) / 1000));
     resampleRGBA(d, w, h, cols, rows, sampleBuf);
     for (let gi = 0; gi < gridCount; gi++) {
       const base = gi * 4;
@@ -231,11 +231,11 @@ async function importGifPrepared(prepared, cols, rows) {
     res.image.close();
   }
 
-  // 帧起始 tick（20 tick/s）
-  const tickOf = new Int32Array(frameCount);
+  // 帧起始毫秒
+  const msOf = new Int32Array(frameCount);
   let acc = 0;
-  for (let i = 0; i < frameCount; i++) { tickOf[i] = acc; acc += frameDurTicks[i]; }
-  const totalTicks = acc;
+  for (let i = 0; i < frameCount; i++) { msOf[i] = acc; acc += frameDurMs[i]; }
+  const totalMs = acc;
 
   // 按粒子/分量归组颜色关键帧
   const changeMap = new Map();
@@ -244,7 +244,7 @@ async function importGifPrepared(prepared, cols, rows) {
     if (!m) { m = new Map(); changeMap.set(gi, m); }
     let arr = m.get(comp);
     if (!arr) { arr = []; m.set(comp, arr); }
-    arr.push([tickOf[fi], value, EASING_NONE]);
+    arr.push([msOf[fi], value, EASING_NONE]);
   }
 
   const g = importGridMetrics(w, h, cols, rows);
@@ -262,7 +262,7 @@ async function importGifPrepared(prepared, cols, rows) {
       scale: [g.scaleX, g.scaleY, 1],
       glow: false,
       lightLevel: 0,
-      life: lastVisible[gi] === frameCount - 1 ? Math.max(1, totalTicks) : Math.max(1, tickOf[lastVisible[gi] + 1]),
+      life: lastVisible[gi] === frameCount - 1 ? Math.max(1, totalMs) : Math.max(1, msOf[lastVisible[gi] + 1]),
     });
     ids.push(p.id);
 

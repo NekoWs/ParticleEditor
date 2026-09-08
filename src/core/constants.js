@@ -145,7 +145,7 @@ export const PARTICLE_SIZE_FACTOR = 0.2; // 编辑器点整宽因子；游戏端
  * - particle: { id, color:[r,g,b,a], scale:[sx,sy,sz], glow, lightLevel,
  *              pos:[x,y,z], vel:[vx,vy,vz], life, st, ent, uv, fx? }
  *   派生粒子 id 固定为 `${fxId}:p${spawn序号}`，由函数对象脚本在运行期 spawn。
- * - track: { pr:'pos.x'|'scl'|..., m:'set'|'op', ids:[...], kf:[[tick,value,easing],...], fx? }
+ * - track: { pr:'pos.x'|'scl'|..., m:'set'|'op', ids:[...], kf:[[ms,value,easing],...], fx? }
  * - group: state.groups[组名] = [粒子id...]；组级 UV 在 state.groupUV[组名]。
  * - function object: { id:'fxN', name, center:[x,y,z], source, vars:{name:{base,kf}},
  *                      duration, preset, params, st, ent, ui, uv, fastMath, spinSpace, rotSpace }
@@ -263,7 +263,7 @@ export function indexParticle(p) { if (particleIndexCache) particleIndexCache.se
 export function getParticle(id) { return particleIndexCache ? particleIndexCache.get(id) : state.particles.find(p => p.id === id); }
 
 // —— 函数对象预设形状模板（参数面板 + 脚本视图）——
-// 上下文通过 this 对象访问：this.index / this.count / this.time 等（见 docs/script-lang-spec.md）。
+// 上下文通过 this 对象访问：this.time（对象本地毫秒）/ this.duration / this.animTime / this.particles 等（见 docs/script-lang-spec.md）。
 
 export const FUNCTION_PRESETS = {
   blank: {
@@ -284,12 +284,12 @@ export const FUNCTION_PRESETS = {
     build: p => ({
       vars: { amp: { base: Number(p.amp), kf: [] }, freq: { base: Number(p.freq), kf: [] }, wid: { base: Number(p.wid), kf: [] } },
       source: `func setup() {
-  for (i = 0; i < 200; i++) {
-    p = this.spawn()
+  for (let i = 0; i < 200; i++) {
+    let p = this.spawn()
     p.f = p.index / 200 - 0.5
   }
 }
-func process(delta) {
+func process() {
   for (const p of this.particles) {
     p.position = [p.f * wid, amp * sin(freq * pi * p.f), 0]
   }
@@ -304,13 +304,13 @@ func process(delta) {
     build: p => ({
       vars: { rad: { base: Number(p.rad), kf: [] } },
       source: `func setup() {
-  for (i = 0; i < 200; i++) {
-    p = this.spawn()
+  for (let i = 0; i < 200; i++) {
+    let p = this.spawn()
     p.th = acos(1 - 2 * (p.index + 0.5) / 200)
     p.ph = p.index * pi * (3 - sqrt(5))
   }
 }
-func process(delta) {
+func process() {
   for (const p of this.particles) {
     p.position = [rad * sin(p.th) * cos(p.ph), rad * cos(p.th), rad * sin(p.th) * sin(p.ph)]
   }
@@ -325,11 +325,11 @@ func process(delta) {
     build: p => ({
       vars: { edge: { base: Number(p.edge), kf: [] }, sx: { base: 8, kf: [] }, sy: { base: 8, kf: [] }, sz: { base: 8, kf: [] } },
       source: `func setup() {
-  for (i = 0; i < sx * sy * sz; i++) {
-    p = this.spawn()
+  for (let i = 0; i < sx * sy * sz; i++) {
+    let p = this.spawn()
   }
 }
-func process(delta) {
+func process() {
   for (const p of this.particles) {
     p.position = [(floor(p.index / (sy * sz)) / (sx - 1) - 0.5) * edge, (floor((p.index % (sy * sz)) / sz) / (sy - 1) - 0.5) * edge, ((p.index % sz) / (sz - 1) - 0.5) * edge]
   }
@@ -347,14 +347,14 @@ func process(delta) {
     build: p => ({
       vars: { major: { base: Number(p.major), kf: [] }, minor: { base: Number(p.minor), kf: [] }, m: { base: Number(p.m), kf: [] }, k: { base: Number(p.k), kf: [] } },
       source: `func setup() {
-  for (i = 0; i < m * k; i++) {
-    p = this.spawn()
+  for (let i = 0; i < m * k; i++) {
+    let p = this.spawn()
   }
 }
-func process(delta) {
+func process() {
   for (const p of this.particles) {
-    th = (p.index % k) / k * 2 * pi
-    ph = floor(p.index / k) / m * 2 * pi
+    let th = (p.index % k) / k * 2 * pi
+    let ph = floor(p.index / k) / m * 2 * pi
     p.position = [(major + minor * cos(th)) * cos(ph), minor * sin(th), (major + minor * cos(th)) * sin(ph)]
   }
 }`,
@@ -372,16 +372,16 @@ func process(delta) {
     build: p => ({
       vars: { rad: { base: Number(p.rad), kf: [] }, h: { base: Number(p.h), kf: [] }, m: { base: Number(p.m), kf: [] }, k: { base: Number(p.k), kf: [] }, cr: { base: Number(p.cr), kf: [] } },
       source: `func setup() {
-  for (i = 0; i < m * (k + 2 * cr); i++) {
-    p = this.spawn()
+  for (let i = 0; i < m * (k + 2 * cr); i++) {
+    let p = this.spawn()
   }
 }
-func process(delta) {
+func process() {
   for (const p of this.particles) {
-    ly = floor(p.index / m)
-    aa = (p.index % m) / m * 2 * pi
-    rf = clamp(min(ly / (cr - 1), (k + 2 * cr - 1 - ly) / (cr - 1)), 0, 1)
-    yf = (clamp(ly, cr, cr + k - 1) - cr) / (k - 1)
+    let ly = floor(p.index / m)
+    let aa = (p.index % m) / m * 2 * pi
+    let rf = clamp(min(ly / (cr - 1), (k + 2 * cr - 1 - ly) / (cr - 1)), 0, 1)
+    let yf = (clamp(ly, cr, cr + k - 1) - cr) / (k - 1)
     p.position = [rad * rf * cos(aa), yf * h - h / 2, rad * rf * sin(aa)]
   }
 }`,
@@ -396,14 +396,14 @@ func process(delta) {
     build: p => ({
       vars: { rad: { base: Number(p.rad), kf: [] }, h: { base: Number(p.h), kf: [] }, m: { base: 32, kf: [] }, k: { base: 16, kf: [] } },
       source: `func setup() {
-  for (i = 0; i < m * k; i++) {
-    p = this.spawn()
+  for (let i = 0; i < m * k; i++) {
+    let p = this.spawn()
   }
 }
-func process(delta) {
+func process() {
   for (const p of this.particles) {
-    aa = (p.index % m) / m * 2 * pi
-    yy = floor(p.index / m) / (k - 1)
+    let aa = (p.index % m) / m * 2 * pi
+    let yy = floor(p.index / m) / (k - 1)
     p.position = [rad * (1 - yy) * cos(aa), (yy - 0.5) * h, rad * (1 - yy) * sin(aa)]
   }
 }`,
@@ -418,14 +418,14 @@ func process(delta) {
     build: p => ({
       vars: { rad: { base: Number(p.rad), kf: [] }, h: { base: Number(p.h), kf: [] }, turns: { base: 3, kf: [] }, ppr: { base: 40, kf: [] } },
       source: `func setup() {
-  for (i = 0; i < turns * ppr; i++) {
-    p = this.spawn()
+  for (let i = 0; i < turns * ppr; i++) {
+    let p = this.spawn()
   }
 }
-func process(delta) {
+func process() {
   for (const p of this.particles) {
-    aa = p.index / ppr * 2 * pi
-    yf = p.index / (turns * ppr) - 0.5
+    let aa = p.index / ppr * 2 * pi
+    let yf = p.index / (turns * ppr) - 0.5
     p.position = [rad * cos(aa), yf * h, rad * sin(aa)]
   }
 }`,
@@ -440,11 +440,11 @@ func process(delta) {
     build: p => ({
       vars: { w: { base: Number(p.w), kf: [] }, d: { base: Number(p.d), kf: [] }, cols: { base: 16, kf: [] }, rows: { base: 16, kf: [] } },
       source: `func setup() {
-  for (i = 0; i < cols * rows; i++) {
-    p = this.spawn()
+  for (let i = 0; i < cols * rows; i++) {
+    let p = this.spawn()
   }
 }
-func process(delta) {
+func process() {
   for (const p of this.particles) {
     p.position = [((p.index % cols) / (cols - 1) - 0.5) * w, 0, (floor(p.index / cols) / (rows - 1) - 0.5) * d]
   }
@@ -459,12 +459,12 @@ func process(delta) {
     build: p => ({
       vars: { rad: { base: Number(p.rad), kf: [] } },
       source: `func setup() {
-  for (i = 0; i < 200; i++) {
-    p = this.spawn()
+  for (let i = 0; i < 200; i++) {
+    let p = this.spawn()
     p.ang = p.index / 200 * 2 * pi
   }
 }
-func process(delta) {
+func process() {
   for (const p of this.particles) {
     p.position = [rad * cos(p.ang), 0, rad * sin(p.ang)]
   }
@@ -479,13 +479,13 @@ func process(delta) {
     build: p => ({
       vars: { diskR: { base: Number(p.diskR), kf: [] } },
       source: `func setup() {
-  for (i = 0; i < 400; i++) {
-    p = this.spawn()
+  for (let i = 0; i < 400; i++) {
+    let p = this.spawn()
     p.rf = sqrt(p.index / 400)
     p.th = p.index * pi * (3 - sqrt(5))
   }
 }
-func process(delta) {
+func process() {
   for (const p of this.particles) {
     p.position = [diskR * p.rf * cos(p.th), 0, diskR * p.rf * sin(p.th)]
   }
@@ -500,14 +500,14 @@ func process(delta) {
     build: p => ({
       vars: { rad: { base: Number(p.rad), kf: [] } },
       source: `func setup() {
-  m = floor(pow(2000, 0.5))
-  for (i = 0; i < 2000; i++) {
-    p = this.spawn()
+  let m = floor(pow(2000, 0.5))
+  for (let i = 0; i < 2000; i++) {
+    let p = this.spawn()
     p.a = floor(p.index / m) * 2 * pi / m
     p.b = (p.index % m) * pi / m - pi / 2
   }
 }
-func process(delta) {
+func process() {
   for (const p of this.particles) {
     p.position.x = rad * pow(cos(p.a) * cos(p.b), 3)
     p.position.y = rad * pow(sin(p.a) * cos(p.b), 3)
@@ -520,23 +520,23 @@ func process(delta) {
     label: '循环上升烟雾',
     params: [
       { key: 'rad', label: '半径', def: 50 },
-      { key: 'spd', label: '上升速度', def: 0.5 },
+      { key: 'spd', label: '上升速度', def: 0.01 },
     ],
     build: p => ({
       vars: { rad: { base: Number(p.rad), kf: []}, spd: { base: Number(p.spd), kf: [] } },
       source: `func setup() {
-  for (i = 0; i < 2000; i++) {
-    p = this.spawn()
+  for (let i = 0; i < 2000; i++) {
+    let p = this.spawn()
     p.rx = rand(i * 2)
     p.rz = rand(i * 4)
     p.ry = rand(i * 6)
   }
 }
-func process(delta) {
+func process() {
   for (const p of this.particles) {
     p.position.x = (p.rx * 2 - 1) * rad
     p.position.z = (p.rz * 2 - 1) * rad
-    y = (p.ry * 2 - 1) * rad
+    let y = (p.ry * 2 - 1) * rad
     p.position.y = -rad + (y + rad + this.time * spd) % (2 * rad)
   }
 }`,

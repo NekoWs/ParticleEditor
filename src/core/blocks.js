@@ -508,7 +508,7 @@ function emitStmt(s, level, spans, lineStart) {
       const body = emitList(s.body || [], level + 1, spans, start + 1);
       return pad + 'func ' + s.name + '(' + (s.params || []).join(', ') + ') {\n' + body + '\n' + pad + '}';
     }
-    case 'global': return pad + 'global ' + s.name + (s.expr ? ' = ' + exprToCode(s.expr, 0) : '');
+    case 'global': return pad + 'let ' + s.name + (s.expr ? ' = ' + exprToCode(s.expr, 0) : '');
     default: throw new Error(_etf('err.unknownStmt', s.kind));
   }
 }
@@ -928,8 +928,8 @@ export function stmtToNode(stmt) {
     if (bClose < 0) throw new Error(_et('err.stmtNeedBrace'));
     return { kind: 'func', name, params, body: codeToStatements(rest.slice(bOpen + 1, bClose)) };
   }
-  if (/^global\s+/.test(s)) {
-    const after = s.slice('global'.length).trim();
+  if (/^(?:global|let|const)\s+/.test(s)) {
+    const after = s.replace(/^(?:global|let|const)\s+/, '').trim();
     const eq = after.indexOf('=');
     if (eq < 0) return { kind: 'global', name: after.replace(/;$/, '').trim(), expr: null };
     return { kind: 'global', name: after.slice(0, eq).trim(), expr: parseExpr(after.slice(eq + 1).replace(/;$/, '').trim()) };
