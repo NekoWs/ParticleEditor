@@ -5,7 +5,7 @@ import { base64ToBytes, bytesToBase64, signData, verifyData } from './crypto.js'
 import { EASING_NONE } from './easing-constants.js';
 
 export const PDRAWC_MAGIC = new Uint8Array([0x50, 0x44, 0x43, 0x31]); // "PDC1"
-export const PDRAWC_VERSION = 13;
+export const PDRAWC_VERSION = 14;
 export const PDRAWC_SIG_LEN = 64;
 export const PDRAWC_PUB_LEN = 32;
 
@@ -280,10 +280,11 @@ function encodeBody(state, texPngOf) {
     const hasEnt = !!(fx.ent && fx.ent.p);
     const hasUV = !!(fx.uv && fx.uv.texture && texIndex.has(fx.uv.texture));
     const fastMath = !!fx.fastMath;
+    const frameSync = !!fx.frameSync;
     const hasFuncs = !!(fx.funcs && String(fx.funcs).trim());
     const spinLocal = fx.spinSpace === 'local';
     const rotLocal = fx.rotSpace === 'local';
-    w.u8((hasEnt ? 1 : 0) | (hasUV ? 2 : 0) | (fastMath ? 4 : 0) | (hasFuncs ? 8 : 0) | (spinLocal ? 16 : 0) | (rotLocal ? 32 : 0));
+    w.u8((hasEnt ? 1 : 0) | (hasUV ? 2 : 0) | (fastMath ? 4 : 0) | (hasFuncs ? 8 : 0) | (spinLocal ? 16 : 0) | (rotLocal ? 32 : 0) | (frameSync ? 64 : 0));
     if (hasEnt) writeEnt(w, fx.ent);
     if (hasUV) writeUV(w, fx.uv, texIndex.get(fx.uv.texture));
     if (hasFuncs) w.str(fx.funcs);
@@ -510,6 +511,7 @@ export async function decodePdrawc(bytes) {
     const fastMath = !!(flags & 4);
     const spinLocal = !!(flags & 16);
     const rotLocal = !!(flags & 32);
+    const frameSync = !!(flags & 64);
     const funcs = ''; // v12 起 funcs 已并入 source
     const varCount = br.varint();
     const vars = [];
@@ -519,7 +521,7 @@ export async function decodePdrawc(bytes) {
       const kf = readKf(br);
       vars.push({ name, base, kf });
     }
-    functions.push({ center, source, funcs, seed, duration, st, ent, uv, vars, fastMath, spinLocal, rotLocal });
+    functions.push({ center, source, funcs, seed, duration, st, ent, uv, vars, fastMath, spinLocal, rotLocal, frameSync });
   }
 
   const camCount = br.varint();

@@ -185,6 +185,7 @@ export function serializeFunction(fx) {
   if (fx.ui) o.ui = JSON.parse(JSON.stringify(fx.ui));
   if (fx.uv && fx.uv.texture) o.uv = serializeUV(fx.uv);
   if (fx.fastMath) o.fm = 1;
+  if (fx.frameSync) o.fs = 1;
   if (fx.spinSpace === 'local') o.ss = 1;
   if (fx.rotSpace === 'local') o.rs = 1;
   return o;
@@ -202,6 +203,7 @@ export function parseFunction(o) {
     ui: o.ui || null,
     uv: parseUV(o.uv),
     fastMath: !!o.fm,
+    frameSync: !!o.fs,
     spinSpace: o.ss === 1 ? 'local' : 'world',
     rotSpace: o.rs === 1 ? 'local' : 'world',
   };

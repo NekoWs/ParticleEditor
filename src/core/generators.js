@@ -396,6 +396,7 @@ export function createFunctionObject(presetId) {
     preset: null,
     params: null,
     fastMath: false,
+    frameSync: false,
     spinSpace: 'local',
     rotSpace: 'local',
   };

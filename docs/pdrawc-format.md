@@ -18,7 +18,7 @@
 ```
 +--------------------+
 | magic     4 bytes  |  ASCII "PDC1" = 0x50 0x44 0x43 0x31
-| version   varint   |  9（当前）；1/2/3/4/5/6/7/8 = 旧版，已拒绝
+| version   varint   |  14（当前）；1..13 = 旧版，已拒绝
 | pubkey    32 bytes |  Ed25519 公钥（原始字节）
 +--------------------+
 | body（见 §2）      |  ← 签名覆盖范围：从 magic 到压缩 body 末尾
@@ -29,7 +29,8 @@
 ```
 
 **版本**：
-- `v11`（当前）：函数对象改为 spawn 模型（`func setup()` / `func tick()` / `func process(param)`；移除 `count`，新增 `tick`/`processParam`）；读取端**拒绝**旧版。
+- `v14`（当前）：函数对象新增 `frameSync` 开关（flags bit6）：true=派生粒子按渲染帧精确同步（无 50ms 延迟）；false=按 game tick 同步，与普通粒子渲染一致；读取端**拒绝**旧版。
+- `v11`（旧版）：函数对象改为 spawn 模型（`func setup()` / `func tick()` / `func process(param)`；移除 `count`，新增 `tick`/`processParam`）；读取端**拒绝**旧版。
 - `v10`（旧版）：UV 字段（`uvStart`/`uvSize`/`uvStep`/`fps`/`maxFrame`）支持 script-lang 单行表达式（§3.1）；读取端**拒绝**。
 - `v9`（旧版）：脚本语言改为 `this` 对象模型（`this.position` 等；旧 `i/n/[x,y,z]=...` 语法移除）；读取端**拒绝**。
 - `v8`（旧版）：新增摄像机「旋转」空间 flags（bit0=rotLocal；局部=摄像机 lookAt+roll 自身朝向，世界=世界轴）；组级自转/公转空间**缺省改为 local**（flags 位语义不变，编辑器总是写入显式值）；读取端**拒绝**。
@@ -128,7 +129,7 @@ count × {
   seed                      varint：随机种子（有符号截断后按 int 解释）
   duration                  varint：tick
   st                        varint：入场 tick
-  flags                     1 byte：bit0=hasEnt, bit1=hasUV, bit2=fastMath, bit3=hasFuncs, bit4=spinLocal, bit5=rotLocal
+  flags                     1 byte：bit0=hasEnt, bit1=hasUV, bit2=fastMath, bit3=hasFuncs, bit4=spinLocal, bit5=rotLocal, bit6=frameSync
   [ent]                     仅 flags.hasEnt 时存在：见 §3.2
   [uv]                      仅 flags.hasUV 时存在：见 §3.1
   varCount                  varint
@@ -287,7 +288,7 @@ index                       varint：对应数组的 0-based 索引
 
 ## 7. 版本与拒绝语义
 
-- 魔数不是 `PDC1`、版本不是 11、或数据截断/越界 → **拒绝**。
+- 魔数不是 `PDC1`、版本不是 14、或数据截断/越界 → **拒绝**。
 - 签名验证失败 → **拒绝播放**。
 - raw DEFLATE 解压失败 → **拒绝**。
 - 未知 `pr` 枚举、未知 UV mode、未知 easing tag 等 → 视为损坏数据拒绝。

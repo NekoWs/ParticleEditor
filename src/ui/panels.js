@@ -421,6 +421,23 @@ export function buildFunctionPanel(fx) {
   seedRow.appendChild(seedIn);
   wrap.appendChild(seedRow);
 
+  // 帧级同步：导出后在播放器里是否每渲染帧精确同步派生粒子（默认关闭＝与普通粒子一致，带约 50ms 渲染延迟）
+  const fsRow = document.createElement('label');
+  fsRow.className = 'row fx-framesync-row';
+  fsRow.title = t('fx.frameSyncHint');
+  const fsLabel = document.createElement('span');
+  fsLabel.textContent = t('fx.frameSync');
+  const fsChk = document.createElement('input');
+  fsChk.type = 'checkbox';
+  fsChk.checked = !!fx.frameSync;
+  fsChk.onchange = () => {
+    pushUndo();
+    fx.frameSync = fsChk.checked;
+  };
+  fsRow.appendChild(fsLabel);
+  fsRow.appendChild(fsChk);
+  wrap.appendChild(fsRow);
+
   // 公式代码块（默认折叠；完整源码 + 终端 + 快速数学放在折叠区内）
   const codeWrap = document.createElement('div');
   codeWrap.className = 'fx-code-wrap';

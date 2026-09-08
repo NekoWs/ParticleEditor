@@ -148,7 +148,7 @@ export const PARTICLE_SIZE_FACTOR = 0.2; // 编辑器点整宽因子；游戏端
  * - track: { pr:'pos.x'|'scl'|..., m:'set'|'op', ids:[...], kf:[[ms,value,easing],...], fx? }
  * - group: state.groups[组名] = [粒子id...]；组级 UV 在 state.groupUV[组名]。
  * - function object: { id:'fxN', name, center:[x,y,z], source, vars:{name:{base,kf}},
- *                      duration, preset, params, st, ent, ui, uv, fastMath, spinSpace, rotSpace }
+ *                      duration, preset, params, st, ent, ui, uv, fastMath, frameSync, spinSpace, rotSpace }
  */
 export const state = {
   name: 'my_animation',
