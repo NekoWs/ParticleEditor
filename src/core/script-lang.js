@@ -2253,7 +2253,8 @@ class Compiler {
         if (st.kind === 'const') this.constSlots.set(slot, st.name);
         if (st.init) this.compileExpr(st.init);
         else this.emit2(OP.CONST, this.internConst(undefined), st);
-        this.emit2(OP.STORE_LOCAL, slot, st);
+        // 初始化赋值对 const 合法：绕过只读检查（与 for-of 的 const 循环变量一致）。
+        this.emit2(st.kind === 'const' ? OP.STORE_LOCAL_FORCE : OP.STORE_LOCAL, slot, st);
         return;
       }
       case 'block':
