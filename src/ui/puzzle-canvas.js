@@ -894,7 +894,7 @@ function ctlHeaderParts(s) {
     } } });
     P.push({ text: ') ' });
   } else if (s.kind === 'global' || s.kind === 'static') {
-    P.push({ text: t('blk.stmt.' + s.kind) + ' ' });
+    P.push({ text: ((s.kind === 'global' && s.decl === 'const') ? t('blk.stmt.const') : t('blk.stmt.' + s.kind)) + ' ' });
     P.push({ edit: { kind: 'text', key: 'name', ident: true, value: s.name, commit: (v) => { s.name = String(v).trim(); return true; } } });
     P.push({ text: ' = ' });
     P.push({ slot: { ref: slotRef(() => s.expr, v => { s.expr = v; }, T_ANY), type: T_ANY, label: '' } });

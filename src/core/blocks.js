@@ -344,6 +344,7 @@ export function stmtComplete(s) {
     case 'for_of': case 'spawn': return true;
     case 'func': return String(s.name || '').trim() !== '';
     case 'global':
+      if (s.decl === 'const') return String(s.name || '').trim() !== '' && exprComplete(s.expr);
       return String(s.name || '').trim() !== '' && (s.expr == null || exprComplete(s.expr));
     default: return true;
   }
@@ -508,7 +509,7 @@ function emitStmt(s, level, spans, lineStart) {
       const body = emitList(s.body || [], level + 1, spans, start + 1);
       return pad + 'func ' + s.name + '(' + (s.params || []).join(', ') + ') {\n' + body + '\n' + pad + '}';
     }
-    case 'global': return pad + 'let ' + s.name + (s.expr ? ' = ' + exprToCode(s.expr, 0) : '');
+    case 'global': return pad + (s.decl === 'const' ? 'const ' : 'let ') + s.name + (s.expr ? ' = ' + exprToCode(s.expr, 0) : '');
     default: throw new Error(_etf('err.unknownStmt', s.kind));
   }
 }
@@ -929,10 +930,11 @@ export function stmtToNode(stmt) {
     return { kind: 'func', name, params, body: codeToStatements(rest.slice(bOpen + 1, bClose)) };
   }
   if (/^(?:global|let|const)\s+/.test(s)) {
+    const decl = /^const\b/.test(s) ? 'const' : 'let';
     const after = s.replace(/^(?:global|let|const)\s+/, '').trim();
     const eq = after.indexOf('=');
-    if (eq < 0) return { kind: 'global', name: after.replace(/;$/, '').trim(), expr: null };
-    return { kind: 'global', name: after.slice(0, eq).trim(), expr: parseExpr(after.slice(eq + 1).replace(/;$/, '').trim()) };
+    if (eq < 0) return { kind: 'global', decl, name: after.replace(/;$/, '').trim(), expr: null };
+    return { kind: 'global', decl, name: after.slice(0, eq).trim(), expr: parseExpr(after.slice(eq + 1).replace(/;$/, '').trim()) };
   }
 
   const eq = s.indexOf('=');

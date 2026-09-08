@@ -23,9 +23,11 @@ import {
   memberCtxKey,
   opSlotType,
   slotRef,
+  splitStatements,
   statementsToCode,
   statementsToCodeSpans,
   STMT_BLOCKS,
+  stmtComplete,
   T_ANY,
   T_SCALAR,
   T_VEC,
@@ -322,7 +324,8 @@ export function newStmtNode(kind) {
     case 'for_of': return { kind: 'for_of', name: 'p', body: [] };
     case 'spawn': return { kind: 'spawn', name: 'p' };
     case 'func': return { kind: 'func', name: freshFuncName(), params: [], body: [] };
-    case 'global': return { kind: 'global', name: '', expr: null };
+    case 'global': return { kind: 'global', name: '', expr: null, decl: 'let' };
+    case 'const': return { kind: 'global', name: '', expr: null, decl: 'const' };
     case 'comment': return { kind: 'comment', text: '' };
     case 'break': return { kind: 'break' };
     case 'continue': return { kind: 'continue' };
@@ -422,7 +425,7 @@ export function buildPaletteGroup(g) {
     ['scl', 'glow', 'light'].forEach(k => items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: t(STMT_BLOCKS[k].label), info: t(STMT_BLOCKS[k].desc) }));
     items.push({ key: 'stmt:attr', type: 'stmt', kind: 'attr', label: t(STMT_BLOCKS.attr.label), info: t(STMT_BLOCKS.attr.desc) });
   } else if (g.id === 'logic') {
-    ['if', 'repeat_n', 'repeat', 'repeat_until', 'for_of', 'while', 'do', 'break', 'continue', 'return', 'global'].forEach(k => {
+    ['if', 'repeat_n', 'repeat', 'repeat_until', 'for_of', 'while', 'do', 'break', 'continue', 'return', 'global', 'const'].forEach(k => {
       items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: t(STMT_BLOCKS[k] ? STMT_BLOCKS[k].label : 'blk.stmt.' + k), info: t(STMT_BLOCKS[k] ? STMT_BLOCKS[k].desc : 'blk.stmt.' + k) });
     });
     items.push({ key: 'if-branch:else', type: 'if-branch', branch: 'else', label: t('blk.stmt.else'), info: t('blk.stmt.else.desc') });
@@ -810,24 +813,32 @@ function parsePuzzleSource(fx) {
     if (stmts.length === 1 && stmts[0].kind === 'func') funcStmts.push(stmts[0]);
     else funcStmts.push({ kind: 'func', name, params: fn.params.slice(), body: codeToStatements(body) });
   }
-  return { setupBody, tickBody, processBody, funcStmts };
+  // 顶层 let/const 声明解析为 global 块，放在 setup 链中（关闭时再提升回顶层）。
+  const globals = [];
+  for (const stmt of splitStatements(src)) {
+    if (!/^(?:global|let|const)\s+/.test(stmt)) continue;
+    const nodes = codeToStatements(stmt);
+    if (nodes.length === 1 && nodes[0].kind === 'global') globals.push(nodes[0]);
+  }
+  return { setupBody, tickBody, processBody, funcStmts, globals };
 }
 
 export function openBlockDrawer(fx) {
   ensurePuzzleDom();
-  let chain, setupChain, tickChain, funcStmts;
+  let chain, setupChain, tickChain, funcStmts, globals = [];
   try {
     const parsed = parsePuzzleSource(fx);
     setupChain = codeToStatements(parsed.setupBody);
     tickChain = codeToStatements(parsed.tickBody);
     chain = codeToStatements(parsed.processBody);
     funcStmts = parsed.funcStmts;
+    globals = parsed.globals;
     // 兼容：setup/tick/process 体内若混入 func 定义，迁移为顶层函数。
     const cExtract = extractTopLevelFuncs(chain);
     const sExtract = extractTopLevelFuncs(setupChain);
     const tExtract = extractTopLevelFuncs(tickChain);
     chain = cExtract.rest;
-    setupChain = sExtract.rest;
+    setupChain = [...globals, ...sExtract.rest];
     tickChain = tExtract.rest;
     funcStmts = funcStmts.concat(cExtract.funcs, sExtract.funcs, tExtract.funcs);
     // 迁移旧 per-particle process（this.position/this.color 等）：整体包进 for (const p of this.particles)，
@@ -852,7 +863,7 @@ export function openBlockDrawer(fx) {
   const saved = fx.ui || {};
   const savedHats = saved.hats || null;
   // 起始块存在性：新格式显式记录；旧格式按「是否有代码 / 是否保存过位置」回退。
-  const hasSetup = savedHats ? !!savedHats.setup : (setupChain.length > 0 || !!saved.setup);
+  const hasSetup = savedHats ? (!!savedHats.setup || globals.length > 0) : (setupChain.length > 0 || !!saved.setup);
   const hasTick = savedHats ? !!savedHats.tick : (tickChain.length > 0 || !!saved.tick);
   const hasProcess = savedHats ? !!savedHats.process : (chain.length > 0 || !!saved.chain);
   // 默认位置：未保存时按前一个起始块的预期宽度向右平铺，避免默认起始块互相遮挡。
@@ -917,27 +928,32 @@ export function openBlockDrawer(fx) {
   renderChain();
 }
 
+/** 组装与提交一致的完整源码：setup 链中的 global 块提升为顶层 let/const。 */
+function buildPuzzleSource() {
+  const setupStmts = bctx.layout.setup ? (bctx.setupChain || []) : [];
+  const globals = [];
+  const setupBody = [];
+  for (const s of setupStmts) {
+    if (s && s.kind === 'global') globals.push(s);
+    else setupBody.push(s);
+  }
+  const globalsCode = globals.filter(stmtComplete)
+    .map(s => (s.decl === 'const' ? 'const ' : 'let ') + s.name + (s.expr ? ' = ' + exprToCode(s.expr, 0) : ''))
+    .join('\n');
+  const setupCode = bctx.layout.setup ? statementsToCode(setupBody) : '';
+  const processCode = bctx.layout.chain ? statementsToCode(bctx.chain) : '';
+  const tickCode = bctx.layout.tick ? statementsToCode(bctx.tickChain) : '';
+  const funcsCode = statementsToCode(bctx.funcs.map(f => f.stmt));
+  const source = buildScriptSource(setupCode, processCode, tickCode, funcsCode, globalsCode);
+  return { source, globalsCode, setupBody, setupCode, processCode, funcsCode };
+}
+
 export function closeBlockDrawer(commit) {
   if (!bctx) return;
   puzzleCanvasCancelEdit();
   const fx = getFunction(bctx.fxId);
   if (commit && fx) {
-    const newCode = bctx.layout.chain ? statementsToCode(bctx.chain) : '';
-    const tickText = bctx.layout.tick ? statementsToCode(bctx.tickChain) : '';
-    const funcsText = statementsToCode(bctx.funcs.map(f => f.stmt));
-    // 全局变量从 setup 链中抽出，生成顶层 let/const 声明（v13 起无 global 语句）。
-    const setupStmts = bctx.layout.setup ? (bctx.setupChain || []) : [];
-    const globals = [];
-    const setupBody = [];
-    for (const s of setupStmts) {
-      if (s && s.kind === 'global') globals.push(s);
-      else setupBody.push(s);
-    }
-    const setupText = bctx.layout.setup ? statementsToCode(setupBody) : '';
-    const globalsText = globals
-      .map(s => ((s.kind === 'const') ? 'const ' : 'let ') + s.name + (s.expr ? ' = ' + exprToCode(s.expr, 0) : ''))
-      .join('\n');
-    const source = buildScriptSource(setupText, newCode, tickText, funcsText, globalsText);
+    const { source } = buildPuzzleSource();
     fx.source = source;
     for (const name of bctx.varOrder) {
       if (name in bctx.varExprs) {
@@ -1021,26 +1037,27 @@ function findSpanIn(spans, line) {
   return null;
 }
 
-function mapErrorToStmt(funcsSpans, setupSpans, processSpans, funcsCode, setupCode, processCode, message) {
+function mapErrorToStmt(funcsSpans, setupSpans, processSpans, globalsCode, funcsCode, setupCode, processCode, message) {
   const loc = parseErrorLine(message);
   if (!loc) return null;
+  const gl = lineCountOf(globalsCode);
   const funcsPrefix = funcsCode ? funcsCode + '\n' : '';
-  const setupPrefixLines = lineCountOf(funcsPrefix + 'setup {\n') - 1;
+  const setupPrefixLines = gl + lineCountOf(funcsPrefix + 'setup {\n') - 1;
   const setupLineCount = lineCountOf(setupCode);
   if (loc.line > setupPrefixLines && loc.line <= setupPrefixLines + setupLineCount) {
     return findSpanIn(setupSpans, loc.line - setupPrefixLines);
   }
-  const processPrefixLines = lineCountOf(funcsPrefix + 'setup {\n' + setupCode + '\n}\nprocess {\n') - 1;
+  const processPrefixLines = gl + lineCountOf(funcsPrefix + 'setup {\n' + setupCode + '\n}\nprocess {\n') - 1;
   if (loc.line > processPrefixLines) return findSpanIn(processSpans, loc.line - processPrefixLines);
-  if (funcsCode && loc.line <= lineCountOf(funcsCode)) return findSpanIn(funcsSpans, loc.line);
+  if (funcsCode && loc.line > gl && loc.line <= gl + lineCountOf(funcsCode)) return findSpanIn(funcsSpans, loc.line - gl);
   return null;
 }
 
-function errorsFromValidation(fx, setupCode, processCode, funcsCode, err) {
+function errorsFromValidation(fx, globalsCode, setupBody, setupCode, processCode, funcsCode, err) {
   const funcsSpans = statementsToCodeSpans(bctx.funcs.map(f => f.stmt)).spans;
-  const setupSpans = statementsToCodeSpans(bctx.setupChain).spans;
+  const setupSpans = statementsToCodeSpans(setupBody).spans;
   const processSpans = statementsToCodeSpans(bctx.chain).spans;
-  const stmt = mapErrorToStmt(funcsSpans, setupSpans, processSpans, funcsCode, setupCode, processCode, err && err.message);
+  const stmt = mapErrorToStmt(funcsSpans, setupSpans, processSpans, globalsCode, funcsCode, setupCode, processCode, err && err.message);
   if (stmt) return [{ stmt, message: err.message }];
   // 没有可定位行号时，仍保留错误并挂到首个可用语句，避免静默吞掉。
   const any = bctx.chain[0] || bctx.setupChain[0] || bctx.tickChain[0] || (bctx.funcs[0] && bctx.funcs[0].stmt);
@@ -1051,27 +1068,19 @@ function computeBctxErrors() {
   if (!bctx) return [];
   const fx = getFunction(bctx.fxId);
   if (!fx) return [];
-  const setupCode = bctx.layout.setup ? statementsToCode(bctx.setupChain) : '';
-  const tickCode = bctx.layout.tick ? statementsToCode(bctx.tickChain) : '';
-  const processCode = bctx.layout.chain ? statementsToCode(bctx.chain) : '';
-  const funcsCode = statementsToCode(bctx.funcs.map(f => f.stmt));
-  const source = buildScriptSource(setupCode, processCode, tickCode, funcsCode);
+  const { source, globalsCode, setupBody, setupCode, processCode, funcsCode } = buildPuzzleSource();
   let err = null;
   try { err = validateFunctionScript(fx, source); }
   catch (e) { err = e; }
   if (!err) return [];
-  return errorsFromValidation(fx, setupCode, processCode, funcsCode, err);
+  return errorsFromValidation(fx, globalsCode, setupBody, setupCode, processCode, funcsCode, err);
 }
 
 export function blockPreview() {
   if (!bctx) return;
   const fx = getFunction(bctx.fxId);
   if (!fx) return;
-  const code = bctx.layout.chain ? statementsToCode(bctx.chain) : '';
-  const setupText = bctx.layout.setup ? statementsToCode(bctx.setupChain) : '';
-  const tickText = bctx.layout.tick ? statementsToCode(bctx.tickChain) : '';
-  const funcsText = statementsToCode(bctx.funcs.map(f => f.stmt));
-  const source = buildScriptSource(setupText, code, tickText, funcsText);
+  const { source, globalsCode, setupBody, setupCode, processCode, funcsCode } = buildPuzzleSource();
   fx.source = source;
   for (const name of bctx.varOrder) {
     if (name in bctx.varExprs) {
@@ -1084,7 +1093,7 @@ export function blockPreview() {
   catch (e) { err = e; }
   if (err) {
     fx._error = err.message;
-    bctx.errors = errorsFromValidation(fx, setupText, code, funcsText, err);
+    bctx.errors = errorsFromValidation(fx, globalsCode, setupBody, setupCode, processCode, funcsCode, err);
   } else {
     fx._error = null;
     bctx.errors = [];
