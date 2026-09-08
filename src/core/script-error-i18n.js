@@ -80,7 +80,7 @@ export const SCRIPT_ERROR_PATTERNS = [
   { re: /^'kill' takes no arguments$/, key: 'err.script.killNoArgs' },
   { re: /^unknown this field '\.(.*)'$/, key: 'err.script.unknownThisField' },
   { re: /^this\.(.*) is not available here$/, key: 'err.script.thisFieldUnavailable' },
-  { re: /^particle\.color requires a vec3, vec4, \[r,g,b\] or \[r,g,b,a\], got (.*)$/, key: 'err.script.particleColorType' },
+  { re: /^particle\.color requires a vec3, vec4, \[r,g,b] or \[r,g,b,a], got (.*)$/, key: 'err.script.particleColorType' },
   { re: /^particle\.glow requires a num\/bool, got (.*)$/, key: 'err.script.particleGlowType' },
   { re: /^particle\.index is read-only$/, key: 'err.script.particleIndexReadonly' },
   { re: /^cannot unpack (.*) components into (.*) names$/, key: 'err.script.unpackComponents' },
@@ -90,9 +90,9 @@ export const SCRIPT_ERROR_PATTERNS = [
   { re: /^'(\+\+|--)' operand requires a num, got (.*)$/, key: 'err.script.incOperand' },
 
   // —— runtime：类型 / 运算 ——
-  { re: /^(.*) requires a vec(2|3|4) or array of (?:2|3|4) numbers, got (.*)$/, key: 'err.script.requiresVecOrArray' },
+  { re: /^(.*) requires a vec([234]) or array of [234] numbers, got (.*)$/, key: 'err.script.requiresVecOrArray' },
   { re: /^(.*) requires an array of (.*) numbers, got length (.*)$/, key: 'err.script.requiresArrayN' },
-  { re: /^(.*) requires a vec(2|3|4), got (.*)$/, key: 'err.script.requiresVecN' },
+  { re: /^(.*) requires a vec([234]), got (.*)$/, key: 'err.script.requiresVecN' },
   { re: /^(.*) requires a vec2\/vec3\/vec4, got (.*)$/, key: 'err.script.requiresVec' },
   { re: /^(.*) requires an array, got (.*)$/, key: 'err.script.requiresArray' },
   { re: /^(.*) requires an integer, got (.*)$/, key: 'err.script.requiresInt' },
@@ -155,7 +155,7 @@ export const SCRIPT_ERROR_PATTERNS = [
 const LOC_RE = /^(.*?)\s*\(line (\d+), col (\d+)\)$/;
 
 function format(tpl, args) {
-  return String(tpl == null ? '' : tpl).replace(/\{(\d+)\}/g, (m, i) => {
+  return String(tpl == null ? '' : tpl).replace(/\{(\d+)}/g, (m, i) => {
     const v = args[+i];
     return v != null ? String(v) : m;
   });
