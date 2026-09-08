@@ -296,7 +296,7 @@ export function refreshAllPanelsLight() {
   // 否则 #tl-max 与循环播放边界仍取到上一次的缓存值（rebuildPoints 内部的失效发生在读值之后）。
   invalidateMaxMsCache();
   const maxEl = document.getElementById('tl-max');
-  if (maxEl) maxEl.textContent = maxMs();
+  if (maxEl) maxEl.textContent = (maxMs() / 1000).toFixed(3);
   if (typeof drawTimeline === 'function') drawTimeline();
   drawTimelineLayers();
   rebuildPoints(false);
