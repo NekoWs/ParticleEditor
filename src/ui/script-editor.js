@@ -42,12 +42,14 @@ const THIS_FIELD_SET = new Set(SCRIPT_THIS_FIELDS);
 export const SCRIPT_BUILTINS = [
   'vec2', 'vec3', 'vec4', 'mat3', 'mat4',
   'translate', 'scale', 'rotate', 'lookAt', 'rotX', 'rotY', 'rotZ', 'rotAxis',
-  'dot', 'cross', 'len', 'len2', 'norm', 'lerp', 'mix', 'distance', 'angle_between', 'project', 'reflect',
+  'rotateX', 'rotateY', 'rotateZ',
+  'norm', 'hash', 'phases', 'repeat',
   'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'atan2',
   'sqrt', 'abs', 'sign', 'exp', 'log', 'ln', 'floor', 'ceil', 'round', 'fract', 'pow',
   'min', 'max', 'clamp', 'step', 'smoothstep', 'mod', 'map_range', 'remap', 'int', 'float', 'bool',
   'noise', 'fbm', 'rand', 'random',
   'ease_linear', 'ease_in_out', 'ease_out_back', 'ease_in_elastic',
+  'color', 'red', 'green', 'blue', 'alpha', 'hue', 'saturation', 'value', 'rgb2hsv', 'hsv2rgb',
   'unique', 'reverse', 'sort', 'print', 'assert',
 ];
 
@@ -288,8 +290,10 @@ const BUILTIN_RETURN_TYPES = {
   mat3: 'mat3', mat4: 'mat4',
   translate: 'mat4', scale: 'mat4', rotate: 'mat4', lookAt: 'mat4',
   rotX: 'mat3', rotY: 'mat3', rotZ: 'mat3', rotAxis: 'mat3',
-  cross: 'vec3',
-  dot: 'num', len: 'num', len2: 'num', distance: 'num', angle_between: 'num',
+  rotateX: 'vec3', rotateY: 'vec3', rotateZ: 'vec3',
+  norm: 'num', hash: 'num',
+  color: 'vec4', red: 'vec4', green: 'vec4', blue: 'vec4', alpha: 'vec4',
+  hue: 'vec4', saturation: 'vec4', value: 'vec4', rgb2hsv: 'vec3', hsv2rgb: 'vec4',
   sin: 'num', cos: 'num', tan: 'num', asin: 'num', acos: 'num', atan: 'num', atan2: 'num',
   sqrt: 'num', abs: 'num', sign: 'num', exp: 'num', log: 'num', ln: 'num',
   floor: 'num', ceil: 'num', round: 'num', fract: 'num', pow: 'num',
@@ -327,12 +331,8 @@ function inferCallType(node, env) {
   if (!callee || callee.type !== 'var') return 'unknown';
   const name = callee.name;
 
-  if (name === 'lerp' || name === 'mix' || name === 'clamp') {
+  if (name === 'clamp') {
     return node.args.length ? inferExprType(node.args[0], env) : 'unknown';
-  }
-  if (name === 'norm' || name === 'project' || name === 'reflect') {
-    const at = node.args.length ? inferExprType(node.args[0], env) : 'unknown';
-    return isVecType(at) ? at : 'unknown';
   }
   if (name === 'int' || name === 'float') {
     const at = node.args.length ? inferExprType(node.args[0], env) : 'unknown';

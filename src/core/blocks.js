@@ -15,6 +15,8 @@ export const T_ANY = 'any'; // 临时变量（类型由赋值决定，放宽约�
 
 // PREC/NEG_PREC 来自 script-lang 的优先级表；ATOM_PREC 为原子表达式的虚拟优先级
 export const ATOM_PREC = 10;
+// 管道 | > 优先级最低（低于三元 0.75），父级优先级低于此值时才加括号。
+export const PIPE_PREC = 0.6;
 
 /* —— 语句块槽规格（ASCII 名原样显示；中文语义槽用 i18n 键 blk.slot.*） —— */
 export const STMT_SLOTS = {
@@ -181,17 +183,28 @@ export const FUNC_BLOCKS = {
   min: { ret: T_SCALAR, args: [['a', T_SCALAR], ['b', T_SCALAR]], desc: 'blk.func.min.desc' },
   max: { ret: T_SCALAR, args: [['a', T_SCALAR], ['b', T_SCALAR]], desc: 'blk.func.max.desc' },
   clamp: { ret: T_SCALAR, args: [['blk.arg.value', T_SCALAR], ['blk.arg.lo', T_SCALAR], ['blk.arg.hi', T_SCALAR]], desc: 'blk.func.clamp.desc' },
-  lerp: { ret: T_SCALAR, args: [['a', T_SCALAR], ['b', T_SCALAR], ['t', T_SCALAR]], desc: 'blk.func.lerp.desc' },
   step: { ret: T_SCALAR, args: [['blk.arg.edge', T_SCALAR], ['blk.arg.value', T_SCALAR]], desc: 'blk.func.step.desc' },
   smoothstep: { ret: T_SCALAR, args: [['blk.arg.lo', T_SCALAR], ['blk.arg.hi', T_SCALAR], ['blk.arg.value', T_SCALAR]], desc: 'blk.func.smoothstep.desc' },
   mod: { ret: T_SCALAR, args: [['blk.arg.value', T_SCALAR], ['blk.arg.mod', T_SCALAR]], desc: 'blk.func.mod.desc' },
   random: { ret: T_SCALAR, args: [], desc: 'blk.func.random.desc' },
   rand: { ret: T_SCALAR, args: [['blk.arg.seed', T_SCALAR]], desc: 'blk.func.rand.desc' },
   vec: { ret: T_VEC, args: [['x', T_SCALAR], ['y', T_SCALAR], ['z', T_SCALAR]], desc: 'blk.func.vec.desc' },
-  dot: { ret: T_SCALAR, args: [['a', T_VEC], ['b', T_VEC]], desc: 'blk.func.dot.desc' },
-  cross: { ret: T_VEC, args: [['a', T_VEC], ['b', T_VEC]], desc: 'blk.func.cross.desc' },
-  len: { ret: T_SCALAR, args: [['blk.arg.vec', T_ANY]], desc: 'blk.func.len.desc' },
-  norm: { ret: T_VEC, args: [['blk.arg.vec', T_VEC]], desc: 'blk.func.norm.desc' },
+  hash: { ret: T_SCALAR, args: [['blk.arg.seed', T_SCALAR], ['blk.arg.salt', T_SCALAR]], desc: 'blk.func.hash.desc' },
+  norm: { ret: T_SCALAR, args: [['a', T_SCALAR], ['b', T_SCALAR]], desc: 'blk.func.norm.desc' },
+  color: { ret: T_ANY, args: [['r', T_SCALAR], ['g', T_SCALAR], ['b', T_SCALAR], ['a', T_SCALAR]], desc: 'blk.func.color.desc' },
+  red: { ret: T_ANY, args: [['c', T_ANY], ['v', T_SCALAR]], desc: 'blk.func.red.desc' },
+  green: { ret: T_ANY, args: [['c', T_ANY], ['v', T_SCALAR]], desc: 'blk.func.green.desc' },
+  blue: { ret: T_ANY, args: [['c', T_ANY], ['v', T_SCALAR]], desc: 'blk.func.blue.desc' },
+  alpha: { ret: T_ANY, args: [['c', T_ANY], ['v', T_SCALAR]], desc: 'blk.func.alpha.desc' },
+  hue: { ret: T_ANY, args: [['c', T_ANY], ['v', T_SCALAR]], desc: 'blk.func.hue.desc' },
+  saturation: { ret: T_ANY, args: [['c', T_ANY], ['v', T_SCALAR]], desc: 'blk.func.saturation.desc' },
+  value: { ret: T_ANY, args: [['c', T_ANY], ['v', T_SCALAR]], desc: 'blk.func.value.desc' },
+  rgb2hsv: { ret: T_VEC, args: [['c', T_ANY]], desc: 'blk.func.rgb2hsv.desc' },
+  hsv2rgb: { ret: T_ANY, args: [['h', T_SCALAR], ['s', T_SCALAR], ['v', T_SCALAR]], desc: 'blk.func.hsv2rgb.desc' },
+  rotateX: { ret: T_VEC, args: [['v', T_VEC], ['blk.arg.angle', T_SCALAR]], desc: 'blk.func.rotateX.desc' },
+  rotateY: { ret: T_VEC, args: [['v', T_VEC], ['blk.arg.angle', T_SCALAR]], desc: 'blk.func.rotateY.desc' },
+  rotateZ: { ret: T_VEC, args: [['v', T_VEC], ['blk.arg.angle', T_SCALAR]], desc: 'blk.func.rotateZ.desc' },
+  phases: { ret: T_ANY, args: [['t', T_SCALAR], ['blk.arg.obj', T_ANY]], desc: 'blk.func.phases.desc' },
   rotX: { ret: T_MAT, args: [['blk.arg.angle', T_SCALAR]], desc: 'blk.func.rotX.desc' },
   rotY: { ret: T_MAT, args: [['blk.arg.angle', T_SCALAR]], desc: 'blk.func.rotY.desc' },
   rotZ: { ret: T_MAT, args: [['blk.arg.angle', T_SCALAR]], desc: 'blk.func.rotZ.desc' },
@@ -219,6 +232,9 @@ export const STMT_BLOCKS = {
   repeat_until: { label: 'blk.stmt.repeat_until.label', group: 'logic', desc: 'blk.stmt.repeat_until.desc' },
   for_of: { label: 'blk.stmt.for_of.label', group: 'logic', desc: 'blk.stmt.for_of.desc' },
   spawn: { label: 'blk.stmt.spawn.label', group: 'pos', desc: 'blk.stmt.spawn.desc' },
+  when: { label: 'blk.stmt.when.label', group: 'logic', desc: 'blk.stmt.when.desc' },
+  destructure: { label: 'blk.stmt.destructure.label', group: 'var', desc: 'blk.stmt.destructure.desc' },
+  repeat_fn: { label: 'blk.stmt.repeat_fn.label', group: 'logic', desc: 'blk.stmt.repeat_fn.desc' },
 };
 
 /* —— 调色板分组（顺序即显示顺序；label 为 i18n 键 blk.pal.<id>） —— */
@@ -230,6 +246,7 @@ export const PALETTE_GROUPS = [
   { id: 'math', label: 'blk.pal.math' },
   { id: 'vec', label: 'blk.pal.vec' },
   { id: 'mat', label: 'blk.pal.mat' },
+  { id: 'color', label: 'blk.pal.color' },
   { id: 'array', label: 'blk.pal.array' },
   { id: 'var', label: 'blk.pal.var' },
   { id: 'const', label: 'blk.pal.const' },
@@ -323,6 +340,10 @@ export function exprComplete(node) {
     case 'index': return exprComplete(node.target) && exprComplete(node.index);
     case 'method': return exprComplete(node.obj) && node.args.every(exprComplete);
     case 'array': return true; // 数组字面量允许留空；生成时跳过空槽（全空生成 []）
+    case 'lambda': return node.body == null || exprComplete(node.body);
+    case 'obj': return node.entries.every(e => exprComplete(e.value));
+    case 'pipe': return exprComplete(node.left) && exprComplete(node.right);
+    case 'apply': return exprComplete(node.target) && (node.body == null || exprComplete(node.body));
     default: return false;
   }
 }
@@ -346,6 +367,9 @@ export function stmtComplete(s) {
     case 'global':
       if (s.decl === 'const') return String(s.name || '').trim() !== '' && exprComplete(s.expr);
       return String(s.name || '').trim() !== '' && (s.expr == null || exprComplete(s.expr));
+    case 'repeat_fn': return exprComplete(s.count);
+    case 'destructure': return exprComplete(s.value);
+    case 'when': return exprComplete(s.subject);
     default: return true;
   }
 }
@@ -363,6 +387,8 @@ export function fmtNum(v) {
 }
 
 /** 表达式节点 → 代码。parentPrec 为父级要求的优先级（低于则加括号）。 */
+function isSimpleIdent(k) { return /^[A-Za-z_][A-Za-z0-9_]*$/.test(k); }
+
 export function exprToCode(node, parentPrec) {
   if (!node) return '';
   let s, p;
@@ -419,6 +445,18 @@ export function exprToCode(node, parentPrec) {
       for (let i = 0; i < n; i++) { const pr = PREC[node.ops[i]]; if (pr < p) p = pr; }
       break;
     }
+    case 'lambda':
+      s = '{ ' + ((node.params && node.params.length) ? node.params.join(', ') + ' -> ' : '') + (node.body ? exprToCode(node.body, 0) : '') + ' }';
+      p = ATOM_PREC; break;
+    case 'obj':
+      s = '{ ' + node.entries.map(e => (isSimpleIdent(e.key) ? e.key : '"' + e.key + '"') + ': ' + exprToCode(e.value, 0)).join(', ') + ' }';
+      p = ATOM_PREC; break;
+    case 'pipe':
+      s = exprToCode(node.left, PIPE_PREC) + ' |> ' + exprToCode(node.right, PIPE_PREC);
+      p = PIPE_PREC; break;
+    case 'apply':
+      s = exprToCode(node.target, ATOM_PREC) + '.apply { ' + (node.body ? exprToCode(node.body, 0) : '') + ' }';
+      p = ATOM_PREC; break;
     default: throw new Error(_etf('err.unknownExprNode', node.kind));
   }
   return (p < parentPrec) ? '(' + s + ')' : s;
@@ -448,7 +486,7 @@ function emitStmt(s, level, spans, lineStart) {
     case 'light': return pad + 'p.light = ' + exprToCode(s.expr, 0);
     case 'attr': return pad + 'p.' + s.name + ' = ' + exprToCode(s.expr, 0);
     case 'set': return pad + s.name + ' = ' + exprToCode(s.expr, 0);
-    case 'spawn': return pad + (s.name || 'p') + ' = this.spawn()';
+    case 'spawn': return pad + (s.name || 'p') + ' = this.spawn(' + (s.config ? exprToCode(s.config, 0) : '') + ')';
     case 'expr': return pad + exprToCode(s.expr, 0);
     case 'raw': return s.text || '';
     case 'comment': return emitComment(s, pad);
@@ -510,6 +548,24 @@ function emitStmt(s, level, spans, lineStart) {
       return pad + 'func ' + s.name + '(' + (s.params || []).join(', ') + ') {\n' + body + '\n' + pad + '}';
     }
     case 'global': return pad + (s.decl === 'const' ? 'const ' : 'let ') + s.name + (s.expr ? ' = ' + exprToCode(s.expr, 0) : '');
+    case 'destructure':
+      return pad + (s.decl === 'const' ? 'const ' : 'let ') + '{ ' + (s.names || []).join(', ') + ' } = ' + exprToCode(s.value, 0);
+    case 'repeat_fn': {
+      const body = emitList(s.body || [], level + 1, spans, start + 1);
+      return pad + 'repeat(' + exprToCode(s.count, 0) + ') {\n' + body + '\n' + pad + '}';
+    }
+    case 'when': {
+      const lines = [];
+      for (const c of s.cases || []) {
+        const b = emitList(c.body || [], level + 1, spans, 1);
+        lines.push(exprToCode(c.label, 0) + ' -> ' + (b || '').trim());
+      }
+      if (s.els && s.els.length) {
+        const b = emitList(s.els, level + 1, spans, 1);
+        lines.push('else -> ' + (b || '').trim());
+      }
+      return pad + 'when (' + exprToCode(s.subject, 0) + ') {\n' + lines.map(l => indentPad(level + 1) + l).join(';\n') + '\n' + pad + '}';
+    }
     default: throw new Error(_etf('err.unknownStmt', s.kind));
   }
 }
@@ -573,6 +629,10 @@ export function blockTokenize(expr) {
       tokens.push({ t: 'op', op: two });
       i += 2; expectOperand = true; continue;
     }
+    if (two === '|>' || two === '->') {
+      tokens.push({ t: two });
+      i += 2; expectOperand = true; continue;
+    }
     if (c === '.' && /[xyzwrgba]/.test(expr[i + 1] || '') && !/[a-zA-Z0-9_]/.test(expr[i + 2] || '')) {
       tokens.push({ t: 'comp', axis: expr[i + 1] }); i += 2; expectOperand = false; continue;
     }
@@ -598,6 +658,8 @@ export function blockTokenize(expr) {
     if (c === ':') { tokens.push({ t: ':' }); i++; expectOperand = true; continue; }
     if (c === '[') { tokens.push({ t: '[' }); i++; expectOperand = true; continue; }
     if (c === ']') { tokens.push({ t: ']' }); i++; expectOperand = false; continue; }
+    if (c === '{') { tokens.push({ t: '{' }); i++; expectOperand = true; continue; }
+    if (c === '}') { tokens.push({ t: '}' }); i++; expectOperand = false; continue; }
     if ('<>+-*/%^(),'.includes(c)) { tokens.push({ t: c }); i++; expectOperand = (c === '(' || c === ',' || '<>+-*/%^'.includes(c)); continue; }
     i++;
   }
@@ -658,6 +720,42 @@ export function parseExpr(str) {
       }
       expect(']');
       node = { kind: 'array', items };
+    } else if (tk.t === '{') {
+      // 对象字面量 / lambda 字面量：`{k:v}` 与 `{ p -> body }` / `{ body }`。
+      const braceNext = peek();
+      if (braceNext && braceNext.t === '}') { next(); return { kind: 'lambda', params: [], body: null }; }
+      const isObjStart = () => {
+        const a = peek();
+        if (!a) return false;
+        return (a.t === 'var' || a.t === 'str' || a.t === 'func') && toks[pos + 1] && toks[pos + 1].t === ':';
+      };
+      const isLambdaParams = () => {
+        const a = peek();
+        return a && a.t === 'var' && toks[pos + 1] && (toks[pos + 1].t === '->' || toks[pos + 1].t === ',');
+      };
+      if (isObjStart()) {
+        const entries = [];
+        while (peek() && peek().t !== '}') {
+          const keyTok = next();
+          const key = (keyTok.t === 'str') ? keyTok.v : keyTok.name;
+          expect(':');
+          const value = parseTernary();
+          entries.push({ key, value });
+          if (peek() && peek().t === ',') { next(); continue; }
+          break;
+        }
+        expect('}');
+        return { kind: 'obj', entries };
+      }
+      let params = [];
+      if (isLambdaParams()) {
+        params.push(next().name);
+        while (peek() && peek().t === ',') { next(); params.push(next().name); }
+        expect('->');
+      }
+      const body = (peek() && peek().t !== '}') ? parseTernary() : null;
+      expect('}');
+      return { kind: 'lambda', params, body };
     } else if (tk.t === '(') {
       node = parseTernary();
       expect(')');
@@ -683,6 +781,13 @@ export function parseExpr(str) {
         const m = next();
         // 方法名可能恰为内建函数名（blockTokenize 会标记为 func），此处两种 token 都接受。
         if (!m || (m.t !== 'var' && m.t !== 'func')) throw new Error(_etf('err.exprNeed', 'method', str));
+        if (m.name === 'apply' && peek() && peek().t === '{') {
+          next(); // '{'
+          const body = (peek() && peek().t !== '}') ? parseTernary() : null;
+          expect('}');
+          node = { kind: 'apply', target: node, body };
+          continue;
+        }
         if (!peek() || peek().t !== '(') { node = { kind: 'member', obj: node, field: m.name }; continue; }
         next(); // '('
         node = { kind: 'method', obj: node, method: m.name, args: parseCallArgs() };
@@ -783,8 +888,17 @@ export function parseExpr(str) {
     }
     return cond;
   }
+  function parsePipe() {
+    let node = parseTernary();
+    while (peek() && peek().t === '|>') {
+      next();
+      const right = parseTernary();
+      node = { kind: 'pipe', left: node, right };
+    }
+    return node;
+  }
 
-  const node = parseTernary();
+  const node = parsePipe();
   if (pos < toks.length) throw new Error(_etf('err.exprExtra', str));
   return node;
 }
@@ -929,6 +1043,50 @@ export function stmtToNode(stmt) {
     if (bClose < 0) throw new Error(_et('err.stmtNeedBrace'));
     return { kind: 'func', name, params, body: codeToStatements(rest.slice(bOpen + 1, bClose)) };
   }
+  if (/^when\s*\(/.test(s)) {
+    const open = s.indexOf('(');
+    const close = matchDelim(s, open, '(', ')');
+    if (close < 0) throw new Error(_et('err.stmtNeedParen'));
+    const subject = parseExpr(s.slice(open + 1, close).trim());
+    const rest = s.slice(close + 1).trim();
+    const bOpen = rest.indexOf('{');
+    const bClose = matchDelim(rest, bOpen, '{', '}');
+    if (bClose < 0) throw new Error(_et('err.stmtNeedBrace'));
+    const inner = rest.slice(bOpen + 1, bClose).trim();
+    const cases = [];
+    let els = null;
+    for (const part of splitTopSemicolons(inner)) {
+      const arrow = part.indexOf('->');
+      if (arrow < 0) throw new Error(_etf('err.unknownPack', stmt));
+      const labelText = part.slice(0, arrow).trim();
+      const body = codeToStatements(part.slice(arrow + 2).trim());
+      if (labelText === 'else') els = body;
+      else cases.push({ label: parseExpr(labelText), body });
+    }
+    return { kind: 'when', subject, cases, els };
+  }
+  if (/^(?:let|const)\s*\{/.test(s)) {
+    const decl = /^const\b/.test(s) ? 'const' : 'let';
+    const open = s.indexOf('{');
+    const close = matchDelim(s, open, '{', '}');
+    if (close < 0) throw new Error(_et('err.stmtNeedBrace'));
+    const names = s.slice(open + 1, close).split(',').map(x => x.trim()).filter(Boolean);
+    const rest = s.slice(close + 1).trim();
+    const eq = rest.indexOf('=');
+    if (eq < 0) throw new Error(_etf('err.unknownPack', stmt));
+    return { kind: 'destructure', decl, names, value: parseExpr(rest.slice(eq + 1).replace(/;$/, '').trim()) };
+  }
+  if (/^repeat\s*\(/.test(s)) {
+    const open = s.indexOf('(');
+    const close = matchDelim(s, open, '(', ')');
+    if (close < 0) throw new Error(_et('err.stmtNeedParen'));
+    const count = parseExpr(s.slice(open + 1, close).trim());
+    const rest = s.slice(close + 1).trim();
+    const bOpen = rest.indexOf('{');
+    const bClose = matchDelim(rest, bOpen, '{', '}');
+    if (bClose < 0) throw new Error(_et('err.stmtNeedBrace'));
+    return { kind: 'repeat_fn', count, body: codeToStatements(rest.slice(bOpen + 1, bClose)) };
+  }
   if (/^(?:global|let|const)\s+/.test(s)) {
     const decl = /^const\b/.test(s) ? 'const' : 'let';
     const after = s.replace(/^(?:global|let|const)\s+/, '').trim();
@@ -986,8 +1144,13 @@ export function stmtToNode(stmt) {
   if (/^(this|p)\.(position|velocity|color)\.(x|y|z|r|g|b|a|w)$/.test(lhs)) {
     return { kind: 'attr', name: lhs.slice(lhs.indexOf('.') + 1), expr: parseExpr(rhs) };
   }
-  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(lhs) && rhs.replace(/;$/, '').trim() === 'this.spawn()') {
-    return { kind: 'spawn', name: lhs };
+  {
+    const rhsT = rhs.replace(/;$/, '').trim();
+    const spawnM = /^this\.spawn\(([\s\S]*)\)$/.exec(rhsT);
+    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(lhs) && spawnM) {
+      const argText = spawnM[1].trim();
+      return { kind: 'spawn', name: lhs, config: argText ? parseExpr(argText) : null };
+    }
   }
   return { kind: 'set', name: lhs, expr: parseExpr(rhs) };
 }

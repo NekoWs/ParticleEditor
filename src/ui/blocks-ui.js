@@ -76,6 +76,10 @@ export function cloneExprNode(n) {
   else if (n.kind === 'method') { o.obj = cloneExprNode(n.obj); o.method = n.method; o.args = n.args.map(cloneExprNode); }
   else if (n.kind === 'array') { o.items = n.items.map(cloneExprNode); }
   else if (n.kind === 'chain') { o.terms = n.terms.map(cloneExprNode); o.ops = n.ops.slice(); }
+  else if (n.kind === 'lambda') { o.params = n.params ? n.params.slice() : []; o.body = cloneExprNode(n.body); }
+  else if (n.kind === 'obj') { o.entries = (n.entries || []).map(e => ({ key: e.key, value: cloneExprNode(e.value) })); }
+  else if (n.kind === 'pipe') { o.left = cloneExprNode(n.left); o.right = cloneExprNode(n.right); }
+  else if (n.kind === 'apply') { o.target = cloneExprNode(n.target); o.body = cloneExprNode(n.body); }
   return o;
 }
 export function cloneStmt(s) {
@@ -89,6 +93,12 @@ export function cloneStmt(s) {
   if (Array.isArray(s.body)) o.body = s.body.map(cloneStmt);
   if (Array.isArray(s.elseBody)) o.elseBody = s.elseBody.map(cloneStmt);
   if (Array.isArray(s.params)) o.params = s.params.slice();
+  if (s.subject) o.subject = cloneExprNode(s.subject);
+  if (Array.isArray(s.cases)) o.cases = s.cases.map(c => ({ label: cloneExprNode(c.label), body: (c.body || []).map(cloneStmt) }));
+  if (Array.isArray(s.els)) o.els = s.els.map(cloneStmt);
+  if (Array.isArray(s.names)) o.names = s.names.slice();
+  if (s.value) o.value = cloneExprNode(s.value);
+  if (s.config) o.config = cloneExprNode(s.config);
   return o;
 }
 export function cloneStmts(stmts) { return stmts.map(cloneStmt); }
@@ -322,7 +332,10 @@ export function newStmtNode(kind) {
     case 'repeat_n': return { kind: 'repeat_n', count: null, body: [] };
     case 'repeat_until': return { kind: 'repeat_until', cond: null, body: [] };
     case 'for_of': return { kind: 'for_of', name: 'p', body: [] };
-    case 'spawn': return { kind: 'spawn', name: 'p' };
+    case 'spawn': return { kind: 'spawn', name: 'p', config: null };
+    case 'when': return { kind: 'when', subject: null, cases: [], els: null };
+    case 'destructure': return { kind: 'destructure', decl: 'let', names: ['a', 'b'], value: null };
+    case 'repeat_fn': return { kind: 'repeat_fn', count: null, body: [] };
     case 'func': return { kind: 'func', name: freshFuncName(), params: [], body: [] };
     case 'global': return { kind: 'global', name: '', expr: null, decl: 'let' };
     case 'const': return { kind: 'global', name: '', expr: null, decl: 'const' };
@@ -425,7 +438,7 @@ export function buildPaletteGroup(g) {
     ['scl', 'glow', 'light'].forEach(k => items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: t(STMT_BLOCKS[k].label), info: t(STMT_BLOCKS[k].desc) }));
     items.push({ key: 'stmt:attr', type: 'stmt', kind: 'attr', label: t(STMT_BLOCKS.attr.label), info: t(STMT_BLOCKS.attr.desc) });
   } else if (g.id === 'logic') {
-    ['if', 'repeat_n', 'repeat', 'repeat_until', 'for_of', 'while', 'do', 'break', 'continue', 'return', 'global', 'const'].forEach(k => {
+    ['if', 'repeat_n', 'repeat', 'repeat_until', 'repeat_fn', 'for_of', 'while', 'do', 'when', 'break', 'continue', 'return', 'global', 'const'].forEach(k => {
       items.push({ key: 'stmt:' + k, type: 'stmt', kind: k, label: t(STMT_BLOCKS[k] ? STMT_BLOCKS[k].label : 'blk.stmt.' + k), info: t(STMT_BLOCKS[k] ? STMT_BLOCKS[k].desc : 'blk.stmt.' + k) });
     });
     items.push({ key: 'if-branch:else', type: 'if-branch', branch: 'else', label: t('blk.stmt.else'), info: t('blk.stmt.else.desc') });
@@ -440,22 +453,27 @@ export function buildPaletteGroup(g) {
     items.push({ key: 'dd:trig', type: 'func-dd', group: 'trig', selection: 'sin', label: t(FUNC_DROPDOWNS.trig.label), info: t(FUNC_DROPDOWNS.trig.desc) });
     items.push({ key: 'dd:numeric', type: 'func-dd', group: 'numeric', selection: 'sqrt', label: t(FUNC_DROPDOWNS.numeric.label), info: t(FUNC_DROPDOWNS.numeric.desc) });
     items.push({ key: 'dd:clamp', type: 'func-dd', group: 'clamp', selection: 'min', label: t(FUNC_DROPDOWNS.clamp.label), info: t(FUNC_DROPDOWNS.clamp.desc) });
-    for (const name of ['pow', 'lerp', 'step', 'smoothstep', 'mod', 'random', 'rand']) {
+    for (const name of ['pow', 'step', 'smoothstep', 'mod', 'random', 'rand', 'hash', 'norm', 'phases']) {
       if (FUNC_BLOCKS[name]) items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name, info: funcInfo(name) });
     }
   } else if (g.id === 'vec') {
-    ['vec', 'cross', 'norm', 'polar', 'sphere', 'torus', 'dot', 'len'].forEach(name => {
+    ['vec', 'rotateX', 'rotateY', 'rotateZ', 'polar', 'sphere', 'torus'].forEach(name => {
       if (FUNC_BLOCKS[name]) items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name, info: funcInfo(name) });
     });
     items.push({ key: 'expr:comp', type: 'expr', template: { kind: 'comp', axis: 'x', target: null }, label: t('blk.comp'), info: t('blk.compDesc') });
   } else if (g.id === 'mat') {
     ['rotX', 'rotY', 'rotZ', 'rotAxis'].forEach(name => items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name, info: funcInfo(name) }));
+  } else if (g.id === 'color') {
+    ['color', 'red', 'green', 'blue', 'alpha', 'hue', 'saturation', 'value', 'rgb2hsv', 'hsv2rgb'].forEach(name => {
+      if (FUNC_BLOCKS[name]) items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name, info: funcInfo(name) });
+    });
   } else if (g.id === 'array') {
     items.push({ key: 'expr:array', type: 'expr', template: { kind: 'array' }, label: '[]', info: t('blk.arrayDesc') });
     items.push({ key: 'expr:index', type: 'expr', template: { kind: 'index' }, label: '[ ]', info: t('blk.indexDesc') });
     items.push({ key: 'dd:array', type: 'method-dd', selection: 'push', label: t('blk.dd.array'), info: t('blk.dd.array.desc') });
   } else if (g.id === 'var') {
     items.push({ key: 'stmt:set', type: 'stmt', kind: 'set', label: t(STMT_BLOCKS.set.label), info: t(STMT_BLOCKS.set.desc) });
+    items.push({ key: 'stmt:destructure', type: 'stmt', kind: 'destructure', label: t(STMT_BLOCKS.destructure.label), info: t(STMT_BLOCKS.destructure.desc) });
     items.push({ key: 'dd:context', type: 'ctx-dd', selection: 'this.time', label: t('blk.dd.context'), info: t('blk.dd.context.desc') });
     for (const name of availableVars()) items.push({ key: 'var:' + name, type: 'expr', template: { kind: 'var', name }, label: name, info: t('blk.var') });
   } else if (g.id === 'const') {

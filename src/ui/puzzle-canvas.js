@@ -686,6 +686,32 @@ function exprParts(node) {
       P.push({ text: ']' });
       P.push({ arrayAppend: { node } });
       break;
+    case 'lambda':
+      P.push({ text: '{ ' });
+      if (node.params && node.params.length) P.push({ text: node.params.join(', ') + ' -> ' });
+      P.push({ slot: { ref: slotRef(() => node.body, v => { node.body = v; }, T_ANY), type: T_ANY, label: '' } });
+      P.push({ text: ' }' });
+      break;
+    case 'obj':
+      P.push({ text: '{ ' });
+      node.entries.forEach((e, i) => {
+        if (i > 0) P.push({ text: ', ' });
+        P.push({ text: e.key + ': ' });
+        P.push({ slot: { ref: slotRef(() => e.value, v => { e.value = v; }, T_ANY), type: T_ANY, label: '' } });
+      });
+      P.push({ text: ' }' });
+      break;
+    case 'pipe':
+      P.push({ slot: { ref: slotRef(() => node.left, v => { node.left = v; }, T_ANY), type: T_ANY, label: '' } });
+      P.push({ text: ' |> ' });
+      P.push({ slot: { ref: slotRef(() => node.right, v => { node.right = v; }, T_ANY), type: T_ANY, label: '' } });
+      break;
+    case 'apply':
+      P.push({ slot: { ref: slotRef(() => node.target, v => { node.target = v; }, T_ANY), type: T_ANY, label: '' } });
+      P.push({ text: '.apply { ' });
+      P.push({ slot: { ref: slotRef(() => node.body, v => { node.body = v; }, T_ANY), type: T_ANY, label: '' } });
+      P.push({ text: ' }' });
+      break;
     default: P.push({ text: '?' });
   }
   return P;
@@ -758,7 +784,34 @@ function stmtParts(s) {
     ];
   }
   if (s.kind === 'spawn') {
-    return [{ text: t(STMT_BLOCKS.spawn.label) }];
+    return [
+      { text: t(STMT_BLOCKS.spawn.label) + ' ' },
+      { slot: { ref: slotRef(() => s.config, v => { s.config = v; }, T_ANY), type: T_ANY, label: '' } },
+    ];
+  }
+  if (s.kind === 'destructure') {
+    const P = [{ text: (s.decl === 'const' ? 'const ' : 'let ') + '{ ' }];
+    (s.names || []).forEach((n, i) => {
+      if (i > 0) P.push({ text: ', ' });
+      P.push({ text: n });
+    });
+    P.push({ text: ' } = ' });
+    P.push({ slot: { ref: slotRef(() => s.value, v => { s.value = v; }, T_ANY), type: T_ANY, label: '' } });
+    return P;
+  }
+  if (s.kind === 'repeat_fn') {
+    return [
+      { text: 'repeat(' },
+      { slot: { ref: slotRef(() => s.count, v => { s.count = v; }, T_ANY), type: T_ANY, label: '' } },
+      { text: ') { … }' },
+    ];
+  }
+  if (s.kind === 'when') {
+    return [
+      { text: 'when (' },
+      { slot: { ref: slotRef(() => s.subject, v => { s.subject = v; }, T_ANY), type: T_ANY, label: '' } },
+      { text: ') { … }' },
+    ];
   }
   const label = t(STMT_BLOCKS[s.kind].label) + ' ';
   const slotType = (s.kind === 'pos_vec' || s.kind === 'vel_vec') ? T_VEC : T_SCALAR;
