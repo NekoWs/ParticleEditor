@@ -222,6 +222,14 @@ function readDerivedVisual(p, T) {
 function writePointBuffers(full) {
   buildOpDeltaCache(state.time);
   buildGroupXforms(state.time);
+  const T = state.time;
+  // 先推进函数对象 tick/process：脚本可能 spawn/kill 粒子，改变 state.particles 数量，
+  // 必须在分配缓冲与遍历之前求值，否则 kill 后仍按旧数量遍历会读到 undefined。
+  for (const fx of state.functions) {
+    evaluateFxFrame(fx, T);
+  }
+  // 脚本可能在 tick/process 中 print：同步当前函数面板的终端显示（无新输出时内部跳过）。
+  refreshFxTerminal(getFunction(state.selectedFunction));
   const n = state.particles.length;
   if (!rpUV || rpUV.length !== n * 4) rpUV = new Float32Array(n * 4);
   if (!rpUVScale || rpUVScale.length !== n * 4) rpUVScale = new Float32Array(n * 4);
@@ -235,19 +243,12 @@ function writePointBuffers(full) {
   const mainGeo = ensurePointsGeometry(points, n);
   const positions = mainGeo.positions, colors = mainGeo.colors, sizes = mainGeo.sizes;
   rpPos = positions; rpCol = colors; rpSize = sizes;
-  const T = state.time;
   const hasAnyTexture = Object.keys(texAtlasMap).length > 0;
   const memberIdx = groupMemberIndexCache;
   const hasGroups = memberIdx.size > 0;
   const xforms = groupXformCache;
   const SZF = PARTICLE_SIZE_FACTOR;
   hasAnimatedTex = false; // 主循环顺带统计动画贴图粒子，避免额外整表扫描
-  // 先推进每个函数对象的 tick/process（脚本直接写粒子存储值）。
-  for (const fx of state.functions) {
-    evaluateFxFrame(fx, T);
-  }
-  // 脚本可能在 tick/process 中 print：同步当前函数面板的终端显示（无新输出时内部跳过）。
-  refreshFxTerminal(getFunction(state.selectedFunction));
   // UV 表达式求值复用的 this 上下文（仅对含表达式的粒子填写，避免每粒子分配）。
   const uvCtxOut = { pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0], scale: 1, glow: false, light: 0, life: -1 };
   const uvCtx = { i: 0, n, t: T, dt: 0, duration: maxMs(), life: -1, uv_x: 0, uv_y: 0, vars: {}, out: uvCtxOut };
