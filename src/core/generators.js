@@ -128,6 +128,86 @@ function newParticleWrapper(fx, runtime) {
   };
 }
 
+// this.spawn(config) 的可选配置字段与校验。config 是脚本层对象值 { t:'obj', fields }。
+const SPAWN_CONFIG_FIELDS = new Set(['position', 'color', 'velocity', 'scale', 'glow', 'light', 'life', 'uv']);
+
+function cfgNum(v, field) {
+  if (typeof v !== 'number') throw new Error(`spawn config '${field}' requires a num`);
+  return v;
+}
+function cfgVec(v, field, len) {
+  if (v && (v.t === 'vec2' || v.t === 'vec3' || v.t === 'vec4')) {
+    const c = v.t === 'vec2' ? [v.x, v.y] : v.t === 'vec3' ? [v.x, v.y, v.z] : [v.x, v.y, v.z, v.w];
+    if (c.length !== len) throw new Error(`spawn config '${field}' requires a vec${len}`);
+    return c;
+  }
+  if (Array.isArray(v)) {
+    if (v.length !== len) throw new Error(`spawn config '${field}' requires an array of ${len} numbers`);
+    return v.map((x, i) => {
+      if (typeof x !== 'number') throw new Error(`spawn config '${field}[${i}]' requires a num`);
+      return x;
+    });
+  }
+  throw new Error(`spawn config '${field}' requires a vec${len} or array of ${len} numbers`);
+}
+function cfgColor(v) {
+  if (v && v.t === 'color') return [v.r, v.g, v.b, v.a];
+  if (v && v.t === 'vec4') return [v.x, v.y, v.z, v.w];
+  if (v && v.t === 'vec3') return [v.x, v.y, v.z];
+  if (Array.isArray(v) && (v.length === 3 || v.length === 4)) {
+    return v.map((x, i) => {
+      if (typeof x !== 'number') throw new Error(`spawn config 'color[${i}]' requires a num`);
+      return x;
+    });
+  }
+  throw new Error("spawn config 'color' requires a color, vec3, vec4 or [r,g,b(,a)]");
+}
+
+function applySpawnConfig(w, config) {
+  if (config == null || config.t !== 'obj') {
+    throw new Error('this.spawn(config) requires an object');
+  }
+  for (const [key, v] of config.fields) {
+    if (!SPAWN_CONFIG_FIELDS.has(key)) throw new Error(`unknown spawn config field '${key}'`);
+    switch (key) {
+      case 'position': {
+        const c = cfgVec(v, 'position', 3);
+        w.pos[0] = c[0]; w.pos[1] = c[1]; w.pos[2] = c[2];
+        break;
+      }
+      case 'velocity': {
+        const c = cfgVec(v, 'velocity', 3);
+        w.vel[0] = c[0]; w.vel[1] = c[1]; w.vel[2] = c[2];
+        break;
+      }
+      case 'color': {
+        const c = cfgColor(v);
+        const clamp01 = (x) => Math.max(0, Math.min(1, x));
+        w.color[0] = clamp01(c[0]);
+        w.color[1] = clamp01(c[1]);
+        w.color[2] = clamp01(c[2]);
+        w.color[3] = c.length === 4 ? clamp01(c[3]) : 1;
+        break;
+      }
+      case 'scale': w.scale = cfgNum(v, 'scale'); break;
+      case 'glow': w.glow = (typeof v === 'boolean') ? v : cfgNum(v, 'glow') > 0.5; break;
+      case 'light': w.light = Math.max(0, Math.min(15, Math.round(cfgNum(v, 'light')))); break;
+      case 'life': {
+        const n = Math.round(cfgNum(v, 'life'));
+        w.life = Number.isFinite(n) ? (n < 0 ? -1 : n) : -1;
+        break;
+      }
+      case 'uv': {
+        const c = cfgVec(v, 'uv', 2);
+        if (!w.cf) w.cf = Object.create(null);
+        w.cf.uv = c;
+        break;
+      }
+      default: break;
+    }
+  }
+}
+
 function syncParticleState(p) {
   const w = p._w;
   if (!w) return;
@@ -158,8 +238,9 @@ function attachParticle(fx, w) {
   return p;
 }
 
-function spawnFor(fx, runtime) {
+function spawnFor(fx, runtime, config) {
   const w = newParticleWrapper(fx, runtime);
+  if (config != null) applySpawnConfig(w, config);
   runtime.particles.push(w);
   attachParticle(fx, w);
   return w;
@@ -226,7 +307,7 @@ function ensureRuntime(fx) {
     program,
   };
   fx._runtime = runtime;
-  const spawn = () => spawnFor(fx, runtime);
+  const spawn = (config) => spawnFor(fx, runtime, config);
   const setupEnv = {
     t: st,
     st,
@@ -253,7 +334,7 @@ function makeCtx(fx, runtime, T) {
     maxMs: maxMs(),
     vars: varsAt(fx, T),
     particles: runtime.particles,
-    spawn: () => spawnFor(fx, runtime),
+    spawn: (config) => spawnFor(fx, runtime, config),
     fastMath: !!fx.fastMath,
     print: line => fxTerminalPush(fx, line, 'info'),
   };
@@ -357,13 +438,14 @@ export function validateFunctionScript(fx, sourceOverride) {
   const st = fx.st || 0;
   const particles = [];
   let serial = 0;
-  const spawn = () => {
+  const spawn = (config) => {
     const w = {
       pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0],
       scale: 1, glow: false, light: 0, life: -1,
       index: serial++, cf: Object.create(null), alive: true, _spawnMs: st,
       kill() { this.alive = false; },
     };
+    if (config != null) applySpawnConfig(w, config);
     particles.push(w);
     return w;
   };

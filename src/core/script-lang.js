@@ -11,6 +11,16 @@
 import { FAST_MATH } from './fastmath.js';
 import { CTX_NAME, CONSTANTS, COMP_ALIAS, BUILTIN_FUNCTIONS, parseError } from './script/lexical.js';
 import { parseProgram, parseExpression } from './script/parser.js';
+import {
+  vec2, vec3, vec4, mat3, mat4,
+  isVec, isMat, vecDim, vecComps, mkVec,
+  rotateXVec3, rotateYVec3, rotateZVec3, translateVec3, scaleVec3,
+  VEC_METHODS,
+} from './script/vec.js';
+import {
+  color, isColor, colorComponent, colorWithComponent, colorFromVec, colorToVec4,
+  red, green, blue, alpha, hue, saturation, value, rgb2hsv, hsv2rgb,
+} from './script/color.js';
 export { parseProgram, parseExpression };
 
 // this 只读字段（setup/tick/process 通用）：
@@ -38,11 +48,6 @@ const EQ_TOLERANCE = 1e-6;          // 数组 find/includes/unique 相等容差
 
 // —— 值类型构造与判定 ——
 
-const vec2 = (x, y) => ({ t: 'vec2', x, y });
-const vec3 = (x, y, z) => ({ t: 'vec3', x, y, z });
-const vec4 = (x, y, z, w) => ({ t: 'vec4', x, y, z, w });
-const mat3 = (m) => ({ t: 'mat3', m });
-const mat4 = (m) => ({ t: 'mat4', m });
 // 粒子句柄 / 粒子列表。w 为宿主侧粒子存储对象。
 // 句柄对象按 w 缓存复用：process 的 for-of 每帧每粒子都会取一次句柄，
 // 逐次新建 {t:'particle',w} 会产生大量短命对象并拖累 GC。
@@ -51,23 +56,15 @@ const particleList = (list) => ({ t: 'particleList', list });
 
 const isNum = (v) => typeof v === 'number';
 const isBool = (v) => typeof v === 'boolean';
-const isVec = (v) => v != null && (v.t === 'vec2' || v.t === 'vec3' || v.t === 'vec4');
-const isMat = (v) => v != null && (v.t === 'mat3' || v.t === 'mat4');
 const isFunc = (v) => v != null && v.t === 'func';
+const isLambda = (v) => v != null && v.t === 'lambda';
+const isCallable = (v) => isFunc(v) || isLambda(v);
+const isObj = (v) => v != null && v.t === 'obj';
 const isParticle = (v) => v != null && v.t === 'particle';
 const isParticleList = (v) => v != null && v.t === 'particleList';
 
-const vecDim = (v) => (v.t === 'vec2' ? 2 : v.t === 'vec3' ? 3 : 4);
-const vecComps = (v) => {
-  if (v.t === 'vec2') return [v.x, v.y];
-  if (v.t === 'vec3') return [v.x, v.y, v.z];
-  return [v.x, v.y, v.z, v.w];
-};
-const mkVec = (dim, comps) => {
-  if (dim === 2) return vec2(comps[0], comps[1]);
-  if (dim === 3) return vec3(comps[0], comps[1], comps[2]);
-  return vec4(comps[0], comps[1], comps[2], comps[3]);
-};
+// 无参 lambda 调用时的内部哨兵：绑定为 it 的占位，访问时抛错。
+const IT_NOT_BOUND = Symbol('it-not-bound');
 
 function typeName(v) {
   if (v === undefined) return 'undefined';
@@ -76,7 +73,9 @@ function typeName(v) {
   if (typeof v === 'string') return 'string';
   if (Array.isArray(v)) return 'array';
   if (v == null) return 'null';
-  if (v.t === 'vec2' || v.t === 'vec3' || v.t === 'vec4' || v.t === 'mat3' || v.t === 'mat4' || v.t === 'func' || v.t === 'particle' || v.t === 'particleList') return v.t;
+  if (v.t === 'vec2' || v.t === 'vec3' || v.t === 'vec4' || v.t === 'mat3' || v.t === 'mat4' ||
+      v.t === 'func' || v.t === 'lambda' || v.t === 'obj' || v.t === 'color' ||
+      v.t === 'particle' || v.t === 'particleList') return v.t;
   return 'unknown';
 }
 
@@ -255,6 +254,9 @@ function eqExact(a, b) {
     }
     return true;
   }
+  if (isColor(a) && isColor(b)) {
+    return a.r === b.r && a.g === b.g && a.b === b.b && a.a === b.a;
+  }
   if (Array.isArray(a) && Array.isArray(b)) {
     if (a.length !== b.length) return false;
     for (let i = 0; i < a.length; i++) if (!eqExact(a[i], b[i])) return false;
@@ -293,9 +295,32 @@ function eqTol(a, b) {
     }
     return true;
   }
+  if (isColor(a) && isColor(b)) {
+    return Math.abs(a.r - b.r) <= EQ_TOLERANCE &&
+      Math.abs(a.g - b.g) <= EQ_TOLERANCE &&
+      Math.abs(a.b - b.b) <= EQ_TOLERANCE &&
+      Math.abs(a.a - b.a) <= EQ_TOLERANCE;
+  }
   if (Array.isArray(a) && Array.isArray(b)) {
     if (a.length !== b.length) return false;
     for (let i = 0; i < a.length; i++) if (!eqTol(a[i], b[i])) return false;
+    return true;
+  }
+  return false;
+}
+
+// when 的 case 匹配：数值/向量/矩阵/颜色分量按 1e-6 容差，布尔/字符串精确，数组递归。
+function whenEqual(a, b) {
+  if (a === undefined || b === undefined) return a === undefined && b === undefined;
+  if (isNum(a) && isNum(b)) return Math.abs(a - b) <= EQ_TOLERANCE;
+  if (isBool(a) && isBool(b)) return a === b;
+  if (typeof a === 'string' && typeof b === 'string') return a === b;
+  if (isVec(a) && isVec(b)) return eqTol(a, b);
+  if (isMat(a) && isMat(b)) return eqTol(a, b);
+  if (isColor(a) && isColor(b)) return eqTol(a, b);
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (!whenEqual(a[i], b[i])) return false;
     return true;
   }
   return false;
@@ -360,6 +385,8 @@ class Runtime {
     this.scopes = [];
     this.scopePool = [];
     this.constSets = [];
+    this.escapedScopes = new Set(); // 被闭包捕获的作用域，出栈时不归还池
+    this.receiverStack = [];        // apply 块的接收者粒子
     this.funcDepth = 0;
     this.inFunction = false;
 
@@ -381,7 +408,13 @@ class Runtime {
   popScope() {
     const s = this.scopes.pop();
     this.constSets.pop();
-    if (s && this.scopePool.length < 128) { s.clear(); this.scopePool.push(s); }
+    if (s && typeof s.clear === 'function' && !this.escapedScopes.has(s) && this.scopePool.length < 128) {
+      s.clear();
+      this.scopePool.push(s);
+    }
+  }
+  markCapturedScopes() {
+    for (const s of this.scopes) this.escapedScopes.add(s);
   }
   currentScope() { return this.scopes[this.scopes.length - 1]; }
   currentConstSet() { return this.constSets[this.constSets.length - 1]; }
@@ -401,7 +434,13 @@ class Runtime {
     // 1) 块级 / 函数局部作用域（由内向外）
     for (let i = this.scopes.length - 1; i >= 0; i--) {
       const s = this.scopes[i];
-      if (s.has(name)) return s.get(name);
+      if (s.has(name)) {
+        const v = s.get(name);
+        if (name === 'it' && v === IT_NOT_BOUND) {
+          throw runtimeError('it is not defined in a no-argument lambda call', node);
+        }
+        return v;
+      }
     }
     // 2) global（对象级）
     if (this.objState.globals.has(name)) return this.objState.globals.get(name);
@@ -464,6 +503,10 @@ class Runtime {
     }
     if (target.type === 'member') {
       if (target.object.type === 'var' && target.object.name === CTX_NAME) {
+        if (this.receiverStack.length > 0) {
+          particleSetField(this.receiverStack[this.receiverStack.length - 1], target.field, value, node);
+          return;
+        }
         throw runtimeError(`this.${target.field} is read-only`, node);
       }
       const obj = this.evalExpr(target.object);
@@ -471,10 +514,22 @@ class Runtime {
         particleSetField(obj, target.field, value, node);
         return;
       }
-      throw runtimeError(`only this / particle have fields '.${target.field}'`, node);
+      if (isObj(obj)) {
+        obj.fields.set(target.field, value);
+        return;
+      }
+      throw runtimeError(`only this / particle / objects have fields '.${target.field}'`, node);
     }
     if (target.type === 'index') {
       const arr = this.evalExpr(target.target);
+      if (isObj(arr)) {
+        const key = this.evalExpr(target.index);
+        if (typeof key !== 'string') {
+          throw runtimeError(`object index requires a string, got ${typeName(key)}`, node);
+        }
+        arr.fields.set(key, value);
+        return;
+      }
       if (!Array.isArray(arr)) throw runtimeError('indexed assignment target is not an array', node);
       const idx = this.evalExpr(target.index);
       const n = expectInt(idx, 'array index', node);
@@ -489,6 +544,16 @@ class Runtime {
       // particle 上 .x/.y/.z/.w/.r/.g/.b/.a 不是保留字段，按自定义字段存取（p.color.a 仍是颜色分量）。
       if (isParticle(v)) {
         particleSetField(v, target.comp, value, node);
+        return;
+      }
+      // obj 单字母键按字段写入。
+      if (isObj(v)) {
+        v.fields.set(target.comp, value);
+        return;
+      }
+      if (isColor(v)) {
+        const updated = colorCompWrite(v, target.comp, expectNum(value, 'component value', node), node);
+        this.assignTarget(target.target, updated, node);
         return;
       }
       if (!isVec(v)) throw runtimeError('component assignment target is not a vector', node);
@@ -526,6 +591,14 @@ class Runtime {
       }
       case 'declare': {
         this.execDeclare(node);
+        return;
+      }
+      case 'destructure': {
+        this.execDestructure(node);
+        return;
+      }
+      case 'whenstmt': {
+        this.execWhenStmt(node);
         return;
       }
       case 'forof': return this.execForOf(node);
@@ -574,6 +647,31 @@ class Runtime {
       this.currentScope().set(d.name, v);
       if (node.kind === 'const') this.markConst(d.name);
     }
+  }
+
+  execDestructure(node) {
+    const v = this.evalExpr(node.value);
+    if (!isObj(v)) {
+      throw runtimeError(`object destructuring requires an object, got ${typeName(v)}`, node);
+    }
+    for (const name of node.names) {
+      if (this.currentScope().has(name)) {
+        throw runtimeError(`duplicate declaration '${name}'`, node);
+      }
+      this.currentScope().set(name, v.fields.get(name));
+      if (node.kind === 'const') this.markConst(name);
+    }
+  }
+
+  execWhenStmt(node) {
+    const subject = this.evalExpr(node.subject);
+    for (const c of node.cases) {
+      if (whenEqual(subject, this.evalExpr(c.label), c.label)) {
+        this.execStmt(c.body);
+        return;
+      }
+    }
+    if (node.els) this.execStmt(node.els);
   }
 
   execWhile(node) {
@@ -697,6 +795,11 @@ class Runtime {
       case 'member': return this.evalMember(node);
       case 'call': return this.evalCall(node);
       case 'method': return this.evalMethod(node);
+      case 'lambda': return this.evalLambda(node);
+      case 'obj': return this.evalObj(node);
+      case 'whenexpr': return this.evalWhenExpr(node);
+      case 'pipe': return this.evalPipe(node);
+      case 'apply': return this.evalApply(node);
       case 'preinc': {
         const old = this.evalLValue(node.target);
         const nv = incDecValue(old, node.op, node);
@@ -759,6 +862,13 @@ class Runtime {
 
   evalIndex(node) {
     const target = this.evalExpr(node.target);
+    if (isObj(target)) {
+      const key = this.evalExpr(node.index);
+      if (typeof key !== 'string') {
+        throw runtimeError(`object index requires a string, got ${typeName(key)}`, node);
+      }
+      return target.fields.get(key);
+    }
     const idx = this.evalExpr(node.index);
     const n = expectInt(idx, 'index', node);
     if (isParticleList(target)) {
@@ -768,7 +878,7 @@ class Runtime {
       return particleValue(target.list[n]);
     }
     if (!Array.isArray(target)) {
-      throw runtimeError(`index access requires an array or particle list, got ${typeName(target)}`, node);
+      throw runtimeError(`index access requires an array, particle list or object, got ${typeName(target)}`, node);
     }
     if (n < 0 || n >= target.length) {
       throw runtimeError(`array index ${n} out of bounds (size ${target.length})`, node);
@@ -780,8 +890,11 @@ class Runtime {
     const target = this.evalExpr(node.target);
     // particle 上 .x/.y/.z/.w/.r/.g/.b/.a 不是保留字段，按自定义字段读取。
     if (isParticle(target)) return particleGetField(target, node.comp, node);
+    // obj 的单字母键（a/b/x...）与分量访问同名，按字段读取。
+    if (isObj(target)) return target.fields.get(node.comp);
+    if (isColor(target)) return colorCompRead(target, node.comp, node);
     if (!isVec(target)) {
-      throw runtimeError(`component access requires a vector, got ${typeName(target)}`, node);
+      throw runtimeError(`component access requires a vector or color, got ${typeName(target)}`, node);
     }
     const comp = COMP_ALIAS[node.comp];
     if ((target.t === 'vec2' && (comp === 'z' || comp === 'w')) ||
@@ -794,11 +907,15 @@ class Runtime {
   evalMember(node) {
     const field = node.field;
     if (node.object.type === 'var' && node.object.name === CTX_NAME) {
+      if (this.receiverStack.length > 0) {
+        return particleGetField(this.receiverStack[this.receiverStack.length - 1], field, node);
+      }
       return ctxRead(field, this, node);
     }
     const obj = this.evalExpr(node.object);
     if (isParticle(obj)) return particleGetField(obj, field, node);
-    throw runtimeError(`only this / particle have fields '.${field}'`, node);
+    if (isObj(obj)) return obj.fields.get(field);
+    throw runtimeError(`only this / particle / objects have fields '.${field}'`, node);
   }
 
   // 读取可赋值目标（++/-- 用）
@@ -811,9 +928,12 @@ class Runtime {
   }
 
   evalCall(node) {
-    const callee = node.callee;
     const args = node.args.map((a) => this.evalExpr(a));
+    return this.callCallee(node.callee, args, node);
+  }
 
+  // 求值并调用一个 callable（内建 / 用户函数 / lambda 值）。
+  callCallee(callee, args, node) {
     if (callee.type === 'var') {
       const name = callee.name;
       if (BUILTIN_FUNCTIONS.has(name)) {
@@ -823,43 +943,200 @@ class Runtime {
         return this.callUserFunc(this.program.functions.get(name), args, node);
       }
     }
-
     const fn = this.evalExpr(callee);
+    return this.callValue(fn, args, node);
+  }
+
+  callValue(fn, args, node) {
     if (isFunc(fn)) return this.callUserFunc(this.program.functions.get(fn.name), args, node);
+    if (isLambda(fn)) return this.callLambda(fn, args, node);
     throw runtimeError(`value of type ${typeName(fn)} is not callable`, node);
   }
 
   evalMethod(node) {
-    // this.spawn()
+    // this.spawn(config)
     if (node.object.type === 'var' && node.object.name === CTX_NAME && node.method === 'spawn') {
       const fx = fxRuntime(this);
       if (!fx || typeof fx.spawn !== 'function') {
         throw runtimeError('this.spawn is not available here', node);
       }
-      const w = fx.spawn();
+      if (node.args.length > 1) {
+        throw runtimeError('this.spawn expects at most 1 argument', node);
+      }
+      const args = node.args.map((a) => this.evalExpr(a));
+      const w = fx.spawn(args.length === 1 ? args[0] : undefined);
       if (!w) throw runtimeError('spawn failed', node);
       return particleValue(w);
     }
 
     const obj = this.evalExpr(node.object);
     const args = node.args.map((a) => this.evalExpr(a));
+    return this.callMethod(obj, node.method, args, node);
+  }
 
+  callMethod(obj, method, args, node) {
     if (isParticle(obj)) {
-      if (node.method === 'kill') {
+      if (method === 'kill') {
         if (args.length !== 0) throw runtimeError("'kill' takes no arguments", node);
         particleKill(obj, node);
         return 0;
       }
-      throw runtimeError(`particle has no method '.${node.method}()'`, node);
+      throw runtimeError(`particle has no method '.${method}()'`, node);
     }
     if (isParticleList(obj)) {
-      if (node.method === 'size') return obj.list.length;
-      throw runtimeError(`particle list has no method '.${node.method}()'`, node);
+      if (method === 'size') return obj.list.length;
+      throw runtimeError(`particle list has no method '.${method}()'`, node);
+    }
+    if (isVec(obj)) return callVecMethod(obj, method, args, node);
+    if (isObj(obj)) {
+      throw runtimeError(`objects have no method '.${method}()'`, node);
     }
     if (!Array.isArray(obj)) {
-      throw runtimeError(`method '.${node.method}()' requires an array, particle or particle list, got ${typeName(obj)}`, node);
+      throw runtimeError(`method '.${method}()' requires an array, particle, particle list or vector, got ${typeName(obj)}`, node);
     }
-    return applyArrayMethod(obj, node.method, args, this, node);
+    return applyArrayMethod(obj, method, args, this, node);
+  }
+
+  evalLambda(node) {
+    // 捕获当前作用域链（按引用），供调用时安装。
+    this.markCapturedScopes();
+    return {
+      t: 'lambda',
+      params: node.params.slice(),
+      body: node.body,
+      closure: this.scopes.slice(),
+      closureConsts: this.constSets.slice(),
+    };
+  }
+
+  evalObj(node) {
+    const fields = new Map();
+    for (const [k, exprNode] of node.fields) fields.set(k, this.evalExpr(exprNode));
+    return { t: 'obj', fields };
+  }
+
+  evalWhenExpr(node) {
+    const subject = this.evalExpr(node.subject);
+    for (const c of node.cases) {
+      if (whenEqual(subject, this.evalExpr(c.label), c.label)) return this.evalExpr(c.expr);
+    }
+    if (node.els) return this.evalExpr(node.els);
+    throw runtimeError('when expression has no matching case and no else', node);
+  }
+
+  evalPipe(node) {
+    const left = this.evalExpr(node.left);
+    const right = node.right;
+    if (right.type === 'call') {
+      const args = [left];
+      for (const a of right.args) args.push(this.evalExpr(a));
+      return this.callCallee(right.callee, args, node);
+    }
+    // method：obj.m(left, ...args)
+    const obj = this.evalExpr(right.object);
+    const args = [left];
+    for (const a of right.args) args.push(this.evalExpr(a));
+    return this.callMethod(obj, right.method, args, node);
+  }
+
+  evalApply(node) {
+    const pv = this.evalExpr(node.target);
+    if (!isParticle(pv)) {
+      throw runtimeError(`'apply' requires a particle, got ${typeName(pv)}`, node);
+    }
+    const fn = this.evalLambda(node.body);
+    return this.callLambdaReceiver(fn, pv, node);
+  }
+
+  // 调用带接收者的 lambda：this=粒子，裸名优先解析为粒子字段。返回接收者粒子。
+  callLambdaReceiver(fn, pv, node) {
+    if (this.funcDepth >= MAX_RECURSION_DEPTH) {
+      throw runtimeError(`maximum recursion depth (${MAX_RECURSION_DEPTH}) exceeded`, node);
+    }
+    this.funcDepth++;
+    const prevInFunction = this.inFunction;
+    this.inFunction = true;
+    const savedScopes = this.scopes;
+    const savedConsts = this.constSets;
+
+    this.scopes = fn.closure.slice();
+    this.constSets = fn.closureConsts.slice();
+    this.pushScope(new ParticleScope(pv));
+    this.pushScope(new Map());
+    this.receiverStack.push(pv);
+    try {
+      this.execLambdaBody(fn.body);
+    } catch (f) {
+      if (!(f instanceof Flow && f.kind === 'return')) throw f;
+    } finally {
+      this.receiverStack.pop();
+      this.popScope(); // 参数作用域
+      this.popScope(); // 接收者作用域
+      this.scopes = savedScopes;
+      this.constSets = savedConsts;
+      this.inFunction = prevInFunction;
+      this.funcDepth--;
+    }
+    return pv;
+  }
+
+  callLambda(fn, args, node) {
+    if (fn.params.length === 0 && args.length >= 2) {
+      throw runtimeError(`lambda with no parameter list accepts at most 1 argument, got ${args.length}`, node);
+    }
+    if (this.funcDepth >= MAX_RECURSION_DEPTH) {
+      throw runtimeError(`maximum recursion depth (${MAX_RECURSION_DEPTH}) exceeded`, node);
+    }
+    this.funcDepth++;
+    const prevInFunction = this.inFunction;
+    this.inFunction = true;
+    const savedScopes = this.scopes;
+    const savedConsts = this.constSets;
+
+    this.scopes = fn.closure.slice();
+    this.constSets = fn.closureConsts.slice();
+    this.pushScope(new Map());
+    if (fn.params.length === 0) {
+      if (args.length === 0) this.currentScope().set('it', IT_NOT_BOUND);
+      else this.currentScope().set('it', args[0]);
+    } else {
+      for (let i = 0; i < fn.params.length; i++) {
+        this.currentScope().set(fn.params[i], i < args.length ? args[i] : undefined);
+      }
+    }
+
+    let result = undefined;
+    try {
+      result = this.execLambdaBody(fn.body);
+    } catch (f) {
+      if (f instanceof Flow && f.kind === 'return') result = f.value;
+      else throw f;
+    } finally {
+      this.popScope();
+      this.scopes = savedScopes;
+      this.constSets = savedConsts;
+      this.inFunction = prevInFunction;
+      this.funcDepth--;
+    }
+    return result;
+  }
+
+  // 执行 lambda 块体；值是最后一条表达式的值，return 由调用方捕获。
+  execLambdaBody(body) {
+    this.pushScope(new Map());
+    let result = undefined;
+    try {
+      for (const st of body.body) {
+        if (st.type === 'expr') result = this.evalExpr(st.expr);
+        else {
+          this.execStmt(st);
+          result = undefined;
+        }
+      }
+    } finally {
+      this.popScope();
+    }
+    return result;
   }
 
   callUserFunc(fn, args, node) {
@@ -975,6 +1252,13 @@ function vecFieldValues(value, len, what, node) {
 }
 
 function writeParticleColor(w, value, node) {
+  if (isColor(value)) {
+    w.color[0] = clamp01(value.r);
+    w.color[1] = clamp01(value.g);
+    w.color[2] = clamp01(value.b);
+    w.color[3] = clamp01(value.a);
+    return;
+  }
   if (isVec(value)) {
     if (value.t === 'vec3') {
       w.color[0] = clamp01(value.x);
@@ -1004,14 +1288,14 @@ function writeParticleColor(w, value, node) {
       return;
     }
   }
-  throw runtimeError(`particle.color requires a vec3, vec4, [r,g,b] or [r,g,b,a], got ${typeName(value)}`, node);
+  throw runtimeError(`particle.color requires a color, vec3, vec4, [r,g,b] or [r,g,b,a], got ${typeName(value)}`, node);
 }
 
 function particleGetField(pv, field, node) {
   const w = pv.w;
   switch (field) {
     case 'position': return vec3(w.pos[0], w.pos[1], w.pos[2]);
-    case 'color': return vec4(w.color[0], w.color[1], w.color[2], w.color[3]);
+    case 'color': return color(w.color[0], w.color[1], w.color[2], w.color[3]);
     case 'velocity': return vec3(w.vel[0], w.vel[1], w.vel[2]);
     case 'scale': return w.scale;
     case 'glow': return w.glow;
@@ -1072,6 +1356,36 @@ function particleKill(pv, node) {
   const w = pv.w;
   if (typeof w.kill === 'function') w.kill();
   else w.alive = false;
+}
+
+// apply 块的接收者作用域：裸名按粒子字段读写，粒子无该字段时回退外层作用域。
+const PARTICLE_FIELDS = new Set(['position', 'color', 'velocity', 'scale', 'glow', 'light', 'life', 'index']);
+
+function particleHasField(pv, name) {
+  if (PARTICLE_FIELDS.has(name)) return true;
+  const cf = pv.w.cf;
+  return !!(cf && (name in cf));
+}
+
+class ParticleScope {
+  constructor(pv) { this.pv = pv; }
+  has(name) { return particleHasField(this.pv, name); }
+  get(name) { return particleGetField(this.pv, name, null); }
+  set(name, value) { particleSetField(this.pv, name, value, null); }
+}
+
+function colorCompRead(c, comp, node) {
+  try { return colorComponent(c, comp); } catch (e) { throw runtimeError(e.message, node); }
+}
+
+function colorCompWrite(c, comp, value, node) {
+  try { return colorWithComponent(c, comp, value); } catch (e) { throw runtimeError(e.message, node); }
+}
+
+function callVecMethod(v, method, args, node) {
+  const impl = VEC_METHODS[method];
+  if (!impl) throw runtimeError(`vector has no method '.${method}()'`, node);
+  try { return impl(v, args); } catch (e) { throw runtimeError(e.message, node); }
 }
 
 function setVecComp(v, comp, value) {
@@ -1299,13 +1613,11 @@ function arraySort(arr, cmpVal, rt, node) {
     arr.sort((a, b) => defaultCompare(a, b, node));
     return arr;
   }
-  if (!isFunc(cmpVal)) {
+  if (!isCallable(cmpVal)) {
     throw runtimeError(`sort comparator must be a function, got ${typeName(cmpVal)}`, node);
   }
-  const fn = rt.program.functions.get(cmpVal.name);
-  if (!fn) throw runtimeError(`comparator function '${cmpVal.name}' not found`, node);
   arr.sort((a, b) => {
-    const res = rt.callUserFunc(fn, [a, b], node);
+    const res = rt.callValue(cmpVal, [a, b], node);
     if (!isNum(res)) throw runtimeError('comparator function must return a num', node);
     return res;
   });
@@ -1484,7 +1796,14 @@ const BUILTIN_TABLE = new Map([
     }
     return mat3FromRows(r0, r1, r2);
   }),
-  builtin('translate', 1, 1, (args, rt, node) => {
+  // translate：1 参 → 平移 mat4；4 参 → vec3 平移。
+  builtin('translate', 1, 4, (args, rt, node) => {
+    if (args.length === 4) {
+      try {
+        return translateVec3(args[0], args[1], args[2], args[3]);
+      } catch (e) { throw runtimeError(e.message, node); }
+    }
+    if (args.length !== 1) throw runtimeError('translate expects 1 or 4 arguments', node);
     const v = expectVec(args[0], 'translate', node);
     if (vecDim(v) !== 3) throw runtimeError('translate requires a vec3', node);
     return mat4([
@@ -1494,7 +1813,13 @@ const BUILTIN_TABLE = new Map([
       [0, 0, 0, 1],
     ]);
   }),
+  // scale：1/3 参 → 缩放 mat4；2 参 → vec3 缩放。
   builtin('scale', 1, 3, (args, rt, node) => {
+    if (args.length === 2) {
+      try {
+        return scaleVec3(args[0], args[1]);
+      } catch (e) { throw runtimeError(e.message, node); }
+    }
     let sx, sy, sz;
     if (args.length === 1) {
       const a = args[0];
@@ -1503,12 +1828,10 @@ const BUILTIN_TABLE = new Map([
         const c = vecComps(a);
         sx = c[0]; sy = c[1]; sz = a.t === 'vec3' ? c[2] : 1;
       } else throw runtimeError(`scale not supported for ${typeName(a)}`, node);
-    } else if (args.length === 3) {
+    } else {
       sx = expectNum(args[0], 'scale', node);
       sy = expectNum(args[1], 'scale', node);
       sz = expectNum(args[2], 'scale', node);
-    } else {
-      sx = sy = sz = 1;
     }
     return mat4([
       [sx, 0, 0, 0],
@@ -1540,67 +1863,24 @@ const BUILTIN_TABLE = new Map([
     return mat3Rodrigues(axis, a);
   }),
 
-  // —— 向量 ——
-  builtin('dot', 2, 2, (args, rt, node) => {
-    const a = expectVec(args[0], 'dot', node);
-    const b = expectVec(args[1], 'dot', node);
-    sameDimVec(a, b, node);
-    const ca = vecComps(a), cb = vecComps(b);
-    let s = 0;
-    for (let i = 0; i < ca.length; i++) s += ca[i] * cb[i];
-    return s;
+  // —— 向量变换（vec3→vec3）与标量工具 ——
+  builtin('rotateX', 2, 2, (args, rt, node) => {
+    try { return rotateXVec3(args[0], expectNum(args[1], 'rotateX', node)); }
+    catch (e) { throw runtimeError(e.message, node); }
   }),
-  builtin('cross', 2, 2, (args, rt, node) => {
-    const a = expectVec(args[0], 'cross', node);
-    const b = expectVec(args[1], 'cross', node);
-    if (vecDim(a) !== 3 || vecDim(b) !== 3) throw runtimeError('cross requires vec3 operands', node);
-    return vec3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+  builtin('rotateY', 2, 2, (args, rt, node) => {
+    try { return rotateYVec3(args[0], expectNum(args[1], 'rotateY', node)); }
+    catch (e) { throw runtimeError(e.message, node); }
   }),
-  builtin('len', 1, 1, (args, rt, node) => {
-    const v = args[0];
-    if (Array.isArray(v)) return v.length;
-    expectVec(v, 'len', node);
-    return Math.sqrt(dotSelf(v));
+  builtin('rotateZ', 2, 2, (args, rt, node) => {
+    try { return rotateZVec3(args[0], expectNum(args[1], 'rotateZ', node)); }
+    catch (e) { throw runtimeError(e.message, node); }
   }),
-  builtin('len2', 1, 1, (args, rt, node) => dotSelf(expectVec(args[0], 'len2', node))),
-  builtin('norm', 1, 1, (args, rt, node) => normVecOrZero(expectVec(args[0], 'norm', node))),
-  builtin('lerp', 3, 3, (args, rt, node) => lerpImpl(args[0], args[1], args[2], node)),
-  builtin('mix', 3, 3, (args, rt, node) => lerpImpl(args[0], args[1], args[2], node)),
-  builtin('distance', 2, 2, (args, rt, node) => {
-    const a = expectVec(args[0], 'distance', node);
-    const b = expectVec(args[1], 'distance', node);
-    sameDimVec(a, b, node);
-    const ca = vecComps(a), cb = vecComps(b);
-    let s = 0;
-    for (let i = 0; i < ca.length; i++) s += (ca[i] - cb[i]) ** 2;
-    return Math.sqrt(s);
-  }),
-  builtin('angle_between', 2, 2, (args, rt, node) => {
-    const a = expectVec(args[0], 'angle_between', node);
-    const b = expectVec(args[1], 'angle_between', node);
-    sameDimVec(a, b, node);
-    const na = normVecOrZero(a);
-    const nb = normVecOrZero(b);
-    const d = dotComps(na, nb);
-    return Math.acos(clampNum(d, -1, 1));
-  }),
-  builtin('project', 2, 2, (args, rt, node) => {
-    const a = expectVec(args[0], 'project', node);
-    const b = expectVec(args[1], 'project', node);
-    sameDimVec(a, b, node);
-    const bb = dotSelf(b);
-    if (bb === 0) throw runtimeError('project onto zero-length vector', node);
-    const s = dotComps(a, b) / bb;
-    return mkVec(vecDim(b), vecComps(b).map((x) => x * s));
-  }),
-  builtin('reflect', 2, 2, (args, rt, node) => {
-    const v = expectVec(args[0], 'reflect', node);
-    const n = expectVec(args[1], 'reflect', node);
-    sameDimVec(v, n, node);
-    const d = dotComps(v, n);
-    const c = vecComps(n).map((x) => 2 * d * x);
-    const cv = vecComps(v);
-    return mkVec(vecDim(v), cv.map((x, i) => x - c[i]));
+  builtin('norm', 2, 2, (args, rt, node) => {
+    const a = expectInt(args[0], 'norm', node);
+    const b = expectInt(args[1], 'norm', node);
+    if (a < 0 || b < 0) throw runtimeError('norm requires non-negative integers', node);
+    return a / Math.max(b - 1, 1);
   }),
 
   // —— 数学与钳制 ——
@@ -1714,6 +1994,80 @@ const BUILTIN_TABLE = new Map([
   }),
   builtin('random', 0, 0, (args, rt, node) => Math.random()),
 
+  // —— 哈希 / 阶段 / 集合辅助 ——
+  builtin('hash', 2, 2, (args, rt, node) => {
+    const seed = expectInt(args[0], 'hash seed', node);
+    const salt = expectInt(args[1], 'hash salt', node);
+    let x = ((seed ^ salt) + 0x9e3779b9) | 0;
+    x = Math.imul(x ^ (x >>> 16), 0x85ebca6b) | 0;
+    x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35) | 0;
+    x = x ^ (x >>> 16);
+    return ((x >>> 0) & 0x7fffffff) / 2147483648.0;
+  }),
+  builtin('phases', 2, 2, (args, rt, node) => {
+    const t = expectNum(args[0], 'phases', node);
+    const src = args[1];
+    if (!isObj(src)) throw runtimeError(`phases requires an object, got ${typeName(src)}`, node);
+    const out = new Map();
+    for (const [k, range] of src.fields) {
+      if (!Array.isArray(range) || range.length !== 2) {
+        throw runtimeError(`phases key '${k}' requires a [a,b] array`, node);
+      }
+      const a = expectNum(range[0], `phases '${k}' range[0]`, node);
+      const b = expectNum(range[1], `phases '${k}' range[1]`, node);
+      const tt = clampNum((t - a) / (b - a), 0, 1);
+      out.set(k, tt * tt * (3 - 2 * tt));
+    }
+    return { t: 'obj', fields: out };
+  }),
+  builtin('repeat', 2, 2, (args, rt, node) => {
+    const n = Math.trunc(expectNum(args[0], 'repeat count', node));
+    const fn = args[1];
+    if (!isCallable(fn)) throw runtimeError(`repeat requires a function, got ${typeName(fn)}`, node);
+    for (let i = 0; i < n; i++) {
+      if (i >= MAX_LOOP_ITERATIONS) {
+        throw runtimeError(`loop iteration limit (${MAX_LOOP_ITERATIONS}) exceeded`, node);
+      }
+      rt.callValue(fn, [i], node);
+    }
+    return 0;
+  }),
+
+  // —— 颜色 ——
+  builtin('color', 4, 4, (args, rt, node) => color(
+    expectNum(args[0], 'color', node),
+    expectNum(args[1], 'color', node),
+    expectNum(args[2], 'color', node),
+    expectNum(args[3], 'color', node),
+  )),
+  builtin('red', 2, 2, (args, rt, node) => {
+    try { return red(args[0], expectNum(args[1], 'red', node)); } catch (e) { throw runtimeError(e.message, node); }
+  }),
+  builtin('green', 2, 2, (args, rt, node) => {
+    try { return green(args[0], expectNum(args[1], 'green', node)); } catch (e) { throw runtimeError(e.message, node); }
+  }),
+  builtin('blue', 2, 2, (args, rt, node) => {
+    try { return blue(args[0], expectNum(args[1], 'blue', node)); } catch (e) { throw runtimeError(e.message, node); }
+  }),
+  builtin('alpha', 2, 2, (args, rt, node) => {
+    try { return alpha(args[0], expectNum(args[1], 'alpha', node)); } catch (e) { throw runtimeError(e.message, node); }
+  }),
+  builtin('hue', 2, 2, (args, rt, node) => {
+    try { return hue(args[0], expectNum(args[1], 'hue', node)); } catch (e) { throw runtimeError(e.message, node); }
+  }),
+  builtin('saturation', 2, 2, (args, rt, node) => {
+    try { return saturation(args[0], expectNum(args[1], 'saturation', node)); } catch (e) { throw runtimeError(e.message, node); }
+  }),
+  builtin('value', 2, 2, (args, rt, node) => {
+    try { return value(args[0], expectNum(args[1], 'value', node)); } catch (e) { throw runtimeError(e.message, node); }
+  }),
+  builtin('rgb2hsv', 1, 1, (args, rt, node) => {
+    try { return rgb2hsv(args[0]); } catch (e) { throw runtimeError(e.message, node); }
+  }),
+  builtin('hsv2rgb', 1, 3, (args, rt, node) => {
+    try { return hsv2rgb(...args); } catch (e) { throw runtimeError(e.message, node); }
+  }),
+
   // —— 缓动 ——
   builtin('ease_linear', 3, 3, (args, rt, node) => {
     const a = expectNum(args[0], 'ease_linear', node);
@@ -1758,6 +2112,30 @@ const BUILTIN_TABLE = new Map([
     return arraySort(arr, args.length >= 2 ? args[1] : undefined, rt, node);
   }),
 ]);
+
+// 内建函数归类。默认全部可见，本轮无 import 语法。
+const BUILTIN_PKG = {
+  print: 'debug', assert: 'debug',
+  vec2: 'vec', vec3: 'vec', vec4: 'vec', vec: 'vec', mat3: 'vec',
+  translate: 'vec', scale: 'vec', rotate: 'vec', lookAt: 'vec',
+  rotX: 'vec', rotY: 'vec', rotZ: 'vec', rotAxis: 'vec',
+  rotateX: 'vec', rotateY: 'vec', rotateZ: 'vec',
+  norm: 'math',
+  clamp: 'math', map_range: 'math', remap: 'math', int: 'math', float: 'math', bool: 'math',
+  sin: 'math', cos: 'math', tan: 'math', asin: 'math', acos: 'math', atan: 'math', atan2: 'math',
+  sqrt: 'math', abs: 'math', sign: 'math', exp: 'math', log: 'math', ln: 'math',
+  floor: 'math', ceil: 'math', round: 'math', fract: 'math', pow: 'math', min: 'math', max: 'math',
+  step: 'math', smoothstep: 'math', mod: 'math',
+  hash: 'math',
+  noise: 'noise', fbm: 'noise', rand: 'noise', random: 'noise',
+  ease_linear: 'ease', ease_in_out: 'ease', ease_out_back: 'ease', ease_in_elastic: 'ease',
+  phases: 'collection', repeat: 'collection', unique: 'collection', reverse: 'collection', sort: 'collection',
+  color: 'color', red: 'color', green: 'color', blue: 'color', alpha: 'color',
+  hue: 'color', saturation: 'color', value: 'color', rgb2hsv: 'color', hsv2rgb: 'color',
+};
+for (const [name, entry] of BUILTIN_TABLE) {
+  entry.pkg = BUILTIN_PKG[name] || 'math';
+}
 
 function callBuiltin(name, args, rt, node) {
   const entry = BUILTIN_TABLE.get(name);
@@ -1870,6 +2248,13 @@ function formatValue(v) {
   }
   if (Array.isArray(v)) return `[${v.map(formatValue).join(', ')}]`;
   if (isFunc(v)) return `func ${v.name}`;
+  if (isLambda(v)) return `lambda(${v.params.join(', ')})`;
+  if (isColor(v)) return `color(${v.r}, ${v.g}, ${v.b}, ${v.a})`;
+  if (isObj(v)) {
+    const parts = [];
+    for (const [k, val] of v.fields) parts.push(`${k}: ${formatValue(val)}`);
+    return `{${parts.join(', ')}}`;
+  }
   return String(v);
 }
 
@@ -1917,10 +2302,10 @@ const METHOD_BY_CODE = METHOD_NAMES;
 const COMP_CODE = { x: 0, y: 1, z: 2, w: 3, r: 4, g: 5, b: 6, a: 7 };
 const COMP_BY_CODE = ['x', 'y', 'z', 'w', 'r', 'g', 'b', 'a'];
 
-// 可安全提升为 uniform 的纯内建（无 PRNG/随机、无数组变异）。
+// 可安全提升为 uniform 的纯内建（无 PRNG/随机、无数组变异、无回调）。
 const PURE_BUILTINS = new Set();
 for (const name of BUILTIN_TABLE.keys()) {
-  if (!['rand', 'random', 'print', 'assert', 'unique', 'reverse', 'sort'].includes(name)) {
+  if (!['rand', 'random', 'print', 'assert', 'unique', 'reverse', 'sort', 'repeat'].includes(name)) {
     PURE_BUILTINS.add(name);
   }
 }
@@ -2129,6 +2514,12 @@ class Compiler {
         this.emit3(OP.METHOD, this.internName(node.method), node.args.length, node);
         return;
       }
+      case 'lambda':
+      case 'obj':
+      case 'whenexpr':
+      case 'pipe':
+      case 'apply':
+        throw new Error(`bytecode: unsupported ${node.type}`);
       default:
         throw parseError(`cannot compile expression type '${node.type}'`, node.line, node.col);
     }
@@ -2405,6 +2796,9 @@ class Compiler {
         this.compileAssign(st);
         this.emit1(OP.POP, st);
         return;
+      case 'whenstmt':
+      case 'destructure':
+        throw new Error(`bytecode: unsupported ${st.type}`);
       default:
         throw parseError(`cannot compile statement type '${st.type}'`, st.line, st.col);
     }
@@ -3012,6 +3406,8 @@ class Vm {
     rt.statics = statics;
     rt.ctx = ctx;
     rt.scopes.length = 0;
+    rt.constSets.length = 0;
+    rt.receiverStack.length = 0;
     rt.funcDepth = 0;
     rt.inFunction = false;
     this.topScope.clear();
@@ -3119,6 +3515,11 @@ class Vm {
         case OP.INDEX: {
           const idx = stack.pop();
           const arr = stack.pop();
+          if (isObj(arr)) {
+            if (typeof idx !== 'string') throw runtimeError(`object index requires a string, got ${typeName(idx)}`, node);
+            stack.push(arr.fields.get(idx));
+            break;
+          }
           const n = expectInt(idx, 'index', node);
           if (isParticleList(arr)) {
             if (n < 0 || n >= arr.list.length) {
@@ -3127,7 +3528,7 @@ class Vm {
             stack.push(particleValue(arr.list[n]));
             break;
           }
-          if (!Array.isArray(arr)) throw runtimeError(`index access requires an array or particle list, got ${typeName(arr)}`, node);
+          if (!Array.isArray(arr)) throw runtimeError(`index access requires an array, particle list or object, got ${typeName(arr)}`, node);
           if (n < 0 || n >= arr.length) throw runtimeError(`array index ${n} out of bounds (size ${arr.length})`, node);
           stack.push(arr[n]);
           break;
@@ -3136,6 +3537,12 @@ class Vm {
           const idx = stack.pop();
           const arr = stack.pop();
           const value = stack.pop();
+          if (isObj(arr)) {
+            if (typeof idx !== 'string') throw runtimeError(`object index requires a string, got ${typeName(idx)}`, node);
+            arr.fields.set(idx, value);
+            stack.push(value);
+            break;
+          }
           if (!Array.isArray(arr)) throw runtimeError('indexed assignment target is not an array', node);
           const n = expectInt(idx, 'array index', node);
           if (n < 0 || n >= arr.length) throw runtimeError(`array index ${n} out of bounds (size ${arr.length})`, node);
@@ -3151,8 +3558,16 @@ class Vm {
             stack.push(particleGetField(v, raw, node));
             break;
           }
+          if (isObj(v)) {
+            stack.push(v.fields.get(raw));
+            break;
+          }
+          if (isColor(v)) {
+            stack.push(colorCompRead(v, raw, node));
+            break;
+          }
           const comp = COMP_ALIAS[raw];
-          if (!isVec(v)) throw runtimeError(`component access requires a vector, got ${typeName(v)}`, node);
+          if (!isVec(v)) throw runtimeError(`component access requires a vector or color, got ${typeName(v)}`, node);
           if ((v.t === 'vec2' && (comp === 'z' || comp === 'w')) ||
               (v.t === 'vec3' && comp === 'w')) {
             throw runtimeError(`${v.t} has no component '${raw}'`, node);
@@ -3168,6 +3583,15 @@ class Vm {
           if (isParticle(old)) {
             particleSetField(old, raw, nv, node);
             stack.push(old);
+            break;
+          }
+          if (isObj(old)) {
+            old.fields.set(raw, nv);
+            stack.push(old);
+            break;
+          }
+          if (isColor(old)) {
+            stack.push(colorCompWrite(old, raw, expectNum(nv, 'component value', node), node));
             break;
           }
           const comp = COMP_ALIAS[raw];
@@ -3191,6 +3615,17 @@ class Vm {
           if (isParticle(old)) {
             particleSetField(old, raw, nv, node);
             stack.push(old);
+            break;
+          }
+          if (isObj(old)) {
+            old.fields.set(raw, nv);
+            stack.push(old);
+            break;
+          }
+          if (isColor(old)) {
+            const updated = colorCompWrite(old, raw, expectNum(nv, 'component value', node), node);
+            arr[n] = updated;
+            stack.push(updated);
             break;
           }
           const comp = COMP_ALIAS[raw];
@@ -3252,10 +3687,15 @@ class Vm {
           for (let i = 0; i < argCount; i++) args.push(stack.pop());
           args.reverse();
           const callee = stack.pop();
-          if (!isFunc(callee)) throw runtimeError(`value of type ${typeName(callee)} is not callable`, node);
-          const fidx = this.funcIdxByName.get(callee.name);
-          if (fidx == null) throw runtimeError(`function '${callee.name}' not found`, node);
-          this.enterFunction(fidx, args, node);
+          if (isFunc(callee)) {
+            const fidx = this.funcIdxByName.get(callee.name);
+            if (fidx == null) throw runtimeError(`function '${callee.name}' not found`, node);
+            this.enterFunction(fidx, args, node);
+          } else if (isLambda(callee)) {
+            stack.push(this.rt.callLambda(callee, args, node));
+          } else {
+            throw runtimeError(`value of type ${typeName(callee)} is not callable`, node);
+          }
           break;
         }
         case OP.METHOD: {
@@ -3277,17 +3717,22 @@ class Vm {
           } else if (isParticleList(obj)) {
             if (method === 'size') stack.push(obj.list.length);
             else throw runtimeError(`particle list has no method '.${method}()'`, node);
+          } else if (isVec(obj)) {
+            stack.push(callVecMethod(obj, method, args, node));
+          } else if (isObj(obj)) {
+            throw runtimeError(`objects have no method '.${method}()'`, node);
           } else if (Array.isArray(obj)) {
             stack.push(applyArrayMethod(obj, method, args, this.rt, node));
           } else {
-            throw runtimeError(`method '.${method}()' requires an array, particle or particle list, got ${typeName(obj)}`, node);
+            throw runtimeError(`method '.${method}()' requires an array, particle, particle list or vector, got ${typeName(obj)}`, node);
           }
           break;
         }
         case OP.LOAD_MEMBER: {
           const field = this.names[code[this.pc++]];
           const obj = stack.pop();
-          if (!isParticle(obj)) throw runtimeError(`only particles have fields '.${field}'`, node);
+          if (isObj(obj)) { stack.push(obj.fields.get(field)); break; }
+          if (!isParticle(obj)) throw runtimeError(`only particles / objects have fields '.${field}'`, node);
           stack.push(particleGetField(obj, field, node));
           break;
         }
@@ -3295,7 +3740,8 @@ class Vm {
           const field = this.names[code[this.pc++]];
           const obj = stack.pop();
           const value = stack.pop();
-          if (!isParticle(obj)) throw runtimeError(`only particles have fields '.${field}'`, node);
+          if (isObj(obj)) { obj.fields.set(field, value); break; }
+          if (!isParticle(obj)) throw runtimeError(`only particles / objects have fields '.${field}'`, node);
           particleSetField(obj, field, value, node);
           break;
         }
@@ -3306,7 +3752,20 @@ class Vm {
           const old = stack.pop();
           const obj = stack.pop();
           const nv = stack.pop();
-          if (!isParticle(obj)) throw runtimeError(`only particles have fields '.${field}'`, node);
+          if (isObj(obj)) {
+            if (isColor(old)) {
+              obj.fields.set(field, colorCompWrite(old, raw, expectNum(nv, 'component value', node), node));
+              break;
+            }
+            const comp = COMP_ALIAS[raw];
+            if (!isVec(old)) throw runtimeError('component assignment target is not a vector', node);
+            if ((old.t === 'vec2' && (comp === 'z' || comp === 'w')) || (old.t === 'vec3' && comp === 'w')) {
+              throw runtimeError(`${old.t} has no component '${raw}'`, node);
+            }
+            obj.fields.set(field, setVecComp(old, comp, expectNum(nv, 'component value', node)));
+            break;
+          }
+          if (!isParticle(obj)) throw runtimeError(`only particles / objects have fields '.${field}'`, node);
           const comp = COMP_ALIAS[raw];
           if (!isVec(old)) throw runtimeError('component assignment target is not a vector', node);
           if ((old.t === 'vec2' && (comp === 'z' || comp === 'w')) || (old.t === 'vec3' && comp === 'w')) {
@@ -3346,9 +3805,10 @@ class Vm {
           const args = [];
           for (let i = 0; i < argCount; i++) args.push(stack.pop());
           args.reverse();
+          if (argCount > 1) throw runtimeError('this.spawn expects at most 1 argument', node);
           const fx = fxRuntime(this.rt);
           if (!fx || typeof fx.spawn !== 'function') throw runtimeError('this.spawn is not available here', node);
-          const w = fx.spawn();
+          const w = fx.spawn(argCount === 1 ? args[0] : undefined);
           if (!w) throw runtimeError('spawn failed', node);
           stack.push(particleValue(w));
           break;
@@ -3416,6 +3876,20 @@ export function runTopLevel(program, objState, env) {
   rt.pushScope(new Map());
   try {
     for (const d of globals) {
+      if (d.type === 'destructure') {
+        const v = rt.evalExpr(d.value);
+        if (!isObj(v)) {
+          throw runtimeError('object destructuring requires an object', d);
+        }
+        for (const name of d.names) {
+          if (objState.globals.has(name)) {
+            throw runtimeError(`duplicate global '${name}'`, d);
+          }
+          objState.globals.set(name, v.fields.get(name));
+          if (d.kind === 'const') objState.constGlobals.add(name);
+        }
+        continue;
+      }
       for (const dec of d.decls) {
         if (objState.globals.has(dec.name)) {
           throw runtimeError(`duplicate global '${dec.name}'`, dec);

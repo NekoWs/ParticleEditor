@@ -3,7 +3,7 @@
 
 export const KEYWORDS = new Set([
   'setup', 'process', 'tick', 'func', 'return', 'if', 'else', 'while', 'do', 'for', 'of', 'const',
-  'let', 'undefined',
+  'let', 'undefined', 'when',
   'break', 'continue', 'true', 'false',
 ]);
 
@@ -34,8 +34,8 @@ export const BUILTIN_FUNCTION_NAMES = [
   'vec2', 'vec3', 'vec4', 'vec', 'mat3',
   'translate', 'scale', 'rotate', 'lookAt',
   'rotX', 'rotY', 'rotZ', 'rotAxis',
-  'dot', 'cross', 'len', 'len2', 'norm', 'lerp', 'mix',
-  'distance', 'angle_between', 'project', 'reflect',
+  'rotateX', 'rotateY', 'rotateZ',
+  'norm',
   'clamp', 'map_range', 'remap',
   'int', 'float', 'bool',
   'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'atan2',
@@ -44,6 +44,9 @@ export const BUILTIN_FUNCTION_NAMES = [
   'step', 'smoothstep', 'mod',
   'noise', 'fbm', 'rand', 'random',
   'ease_linear', 'ease_in_out', 'ease_out_back', 'ease_in_elastic',
+  'hash', 'phases', 'repeat',
+  'color', 'red', 'green', 'blue', 'alpha',
+  'hue', 'saturation', 'value', 'rgb2hsv', 'hsv2rgb',
   'unique', 'reverse', 'sort',
 ];
 export const BUILTIN_FUNCTIONS = new Set(BUILTIN_FUNCTION_NAMES);

@@ -110,6 +110,18 @@ function tokenize(source) {
     }
 
     // 两字符运算符
+    if (c === '|' && src[i + 1] === '>') {
+      const startLine = line, startCol = col;
+      advance(); advance();
+      push({ type: 'punct', value: '|>', line: startLine, col: startCol });
+      continue;
+    }
+    if (c === '-' && src[i + 1] === '>') {
+      const startLine = line, startCol = col;
+      advance(); advance();
+      push({ type: 'punct', value: '->', line: startLine, col: startCol });
+      continue;
+    }
     if ((c === '=' || c === '!' || c === '<' || c === '>') && src[i + 1] === '=') {
       const startLine = line, startCol = col;
       let op;
@@ -193,6 +205,8 @@ class Parser {
     this.pos = 0;
     this.phase = null;     // 'setup' | 'process' | 'func'（当前顶层区块）
     this.loopDepth = 0;
+    this.allowBareExpr = 0; // >0：lambda 体内允许裸表达式语句
+    this.lambdaDepth = 0;   // >0：lambda 体内允许 return
   }
 
   peek(offset = 0) {
@@ -351,9 +365,15 @@ class Parser {
 
   parseBlock() {
     const open = this.expect('{');
+    const block = this.parseBlockBodyAfterOpen(open);
+    this.expect('}');
+    return block;
+  }
+
+  // 解析已消费 `{` 后的语句序列，不消费 `}`。
+  parseBlockBodyAfterOpen(open) {
     const body = [];
     while (!this.check('}') && !this.atEnd()) body.push(this.parseStatement());
-    this.expect('}');
     return { type: 'block', body, line: open.line, col: open.col };
   }
 
@@ -375,6 +395,7 @@ class Parser {
         case 'return': return this.parseReturn(tok);
         case 'let': return this.parseDeclare(tok, 'let');
         case 'const': return this.parseDeclare(tok, 'const');
+        case 'when': return this.parseWhenStmt();
         default: break;
       }
     }
@@ -486,7 +507,7 @@ class Parser {
   }
 
   parseReturn(tok) {
-    if (!this.phase) this.errorAt(tok, "'return' only allowed inside a function");
+    if (!this.phase && this.lambdaDepth === 0) this.errorAt(tok, "'return' only allowed inside a function");
     this.next();
     let expr = null;
     if (!this.check(';') && !this.atEnd() && !this.nlBefore()) expr = this.parseTernary();
@@ -496,12 +517,17 @@ class Parser {
 
   parseDeclare(tok, kind, noStatementEnd) {
     this.next(); // let / const
+    if (this.check('{')) {
+      const node = this.parseDestructure(tok, kind);
+      if (!noStatementEnd) this.statementEnd();
+      return node;
+    }
     const decls = [];
     for (;;) {
       const nameTok = this.expectIdent();
       this.validateDeclName(nameTok);
       let init = null;
-      if (!this.nlBefore() && this.match('=')) init = this.parseTernary();
+      if (!this.nlBefore() && this.match('=')) init = this.parsePipe();
       else if (kind === 'const') this.errorAt(nameTok, "'const' must have an initializer");
       decls.push({ name: nameTok.value, init, line: nameTok.line, col: nameTok.col });
       if (this.check(',') && !this.nlBefore()) { this.next(); continue; }
@@ -509,6 +535,30 @@ class Parser {
     }
     if (!noStatementEnd) this.statementEnd();
     return { type: 'declare', kind, decls, line: tok.line, col: tok.col };
+  }
+
+  // let { a, b } = expr（同名取键，不支持重命名/默认值/嵌套）。
+  parseDestructure(tok, kind) {
+    this.expect('{');
+    const names = [];
+    if (!this.check('}')) {
+      const n0 = this.expectIdent();
+      this.validateDeclName(n0);
+      names.push(n0.value);
+      while (this.match(',')) {
+        if (this.check('}')) break;
+        const nt = this.expectIdent();
+        this.validateDeclName(nt);
+        names.push(nt.value);
+      }
+    }
+    this.expect('}');
+    if (!this.match('=')) {
+      const t = this.peek();
+      throw parseError('object destructuring requires an initializer', t.line, t.col);
+    }
+    const value = this.parsePipe();
+    return { type: 'destructure', kind, names, value, line: tok.line, col: tok.col };
   }
 
   validateDeclName(tok) {
@@ -526,7 +576,9 @@ class Parser {
       return expr;
     }
     this.statementEnd();
-    if (expr.type !== 'call' && expr.type !== 'method' && expr.type !== 'preinc' && expr.type !== 'postinc') {
+    const allowed = expr.type === 'call' || expr.type === 'method' || expr.type === 'preinc' ||
+      expr.type === 'postinc' || expr.type === 'pipe' || expr.type === 'apply';
+    if (!allowed && this.allowBareExpr === 0) {
       this.errorAt(start, 'expression statement must be a function call');
     }
     return { type: 'expr', expr, line: start.line, col: start.col };
@@ -536,14 +588,14 @@ class Parser {
   // 复合赋值 a += b 等价于 a = a + b（左侧表达式作为读取值参与二元运算）。
   parseAssignExpr() {
     const start = this.peek();
-    const left = this.parseTernary();
+    const left = this.parsePipe();
     if (!this.nlBefore()) {
       const opTok = this.peek();
       const binOp = COMPOUND_ASSIGN[opTok.value];
       if (binOp) {
         this.next();
         const target = toLValue(left, start);
-        const value = this.parseTernary();
+        const value = this.parsePipe();
         return {
           type: 'assign', target,
           value: { type: 'binary', op: binOp, left, right: value, line: opTok.line, col: opTok.col },
@@ -561,6 +613,20 @@ class Parser {
   }
 
   /* -- 表达式 -- */
+
+  // 管道：x |> f(a) ≡ f(x, a)。左结合，优先级最低（低于赋值、高于三元）。
+  parsePipe() {
+    let left = this.parseTernary();
+    while (!this.nlBefore() && this.match('|>')) {
+      const opTok = this.tokens[this.pos - 1];
+      const right = this.parseTernary();
+      if (right.type !== 'call' && right.type !== 'method') {
+        throw parseError(`right side of '|>' must be a function call`, right.line, right.col);
+      }
+      left = { type: 'pipe', left, right, line: opTok.line, col: opTok.col };
+    }
+    return left;
+  }
 
   parseTernary() {
     const cond = this.parseOr();
@@ -666,6 +732,11 @@ class Parser {
       if (!this.nlBefore() && this.match('(')) {
         const args = this.parseArgs();
         expr = { type: 'call', callee: expr, args, line: expr.line, col: expr.col };
+        // 尾随 lambda：f(args) { λ } ≡ f(args, λ)
+        if (!this.nlBefore() && this.check('{')) {
+          const open = this.next();
+          expr.args.push(this.parseLambdaAfterOpen(open));
+        }
       } else if (!this.nlBefore() && this.match('[')) {
         const idx = this.parseTernary();
         this.expect(']');
@@ -675,6 +746,14 @@ class Parser {
         if (this.match('(')) {
           const args = this.parseArgs();
           expr = { type: 'method', object: expr, method: nameTok.value, args, line: expr.line, col: expr.col };
+          if (!this.nlBefore() && this.check('{')) {
+            const open = this.next();
+            expr.args.push(this.parseLambdaAfterOpen(open));
+          }
+        } else if (nameTok.value === 'apply' && !this.nlBefore() && this.check('{')) {
+          const open = this.next();
+          const body = this.parseLambdaAfterOpen(open);
+          expr = { type: 'apply', target: expr, body, line: nameTok.line, col: nameTok.col };
         } else if (COMP_NAMES.has(nameTok.value)) {
           expr = { type: 'comp', target: expr, comp: nameTok.value, line: expr.line, col: expr.col };
         } else {
@@ -715,6 +794,9 @@ class Parser {
       if (tok.value === 'undefined') {
         return { type: 'undefined', line: tok.line, col: tok.col };
       }
+      if (tok.value === 'when') {
+        return this.parseWhenExpr(tok);
+      }
       return { type: 'var', name: tok.value, line: tok.line, col: tok.col };
     }
 
@@ -736,7 +818,125 @@ class Parser {
       return { type: 'array', items, line: tok.line, col: tok.col };
     }
 
+    if (tok.type === 'punct' && tok.value === '{') {
+      this.next();
+      return this.parseBraceExpr(tok);
+    }
+
     this.errorAt(tok, `unexpected token '${tok.value}'`);
+  }
+
+  // 表达式位置的 `{`：按首 token 消歧为 lambda 或对象字面量。
+  parseBraceExpr(openTok) {
+    const tok = this.peek();
+    if (tok.type === 'punct' && tok.value === '}') return this.parseLambdaAfterOpen(openTok);
+    if (tok.type === 'ident') {
+      const next = this.peek(1);
+      if (next.value === ':') return this.parseObjAfterOpen(openTok);
+      return this.parseLambdaAfterOpen(openTok);
+    }
+    if (tok.type === 'str' && this.peek(1).value === ':') return this.parseObjAfterOpen(openTok);
+    return this.parseLambdaAfterOpen(openTok);
+  }
+
+  // lambda 字面量：{ [ident (, ident)* ->] body }。`{` 已消费。
+  parseLambdaAfterOpen(openTok) {
+    const params = [];
+    const t0 = this.peek();
+    if (t0.type === 'ident' && (this.peek(1).value === '->' || this.peek(1).value === ',')) {
+      for (;;) {
+        const pt = this.expectIdent();
+        this.validateParamName(pt);
+        params.push(pt.value);
+        if (this.match(',')) continue;
+        break;
+      }
+      this.expect('->');
+    }
+    this.allowBareExpr++;
+    this.lambdaDepth++;
+    let body;
+    try {
+      body = this.parseBlockBodyAfterOpen(openTok);
+    } finally {
+      this.lambdaDepth--;
+      this.allowBareExpr--;
+    }
+    this.expect('}');
+    return { type: 'lambda', params, body, line: openTok.line, col: openTok.col };
+  }
+
+  // 对象字面量：{ key: value, ... }。`{` 已消费。
+  parseObjAfterOpen(openTok) {
+    const fields = new Map();
+    if (this.check('}')) {
+      this.next();
+      return { type: 'obj', fields, line: openTok.line, col: openTok.col };
+    }
+    for (;;) {
+      const keyTok = this.peek();
+      let key;
+      if (keyTok.type === 'ident') { this.next(); key = keyTok.value; }
+      else if (keyTok.type === 'str') { this.next(); key = keyTok.value; }
+      else this.errorAt(keyTok, 'object key must be an identifier or string');
+      this.expect(':');
+      const val = this.parseTernary();
+      fields.set(key, val);
+      if (this.match(',')) {
+        if (this.check('}')) { this.next(); break; }
+        continue;
+      }
+      break;
+    }
+    this.expect('}');
+    return { type: 'obj', fields, line: openTok.line, col: openTok.col };
+  }
+
+  parseWhenStmt() {
+    const start = this.next(); // 'when'
+    return this.parseWhenBody(start, true);
+  }
+
+  parseWhenExpr(whenTok) {
+    return this.parseWhenBody(whenTok, false);
+  }
+
+  parseWhenBody(start, isStmt) {
+    this.expect('(');
+    const subject = this.parseTernary();
+    this.expect(')');
+    this.expect('{');
+    const cases = [];
+    let els = null;
+    while (true) {
+      if (this.check('}')) break;
+      if (this.matchKw('else')) {
+        this.expect('->');
+        els = isStmt ? this.parseStatement() : this.parseTernary();
+        break;
+      }
+      const label = this.parseTernary();
+      this.expect('->');
+      const body = isStmt ? this.parseStatement() : this.parseTernary();
+      if (isStmt) {
+        cases.push({ label, body });
+        // 简单语句体已由 statementEnd 消费 ';'；块体后可能还有 ';'，这里兜底跳过。
+        this.match(';');
+        continue;
+      }
+      cases.push({ label, expr: body });
+      if (this.match(';')) continue;
+      if (this.check('}')) continue;
+      if (this.peek().type === 'ident' && this.peek().value === 'else') continue;
+      if (!this.nlBefore()) {
+        this.errorAt(this.peek(), `expected ';', newline or '}' in when`);
+      }
+    }
+    this.expect('}');
+    if (!isStmt && els === null) {
+      throw parseError('when expression requires an else branch', start.line, start.col);
+    }
+    return { type: isStmt ? 'whenstmt' : 'whenexpr', subject, cases, els, line: start.line, col: start.col };
   }
 }
 
@@ -745,7 +945,7 @@ export function parseProgram(source) {
 }
 export function parseExpression(source) {
   const p = new Parser(source);
-  const node = p.parseTernary();
+  const node = p.parsePipe();
   const extra = p.peek();
   if (extra.type !== 'eof') {
     throw parseError(`unexpected '${extra.value}' after expression`, extra.line, extra.col);
