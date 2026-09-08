@@ -184,7 +184,7 @@ function exprCls(node) {
   switch (node.kind) {
     case 'num': return 'blk-const';
     case 'bool': return 'blk-const blk-bool';
-    case 'var': return (node.name === 'pi' || node.name === 'e') ? 'blk-const' : 'blk-var';
+    case 'var': return (node.name === 'PI' || node.name === 'E') ? 'blk-const' : 'blk-var';
     case 'member': return 'blk-var';
     case 'func': return funcColor(node.name);
     case 'op': return 'blk-math' + (isBoolOp(node.op) ? ' blk-bool' : '');

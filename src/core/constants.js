@@ -291,7 +291,7 @@ export const FUNCTION_PRESETS = {
 }
 func process() {
   for (const p of this.particles) {
-    p.position = [p.f * wid, amp * sin(freq * pi * p.f), 0]
+    p.position = [p.f * wid, amp * sin(freq * PI * p.f), 0]
   }
 }`,
     }),
@@ -307,7 +307,7 @@ func process() {
   for (let i = 0; i < 200; i++) {
     let p = this.spawn()
     p.th = acos(1 - 2 * (p.index + 0.5) / 200)
-    p.ph = p.index * pi * (3 - sqrt(5))
+    p.ph = p.index * PI * (3 - sqrt(5))
   }
 }
 func process() {
@@ -353,8 +353,8 @@ func process() {
 }
 func process() {
   for (const p of this.particles) {
-    let th = (p.index % k) / k * 2 * pi
-    let ph = floor(p.index / k) / m * 2 * pi
+    let th = (p.index % k) / k * 2 * PI
+    let ph = floor(p.index / k) / m * 2 * PI
     p.position = [(major + minor * cos(th)) * cos(ph), minor * sin(th), (major + minor * cos(th)) * sin(ph)]
   }
 }`,
@@ -379,7 +379,7 @@ func process() {
 func process() {
   for (const p of this.particles) {
     let ly = floor(p.index / m)
-    let aa = (p.index % m) / m * 2 * pi
+    let aa = (p.index % m) / m * 2 * PI
     let rf = clamp(min(ly / (cr - 1), (k + 2 * cr - 1 - ly) / (cr - 1)), 0, 1)
     let yf = (clamp(ly, cr, cr + k - 1) - cr) / (k - 1)
     p.position = [rad * rf * cos(aa), yf * h - h / 2, rad * rf * sin(aa)]
@@ -402,7 +402,7 @@ func process() {
 }
 func process() {
   for (const p of this.particles) {
-    let aa = (p.index % m) / m * 2 * pi
+    let aa = (p.index % m) / m * 2 * PI
     let yy = floor(p.index / m) / (k - 1)
     p.position = [rad * (1 - yy) * cos(aa), (yy - 0.5) * h, rad * (1 - yy) * sin(aa)]
   }
@@ -424,7 +424,7 @@ func process() {
 }
 func process() {
   for (const p of this.particles) {
-    let aa = p.index / ppr * 2 * pi
+    let aa = p.index / ppr * 2 * PI
     let yf = p.index / (turns * ppr) - 0.5
     p.position = [rad * cos(aa), yf * h, rad * sin(aa)]
   }
@@ -461,7 +461,7 @@ func process() {
       source: `func setup() {
   for (let i = 0; i < 200; i++) {
     let p = this.spawn()
-    p.ang = p.index / 200 * 2 * pi
+    p.ang = p.index / 200 * 2 * PI
   }
 }
 func process() {
@@ -482,7 +482,7 @@ func process() {
   for (let i = 0; i < 400; i++) {
     let p = this.spawn()
     p.rf = sqrt(p.index / 400)
-    p.th = p.index * pi * (3 - sqrt(5))
+    p.th = p.index * PI * (3 - sqrt(5))
   }
 }
 func process() {
@@ -503,8 +503,8 @@ func process() {
   let m = floor(pow(2000, 0.5))
   for (let i = 0; i < 2000; i++) {
     let p = this.spawn()
-    p.a = floor(p.index / m) * 2 * pi / m
-    p.b = (p.index % m) * pi / m - pi / 2
+    p.a = floor(p.index / m) * 2 * PI / m
+    p.b = (p.index % m) * PI / m - PI / 2
   }
 }
 func process() {

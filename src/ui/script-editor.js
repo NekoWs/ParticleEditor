@@ -129,7 +129,7 @@ export const scriptLanguage = StreamLanguage.define({
       if (word === 'func') { state.afterFunc = true; return 'keyword'; }
       if (word === 'this') return 'keyword';
       if (KEYWORD_SET.has(word)) return 'keyword';
-      if (word === 'pi' || word === 'true' || word === 'false' || word === 'undefined') return 'atom';
+      if (word === 'PI' || word === 'E' || word === 'true' || word === 'false' || word === 'undefined') return 'atom';
       if (BUILTIN_SET.has(word)) return 'function';
       return 'variableName';
     }
@@ -353,7 +353,7 @@ function inferExprType(node, env) {
     case 'var': {
       const t = lookupType(env, node.name);
       if (t != null) return t;
-      if (node.name === 'pi' || node.name === 'e') return 'num';
+      if (node.name === 'PI' || node.name === 'E') return 'num';
       return 'unknown';
     }
     case 'unary': {
@@ -571,8 +571,8 @@ function buildScriptEnvs(fx, pos) {
   collectGlobals(program.globals, globals);
 
   const root = new Map(globals);
-  root.set('pi', 'num');
-  root.set('e', 'num');
+  root.set('PI', 'num');
+  root.set('E', 'num');
   for (const name of Object.keys(fx?.vars || {})) root.set(name, 'num');
 
   if (pos == null) return root;

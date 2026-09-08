@@ -50,7 +50,7 @@ const cases = [
   {
     name: 'vec_mat',
     seed: 0, count: 1, setup: '',
-    process: 'v = vec(1,2,3); m = rotZ(pi/2); w = m * v; [x,y,z] = w; [r,g,b,a] = [len(w)/4, dot(v,w)/12, cross(v,w).y/10, 1];',
+    process: 'v = vec(1,2,3); m = rotZ(PI/2); w = m * v; [x,y,z] = w; [r,g,b,a] = [len(w)/4, dot(v,w)/12, cross(v,w).y/10, 1];',
     samples: [
       { i: 0, t: 0, expect: null }, // 下面用近似断言，不写死
     ],

@@ -275,7 +275,7 @@ export function exprType(node, varTypeOf) {
   switch (node.kind) {
     case 'num': return T_SCALAR;
     case 'bool': return T_SCALAR;
-    case 'var': return (node.name === 'pi' || node.name === 'e') ? T_SCALAR : vt(node.name);
+    case 'var': return (node.name === 'PI' || node.name === 'E') ? T_SCALAR : vt(node.name);
     case 'member': return (node.field === 'uv' || node.field === 'position' || node.field === 'color' || node.field === 'velocity') ? T_VEC : T_SCALAR;
     case 'func': return FUNC_BLOCKS[node.name] ? FUNC_BLOCKS[node.name].ret : T_ANY;
     case 'array': return T_ANY;
@@ -546,8 +546,8 @@ export function statementsToCodeSpans(stmts, level) {
 // —— 代码解析（文本 → 积木树）——
 
 /**
- * 拼图专用分词：与 script-lang 表达式语法对齐，但 pi/e 保留为标识符
- * 使往返序列化保持 `pi`/`e` 原样、不损失精度。
+ * 拼图专用分词：与 script-lang 表达式语法对齐，但 PI/E 保留为标识符
+ * 使往返序列化保持 `PI`/`E` 原样、不损失精度。
  */
 export function blockTokenize(expr) {
   const tokens = [];
@@ -588,7 +588,7 @@ export function blockTokenize(expr) {
       if (name === 'true') { tokens.push({ t: 'bool', v: true }); }
       else if (name === 'false') { tokens.push({ t: 'bool', v: false }); }
       else if (SCRIPT_FUNC_SET.has(name)) tokens.push({ t: 'func', name });
-      else tokens.push({ t: 'var', name }); // pi/e 归为 var，序列化时原样输出
+      else tokens.push({ t: 'var', name }); // PI/E 归为 var，序列化时原样输出
       i = j; expectOperand = false; continue;
     }
     if (c === '-' && expectOperand) { tokens.push({ t: 'neg' }); i++; continue; } // 一元负号

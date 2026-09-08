@@ -28,7 +28,7 @@ const CTX_FIELD_CODE = {};
 CTX_FIELD_NAMES.forEach((n, i) => { CTX_FIELD_CODE[n] = i; });
 const CTX_FIELD_BY_CODE = CTX_FIELD_NAMES;
 
-// 常量。pi / e 在 tokenizer 里直接变成数值字面量，这里保留以防查表。
+// 常量。PI / E 在 tokenizer 里直接变成数值字面量，这里保留以防查表。
 
 // 向量分量访问名：r/g/b 是 x/y/z 的别名，a 是 w 的别名。
 

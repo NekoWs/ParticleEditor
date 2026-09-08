@@ -92,7 +92,7 @@ export function cloneStmt(s) {
 export function cloneStmts(stmts) { return stmts.map(cloneStmt); }
 
 export function blockVarTypeOf(name) {
-  if (name === 'pi' || name === 'e') return T_SCALAR;
+  if (name === 'PI' || name === 'E') return T_SCALAR;
   if (bctx && name in bctx.varExprs) return T_SCALAR;
   return T_ANY;
 }
@@ -457,8 +457,8 @@ export function buildPaletteGroup(g) {
     for (const name of availableVars()) items.push({ key: 'var:' + name, type: 'expr', template: { kind: 'var', name }, label: name, info: t('blk.var') });
   } else if (g.id === 'const') {
     items.push({ key: 'expr:num', type: 'expr', template: { kind: 'num', value: 1 }, label: t('blk.type.scalar'), info: t('blk.constNum') });
-    items.push({ key: 'expr:pi', type: 'expr', template: { kind: 'var', name: 'pi' }, label: 'pi', info: t('blk.piInfo') });
-    items.push({ key: 'expr:e', type: 'expr', template: { kind: 'var', name: 'e' }, label: 'e', info: t('blk.eInfo') });
+    items.push({ key: 'expr:PI', type: 'expr', template: { kind: 'var', name: 'PI' }, label: 'PI', info: t('blk.piInfo') });
+    items.push({ key: 'expr:E', type: 'expr', template: { kind: 'var', name: 'E' }, label: 'E', info: t('blk.eInfo') });
   }
   return items;
 }

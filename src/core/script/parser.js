@@ -102,9 +102,9 @@ function tokenize(source) {
       const startLine = line, startCol = col;
       let name = '';
       while (i < len && isIdentPart(src[i])) name += advance();
-      // pi / e 是数值字面量保留名（§13）
-      if (name === 'pi') push({ type: 'num', value: Math.PI, line: startLine, col: startCol });
-      else if (name === 'e') push({ type: 'num', value: Math.E, line: startLine, col: startCol });
+      // PI / E 是数值字面量保留名（§13）
+      if (name === 'PI') push({ type: 'num', value: Math.PI, line: startLine, col: startCol });
+      else if (name === 'E') push({ type: 'num', value: Math.E, line: startLine, col: startCol });
       else push({ type: 'ident', value: name, line: startLine, col: startCol });
       continue;
     }
@@ -558,7 +558,7 @@ class Parser {
 
   parseTernary() {
     const cond = this.parseOr();
-    if (!this.nlBefore() && this.match('?')) {
+    if (this.match('?')) {
       const qTok = this.tokens[this.pos - 1];
       const thenExpr = this.parseTernary();
       this.expect(':');

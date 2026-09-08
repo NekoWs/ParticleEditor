@@ -273,7 +273,7 @@ export var LANGS = {
     'blk.method.sort.desc': '对数组元素排序',
     'blk.method.unique.desc': '对数组元素去重',
     'blk.method.reverse.desc': '反转数组元素顺序',
-    'blk.piInfo': '圆周率 π ≈ 3.14159', 'blk.eInfo': '自然常数 e ≈ 2.71828',
+    'blk.piInfo': '圆周率 π ≈ 3.14159', 'blk.eInfo': '自然常数 E ≈ 2.71828',
     // —— 拼图：类型 / 内置变量 / 调色板 / 运算符 / 参数 ——
     'blk.type.scalar': '数字', 'blk.type.vec': '向量', 'blk.type.mat': '矩阵', 'blk.type.any': '任意',
     'blk.stmt.if': '如果', 'blk.stmt.while': '当循环', 'blk.stmt.for': '计数循环', 'blk.stmt.do': '直到循环', 'blk.stmt.func': '函数', 'blk.stmt.global': '全局变量', 'blk.stmt.static': '静态变量', 'blk.stmt.break': '跳出循环', 'blk.stmt.continue': '继续循环', 'blk.stmt.return': '返回', 'blk.stmt.else': '否则', 'blk.stmt.else_if': '否则如果', 'blk.stmt.else.desc': '为如果块添加否则分支', 'blk.stmt.else_if.desc': '为如果块添加否则如果分支', 'blk.stmt.setup.desc': '对象初始化时执行一次', 'blk.stmt.tick.desc': '每 50ms 执行一次', 'blk.stmt.process.desc': '每个渲染帧执行一次', 'blk.stmt.func.desc': '定义顶层函数（可递归，供 setup/tick/process 调用）', 'blk.repeatTimes': '次',
@@ -621,7 +621,7 @@ export var LANGS = {
     'blk.method.sort.desc': 'Sort the array elements',
     'blk.method.unique.desc': 'Remove duplicate array elements',
     'blk.method.reverse.desc': 'Reverse the order of array elements',
-    'blk.piInfo': 'Pi π ≈ 3.14159', 'blk.eInfo': 'Euler\'s number e ≈ 2.71828',
+    'blk.piInfo': 'Pi π ≈ 3.14159', 'blk.eInfo': 'Euler\'s number E ≈ 2.71828',
     // —— 拼图：类型 / 内置变量 / 调色板 / 运算符 / 参数 ——
     'blk.type.scalar': 'Number', 'blk.type.vec': 'Vector', 'blk.type.mat': 'Matrix', 'blk.type.any': 'Any',
     'blk.stmt.if': 'If', 'blk.stmt.while': 'While', 'blk.stmt.for': 'For', 'blk.stmt.do': 'Do-while', 'blk.stmt.func': 'Function', 'blk.stmt.global': 'Global', 'blk.stmt.static': 'Static', 'blk.stmt.break': 'Break', 'blk.stmt.continue': 'Continue', 'blk.stmt.return': 'Return', 'blk.stmt.else': 'Else', 'blk.stmt.else_if': 'Else If', 'blk.stmt.else.desc': 'Add an else branch to an if block', 'blk.stmt.else_if.desc': 'Add an else-if branch to an if block', 'blk.stmt.setup.desc': 'Runs once during object init', 'blk.stmt.tick.desc': 'Runs once every 50ms', 'blk.stmt.process.desc': 'Runs once per rendered frame', 'blk.stmt.func.desc': 'Defines a top-level function (recursive, callable from setup/tick/process)', 'blk.repeatTimes': 'times',

@@ -13,15 +13,15 @@ export const CTX_NAME = 'this';
 // 生命周期入口：setup / tick / process 是保留函数名，其它自定义函数不可使用。
 export const LIFECYCLE_FUNCS = new Set(['setup', 'tick', 'process']);
 
-// 常量（§13）。pi / e 在 tokenizer 中直接变成数值字面量，这里保留以防查表。
+// 常量（§13）。PI / E 在 tokenizer 中直接变成数值字面量，这里保留以防查表。
 export const CONSTANTS = new Map([
   ['TAU', Math.PI * 2],
   ['HALF_PI', Math.PI / 2],
   ['QUARTER_PI', Math.PI / 4],
   ['DEG2RAD', Math.PI / 180],
   ['RAD2DEG', 180 / Math.PI],
-  ['pi', Math.PI],
-  ['e', Math.E],
+  ['PI', Math.PI],
+  ['E', Math.E],
 ]);
 
 // 向量分量访问名：r/g/b 分别是 x/y/z 的别名，a 是 w 的别名（§5 后缀）。
