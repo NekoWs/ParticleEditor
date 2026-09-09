@@ -14,12 +14,11 @@ import { parseProgram, parseExpression } from './script/parser.js';
 import {
   vec2, vec3, vec4, mat3, mat4,
   isVec, isMat, vecDim, vecComps, mkVec,
-  rotateXVec3, rotateYVec3, rotateZVec3, translateVec3, scaleVec3,
   VEC_METHODS,
 } from './script/vec.js';
 import {
-  color, isColor, colorComponent, colorWithComponent, colorFromVec, colorToVec4,
-  red, green, blue, alpha, hue, saturation, value, rgb2hsv, hsv2rgb,
+  color, isColor, colorComponent, colorWithComponent,
+  COLOR_METHODS,
 } from './script/color.js';
 export { parseProgram, parseExpression };
 
@@ -798,7 +797,6 @@ class Runtime {
       case 'lambda': return this.evalLambda(node);
       case 'obj': return this.evalObj(node);
       case 'whenexpr': return this.evalWhenExpr(node);
-      case 'pipe': return this.evalPipe(node);
       case 'apply': return this.evalApply(node);
       case 'preinc': {
         const old = this.evalLValue(node.target);
@@ -988,11 +986,12 @@ class Runtime {
       throw runtimeError(`particle list has no method '.${method}()'`, node);
     }
     if (isVec(obj)) return callVecMethod(obj, method, args, node);
+    if (isColor(obj)) return callColorMethod(obj, method, args, node);
     if (isObj(obj)) {
       throw runtimeError(`objects have no method '.${method}()'`, node);
     }
     if (!Array.isArray(obj)) {
-      throw runtimeError(`method '.${method}()' requires an array, particle, particle list or vector, got ${typeName(obj)}`, node);
+      throw runtimeError(`method '.${method}()' requires an array, particle, particle list, vector or color, got ${typeName(obj)}`, node);
     }
     return applyArrayMethod(obj, method, args, this, node);
   }
@@ -1022,21 +1021,6 @@ class Runtime {
     }
     if (node.els) return this.evalExpr(node.els);
     throw runtimeError('when expression has no matching case and no else', node);
-  }
-
-  evalPipe(node) {
-    const left = this.evalExpr(node.left);
-    const right = node.right;
-    if (right.type === 'call') {
-      const args = [left];
-      for (const a of right.args) args.push(this.evalExpr(a));
-      return this.callCallee(right.callee, args, node);
-    }
-    // method：obj.m(left, ...args)
-    const obj = this.evalExpr(right.object);
-    const args = [left];
-    for (const a of right.args) args.push(this.evalExpr(a));
-    return this.callMethod(obj, right.method, args, node);
   }
 
   evalApply(node) {
@@ -1386,6 +1370,12 @@ function callVecMethod(v, method, args, node) {
   const impl = VEC_METHODS[method];
   if (!impl) throw runtimeError(`vector has no method '.${method}()'`, node);
   try { return impl(v, args); } catch (e) { throw runtimeError(e.message, node); }
+}
+
+function callColorMethod(c, method, args, node) {
+  const impl = COLOR_METHODS[method];
+  if (!impl) throw runtimeError(`color has no method '.${method}()'`, node);
+  try { return impl(c, args); } catch (e) { throw runtimeError(e.message, node); }
 }
 
 function setVecComp(v, comp, value) {
@@ -1796,86 +1786,16 @@ const BUILTIN_TABLE = new Map([
     }
     return mat3FromRows(r0, r1, r2);
   }),
-  // translate：1 参 → 平移 mat4；4 参 → vec3 平移。
-  builtin('translate', 1, 4, (args, rt, node) => {
-    if (args.length === 4) {
-      try {
-        return translateVec3(args[0], args[1], args[2], args[3]);
-      } catch (e) { throw runtimeError(e.message, node); }
+  builtin('mat4', 4, 4, (args, rt, node) => {
+    const rows = [];
+    for (let i = 0; i < 4; i++) {
+      const r = expectVec(args[i], 'mat4', node);
+      if (vecDim(r) !== 4) throw runtimeError('mat4 rows must be vec4', node);
+      rows.push([r.x, r.y, r.z, r.w]);
     }
-    if (args.length !== 1) throw runtimeError('translate expects 1 or 4 arguments', node);
-    const v = expectVec(args[0], 'translate', node);
-    if (vecDim(v) !== 3) throw runtimeError('translate requires a vec3', node);
-    return mat4([
-      [1, 0, 0, v.x],
-      [0, 1, 0, v.y],
-      [0, 0, 1, v.z],
-      [0, 0, 0, 1],
-    ]);
-  }),
-  // scale：1/3 参 → 缩放 mat4；2 参 → vec3 缩放。
-  builtin('scale', 1, 3, (args, rt, node) => {
-    if (args.length === 2) {
-      try {
-        return scaleVec3(args[0], args[1]);
-      } catch (e) { throw runtimeError(e.message, node); }
-    }
-    let sx, sy, sz;
-    if (args.length === 1) {
-      const a = args[0];
-      if (isNum(a)) { sx = sy = sz = a; }
-      else if (isVec(a)) {
-        const c = vecComps(a);
-        sx = c[0]; sy = c[1]; sz = a.t === 'vec3' ? c[2] : 1;
-      } else throw runtimeError(`scale not supported for ${typeName(a)}`, node);
-    } else {
-      sx = expectNum(args[0], 'scale', node);
-      sy = expectNum(args[1], 'scale', node);
-      sz = expectNum(args[2], 'scale', node);
-    }
-    return mat4([
-      [sx, 0, 0, 0],
-      [0, sy, 0, 0],
-      [0, 0, sz, 0],
-      [0, 0, 0, 1],
-    ]);
-  }),
-  builtin('rotate', 2, 2, (args, rt, node) => {
-    const axis = normalizeVec3(expectVec(args[0], 'rotate axis', node), node);
-    const a = expectNum(args[1], 'rotate angle', node);
-    return mat4Rodrigues(axis, a);
-  }),
-  builtin('lookAt', 3, 3, (args, rt, node) => {
-    const eye = expectVec(args[0], 'lookAt', node);
-    const target = expectVec(args[1], 'lookAt', node);
-    const up = expectVec(args[2], 'lookAt', node);
-    if (vecDim(eye) !== 3 || vecDim(target) !== 3 || vecDim(up) !== 3) {
-      throw runtimeError('lookAt requires vec3 arguments', node);
-    }
-    return lookAtMat4(eye, target, up, node);
-  }),
-  builtin('rotX', 1, 1, (args, rt, node) => rotXMat3(expectNum(args[0], 'rotX', node))),
-  builtin('rotY', 1, 1, (args, rt, node) => rotYMat3(expectNum(args[0], 'rotY', node))),
-  builtin('rotZ', 1, 1, (args, rt, node) => rotZMat3(expectNum(args[0], 'rotZ', node))),
-  builtin('rotAxis', 2, 2, (args, rt, node) => {
-    const axis = normalizeVec3(expectVec(args[0], 'rotAxis axis', node), node);
-    const a = expectNum(args[1], 'rotAxis angle', node);
-    return mat3Rodrigues(axis, a);
+    return mat4(rows);
   }),
 
-  // —— 向量变换（vec3→vec3）与标量工具 ——
-  builtin('rotateX', 2, 2, (args, rt, node) => {
-    try { return rotateXVec3(args[0], expectNum(args[1], 'rotateX', node)); }
-    catch (e) { throw runtimeError(e.message, node); }
-  }),
-  builtin('rotateY', 2, 2, (args, rt, node) => {
-    try { return rotateYVec3(args[0], expectNum(args[1], 'rotateY', node)); }
-    catch (e) { throw runtimeError(e.message, node); }
-  }),
-  builtin('rotateZ', 2, 2, (args, rt, node) => {
-    try { return rotateZVec3(args[0], expectNum(args[1], 'rotateZ', node)); }
-    catch (e) { throw runtimeError(e.message, node); }
-  }),
   builtin('norm', 2, 2, (args, rt, node) => {
     const a = expectInt(args[0], 'norm', node);
     const b = expectInt(args[1], 'norm', node);
@@ -2040,33 +1960,6 @@ const BUILTIN_TABLE = new Map([
     expectNum(args[2], 'color', node),
     expectNum(args[3], 'color', node),
   )),
-  builtin('red', 2, 2, (args, rt, node) => {
-    try { return red(args[0], expectNum(args[1], 'red', node)); } catch (e) { throw runtimeError(e.message, node); }
-  }),
-  builtin('green', 2, 2, (args, rt, node) => {
-    try { return green(args[0], expectNum(args[1], 'green', node)); } catch (e) { throw runtimeError(e.message, node); }
-  }),
-  builtin('blue', 2, 2, (args, rt, node) => {
-    try { return blue(args[0], expectNum(args[1], 'blue', node)); } catch (e) { throw runtimeError(e.message, node); }
-  }),
-  builtin('alpha', 2, 2, (args, rt, node) => {
-    try { return alpha(args[0], expectNum(args[1], 'alpha', node)); } catch (e) { throw runtimeError(e.message, node); }
-  }),
-  builtin('hue', 2, 2, (args, rt, node) => {
-    try { return hue(args[0], expectNum(args[1], 'hue', node)); } catch (e) { throw runtimeError(e.message, node); }
-  }),
-  builtin('saturation', 2, 2, (args, rt, node) => {
-    try { return saturation(args[0], expectNum(args[1], 'saturation', node)); } catch (e) { throw runtimeError(e.message, node); }
-  }),
-  builtin('value', 2, 2, (args, rt, node) => {
-    try { return value(args[0], expectNum(args[1], 'value', node)); } catch (e) { throw runtimeError(e.message, node); }
-  }),
-  builtin('rgb2hsv', 1, 1, (args, rt, node) => {
-    try { return rgb2hsv(args[0]); } catch (e) { throw runtimeError(e.message, node); }
-  }),
-  builtin('hsv2rgb', 1, 3, (args, rt, node) => {
-    try { return hsv2rgb(...args); } catch (e) { throw runtimeError(e.message, node); }
-  }),
 
   // —— 缓动 ——
   builtin('ease_linear', 3, 3, (args, rt, node) => {
@@ -2562,37 +2455,6 @@ class Compiler {
         this.patchJump(jend, end);
         for (const j of endJumps) this.patchJump(j, end);
         return;
-      }
-      case 'pipe': {
-        const right = node.right;
-        if (right.type === 'call') {
-          const callee = right.callee;
-          if (callee.type === 'var' && BUILTIN_FUNCTIONS.has(callee.name)) {
-            this.compileExpr(node.left);
-            for (const a of right.args) this.compileExpr(a);
-            this.emit3(OP.CALL_BUILTIN, BUILTIN_CODE.get(callee.name), right.args.length + 1, node);
-            return;
-          }
-          if (callee.type === 'var' && this.program.functions.has(callee.name)) {
-            this.compileExpr(node.left);
-            for (const a of right.args) this.compileExpr(a);
-            this.emit3(OP.CALL_USER, this.funcIdxByName.get(callee.name), right.args.length + 1, node);
-            return;
-          }
-          this.compileExpr(callee);
-          this.compileExpr(node.left);
-          for (const a of right.args) this.compileExpr(a);
-          this.emit2(OP.CALL_VALUE, right.args.length + 1, node);
-          return;
-        }
-        if (right.type === 'method') {
-          this.compileExpr(right.object);
-          this.compileExpr(node.left);
-          for (const a of right.args) this.compileExpr(a);
-          this.emit3(OP.METHOD, this.internName(right.method), right.args.length + 1, node);
-          return;
-        }
-        throw parseError(`right side of '|>' must be a function call`, node.line, node.col);
       }
       case 'lambda':
       case 'apply':
@@ -3885,12 +3747,14 @@ class Vm {
             else throw runtimeError(`particle list has no method '.${method}()'`, node);
           } else if (isVec(obj)) {
             stack.push(callVecMethod(obj, method, args, node));
+          } else if (isColor(obj)) {
+            stack.push(callColorMethod(obj, method, args, node));
           } else if (isObj(obj)) {
             throw runtimeError(`objects have no method '.${method}()'`, node);
           } else if (Array.isArray(obj)) {
             stack.push(applyArrayMethod(obj, method, args, this.rt, node));
           } else {
-            throw runtimeError(`method '.${method}()' requires an array, particle, particle list or vector, got ${typeName(obj)}`, node);
+            throw runtimeError(`method '.${method}()' requires an array, particle, particle list, vector or color, got ${typeName(obj)}`, node);
           }
           break;
         }

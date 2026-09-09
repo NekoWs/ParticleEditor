@@ -195,6 +195,7 @@ function exprCls(node) {
     case 'ternary': return 'blk-math';
     case 'index': return 'blk-array';
     case 'method': return 'blk-array';
+    case 'chaincall': return 'blk-vec';
     case 'array': return 'blk-array';
     default: return 'blk-var';
   }
@@ -701,11 +702,18 @@ function exprParts(node) {
       });
       P.push({ text: ' }' });
       break;
-    case 'pipe':
-      P.push({ slot: { ref: slotRef(() => node.left, v => { node.left = v; }, T_ANY), type: T_ANY, label: '' } });
-      P.push({ text: ' |> ' });
-      P.push({ slot: { ref: slotRef(() => node.right, v => { node.right = v; }, T_ANY), type: T_ANY, label: '' } });
+    case 'chaincall': {
+      P.push({ slot: { ref: slotRef(() => node.obj, v => { node.obj = v; }, T_ANY), type: T_ANY, label: '' } });
+      node.calls.forEach((c) => {
+        P.push({ text: '.' + c.method + '(' });
+        c.args.forEach((_, i) => {
+          if (i > 0) P.push({ text: ', ' });
+          P.push({ slot: { ref: slotRef(() => c.args[i], v => { c.args[i] = v; }, T_ANY), type: T_ANY, label: '' } });
+        });
+        P.push({ text: ')' });
+      });
       break;
+    }
     case 'apply':
       P.push({ slot: { ref: slotRef(() => node.target, v => { node.target = v; }, T_ANY), type: T_ANY, label: '' } });
       P.push({ text: '.apply { ' });

@@ -31,10 +31,7 @@ export const COMP_NAMES = new Set(['x', 'y', 'z', 'w', 'r', 'g', 'b', 'a']);
 // 内建函数名（与 BUILTIN_TABLE 的声明一一对应，parser 用于保留名校验）。
 export const BUILTIN_FUNCTION_NAMES = [
   'print', 'assert',
-  'vec2', 'vec3', 'vec4', 'vec', 'mat3',
-  'translate', 'scale', 'rotate', 'lookAt',
-  'rotX', 'rotY', 'rotZ', 'rotAxis',
-  'rotateX', 'rotateY', 'rotateZ',
+  'vec2', 'vec3', 'vec4', 'vec', 'mat3', 'mat4',
   'norm',
   'clamp', 'map_range', 'remap',
   'int', 'float', 'bool',
@@ -45,8 +42,7 @@ export const BUILTIN_FUNCTION_NAMES = [
   'noise', 'fbm', 'rand', 'random',
   'ease_linear', 'ease_in_out', 'ease_out_back', 'ease_in_elastic',
   'hash', 'phases', 'repeat',
-  'color', 'red', 'green', 'blue', 'alpha',
-  'hue', 'saturation', 'value', 'rgb2hsv', 'hsv2rgb',
+  'color',
   'unique', 'reverse', 'sort',
 ];
 export const BUILTIN_FUNCTIONS = new Set(BUILTIN_FUNCTION_NAMES);

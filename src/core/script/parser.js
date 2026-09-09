@@ -110,12 +110,6 @@ function tokenize(source) {
     }
 
     // 两字符运算符
-    if (c === '|' && src[i + 1] === '>') {
-      const startLine = line, startCol = col;
-      advance(); advance();
-      push({ type: 'punct', value: '|>', line: startLine, col: startCol });
-      continue;
-    }
     if (c === '-' && src[i + 1] === '>') {
       const startLine = line, startCol = col;
       advance(); advance();
@@ -527,7 +521,7 @@ class Parser {
       const nameTok = this.expectIdent();
       this.validateDeclName(nameTok);
       let init = null;
-      if (!this.nlBefore() && this.match('=')) init = this.parsePipe();
+      if (!this.nlBefore() && this.match('=')) init = this.parseTernary();
       else if (kind === 'const') this.errorAt(nameTok, "'const' must have an initializer");
       decls.push({ name: nameTok.value, init, line: nameTok.line, col: nameTok.col });
       if (this.check(',') && !this.nlBefore()) { this.next(); continue; }
@@ -557,7 +551,7 @@ class Parser {
       const t = this.peek();
       throw parseError('object destructuring requires an initializer', t.line, t.col);
     }
-    const value = this.parsePipe();
+    const value = this.parseTernary();
     return { type: 'destructure', kind, names, value, line: tok.line, col: tok.col };
   }
 
@@ -577,7 +571,7 @@ class Parser {
     }
     this.statementEnd();
     const allowed = expr.type === 'call' || expr.type === 'method' || expr.type === 'preinc' ||
-      expr.type === 'postinc' || expr.type === 'pipe' || expr.type === 'apply';
+      expr.type === 'postinc' || expr.type === 'apply';
     if (!allowed && this.allowBareExpr === 0) {
       this.errorAt(start, 'expression statement must be a function call');
     }
@@ -588,14 +582,14 @@ class Parser {
   // 复合赋值 a += b 等价于 a = a + b（左侧表达式作为读取值参与二元运算）。
   parseAssignExpr() {
     const start = this.peek();
-    const left = this.parsePipe();
+    const left = this.parseTernary();
     if (!this.nlBefore()) {
       const opTok = this.peek();
       const binOp = COMPOUND_ASSIGN[opTok.value];
       if (binOp) {
         this.next();
         const target = toLValue(left, start);
-        const value = this.parsePipe();
+        const value = this.parseTernary();
         return {
           type: 'assign', target,
           value: { type: 'binary', op: binOp, left, right: value, line: opTok.line, col: opTok.col },
@@ -613,20 +607,6 @@ class Parser {
   }
 
   /* -- 表达式 -- */
-
-  // 管道：x |> f(a) ≡ f(x, a)。左结合，优先级最低（低于赋值、高于三元）。
-  parsePipe() {
-    let left = this.parseTernary();
-    while (!this.nlBefore() && this.match('|>')) {
-      const opTok = this.tokens[this.pos - 1];
-      const right = this.parseTernary();
-      if (right.type !== 'call' && right.type !== 'method') {
-        throw parseError(`right side of '|>' must be a function call`, right.line, right.col);
-      }
-      left = { type: 'pipe', left, right, line: opTok.line, col: opTok.col };
-    }
-    return left;
-  }
 
   parseTernary() {
     const cond = this.parseOr();
@@ -741,7 +721,7 @@ class Parser {
         const idx = this.parseTernary();
         this.expect(']');
         expr = { type: 'index', target: expr, index: idx, line: expr.line, col: expr.col };
-      } else if (!this.nlBefore() && this.match('.')) {
+      } else if (this.match('.')) {
         const nameTok = this.expectIdent();
         if (this.match('(')) {
           const args = this.parseArgs();
@@ -945,7 +925,7 @@ export function parseProgram(source) {
 }
 export function parseExpression(source) {
   const p = new Parser(source);
-  const node = p.parsePipe();
+  const node = p.parseTernary();
   const extra = p.peek();
   if (extra.type !== 'eof') {
     throw parseError(`unexpected '${extra.value}' after expression`, extra.line, extra.col);

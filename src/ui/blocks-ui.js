@@ -74,11 +74,11 @@ export function cloneExprNode(n) {
   else if (n.kind === 'ternary') { o.cond = cloneExprNode(n.cond); o.a = cloneExprNode(n.a); o.b = cloneExprNode(n.b); }
   else if (n.kind === 'index') { o.target = cloneExprNode(n.target); o.index = cloneExprNode(n.index); }
   else if (n.kind === 'method') { o.obj = cloneExprNode(n.obj); o.method = n.method; o.args = n.args.map(cloneExprNode); }
+  else if (n.kind === 'chaincall') { o.obj = cloneExprNode(n.obj); o.calls = n.calls.map(c => ({ method: c.method, args: c.args.map(cloneExprNode) })); }
   else if (n.kind === 'array') { o.items = n.items.map(cloneExprNode); }
   else if (n.kind === 'chain') { o.terms = n.terms.map(cloneExprNode); o.ops = n.ops.slice(); }
   else if (n.kind === 'lambda') { o.params = n.params ? n.params.slice() : []; o.body = cloneExprNode(n.body); }
   else if (n.kind === 'obj') { o.entries = (n.entries || []).map(e => ({ key: e.key, value: cloneExprNode(e.value) })); }
-  else if (n.kind === 'pipe') { o.left = cloneExprNode(n.left); o.right = cloneExprNode(n.right); }
   else if (n.kind === 'apply') { o.target = cloneExprNode(n.target); o.body = cloneExprNode(n.body); }
   return o;
 }
@@ -364,6 +364,7 @@ export function newExprNodeFromTemplate(template) {
   if (template.kind === 'index') return { kind: 'index', target: null, index: null };
   if (template.kind === 'method') return { kind: 'method', obj: null, method: template.method, args: Array.from({ length: METHOD_ARITY[template.method] ?? 0 }, () => null) };
   if (template.kind === 'array') return { kind: 'array', items: [null] };
+  if (template.kind === 'chaincall') return { kind: 'chaincall', obj: cloneExprNode(template.obj), calls: template.calls.map(c => ({ method: c.method, args: c.args.map(cloneExprNode) })) };
   return null;
 }
 export function defaultExprFor(type) {
@@ -457,16 +458,18 @@ export function buildPaletteGroup(g) {
       if (FUNC_BLOCKS[name]) items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name, info: funcInfo(name) });
     }
   } else if (g.id === 'vec') {
-    ['vec', 'rotateX', 'rotateY', 'rotateZ', 'polar', 'sphere', 'torus'].forEach(name => {
+    ['vec', 'polar', 'sphere', 'torus'].forEach(name => {
       if (FUNC_BLOCKS[name]) items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name, info: funcInfo(name) });
     });
+    items.push({ key: 'expr:chaincall:vec', type: 'expr', template: { kind: 'chaincall', obj: { kind: 'func', name: 'vec', args: [] }, calls: [{ method: 'rotateY', args: [] }, { method: 'rotateX', args: [] }] }, label: t('blk.chaincall'), info: t('blk.chaincall.desc') });
     items.push({ key: 'expr:comp', type: 'expr', template: { kind: 'comp', axis: 'x', target: null }, label: t('blk.comp'), info: t('blk.compDesc') });
   } else if (g.id === 'mat') {
-    ['rotX', 'rotY', 'rotZ', 'rotAxis'].forEach(name => items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name, info: funcInfo(name) }));
+    ['mat3', 'mat4'].forEach(name => items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name, info: funcInfo(name) }));
   } else if (g.id === 'color') {
-    ['color', 'red', 'green', 'blue', 'alpha', 'hue', 'saturation', 'value', 'rgb2hsv', 'hsv2rgb'].forEach(name => {
+    ['color'].forEach(name => {
       if (FUNC_BLOCKS[name]) items.push({ key: 'func:' + name, type: 'expr', template: { kind: 'func', name, args: [] }, label: name, info: funcInfo(name) });
     });
+    items.push({ key: 'expr:chaincall:color', type: 'expr', template: { kind: 'chaincall', obj: { kind: 'func', name: 'color', args: [] }, calls: [{ method: 'red', args: [] }, { method: 'alpha', args: [] }] }, label: t('blk.chaincall'), info: t('blk.chaincall.desc') });
   } else if (g.id === 'array') {
     items.push({ key: 'expr:array', type: 'expr', template: { kind: 'array' }, label: '[]', info: t('blk.arrayDesc') });
     items.push({ key: 'expr:index', type: 'expr', template: { kind: 'index' }, label: '[ ]', info: t('blk.indexDesc') });
@@ -494,6 +497,7 @@ export function renameRefsInStmts(stmts, oldName, newName) {
     if (!n) return;
     if (n.kind === 'var' && n.name === oldName) n.name = newName;
     if (n.kind === 'func' || n.kind === 'method') n.args.forEach(walk);
+    if (n.kind === 'chaincall') { walk(n.obj); n.calls.forEach(c => c.args.forEach(walk)); }
     if (n.kind === 'member') walk(n.obj);
     if (n.kind === 'op') { walk(n.a); walk(n.b); }
     if (n.kind === 'comp' || n.kind === 'index') { walk(n.target); if (n.index) walk(n.index); }

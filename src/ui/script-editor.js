@@ -30,7 +30,7 @@ import { localizeScriptError } from '../core/script-error-i18n.js';
 export const SCRIPT_KEYWORDS = [
   'this', 'setup', 'process', 'tick', 'func', 'of', 'const', 'let', 'undefined',
   'if', 'else', 'while', 'do', 'for', 'break', 'continue', 'return',
-  'true', 'false',
+  'true', 'false', 'when',
 ];
 
 export const SCRIPT_THIS_FIELDS = [
@@ -41,15 +41,13 @@ const THIS_FIELD_SET = new Set(SCRIPT_THIS_FIELDS);
 
 export const SCRIPT_BUILTINS = [
   'vec2', 'vec3', 'vec4', 'mat3', 'mat4',
-  'translate', 'scale', 'rotate', 'lookAt', 'rotX', 'rotY', 'rotZ', 'rotAxis',
-  'rotateX', 'rotateY', 'rotateZ',
   'norm', 'hash', 'phases', 'repeat',
   'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'atan2',
   'sqrt', 'abs', 'sign', 'exp', 'log', 'ln', 'floor', 'ceil', 'round', 'fract', 'pow',
   'min', 'max', 'clamp', 'step', 'smoothstep', 'mod', 'map_range', 'remap', 'int', 'float', 'bool',
   'noise', 'fbm', 'rand', 'random',
   'ease_linear', 'ease_in_out', 'ease_out_back', 'ease_in_elastic',
-  'color', 'red', 'green', 'blue', 'alpha', 'hue', 'saturation', 'value', 'rgb2hsv', 'hsv2rgb',
+  'color',
   'unique', 'reverse', 'sort', 'print', 'assert',
 ];
 
@@ -118,6 +116,7 @@ export const scriptLanguage = StreamLanguage.define({
         state.afterThisDot = false;
         state.lastWord = word;
         if (isThisField) return 'propertyName';
+        if (word === 'apply') return 'function';
         return stream.match(/^\s*\(/, false) ? 'function' : 'propertyName';
       }
 
@@ -288,12 +287,8 @@ const ARRAY_METHOD_RETURN_TYPES = {
 const BUILTIN_RETURN_TYPES = {
   vec2: 'vec2', vec3: 'vec3', vec4: 'vec4', vec: 'vec3',
   mat3: 'mat3', mat4: 'mat4',
-  translate: 'mat4', scale: 'mat4', rotate: 'mat4', lookAt: 'mat4',
-  rotX: 'mat3', rotY: 'mat3', rotZ: 'mat3', rotAxis: 'mat3',
-  rotateX: 'vec3', rotateY: 'vec3', rotateZ: 'vec3',
   norm: 'num', hash: 'num',
-  color: 'vec4', red: 'vec4', green: 'vec4', blue: 'vec4', alpha: 'vec4',
-  hue: 'vec4', saturation: 'vec4', value: 'vec4', rgb2hsv: 'vec3', hsv2rgb: 'vec4',
+  color: 'color',
   sin: 'num', cos: 'num', tan: 'num', asin: 'num', acos: 'num', atan: 'num', atan2: 'num',
   sqrt: 'num', abs: 'num', sign: 'num', exp: 'num', log: 'num', ln: 'num',
   floor: 'num', ceil: 'num', round: 'num', fract: 'num', pow: 'num',

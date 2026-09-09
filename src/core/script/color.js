@@ -137,3 +137,76 @@ export function value(c, v) {
   const hsv = rgb2hsv(c);
   return hsv2rgb(hsv.x, hsv.y, clamp01(v));
 }
+
+// —— color 实例方法（面向对象风格；分量方法无参=读、带参=写）——
+
+function colorObj(entries) {
+  return { t: 'obj', fields: new Map(entries) };
+}
+
+function channel(c, args, name, read, write) {
+  expectColor(c, name);
+  if (args.length === 0) return read(c);
+  if (args.length === 1) {
+    if (!isNum(args[0])) throw new Error(`${name} requires a num`);
+    return write(c, args[0]);
+  }
+  throw new Error(`${name} expects 0 or 1 argument(s), got ${args.length}`);
+}
+
+export const COLOR_METHODS = {
+  toRGB(c, args) {
+    expectColor(c, 'toRGB');
+    if (args.length !== 0) throw new Error('toRGB takes no arguments');
+    return colorObj([['r', c.r], ['g', c.g], ['b', c.b], ['a', c.a]]);
+  },
+
+  toHSV(c, args) {
+    expectColor(c, 'toHSV');
+    if (args.length !== 0) throw new Error('toHSV takes no arguments');
+    const hsv = rgb2hsv(c);
+    return colorObj([['h', hsv.x], ['s', hsv.y], ['v', hsv.z]]);
+  },
+
+  red(c, args) {
+    return channel(c, args, 'red', (x) => x.r, (x, v) => color(clamp01(v), x.g, x.b, x.a));
+  },
+
+  green(c, args) {
+    return channel(c, args, 'green', (x) => x.g, (x, v) => color(x.r, clamp01(v), x.b, x.a));
+  },
+
+  blue(c, args) {
+    return channel(c, args, 'blue', (x) => x.b, (x, v) => color(x.r, x.g, clamp01(v), x.a));
+  },
+
+  alpha(c, args) {
+    return channel(c, args, 'alpha', (x) => x.a, (x, v) => color(x.r, x.g, x.b, clamp01(v)));
+  },
+
+  hue(c, args) {
+    return channel(c, args, 'hue',
+      (x) => rgb2hsv(x).x,
+      (x, v) => hsv2rgb(v - Math.floor(v), rgb2hsv(x).y, rgb2hsv(x).z));
+  },
+
+  saturation(c, args) {
+    return channel(c, args, 'saturation',
+      (x) => rgb2hsv(x).y,
+      (x, v) => hsv2rgb(rgb2hsv(x).x, clamp01(v), rgb2hsv(x).z));
+  },
+
+  value(c, args) {
+    return channel(c, args, 'value',
+      (x) => rgb2hsv(x).z,
+      (x, v) => hsv2rgb(rgb2hsv(x).x, rgb2hsv(x).y, clamp01(v)));
+  },
+
+  shift_hue(c, args) {
+    expectColor(c, 'shift_hue');
+    if (args.length !== 1) throw new Error('shift_hue expects 1 argument');
+    if (!isNum(args[0])) throw new Error('shift_hue requires a num');
+    const hsv = rgb2hsv(c);
+    return hsv2rgb(hsv.x + args[0] - Math.floor(hsv.x + args[0]), hsv.y, hsv.z);
+  },
+};

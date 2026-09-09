@@ -104,7 +104,7 @@ p.apply {
 
 - `color(r, g, b, a)`，分量 0..1。
 - 分量 `.r/.g/.b/.a` 与别名 `.x/.y/.z/.w`；分量写入返回新 color 并钳制 0..1。
-- 与 vec4 是不同类型：粒子颜色字段写入时两者都接受（§3）。手动转换用 `vec4(c.r, c.g, c.b, c.a)` 与 `color(v.x, v.y, v.z, v.w)`；HSV 往返用 `rgb2hsv`/`hsv2rgb`（§8）。
+- 与 vec4 是不同类型：粒子颜色字段写入时两者都接受（§3）。手动转换用 `vec4(c.r, c.g, c.b, c.a)` 与 `color(v.x, v.y, v.z, v.w)`；HSV 往返用 `c.toHSV()` / `c.toRGB()`（§8）。
 
 ## 5. 词法
 
@@ -113,7 +113,7 @@ p.apply {
 - 字符串字面量：`"..."`（转义 `\n` `\r` `\t` `\"` `\\`）。
 - 注释：`//`、`/* */`。
 - 关键字：`setup` `process` `tick` `func` `return` `if` `else` `while` `do` `for` `of` `const` `let` `undefined` `when` `break` `continue` `true` `false`。
-- 运算符/箭头：`|>`、`->`（lambda 参数箭头）。
+- 运算符/箭头：`->`（lambda 参数箭头）。
 - `static` 关键字已移除，可作普通标识符。
 
 ## 6. 语句
@@ -133,13 +133,13 @@ when (x) { 1 -> stmt; 2 -> stmt; else -> stmt }   // 语句形式（§7）
 [a, b] = expr                    // 数组/向量拆包赋值（数量须一致）
 ```
 
-语句以 `;`、换行或 `}` 结尾，三者均可；`;` 仅用于同行写多条语句。多行表达式需把运算符写在行尾续行，或靠未闭合的括号续行；行首的运算符 / `.` / `(` / `[` 不续接上一行，而是开启新语句。三元 `?:` 例外，`?` 与 `:` 可置于行首续接上一行。
+语句以 `;`、换行或 `}` 结尾，三者均可；`;` 仅用于同行写多条语句。多行表达式需把运算符写在行尾续行，或靠未闭合的括号续行；行首的运算符 / `(` / `[` 不续接上一行，而是开启新语句；行首的 `.` 会续接上一行的链式调用（方法链可多行）。三元 `?:` 例外，`?` 与 `:` 可置于行首续接上一行。
 
 - 顶层（函数外）只允许 `let`/`const` 声明（含解构）与 `func` 定义；此处变量为全局，`let` 处处可写、`const` 只读。
 - 赋值（`x = v`、`x += v`、`x++`）只能操作已声明变量；给未声明名赋值报错。`let`/`const` 块级作用域，同作用域重复声明报错，可遮蔽外层。
 - C 风格 `for(init;cond;inc)` 中的两个 `;` 是分隔符，仍必填。`for (let i = 0; ...)` 声明块级局部变量；`for (i = 0; ...)` 的 `i` 须已声明。
 - `for...of` 可迭代 `particleList` 与 `array`（迭代快照：循环内 spawn/kill 不影响本次迭代）；`const` 循环变量只读，`let` 与省略写法可写。
-- 普通语句块内裸表达式语句必须是调用（call / method / 前/后置自增 / pipe / apply）；lambda 体内允许任意裸表达式语句，其值即块值。
+- 普通语句块内裸表达式语句必须是调用（call / method / 前/后置自增 / apply）；lambda 体内允许任意裸表达式语句，其值即块值。
 
 ## 7. 表达式与运算
 
@@ -148,19 +148,18 @@ when (x) { 1 -> stmt; 2 -> stmt; else -> stmt }   // 语句形式（§7）
 从低到高：
 
 1. 赋值 `=` `+=` `-=` `*=` `/=` `%=` `^=`（右结合）
-2. 管道 `|>`
-3. 三元 `?:`
-4. `||`
-5. `&&`
-6. `==` `!=`
-7. `<` `<=` `>` `>=`
-8. `+` `-`
-9. `*` `/` `%`
-10. 幂 `^`（右结合）
-11. 一元 `-` `!` `++` `--`（前置）
-12. 后缀 `()` `[]` `.` `++` `--`
+2. 三元 `?:`
+3. `||`
+4. `&&`
+5. `==` `!=`
+6. `<` `<=` `>` `>=`
+7. `+` `-`
+8. `*` `/` `%`
+9. 幂 `^`（右结合）
+10. 一元 `-` `!` `++` `--`（前置）
+11. 后缀 `()` `[]` `.` `++` `--`
 
-管道 `|>` 左结合，优先级低于三元、高于赋值（赋值最松）。一元负号高于幂：`-2^2` 按 `(-2)^2` 计算，拿不准就加括号。
+一元负号高于幂：`-2^2` 按 `(-2)^2` 计算，拿不准就加括号。
 
 ### 运算
 
@@ -179,12 +178,13 @@ when (x) { 1 -> stmt; 2 -> stmt; else -> stmt }   // 语句形式（§7）
 let c = when(x) { 0 -> color(1,0,0,1); 1 -> color(0,1,0,1); else -> color(1,1,1,1) }
 ```
 
-### 管道
+### 方法链
 
-`x |> f(a)` 等价于 `f(x, a)`；左结合；RHS 必须是调用（`f(...)` 或 `obj.m(...)`）。
+变换与分量调整统一用链式方法调用，`.` 前可换行：
 
 ```js
-vec(1, 0, 0) |> rotateZ(PI / 2) |> rotateX(PI / 2)
+vec(1, 0, 0).rotateZ(PI / 2).rotateX(PI / 2)
+color(1, 0, 0, 1).red(0.25).alpha(0.5)
 ```
 
 ### vec 实例方法
@@ -200,6 +200,9 @@ vec(1, 0, 0) |> rotateZ(PI / 2) |> rotateX(PI / 2)
 - `v.project(w)`：投影到 w；w 为零向量抛错。
 - `v.reflect(n)`：`v - 2*dot(v,n)*n`。
 - `v.lerp(w, t)`
+- `v.rotateX(a)` / `v.rotateY(a)` / `v.rotateZ(a)`：仅 vec3，绕轴旋转。
+- `v.translate(...)`：按维数平移（vec2 两参、vec3 三参、vec4 四参）。
+- `v.scale(s)` / `v.scale(w)`：标量或同维向量缩放。
 
 旧的全局 `dot`/`cross`/`len`/`len2`/`norm(v)`/`lerp`/`mix`/`distance`/`angle_between`/`project`/`reflect` 已删除，改用上述实例方法；`norm` 现为标量函数（§8）。
 
@@ -210,12 +213,8 @@ vec(1, 0, 0) |> rotateZ(PI / 2) |> rotateX(PI / 2)
 ### vec
 
 - `vec2(x,y)`、`vec3(x,y,z)`、`vec4(x,y,z,w)`、`vec(x,y,z)`（等价 vec3）
-- `mat3(r0,r1,r2)`：三个 vec3 行向量
-- `translate(v)` → mat4；`translate(v, dx, dy, dz)` → vec3 平移（按参数个数重载）
-- `scale(s)` / `scale(sx,sy,sz)` / `scale(vec)` → mat4；`scale(v, s)` / `scale(v, vec3)` → vec3 缩放
-- `rotate(axis, angle)` → mat4（绕任意轴）；`lookAt(eye, target, up)` → mat4
-- `rotX(a)`、`rotY(a)`、`rotZ(a)` → mat3；`rotAxis(axis, angle)` → mat3
-- `rotateX(v, a)`、`rotateY(v, a)`、`rotateZ(v, a)` → vec3 旋转
+- `mat3(r0,r1,r2)`：三个 vec3 行向量；`mat4(r0,r1,r2,r3)`：四个 vec4 行向量
+- 矩阵乘法 `mat * mat`、`mat * vec`（§7）；旋转/平移/缩放用 vec 实例方法（§7）
 
 ### math
 
@@ -250,9 +249,9 @@ vec(1, 0, 0) |> rotateZ(PI / 2) |> rotateX(PI / 2)
 ### color
 
 - `color(r,g,b,a)`
-- `red(c,v)` / `green(c,v)` / `blue(c,v)` / `alpha(c,v)`：返回改单分量的新 color（分量钳制 0..1）
-- `hue(c,h)` / `saturation(c,s)` / `value(c,v)`：按 HSV 调整，返回新 color
-- `rgb2hsv(c)` → vec3(h,s,v)；`hsv2rgb(h,s,v)` 或 `hsv2rgb(vec3)` → color（alpha 为 1）
+- `c.toRGB()` → `{ r, g, b, a }`；`c.toHSV()` → `{ h, s, v }`
+- 分量方法无参=读、带参=写（返回新 color，钳制 0..1）：`c.red()` / `c.red(v)`、`c.green()`、`c.blue()`、`c.alpha()`
+- HSV 方法：`c.hue()` / `c.hue(h)`、`c.saturation()` / `c.saturation(s)`、`c.value()` / `c.value(v)`、`c.shift_hue(d)`（色相偏移并循环）
 
 ### debug
 

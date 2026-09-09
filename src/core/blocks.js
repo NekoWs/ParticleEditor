@@ -15,8 +15,6 @@ export const T_ANY = 'any'; // 临时变量（类型由赋值决定，放宽约�
 
 // PREC/NEG_PREC 来自 script-lang 的优先级表；ATOM_PREC 为原子表达式的虚拟优先级
 export const ATOM_PREC = 10;
-// 管道 | > 优先级最低（低于三元 0.75），父级优先级低于此值时才加括号。
-export const PIPE_PREC = 0.6;
 
 /* —— 语句块槽规格（ASCII 名原样显示；中文语义槽用 i18n 键 blk.slot.*） —— */
 export const STMT_SLOTS = {
@@ -189,26 +187,12 @@ export const FUNC_BLOCKS = {
   random: { ret: T_SCALAR, args: [], desc: 'blk.func.random.desc' },
   rand: { ret: T_SCALAR, args: [['blk.arg.seed', T_SCALAR]], desc: 'blk.func.rand.desc' },
   vec: { ret: T_VEC, args: [['x', T_SCALAR], ['y', T_SCALAR], ['z', T_SCALAR]], desc: 'blk.func.vec.desc' },
+  mat3: { ret: T_MAT, args: [['r0', T_VEC], ['r1', T_VEC], ['r2', T_VEC]], desc: 'blk.func.mat3.desc' },
+  mat4: { ret: T_MAT, args: [['r0', T_VEC], ['r1', T_VEC], ['r2', T_VEC], ['r3', T_VEC]], desc: 'blk.func.mat4.desc' },
   hash: { ret: T_SCALAR, args: [['blk.arg.seed', T_SCALAR], ['blk.arg.salt', T_SCALAR]], desc: 'blk.func.hash.desc' },
   norm: { ret: T_SCALAR, args: [['a', T_SCALAR], ['b', T_SCALAR]], desc: 'blk.func.norm.desc' },
   color: { ret: T_ANY, args: [['r', T_SCALAR], ['g', T_SCALAR], ['b', T_SCALAR], ['a', T_SCALAR]], desc: 'blk.func.color.desc' },
-  red: { ret: T_ANY, args: [['c', T_ANY], ['v', T_SCALAR]], desc: 'blk.func.red.desc' },
-  green: { ret: T_ANY, args: [['c', T_ANY], ['v', T_SCALAR]], desc: 'blk.func.green.desc' },
-  blue: { ret: T_ANY, args: [['c', T_ANY], ['v', T_SCALAR]], desc: 'blk.func.blue.desc' },
-  alpha: { ret: T_ANY, args: [['c', T_ANY], ['v', T_SCALAR]], desc: 'blk.func.alpha.desc' },
-  hue: { ret: T_ANY, args: [['c', T_ANY], ['v', T_SCALAR]], desc: 'blk.func.hue.desc' },
-  saturation: { ret: T_ANY, args: [['c', T_ANY], ['v', T_SCALAR]], desc: 'blk.func.saturation.desc' },
-  value: { ret: T_ANY, args: [['c', T_ANY], ['v', T_SCALAR]], desc: 'blk.func.value.desc' },
-  rgb2hsv: { ret: T_VEC, args: [['c', T_ANY]], desc: 'blk.func.rgb2hsv.desc' },
-  hsv2rgb: { ret: T_ANY, args: [['h', T_SCALAR], ['s', T_SCALAR], ['v', T_SCALAR]], desc: 'blk.func.hsv2rgb.desc' },
-  rotateX: { ret: T_VEC, args: [['v', T_VEC], ['blk.arg.angle', T_SCALAR]], desc: 'blk.func.rotateX.desc' },
-  rotateY: { ret: T_VEC, args: [['v', T_VEC], ['blk.arg.angle', T_SCALAR]], desc: 'blk.func.rotateY.desc' },
-  rotateZ: { ret: T_VEC, args: [['v', T_VEC], ['blk.arg.angle', T_SCALAR]], desc: 'blk.func.rotateZ.desc' },
   phases: { ret: T_ANY, args: [['t', T_SCALAR], ['blk.arg.obj', T_ANY]], desc: 'blk.func.phases.desc' },
-  rotX: { ret: T_MAT, args: [['blk.arg.angle', T_SCALAR]], desc: 'blk.func.rotX.desc' },
-  rotY: { ret: T_MAT, args: [['blk.arg.angle', T_SCALAR]], desc: 'blk.func.rotY.desc' },
-  rotZ: { ret: T_MAT, args: [['blk.arg.angle', T_SCALAR]], desc: 'blk.func.rotZ.desc' },
-  rotAxis: { ret: T_MAT, args: [['blk.arg.axis', T_VEC], ['blk.arg.angle', T_SCALAR]], desc: 'blk.func.rotAxis.desc' },
   polar: { ret: T_VEC, args: [['blk.arg.radius', T_SCALAR], ['blk.arg.angle', T_SCALAR]], desc: 'blk.func.polar.desc' },
   sphere: { ret: T_VEC, args: [['blk.arg.radius', T_SCALAR], ['θ', T_SCALAR], ['φ', T_SCALAR]], desc: 'blk.func.sphere.desc' },
   torus: { ret: T_VEC, args: [['R', T_SCALAR], ['r', T_SCALAR], ['θ', T_SCALAR], ['φ', T_SCALAR]], desc: 'blk.func.torus.desc' },
@@ -339,10 +323,11 @@ export function exprComplete(node) {
     case 'ternary': return exprComplete(node.cond) && exprComplete(node.a) && exprComplete(node.b);
     case 'index': return exprComplete(node.target) && exprComplete(node.index);
     case 'method': return exprComplete(node.obj) && node.args.every(exprComplete);
+    case 'chaincall': return exprComplete(node.obj) && node.calls.every(c => c.args.every(exprComplete));
     case 'array': return true; // 数组字面量允许留空；生成时跳过空槽（全空生成 []）
     case 'lambda': return node.body == null || exprComplete(node.body);
     case 'obj': return node.entries.every(e => exprComplete(e.value));
-    case 'pipe': return exprComplete(node.left) && exprComplete(node.right);
+    case 'chaincall': return exprComplete(node.obj) && node.calls.every(c => c.args.every(exprComplete));
     case 'apply': return exprComplete(node.target) && (node.body == null || exprComplete(node.body));
     default: return false;
   }
@@ -412,6 +397,9 @@ export function exprToCode(node, parentPrec) {
       s = exprToCode(node.target, ATOM_PREC) + '[' + exprToCode(node.index, 0) + ']'; p = ATOM_PREC; break;
     case 'method':
       s = exprToCode(node.obj, ATOM_PREC) + '.' + node.method + '(' + node.args.map(a => exprToCode(a, 0)).join(', ') + ')'; p = ATOM_PREC; break;
+    case 'chaincall':
+      s = exprToCode(node.obj, ATOM_PREC) + node.calls.map(c => '.' + c.method + '(' + c.args.map(a => exprToCode(a, 0)).join(', ') + ')').join('');
+      p = ATOM_PREC; break;
     case 'comp':
       s = exprToCode(node.target, ATOM_PREC) + '.' + node.axis; p = ATOM_PREC; break;
     case 'not':
@@ -451,9 +439,6 @@ export function exprToCode(node, parentPrec) {
     case 'obj':
       s = '{ ' + node.entries.map(e => (isSimpleIdent(e.key) ? e.key : '"' + e.key + '"') + ': ' + exprToCode(e.value, 0)).join(', ') + ' }';
       p = ATOM_PREC; break;
-    case 'pipe':
-      s = exprToCode(node.left, PIPE_PREC) + ' |> ' + exprToCode(node.right, PIPE_PREC);
-      p = PIPE_PREC; break;
     case 'apply':
       s = exprToCode(node.target, ATOM_PREC) + '.apply { ' + (node.body ? exprToCode(node.body, 0) : '') + ' }';
       p = ATOM_PREC; break;
@@ -790,7 +775,14 @@ export function parseExpr(str) {
         }
         if (!peek() || peek().t !== '(') { node = { kind: 'member', obj: node, field: m.name }; continue; }
         next(); // '('
-        node = { kind: 'method', obj: node, method: m.name, args: parseCallArgs() };
+        const args = parseCallArgs();
+        if (node.kind === 'chaincall') {
+          node.calls.push({ method: m.name, args });
+        } else if (node.kind === 'method') {
+          node = { kind: 'chaincall', obj: node.obj, calls: [{ method: node.method, args: node.args }, { method: m.name, args }] };
+        } else {
+          node = { kind: 'method', obj: node, method: m.name, args };
+        }
       } else {
         break;
       }
@@ -888,17 +880,7 @@ export function parseExpr(str) {
     }
     return cond;
   }
-  function parsePipe() {
-    let node = parseTernary();
-    while (peek() && peek().t === '|>') {
-      next();
-      const right = parseTernary();
-      node = { kind: 'pipe', left: node, right };
-    }
-    return node;
-  }
-
-  const node = parsePipe();
+  const node = parseTernary();
   if (pos < toks.length) throw new Error(_etf('err.exprExtra', str));
   return node;
 }

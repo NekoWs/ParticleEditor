@@ -105,6 +105,17 @@ export function scaleVec3(v, s) {
   throw new Error('scale requires a scalar or vec3');
 }
 
+function scaleVec(v, s) {
+  const dim = vecDim(v);
+  if (isNum(s)) return mkVec(dim, vecComps(v).map((x) => x * s));
+  if (isVec(s)) {
+    if (vecDim(s) !== dim) throw new Error('scale requires a scalar or same-dimension vec');
+    const cs = vecComps(s);
+    return mkVec(dim, vecComps(v).map((x, i) => x * cs[i]));
+  }
+  throw new Error('scale requires a scalar or vec');
+}
+
 // —— vec 实例方法（全部返回新值，不改原值） ——
 
 export const VEC_METHODS = {
@@ -194,5 +205,37 @@ export const VEC_METHODS = {
     sameDim(v, w);
     const ca = vecComps(v), cb = vecComps(w);
     return mkVec(vecDim(v), ca.map((x, i) => x + (cb[i] - x) * t));
+  },
+
+  rotateX(v, args) {
+    expectVec3(v, 'rotateX');
+    checkArity(args, 1, 'rotateX');
+    return rotateXVec3(v, expectNum(args[0], 'rotateX angle'));
+  },
+
+  rotateY(v, args) {
+    expectVec3(v, 'rotateY');
+    checkArity(args, 1, 'rotateY');
+    return rotateYVec3(v, expectNum(args[0], 'rotateY angle'));
+  },
+
+  rotateZ(v, args) {
+    expectVec3(v, 'rotateZ');
+    checkArity(args, 1, 'rotateZ');
+    return rotateZVec3(v, expectNum(args[0], 'rotateZ angle'));
+  },
+
+  translate(v, args) {
+    expectVec(v, 'translate');
+    const dim = vecDim(v);
+    if (args.length !== dim) throw new Error(`translate expects ${dim} argument(s), got ${args.length}`);
+    const c = args.map((x, i) => expectNum(x, `translate[${i}]`));
+    return mkVec(dim, vecComps(v).map((x, i) => x + c[i]));
+  },
+
+  scale(v, args) {
+    expectVec(v, 'scale');
+    checkArity(args, 1, 'scale');
+    return scaleVec(v, args[0]);
   },
 };
