@@ -377,6 +377,8 @@ body.ctrl-held .kf-t { cursor: pointer; }
   transition: border-color 0.12s ease, background-color 0.12s ease;
 }
 .csel-btn:hover { border-color: var(--accent); background-color: var(--panel-3); }
+/* 函数面板顶部新建按钮旁的预设下拉：与按钮同高，避免上下错位 */
+.vars-head .csel-btn { height: 24px; padding: 0 26px 0 10px; }
 .csel-list {
   position: fixed; z-index: 3200; min-width: 120px; max-width: min(78vw, 360px);
   max-height: 42vh; overflow-y: auto; overflow-x: hidden;

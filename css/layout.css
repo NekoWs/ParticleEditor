@@ -528,7 +528,7 @@
 .mini:hover { border-color: var(--accent); color: var(--accent-hover); background: var(--panel-2); }
 
 .vars-head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border-soft); }
-.vars-head .mini { flex: none; height: 24px; }
+.vars-head .mini { flex: none; height: 24px; display: inline-flex; align-items: center; justify-content: center; }
 .var-row, .term-row { display: flex; align-items: center; gap: 6px; margin: 5px 0; }
 .var-row input, .term-row input {
   flex: 1; min-width: 0; background: var(--panel-3); border: 1px solid var(--border);
