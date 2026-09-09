@@ -6,6 +6,15 @@
   <title>粒子动画编辑器 ParticleEditor</title>
   <link rel="stylesheet" href="./styles.css" />
   <link rel="icon" href="./icon.png" />
+  <script>
+    // 首屏前写入主题，避免亮/暗色闪烁。
+    (function () {
+      try {
+        var t = localStorage.getItem('pdraw-theme');
+        document.documentElement.dataset.theme = (t === 'light' || t === 'dark') ? t : 'dark';
+      } catch (e) { document.documentElement.dataset.theme = 'dark'; }
+    })();
+  </script>
 </head>
 <body>
   <header class="topbar">
@@ -46,6 +55,13 @@
         <div class="dropdown" id="menu-lang">
           <button class="dd-item" data-lang="zh">中文</button>
           <button class="dd-item" data-lang="en">English</button>
+        </div>
+      </div>
+      <div class="menu">
+        <button class="menu-btn" data-menu="theme" data-i18n="menu.theme">配色</button>
+        <div class="dropdown" id="menu-theme">
+          <button class="dd-item" data-theme="dark"><span data-i18n="theme.dark">暗色</span><span class="dd-check" id="theme-check-dark">✓</span></button>
+          <button class="dd-item" data-theme="light"><span data-i18n="theme.light">亮色</span><span class="dd-check" id="theme-check-light">✓</span></button>
         </div>
       </div>
       <div class="menu">

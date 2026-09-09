@@ -7,7 +7,8 @@ export var LANGS = {
     'common.new': '新建', 'common.open': '打开', 'common.save': '保存', 'common.undo': '撤回', 'common.redo': '重做',
     'common.close': '关闭', 'common.color': '颜色',
     // —— 菜单 ——
-    'menu.file': '文件', 'menu.import': '导入', 'menu.edit': '编辑', 'menu.lang': '语言', 'menu.about': '关于',
+    'menu.file': '文件', 'menu.import': '导入', 'menu.edit': '编辑', 'menu.lang': '语言', 'menu.theme': '配色', 'menu.about': '关于',
+    'theme.dark': '暗色', 'theme.light': '亮色',
     'menu.openEllipsis': '打开…', 'menu.saveAs': '另存为…', 'menu.exportAnim': '导出动画…', 'menu.clear': '清空',
     'menu.selectAll': '全选', 'menu.deleteSelected': '删除选中', 'menu.group': '建立组',
     // —— 面板 / 选项卡 ——
@@ -364,7 +365,8 @@ export var LANGS = {
     'common.new': 'New', 'common.open': 'Open', 'common.save': 'Save', 'common.undo': 'Undo', 'common.redo': 'Redo',
     'common.close': 'Close', 'common.color': 'Color',
     // —— 菜单 ——
-    'menu.file': 'File', 'menu.import': 'Import', 'menu.edit': 'Edit', 'menu.lang': 'Language', 'menu.about': 'About',
+    'menu.file': 'File', 'menu.import': 'Import', 'menu.edit': 'Edit', 'menu.lang': 'Language', 'menu.theme': 'Theme', 'menu.about': 'About',
+    'theme.dark': 'Dark', 'theme.light': 'Light',
     'menu.openEllipsis': 'Open…', 'menu.saveAs': 'Save As…', 'menu.exportAnim': 'Export Animation…', 'menu.clear': 'Clear',
     'menu.selectAll': 'Select All', 'menu.deleteSelected': 'Delete Selected', 'menu.group': 'Group',
     // —— 面板 / 选项卡 ——

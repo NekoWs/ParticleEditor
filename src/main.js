@@ -3,6 +3,7 @@
 // 可以直接调用前面脚本定义的全局函数。
 
 import { t, applyI18nDom, setLanguage } from './core/i18n.js';
+import { setTheme, getTheme, applyThemeDom } from './core/theme.js';
 import { hasCoarsePointer } from './core/device.js';
 import { state, FUNCTION_PRESETS, getParticle, getFunction, isDerivedParticle, updateTopbarTitle, clearObjectState } from './core/constants.js';
 import { setShiftHeld } from './interaction/input-state.js';
@@ -266,6 +267,23 @@ export function initUI() {
     refreshTimelineTree();
     drawTimelineLayers();
     refreshCameraTabs();
+  });
+  // 主题切换（亮/暗配色）
+  applyThemeDom();
+  const updateThemeChecks = () => {
+    const cur = getTheme();
+    const dark = document.getElementById('theme-check-dark');
+    const light = document.getElementById('theme-check-light');
+    if (dark) dark.style.visibility = cur === 'dark' ? 'visible' : 'hidden';
+    if (light) light.style.visibility = cur === 'light' ? 'visible' : 'hidden';
+  };
+  updateThemeChecks();
+  document.getElementById('menu-theme').addEventListener('click', (ev) => {
+    const btn = ev.target.closest('[data-theme]');
+    if (!btn) return;
+    closeMenus();
+    setTheme(btn.dataset.theme);
+    updateThemeChecks();
   });
   document.getElementById('btn-new').addEventListener('click', async () => { closeMenus(); await newFile(); refreshCameraTabs(); refreshTimelineTree(); });
   document.getElementById('btn-open').addEventListener('click', () => { closeMenus(); openFile(); });

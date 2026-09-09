@@ -1,0 +1,65 @@
+/* 暗色主题：默认配色。变量被 base/layout/components/puzzle 等样式表消费。 */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0f1218;
+  --panel: #171b23;
+  --panel-2: #1e242e;
+  --panel-3: #29303c;
+  --border: #2b3341;
+  --border-soft: #232a36;
+  --text: #e9edf5;
+  --muted: #8e98ac;
+  --accent: #5b9dff;
+  --accent-hover: #78b0ff;
+  --accent-soft: rgba(91, 157, 255, 0.14);
+  --orange: #f6a75f;
+  --orange-soft: rgba(246, 167, 95, 0.16);
+  --danger: #ff6b6b;
+  --danger-soft: rgba(255, 107, 107, 0.14);
+
+  --radius: 8px;
+  --radius-sm: 8px;
+  --radius-lg: 12px;
+  --shadow: 0 10px 36px rgba(0, 0, 0, 0.46);
+  --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.32);
+  --focus-ring: 0 0 0 3px rgba(91, 157, 255, 0.28);
+
+  --scrollbar-thumb: #39414f;
+  --scrollbar-thumb-hover: #4a5466;
+  --slider-ring: #0d1016;
+  --stage-grad-1: #252c3a;
+  --stage-grad-2: #0f1218;
+  --tex-bg: #0d0f14;
+  --lane-bg: #141821;
+  --code-bg: #181a1d;
+  --terminal-bg: #101216;
+  --grid-dot: rgba(255, 255, 255, 0.10);
+  --tooltip-bg: rgba(0, 0, 0, 0.82);
+  --tooltip-text: #eceff5;
+
+  /* CodeMirror 脚本编辑器配色 */
+  --cm-bg: #181a1d;
+  --cm-gutter: #181a1d;
+  --cm-gutter-text: #4e5157;
+  --cm-text: #bcbec4;
+  --cm-keyword: #cf8e6d;
+  --cm-string: #6aab73;
+  --cm-number: #2aacb8;
+  --cm-comment: #7a7e85;
+  --cm-function: #56a8f5;
+  --cm-variable: #bcbec4;
+  --cm-property: #c77dbb;
+  --cm-atom: #cf8e6d;
+  --cm-operator: #bcbec4;
+  --cm-selection: #373b39;
+  --cm-active-line: #252629;
+  --cm-selection-match: rgba(84, 138, 247, 0.25);
+  --cm-tooltip-bg: #2b2d30;
+  --cm-tooltip-text: #bcbec4;
+  --cm-tooltip-border: #3c3f41;
+  --cm-tooltip-selected: #25324d;
+  --cm-tooltip-selected-text: #bcbec4;
+  --cm-highlight: #548af7;
+}
