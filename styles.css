@@ -9,7 +9,6 @@
   --muted: #8e98ac;
   --accent: #5b9dff;
   --accent-hover: #78b0ff;
-  --accent-strong: #3d86f0;
   --accent-soft: rgba(91, 157, 255, 0.14);
   --orange: #f6a75f;
   --orange-soft: rgba(246, 167, 95, 0.16);
@@ -82,9 +81,8 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
   align-items: center;
   gap: 10px;
   padding: 0 12px;
-  background: linear-gradient(180deg, var(--panel-2), var(--panel));
+  background: var(--panel);
   border-bottom: 1px solid var(--border-soft);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.02) inset;
   z-index: 20;
 }
 #topbar-title {
@@ -237,8 +235,7 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
 .cam-tabs {
   position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
   display: flex; gap: 3px; z-index: 10;
-  background: rgba(23, 27, 35, 0.78);
-  backdrop-filter: blur(10px);
+  background: var(--panel);
   border: 1px solid var(--border); border-radius: var(--radius-lg);
   padding: 3px; box-shadow: var(--shadow); max-width: calc(100% - 160px);
 }
@@ -250,7 +247,7 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
   transition: all 0.14s ease; max-width: 160px; overflow: hidden; text-overflow: ellipsis;
 }
 .cam-tab:hover { background: var(--panel-3); color: var(--text); }
-.cam-tab.active { background: linear-gradient(180deg, var(--accent-hover), var(--accent-strong)); border-color: var(--accent); color: #fff; box-shadow: 0 1px 4px rgba(91, 157, 255, 0.35); }
+.cam-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .cam-tab .cam-del { display: none; width: 14px; height: 14px; line-height: 12px; text-align: center; border-radius: 3px; margin-left: 2px; font-size: 11px; }
 .cam-tab:hover .cam-del { display: inline-block; color: #fff; background: rgba(0,0,0,0.25); }
 .cam-tab .cam-del:hover { background: var(--danger); }
@@ -387,14 +384,95 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
 }
 .uv-field .uv-suffix { color: var(--muted); white-space: nowrap; font-size: 12px; }
 .uv-field .uv-suffix em { font-style: normal; color: var(--accent); }
-.uv-panel .row { width: 100%; justify-content: space-between; padding: 6px 14px; background: var(--panel-2); border: 1px solid var(--border-soft); border-radius: var(--radius-lg); }
+.uv-panel .row {
+  width: 100%; justify-content: space-between; padding: 4px 2px;
+  background: transparent; border: none; border-bottom: 1px solid var(--border-soft); border-radius: 0;
+}
 
-/* 属性 / 函数对象选项卡的 row 采用与贴图 UV 面板一致的卡片样式 */
+/* 属性 / 函数对象面板：扁平紧凑行，标签居左、控件组居右（JetBrains/Adobe 面板风格） */
 #pane-props .row,
 #pane-fx .fx-panel .row {
-  width: 100%; justify-content: space-between; padding: 6px 6px 6px 14px;
-  background: var(--panel-2); border: 1px solid var(--border-soft); border-radius: var(--radius-lg);
+  width: 100%;
+  justify-content: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 3px 2px;
+  min-height: 27px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-soft);
+  border-radius: 0;
+  white-space: nowrap;
 }
+#pane-props .row:last-child,
+#pane-fx .fx-panel .row:last-child { border-bottom: none; }
+
+/* 行首标签弱化；首个控件右对齐，形成「标签 … 数值」的紧凑排版 */
+#pane-props .row > span:first-child,
+#pane-fx .fx-panel .row > span:first-child {
+  flex: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+#pane-props .row > span:first-child + *,
+#pane-fx .fx-panel .row > span:first-child + * { margin-left: auto; }
+
+/* 面板内数值输入框：窄高、右对齐、细分隔线，避免整块卡片式臃肿 */
+#pane-props .row > input[type="number"],
+#pane-fx .fx-panel .row > input[type="number"] {
+  flex: none;
+  width: 60px;
+  max-width: none;
+  height: 24px;
+  padding: 0 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  text-align: right;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  box-sizing: border-box;
+}
+#pane-props .row > input#prop-color {
+  flex: 1 1 auto;
+  width: auto;
+  max-width: none;
+  height: 24px;
+  padding: 0 8px;
+  text-align: left;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  text-transform: lowercase;
+  box-sizing: border-box;
+}
+#pane-props .row .color-swatch {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+}
+#pane-props .row > input[type="range"] {
+  flex: 1 1 auto;
+  margin-left: 0;
+  height: 18px;
+}
+#pane-props .row > #light-val {
+  flex: none;
+  min-width: 22px;
+  text-align: right;
+  color: var(--text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 属性面板内的勾选行（发光）与其他行保持一致的扁平分隔线 */
+#pane-props .chk {
+  margin: 0;
+  padding: 3px 2px;
+  min-height: 27px;
+  border-bottom: 1px solid var(--border-soft);
+  justify-content: flex-start;
+}
+#pane-props .chk span { color: var(--muted); font-size: 12px; }
 
 /* ---- 取色板 ---- */
 .color-picker {
@@ -449,8 +527,8 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
 }
 .ui-modal-overlay.closing { animation: modalFadeOut 0.18s ease-in forwards; }
 .ui-modal {
-  background: linear-gradient(180deg, #242a35, #1c212b);
-  border: 1px solid var(--border); border-radius: 14px;
+  background: var(--panel-2);
+  border: 1px solid var(--border); border-radius: 12px;
   padding: 20px 22px 16px; width: 400px; max-width: 90vw; box-shadow: 0 22px 60px rgba(0, 0, 0, 0.6);
   display: flex; flex-direction: column; gap: 10px;
   animation: modalPopIn 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2);
@@ -470,8 +548,8 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
 .ui-modal-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 .ui-modal-btn { background: var(--panel-3); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 16px; cursor: pointer; font-size: 13px; transition: all 0.14s ease; }
 .ui-modal-btn:hover { border-color: var(--accent); color: var(--accent-hover); background: var(--panel-2); }
-.ui-modal-btn.primary { background: linear-gradient(180deg, var(--accent-hover), var(--accent-strong)); border-color: var(--accent); color: #fff; box-shadow: 0 1px 5px rgba(91, 157, 255, 0.35); }
-.ui-modal-btn.primary:hover { background: linear-gradient(180deg, #87bbff, #4d93f7); border-color: var(--accent); color: #fff; }
+.ui-modal-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ui-modal-btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: #fff; }
 .ui-modal-btn.danger { color: var(--danger); }
 .ui-modal-btn.danger:hover { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
 @keyframes modalFadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -491,8 +569,7 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
 .toolbar {
   position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
   display: flex; flex-direction: column; gap: 3px; z-index: 10;
-  background: rgba(23, 27, 35, 0.78);
-  backdrop-filter: blur(10px);
+  background: var(--panel);
   border: 1px solid var(--border); border-radius: var(--radius-lg);
   padding: 5px; box-shadow: var(--shadow);
 }
@@ -506,7 +583,7 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
 .tool svg { width: 18px; height: 18px; }
 .tool:hover { background: var(--panel-3); color: var(--text); }
 .tool:active { transform: scale(0.94); }
-.tool.active { background: linear-gradient(180deg, var(--accent-hover), var(--accent-strong)); border-color: var(--accent); color: #fff; box-shadow: 0 2px 8px rgba(91, 157, 255, 0.4); }
+.tool.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 .btn {
   background: var(--panel-3); color: var(--text); border: 1px solid var(--border);
@@ -524,7 +601,8 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
 }
 .mini:hover { border-color: var(--accent); color: var(--accent-hover); background: var(--panel-2); }
 
-.vars-head { display: flex; align-items: center; justify-content: space-between; margin: 7px 0 3px; font-weight: 600; }
+.vars-head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border-soft); }
+.vars-head .mini { flex: none; height: 24px; }
 .var-row, .term-row { display: flex; align-items: center; gap: 6px; margin: 5px 0; }
 .var-row input, .term-row input {
   flex: 1; min-width: 0; background: var(--panel-3); border: 1px solid var(--border);
@@ -705,11 +783,11 @@ body.ctrl-held .kf-t { cursor: pointer; }
 }
 .tl-controls .btn { height: 32px; padding: 0 14px; display: inline-flex; align-items: center; }
 #btn-play {
-  background: linear-gradient(180deg, var(--accent-hover), var(--accent-strong));
+  background: var(--accent);
   border-color: var(--accent); color: #fff; font-weight: 600; min-width: 74px;
-  justify-content: center; box-shadow: 0 1px 6px rgba(91, 157, 255, 0.32);
+  justify-content: center;
 }
-#btn-play:hover { border-color: var(--accent); color: #fff; background: linear-gradient(180deg, #87bbff, #4d93f7); }
+#btn-play:hover { border-color: var(--accent-hover); color: #fff; background: var(--accent-hover); }
 .tl-controls input[type="number"] {
   width: 56px; background: var(--panel-3); border: 1px solid var(--border);
   color: var(--text); border-radius: var(--radius-sm); padding: 5px 8px; height: 32px;
@@ -836,6 +914,7 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .tt-val:focus, .tt-var-val:focus { border-color: var(--accent); outline: none; }
 .tt-val:disabled, .tt-var-val:disabled { opacity: 0.55; }
 .tt-row .vec3 { height: 20px; }
+.tt-row .vec3-seg { padding: 0 4px; }
 .tt-row .vec3 input { width: 34px; font-size: 10px; }
 
 .tt-add-kf, .tt-add-var-kf, .tt-add-var {
@@ -861,9 +940,9 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .ptree-head.func:hover { background: rgba(122,162,255,0.12); }
 .ptree-head.func-child { padding-left: 20px; }
 .ptree-head.func-child .pid { color: var(--muted); }
-.fx-panel { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
-.fx-panel .row { display: flex; align-items: center; gap: 4px; margin: 2px 0; }
-.fx-panel .row input[type="number"] { width: 58px; background: var(--panel-3); }
+.fx-panel { display: flex; flex-direction: column; gap: 0; font-size: 12px; }
+.fx-panel .row { display: flex; align-items: center; gap: 8px; margin: 0; }
+.fx-panel .row input[type="number"] { width: 60px; background: var(--panel-2); }
 .fx-panel .row input[type="text"] { flex: 1; min-width: 0; }
 .fx-panel .row select { flex: 1; }
 /* 预设下拉框美化（函数面板 + 侧栏新建） */
@@ -876,14 +955,14 @@ body.ctrl-held .kf-t { cursor: pointer; }
   background-repeat: no-repeat;
   background-position: right 8px center;
   background-size: 12px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-soft);
   color: var(--text);
-  border-radius: var(--radius-sm);
-  padding: 6px 26px 6px 10px;
+  border-radius: 6px;
+  padding: 3px 26px 3px 10px;
   font-size: 12px;
-  height: 30px;
+  height: 24px;
   cursor: pointer;
-  transition: border-color 0.12s ease, background-color 0.12s ease;
+  transition: border-color 0.14s ease, background-color 0.14s ease;
 }
 #fx-preset-add:hover,
 .fx-panel select.fx-preset-sel:hover {
@@ -899,14 +978,14 @@ body.ctrl-held .kf-t { cursor: pointer; }
 #fx-preset-add {
   flex: 1;
   min-width: 0;
-  height: 26px;
+  height: 24px;
   margin-right: 10px;
 }
 .fx-panel input, .fx-panel select {
-  background: var(--panel-3); border: 1px solid var(--border);
-  color: var(--text); border-radius: 5px; padding: 4px 6px; height: 26px; box-sizing: border-box;
+  background: var(--panel-2); border: 1px solid var(--border-soft);
+  color: var(--text); border-radius: 6px; padding: 2px 6px; height: 24px; box-sizing: border-box;
 }
-.fx-panel input:focus, .fx-panel select:focus { border-color: var(--accent); outline: none; }
+.fx-panel input:focus, .fx-panel select:focus { border-color: var(--accent); outline: none; box-shadow: var(--focus-ring); }
 
 /* 触屏下的自定义下拉框（替代原生全屏 select，见 ui/select.js） */
 .csel { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
@@ -953,10 +1032,11 @@ body.ctrl-held .kf-t { cursor: pointer; }
    每个属性之间以浅色竖线分隔。 */
 .spin-space-btn {
   margin: 0 6px 0 2px; padding: 0 8px; height: 24px;
-  background: var(--panel-3); border: 1px solid var(--border); border-radius: 5px;
-  color: var(--text); font-size: 11px; cursor: pointer;
+  background: var(--panel-2); border: 1px solid var(--border-soft); border-radius: 6px;
+  color: var(--muted); font-size: 11px; cursor: pointer;
+  transition: border-color 0.14s ease, color 0.14s ease;
 }
-.spin-space-btn:hover { border-color: var(--accent); color: var(--accent); }
+.spin-space-btn:hover { border-color: var(--accent); color: var(--accent-hover); }
 .spin-space-btn:disabled { opacity: 0.5; cursor: default; }
 .tt-spin-space {
   margin: 0 6px 0 2px; padding: 0 6px; height: 20px;
@@ -971,24 +1051,24 @@ body.ctrl-held .kf-t { cursor: pointer; }
 }
 .tt-rot-space:hover { border-color: var(--accent); color: var(--accent); }
 .vec3 {
-  display: inline-flex; align-items: center; height: 26px; box-sizing: border-box;
-  border: 1px solid var(--border); border-radius: 5px; overflow: hidden;
+  display: inline-flex; align-items: center; height: 24px; box-sizing: border-box;
+  border: 1px solid var(--border-soft); border-radius: 6px; overflow: hidden;
 }
 .vec3-wrap {
   display: inline-flex; align-items: center; gap: 6px;
 }
 .vec3-seg {
-  display: inline-flex; align-items: center; gap: 2px; height: 100%;
-  padding: 0 4px; background: var(--panel-2);
+  display: inline-flex; align-items: center; gap: 3px; height: 100%;
+  padding: 0 6px; background: var(--panel-2);
 }
-.vec3-seg + .vec3-seg { border-left: 1px solid var(--border); }
+.vec3-seg + .vec3-seg { border-left: 1px solid var(--border-soft); }
 .vec3-seg span {
   flex: none; font-size: 11px; color: var(--muted); line-height: 1;
 }
 .vec3 input {
-  width: 50px; height: 100%; border: none; background: transparent;
-  padding: 0; text-align: center; box-shadow: none;
-  font-size: 11px; color: var(--text); font-variant-numeric: tabular-nums;
+  width: 42px; height: 100%; border: none; background: transparent;
+  padding: 0; text-align: right; box-shadow: none;
+  font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums;
 }
 .vec3 input:focus { outline: none; }
 .vec3 input:disabled { opacity: 0.55; }
@@ -997,7 +1077,7 @@ body.ctrl-held .kf-t { cursor: pointer; }
   height: 26px; padding: 0 4px; box-sizing: border-box;
   background: var(--panel-3); border: 1px solid var(--border); border-radius: 5px;
 }
-.fx-code-wrap { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 4px; }
+.fx-code-wrap { border-top: none; margin-top: 6px; padding-top: 0; }
 .fx-code-head { display: flex; align-items: center; gap: 6px; }
 .fx-code-toggle { flex: 1; text-align: left; }
 .fx-code-body { margin-top: 4px; display: flex; flex-direction: column; gap: 4px; }

@@ -414,7 +414,9 @@ export function buildFunctionPanel(fx) {
   // 随机种子
   const seedRow = document.createElement('label');
   seedRow.className = 'row';
-  seedRow.textContent = t('fx.seed');
+  const seedLabel = document.createElement('span');
+  seedLabel.textContent = t('fx.seed');
+  seedRow.appendChild(seedLabel);
   const seedIn = document.createElement('input');
   seedIn.type = 'number'; seedIn.step = '1'; seedIn.value = fx.seed | 0;
   seedIn.onchange = () => { pushUndo(); fx.seed = parseInt(seedIn.value) || 0; commitFunctionRebuild(fx); };
