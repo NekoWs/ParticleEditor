@@ -152,6 +152,7 @@ export const PARTICLE_SIZE_FACTOR = 0.2; // 编辑器点整宽因子；游戏端
  */
 export const state = {
   name: 'my_animation',
+  hasProject: false,      // 是否已有打开/新建的项目；false 时启动显示欢迎面板
   key: null,              // Ed25519 密钥对 { alg:'Ed25519', private, public }（base64）；旧工程打开时自动生成
   loop: false,            // 新建动画默认不循环
   particles: [],
@@ -264,6 +265,10 @@ export function getParticle(id) { return particleIndexCache ? particleIndexCache
 
 // —— 函数对象预设形状模板（参数面板 + 脚本视图）——
 // 上下文通过 this 对象访问：this.time（对象本地毫秒）/ this.duration / this.animTime / this.particles 等（见 docs/script-lang-spec.md）。
+
+// 欢迎面板里特殊预设的预览覆盖：键为预设 id，值为 { pos:[x,y,z], fov:度, frame:毫秒 }。
+// 未命中的预设用默认值（相机 (10,10,10) 看向原点、FOV 50、第一帧 0）。当前留空，供后续兼容。
+export const PRESET_PREVIEW_OVERRIDES = {};
 
 export const FUNCTION_PRESETS = {
   blank: {
@@ -495,7 +500,7 @@ func process() {
   star: {
     label: '星形',
     params: [
-      { key: 'rad', label: '半径', def: 20 },
+      { key: 'rad', label: '半径', def: 5 },
     ],
     build: p => ({
       vars: { rad: { base: Number(p.rad), kf: [] } },

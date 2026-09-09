@@ -81,6 +81,8 @@ export var LANGS = {
     'draw.countLabel': '粒子数量',
     // —— 文件流程 ——
     'newProject.title': '新建项目', 'newProject.name': '项目名称',
+    'welcome.title': '欢迎使用 ParticleDrawing', 'welcome.subtitle': '选择一个预设开始，或打开已有工程',
+    'welcome.open': '打开项目', 'welcome.createTitle': '从预设新建',
     'confirm.unsavedTitle': '未保存的更改', 'confirm.unsavedMsg': '当前工程有未保存的修改。',
     'confirm.discard': '不保存', 'confirm.saveAnd': '保存并',
     'filePicker.project': 'ParticleDrawing 工程', 'filePicker.projectFile': '工程文件',
@@ -440,6 +442,8 @@ export var LANGS = {
     'draw.countLabel': 'Particle Count',
     // —— 文件流程 ——
     'newProject.title': 'New Project', 'newProject.name': 'Project Name',
+    'welcome.title': 'Welcome to ParticleDrawing', 'welcome.subtitle': 'Choose a preset to start, or open an existing project',
+    'welcome.open': 'Open Project', 'welcome.createTitle': 'Create from Preset',
     'confirm.unsavedTitle': 'Unsaved Changes', 'confirm.unsavedMsg': 'The current project has unsaved changes.',
     'confirm.discard': "Don't Save", 'confirm.saveAnd': 'Save & ',
     'filePicker.project': 'ParticleDrawing Project', 'filePicker.projectFile': 'Project File',

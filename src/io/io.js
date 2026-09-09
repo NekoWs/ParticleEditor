@@ -8,7 +8,7 @@ import { pushUndo } from '../state/undo.js';
 import { rebuildPoints } from '../core/animation.js';
 import { updateLoopIndicator, refreshFunctionPanel } from '../ui/panels.js';
 import { updateTimeUI, refreshCameraTabs } from '../main.js';
-import { rebuildFunctionObject } from '../core/generators.js';
+import { rebuildFunctionObject, createFunctionObject } from '../core/generators.js';
 import { rotToTarget } from '../core/cam-math.js';
 import { markTextureChanged, refreshTexturePanel } from '../ui/texture-editor.js';
 import { buildModal, modalPrompt, modalAlert } from '../ui/ui.js';
@@ -342,6 +342,7 @@ export async function importProject(obj) {
       markTextureChanged(); refreshTexturePanel();
     });
   }
+  state.hasProject = true;
   updateTimeUI(); rebuildPoints();
   refreshCameraTabs();
   setDirty(keyGenerated);
@@ -477,12 +478,8 @@ export async function exportAnimation() {
   });
 }
 
-// 新建空白动画
-export async function newFile() {
-  const r = await confirmDiscardChanges(t('common.new'));
-  if (r === 'cancel') return;
-  const name = await modalPrompt(t('newProject.title'), 'my_animation', t('newProject.name'));
-  if (!name || !name.trim()) return;
+// 以给定名称创建空白动画（不询问、不确认，只执行新建）。
+export async function createBlankProject(name) {
   pushUndo();
   clearObjectState();
   state.name = name.trim() || 'my_animation';
@@ -493,6 +490,7 @@ export async function newFile() {
     const pair = await generateKeyPair();
     state.key = { alg: KEY_ALG, private: pair.private, public: pair.public };
   } catch (_) { /* 浏览器不支持：导出时再提示 */ }
+  state.hasProject = true;
   document.getElementById('tl-loop').checked = false;
   updateLoopIndicator();
   updateTimeUI(); rebuildPoints();
@@ -503,6 +501,40 @@ export async function newFile() {
     if (typeof refreshTimelineTree === 'function') refreshTimelineTree();
   } catch (_) { /* 动态加载失败不影响新建流程 */ }
   setDirty(false);
+}
+
+// 新建空白动画（左上角「新建」入口）：先确认未保存更改，再询问项目名。
+export async function newFile() {
+  const r = await confirmDiscardChanges(t('common.new'));
+  if (r === 'cancel') return;
+  const name = await modalPrompt(t('newProject.title'), 'my_animation', t('newProject.name'));
+  if (!name || !name.trim()) return;
+  await createBlankProject(name);
+}
+
+// 以预设创建项目：清空后以给定名称新建，并加入一个该预设的函数对象。
+// 含内容的项目保持 dirty=true（未保存），与空白项目不同。
+export async function createProjectFromPreset(presetId, name) {
+  pushUndo();
+  clearObjectState();
+  state.name = name.trim() || 'my_animation';
+  state.fileHandle = null;
+  state.loop = false;
+  state.key = null;
+  try {
+    const pair = await generateKeyPair();
+    state.key = { alg: KEY_ALG, private: pair.private, public: pair.public };
+  } catch (_) { /* 浏览器不支持：导出时再提示 */ }
+  state.hasProject = true;
+  document.getElementById('tl-loop').checked = false;
+  updateLoopIndicator();
+  if (typeof refreshTexturePanel === 'function') refreshTexturePanel();
+  try {
+    const { refreshTimelineTree } = await import('../ui/timeline-tree.js');
+    if (typeof refreshTimelineTree === 'function') refreshTimelineTree();
+  } catch (_) { /* 动态加载失败不影响新建流程 */ }
+  createFunctionObject(presetId); // 内部会重建粒子并把项目标为未保存
+  updateTimeUI(); // 在函数对象加入后刷新时长显示（createFunctionObject 内部已重建索引）
 }
 
 // 若有未保存更改，弹出三键确认（按钮名即操作，不在正文里解释）：

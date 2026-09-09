@@ -1,0 +1,66 @@
+/* 欢迎面板：无项目时的全屏起始页。z-index 低于 ui-modal(200)，项目命名/未保存确认可叠在其上。 */
+.welcome-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 180;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  color: var(--text);
+  animation: modalFadeIn 0.16s ease-out;
+}
+
+.welcome-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 20px 28px 14px;
+}
+
+.welcome-title { font-size: 20px; font-weight: 700; }
+.welcome-subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; }
+
+.welcome-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+  gap: 16px;
+  padding: 8px 28px 32px;
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.welcome-card {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 10px;
+  cursor: pointer;
+  text-align: center;
+  color: var(--text);
+  font-family: inherit;
+  transition: border-color 0.14s ease, transform 0.14s ease, box-shadow 0.14s ease;
+}
+
+.welcome-card:hover,
+.welcome-card:focus-visible {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+  outline: none;
+}
+
+.welcome-card-preview {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: var(--radius);
+  background-color: var(--stage-clear);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.welcome-card-name { margin-top: 8px; font-size: 13px; }
