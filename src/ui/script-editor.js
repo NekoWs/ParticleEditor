@@ -20,7 +20,7 @@ import {
 import { indentWithTab, insertNewlineAndIndent, history, historyKeymap, defaultKeymap } from '@codemirror/commands';
 import { linter } from '@codemirror/lint';
 import { highlightSelectionMatches } from '@codemirror/search';
-import { parseProgram, ARRAY_METHOD_NAMES } from '../core/script-lang.js';
+import { parseProgram, parseExpression, ARRAY_METHOD_NAMES } from '../core/script-lang.js';
 import { CONSTANTS } from '../core/script/lexical.js';
 import { localizeScriptError } from '../core/script-error-i18n.js';
 
@@ -38,6 +38,14 @@ export const SCRIPT_THIS_FIELDS = [
 ];
 
 const THIS_FIELD_SET = new Set(SCRIPT_THIS_FIELDS);
+const THIS_METHOD_SET = new Set(['spawn']);
+
+const PARTICLE_FIELD_TYPES = {
+  position: 'vec3', color: 'vec4', velocity: 'vec3', scale: 'num',
+  glow: 'bool', light: 'num', life: 'num', index: 'num',
+};
+const PARTICLE_FIELD_SET = new Set(Object.keys(PARTICLE_FIELD_TYPES));
+const PARTICLE_METHODS = ['kill', 'apply'];
 
 export const SCRIPT_BUILTINS = [
   'vec2', 'vec3', 'vec4', 'mat3', 'mat4',
@@ -58,9 +66,13 @@ export const scriptLanguage = StreamLanguage.define({
   name: 'pdraw-script',
   tokenTable: {
     function: tags.function(tags.variableName),
+    itParam: tags.strong,
   },
   startState() {
-    return { inBlockComment: false, afterDot: false, afterThisDot: false, lastWord: '', afterFunc: false };
+    return {
+      inBlockComment: false, afterDot: false, afterThisDot: false, lastWord: '', afterFunc: false,
+      braceDepth: 0, applyStack: [], pendingApply: false,
+    };
   },
   token(stream, state) {
     if (state.inBlockComment) {
@@ -69,6 +81,10 @@ export const scriptLanguage = StreamLanguage.define({
       return 'comment';
     }
     if (stream.eatSpace()) return null;
+
+    // `.apply` 后的 `{` 打开粒子接收者 lambda，行内空格由 eatSpace 吞掉后此标记仍在。
+    const pendingApply = state.pendingApply;
+    state.pendingApply = false;
 
     if (stream.match('//')) { stream.skipToEnd(); return 'comment'; }
     if (stream.match('/*')) { state.inBlockComment = true; return 'comment'; }
@@ -95,7 +111,26 @@ export const scriptLanguage = StreamLanguage.define({
       return 'operator';
     }
 
-    if (stream.match(/^[+\-*/%!?:=<>()[\]{},;]/)) {
+    if (stream.match(/^\{/)) {
+      state.braceDepth++;
+      if (pendingApply) state.applyStack.push(state.braceDepth);
+      state.afterDot = false;
+      state.afterThisDot = false;
+      state.afterFunc = false;
+      return 'operator';
+    }
+    if (stream.match(/^\}/)) {
+      if (state.applyStack.length && state.applyStack[state.applyStack.length - 1] === state.braceDepth) {
+        state.applyStack.pop();
+      }
+      state.braceDepth = Math.max(0, state.braceDepth - 1);
+      state.afterDot = false;
+      state.afterThisDot = false;
+      state.afterFunc = false;
+      return 'operator';
+    }
+
+    if (stream.match(/^[+\-*/%!?:=<>()[\],;]/)) {
       state.afterDot = false;
       state.afterThisDot = false;
       return 'operator';
@@ -115,8 +150,11 @@ export const scriptLanguage = StreamLanguage.define({
         state.afterDot = false;
         state.afterThisDot = false;
         state.lastWord = word;
-        if (isThisField) return 'propertyName';
-        if (word === 'apply') return 'function';
+        if (isThisField) return THIS_METHOD_SET.has(word) ? 'function' : 'propertyName';
+        if (word === 'apply') {
+          state.pendingApply = true;
+          return 'function';
+        }
         return stream.match(/^\s*\(/, false) ? 'function' : 'propertyName';
       }
 
@@ -129,6 +167,10 @@ export const scriptLanguage = StreamLanguage.define({
       }
       if (word === 'func') { state.afterFunc = true; return 'keyword'; }
       if (word === 'this') return 'keyword';
+      // apply 块内裸名优先解析为粒子字段，按属性着色（但 color(...) 等函数调用仍按函数）。
+      if (state.applyStack.length > 0 && PARTICLE_FIELD_SET.has(word) && !stream.match(/^\s*\(/, false)) return 'propertyName';
+      // lambda 隐式参数 it 加粗。
+      if (word === 'it') return 'itParam';
       if (KEYWORD_SET.has(word)) return 'keyword';
       if (word === 'PI' || word === 'E' || word === 'true' || word === 'false' || word === 'undefined') return 'atom';
       if (BUILTIN_SET.has(word)) return 'function';
@@ -172,6 +214,7 @@ export const scriptHighlightStyle = HighlightStyle.define([
   { tag: tags.operator, color: PALETTE.operator },
   { tag: tags.function(tags.variableName), color: PALETTE.function },
   { tag: tags.variableName, color: PALETTE.variable },
+  { tag: tags.strong, color: PALETTE.variable, fontWeight: 'bold' },
   { tag: tags.propertyName, color: PALETTE.property },
   { tag: tags.atom, color: PALETTE.atom },
 ]);
@@ -190,7 +233,7 @@ const scriptTheme = EditorView.theme({
     padding: '5px 7px',
     cursor: 'text',
   },
-  '.cm-cursor, .cm-dropCursor': { borderLeftColor: PALETTE.text },
+  '.cm-cursor, .cm-dropCursor': { borderLeftColor: PALETTE.text, borderLeftWidth: '2px' },
   '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
     backgroundColor: PALETTE.selection,
   },
@@ -266,12 +309,6 @@ const THIS_FIELD_TYPES = {
   time: 'num', duration: 'num', particles: 'particleList', spawn: 'func',
 };
 
-const PARTICLE_FIELD_TYPES = {
-  position: 'vec3', color: 'vec4', velocity: 'vec3', scale: 'num',
-  glow: 'bool', light: 'num', life: 'num', index: 'num',
-};
-const PARTICLE_METHODS = ['kill'];
-
 const VEC_COMPONENTS = {
   vec2: ['x', 'y', 'r', 'g'],
   vec3: ['x', 'y', 'z', 'r', 'g', 'b'],
@@ -283,6 +320,11 @@ const ARRAY_METHOD_RETURN_TYPES = {
   sort: 'array', unique: 'array', reverse: 'array',
   size: 'num', find: 'num', includes: 'bool',
 };
+
+const COLOR_COMPONENTS = ['r', 'g', 'b', 'a', 'x', 'y', 'z', 'w'];
+const COLOR_METHOD_NAMES = ['toRGB', 'toHSV', 'red', 'green', 'blue', 'alpha', 'hue', 'saturation', 'value', 'shift_hue'];
+const VEC_COMMON_METHODS = ['normalize', 'dot', 'len', 'len2', 'dist', 'angleTo', 'project', 'reflect', 'lerp', 'translate', 'scale'];
+const VEC3_EXTRA_METHODS = ['cross', 'rotateX', 'rotateY', 'rotateZ'];
 
 const BUILTIN_RETURN_TYPES = {
   vec2: 'vec2', vec3: 'vec3', vec4: 'vec4', vec: 'vec3',
@@ -338,6 +380,29 @@ function inferCallType(node, env) {
   return BUILTIN_RETURN_TYPES[name] || 'unknown';
 }
 
+const VEC_METHOD_RETURN = {
+  normalize: 'same', dot: 'num', cross: 'vec3', len: 'num', len2: 'num', dist: 'num',
+  angleTo: 'num', project: 'same', reflect: 'same', lerp: 'same',
+  rotateX: 'vec3', rotateY: 'vec3', rotateZ: 'vec3', translate: 'same', scale: 'same',
+};
+
+function vecMethodReturnType(vecT, method) {
+  const r = VEC_METHOD_RETURN[method];
+  if (r === 'same') return vecT;
+  if (r === 'vec3') return 'vec3';
+  if (r === 'num') return 'num';
+  return 'unknown';
+}
+
+const COLOR_CHANNEL_METHODS = new Set(['red', 'green', 'blue', 'alpha', 'hue', 'saturation', 'value']);
+
+function colorMethodReturnType(method, args) {
+  if (method === 'toRGB' || method === 'toHSV') return 'obj';
+  if (COLOR_CHANNEL_METHODS.has(method)) return args && args.length >= 1 ? 'color' : 'num';
+  if (method === 'shift_hue') return 'color';
+  return 'unknown';
+}
+
 function inferExprType(node, env) {
   if (!node) return 'unknown';
   switch (node.type) {
@@ -365,11 +430,19 @@ function inferExprType(node, env) {
       return a === b ? a : 'unknown';
     }
     case 'call': return inferCallType(node, env);
+    case 'lambda': return 'lambda';
+    case 'obj': return 'obj';
+    case 'apply': return inferExprType(node.target, env);
     case 'method': {
       if (node.object && node.object.type === 'var' && node.object.name === 'this' && node.method === 'spawn') {
         return 'particle';
       }
-      return ARRAY_METHOD_RETURN_TYPES[node.method] || 'unknown';
+      const objT = inferExprType(node.object, env);
+      if (objT === 'array') return ARRAY_METHOD_RETURN_TYPES[node.method] || 'unknown';
+      if (objT === 'particleList') return node.method === 'size' ? 'num' : 'unknown';
+      if (isVecType(objT)) return vecMethodReturnType(objT, node.method);
+      if (objT === 'color') return colorMethodReturnType(node.method, node.args);
+      return 'unknown';
     }
     case 'comp': return 'num';
     case 'member': {
@@ -491,6 +564,82 @@ function collectGlobals(decls, globals) {
   }
 }
 
+/** 深度优先遍历语句（含嵌套块/分支/循环），对每个语句节点回调一次。 */
+function walkStmt(st, visit) {
+  if (!st) return;
+  visit(st);
+  switch (st.type) {
+    case 'block':
+      for (const s of st.body || []) walkStmt(s, visit);
+      return;
+    case 'if':
+      walkStmt(st.then, visit);
+      if (st.els) walkStmt(st.els, visit);
+      return;
+    case 'while': case 'do':
+      walkStmt(st.body, visit);
+      return;
+    case 'for':
+      if (st.init) walkStmt(st.init, visit);
+      if (st.inc) walkStmt(st.inc, visit);
+      walkStmt(st.body, visit);
+      return;
+    case 'forof':
+      walkStmt(st.body, visit);
+      return;
+    case 'whenstmt':
+      for (const c of st.cases || []) walkStmt(c.body, visit);
+      if (st.els) walkStmt(st.els, visit);
+      return;
+  }
+}
+
+/** 收集函数内声明的局部名（含参数），避免跨函数类型推断误写同名全局。 */
+function collectLocalDecls(fn, set) {
+  for (const p of fn.params || []) set.add(p);
+  walkStmt(fn.body, (st) => {
+    if (st.type === 'declare') {
+      for (const d of st.decls || []) set.add(d.name);
+    } else if (st.type === 'destructure') {
+      for (const n of st.names || []) set.add(n);
+    } else if (st.type === 'forof') {
+      set.add(st.name);
+    } else if (st.type === 'for' && st.init) {
+      if (st.init.type === 'declare') for (const d of st.init.decls || []) set.add(d.name);
+      else if (st.init.type === 'assign' && st.init.target && st.init.target.type === 'var') set.add(st.init.target.name);
+    }
+  });
+}
+
+/** 跨函数传播全局变量类型：setup 里 p = this.spawn() 后，process 里 p. 也能补全粒子成员。 */
+function collectGlobalAssignTypes(program, globals) {
+  const fns = [];
+  if (program.setup) fns.push(program.setup);
+  if (program.tick) fns.push(program.tick);
+  if (program.process) fns.push(program.process);
+  for (const fn of program.functions.values()) fns.push(fn);
+
+  for (let pass = 0; pass < 5; pass++) {
+    let changed = false;
+    for (const fn of fns) {
+      const locals = new Set();
+      collectLocalDecls(fn, locals);
+      walkStmt(fn.body, (st) => {
+        if (st.type !== 'assign' || !st.target || st.target.type !== 'var') return;
+        const name = st.target.name;
+        if (!globals.has(name) || locals.has(name)) return;
+        const t = inferExprType(st.value, globals);
+        const cur = globals.get(name);
+        if ((cur == null || cur === 'unknown') && t !== 'unknown') {
+          globals.set(name, t);
+          changed = true;
+        }
+      });
+    }
+    if (!changed) break;
+  }
+}
+
 /** 光标位于 if/else-if/else 链的哪个分支就进入该分支，否则返回 null。 */
 function walkIfAtPos(st, scope, cursor, src) {
   const thenOpen = bodyBraceOffset(st.then, src);
@@ -570,6 +719,7 @@ function buildScriptEnvs(fx, pos) {
 
   const globals = new Map();
   collectGlobals(program.globals, globals);
+  collectGlobalAssignTypes(program, globals);
 
   const root = new Map(globals);
   root.set('PI', 'num');
@@ -599,15 +749,136 @@ function enclosingFuncName(src, pos) {
   return last;
 }
 
-function resolveDotReceiverType(name, before, matchIndex, fx, pos) {
-  const prefix = before.slice(0, matchIndex);
-  if (/this\s*\.\s*$/.test(prefix)) return THIS_FIELD_TYPES[name] || 'unknown';
-
-  const scope = buildScriptEnvs(fx, pos);
-  return lookupType(scope, name) || 'unknown';
+/** 统计光标前未闭合的 apply 块层数（`.apply { … }`），供其内裸名粒子字段补全使用。 */
+function applyLambdaDepthAt(src, pos) {
+  const n = Math.min(pos, src.length);
+  let braceDepth = 0;
+  const applyStack = [];
+  let pendingApply = false;
+  let afterDot = false;
+  let inBlockComment = false;
+  let i = 0;
+  while (i < n) {
+    const c = src[i];
+    if (inBlockComment) {
+      if (c === '*' && src[i + 1] === '/') { inBlockComment = false; i += 2; }
+      else i++;
+      continue;
+    }
+    if (c === '"') {
+      i++;
+      while (i < n && src[i] !== '"') {
+        if (src[i] === '\\') i++;
+        i++;
+      }
+      i++;
+      continue;
+    }
+    if (c === '/' && src[i + 1] === '/') { while (i < n && src[i] !== '\n') i++; continue; }
+    if (c === '/' && src[i + 1] === '*') { inBlockComment = true; i += 2; continue; }
+    if (/\s/.test(c)) { i++; continue; }
+    if (c === '{') {
+      braceDepth++;
+      if (pendingApply) { applyStack.push(braceDepth); pendingApply = false; }
+      afterDot = false;
+      i++;
+      continue;
+    }
+    if (c === '}') {
+      if (applyStack.length && applyStack[applyStack.length - 1] === braceDepth) applyStack.pop();
+      braceDepth = Math.max(0, braceDepth - 1);
+      afterDot = false;
+      i++;
+      continue;
+    }
+    if (c === '.') { afterDot = true; i++; continue; }
+    if (/[A-Za-z_]/.test(c)) {
+      let j = i;
+      let w = '';
+      while (j < n && /[A-Za-z0-9_]/.test(src[j])) { w += src[j]; j++; }
+      if (afterDot) {
+        if (w === 'apply') pendingApply = true;
+        afterDot = false;
+      }
+      i = j;
+      continue;
+    }
+    pendingApply = false;
+    afterDot = false;
+    i++;
+  }
+  return applyStack.length;
 }
 
-/** 自动补全：关键字 + 内置函数 + this 字段 + 粒子/向量/数组成员 + 代码中已出现的标识符。 */
+/** 从光标前文本中定位成员访问的接收者表达式起点（支持 p.color / vec3(...) 等链式）。 */
+function receiverStart(before, dotIndex) {
+  let depth = 0;
+  let i = dotIndex - 1;
+  while (i >= 0 && /\s/.test(before[i])) i--;
+  for (; i >= 0; i--) {
+    const c = before[i];
+    if (c === ')' || c === ']' || c === '}') depth++;
+    else if (c === '(' || c === '[' || c === '{') {
+      if (depth === 0) return i + 1;
+      depth--;
+    } else if (depth === 0) {
+      if (c === ';' || c === ',' || '=+-*/%<>!&|^?:'.includes(c)) return i + 1;
+      if (c === '\n') {
+        let j = i + 1;
+        while (j < before.length && /\s/.test(before[j])) j++;
+        if (before[j] !== '.') return i + 1; // 新行不是 . 续行，即上一条语句结束
+      }
+    }
+  }
+  return 0;
+}
+
+/** 解析接收者表达式文本并推断其类型。 */
+function resolveReceiverType(receiverText, fx, pos) {
+  const scope = buildScriptEnvs(fx, pos);
+  let node;
+  try {
+    node = parseExpression(receiverText);
+  } catch {
+    return 'unknown';
+  }
+  return inferExprType(node, scope);
+}
+
+function vecMethodsForType(type) {
+  return type === 'vec3' ? [...VEC_COMMON_METHODS, ...VEC3_EXTRA_METHODS] : VEC_COMMON_METHODS;
+}
+
+/** 依接收者类型给出成员补全项；无成员可补时返回 null。 */
+function memberOptionsForType(type) {
+  if (type === 'array') {
+    return ARRAY_METHOD_NAMES.map((m) => ({ label: m, type: 'method', detail: 'array' }));
+  }
+  if (type === 'particleList') {
+    return [{ label: 'size', type: 'method', detail: 'particle list' }];
+  }
+  if (type === 'particle') {
+    return [
+      ...Object.keys(PARTICLE_FIELD_TYPES).map((f) => ({ label: f, type: 'property', detail: 'particle' })),
+      ...PARTICLE_METHODS.map((m) => ({ label: m, type: 'method', detail: 'particle' })),
+    ];
+  }
+  if (VEC_COMPONENTS[type]) {
+    return [
+      ...VEC_COMPONENTS[type].map((c) => ({ label: c, type: 'property', detail: type })),
+      ...vecMethodsForType(type).map((m) => ({ label: m, type: 'method', detail: type })),
+    ];
+  }
+  if (type === 'color') {
+    return [
+      ...COLOR_COMPONENTS.map((c) => ({ label: c, type: 'property', detail: 'color' })),
+      ...COLOR_METHOD_NAMES.map((m) => ({ label: m, type: 'method', detail: 'color' })),
+    ];
+  }
+  return null;
+}
+
+/** 自动补全：关键字 + 内置函数 + this 字段 + 粒子/向量/颜色/数组成员 + 代码中已出现的标识符。 */
 export function scriptCompletionSource(fx) {
   return (context) => {
     const before = context.state.sliceDoc(0, context.pos);
@@ -615,41 +886,46 @@ export function scriptCompletionSource(fx) {
     const lastChar = before.slice(-1);
     if (lastChar === ';' || lastChar === '\n' || lastChar === '{' || lastChar === '}' || lastChar === ')' || lastChar === ' ') return null;
 
+    // 成员访问：receiver.member 或 receiver. （含 this. / p.color. / vec3(...). 等链式）
+    const memberM = /\.\s*([A-Za-z_][A-Za-z0-9_]*)?$/.exec(before);
+    if (memberM) {
+      const partial = memberM[1] || '';
+      const dotIndex = before.length - memberM[0].length;
+      const receiverText = before.slice(receiverStart(before, dotIndex), dotIndex).trim();
+
+      if (receiverText === 'this') {
+        return {
+          from: context.pos - partial.length,
+          options: [
+            ...SCRIPT_THIS_FIELDS.map((name) => ({ label: name, type: 'property', detail: 'this' })),
+            ...['spawn'].map((name) => ({ label: name, type: 'method', detail: 'this' })),
+          ],
+          validFor: /^\w*$/,
+        };
+      }
+
+      const options = memberOptionsForType(resolveReceiverType(receiverText, fx, context.pos));
+      if (!options) return null;
+      return { from: context.pos - partial.length, options, validFor: /^\w*$/ };
+    }
+
+    // 普通标识符 / 关键字补全
     const word = context.matchBefore(/[\w.]*/);
     const from = word ? word.from : context.pos;
 
-    const afterThisDot = /this\s*\.\s*[\w]*$/.test(before);
-    if (afterThisDot) {
-      return {
-        from: context.pos - (/[\w]*$/.exec(before)?.[0]?.length || 0),
-        options: SCRIPT_THIS_FIELDS.map((name) => ({ label: name, type: 'property' })),
-        validFor: /^\w*$/,
-      };
-    }
-
-    const dot = /([A-Za-z_][A-Za-z0-9_]*)\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)?$/.exec(before);
-    if (dot) {
-      const partial = dot[2] || '';
-      const receiverType = resolveDotReceiverType(dot[1], before, dot.index, fx, context.pos);
-      const make = (labels, type) => ({
-        from: context.pos - partial.length,
-        options: labels.map((label) => ({ label, type })),
-        validFor: /^\w*$/,
-      });
-      if (receiverType === 'array') return make(ARRAY_METHOD_NAMES, 'method');
-      if (receiverType === 'particleList') return make(['size'], 'method');
-      if (receiverType === 'particle') return make([...Object.keys(PARTICLE_FIELD_TYPES), ...PARTICLE_METHODS], 'property');
-      if (VEC_COMPONENTS[receiverType]) return make(VEC_COMPONENTS[receiverType], 'property');
-      return null;
-    }
-
     const options = [];
-    for (const kw of SCRIPT_KEYWORDS) options.push({ label: kw, type: 'keyword' });
-    for (const fn of SCRIPT_BUILTINS) options.push({ label: fn, type: 'function', detail: 'builtin' });
-    for (const name of Object.keys(fx?.vars || {})) options.push({ label: name, type: 'variable', detail: 'var' });
+    const seen = new Set();
+    // apply 块内裸名即粒子字段，优先给出。
+    if (applyLambdaDepthAt(before, before.length) > 0) {
+      for (const f of PARTICLE_FIELD_SET) {
+        seen.add(f);
+        options.push({ label: f, type: 'property', detail: 'particle' });
+      }
+    }
+    for (const kw of SCRIPT_KEYWORDS) if (!seen.has(kw)) { seen.add(kw); options.push({ label: kw, type: 'keyword' }); }
+    for (const fn of SCRIPT_BUILTINS) if (!seen.has(fn)) { seen.add(fn); options.push({ label: fn, type: 'function', detail: 'builtin' }); }
+    for (const name of Object.keys(fx?.vars || {})) if (!seen.has(name)) { seen.add(name); options.push({ label: name, type: 'variable', detail: 'var' }); }
 
-    const seen = new Set(SCRIPT_KEYWORDS);
-    for (const fn of SCRIPT_BUILTINS) seen.add(fn);
     const doc = context.state.doc.toString();
     for (const m of doc.matchAll(/[A-Za-z_][A-Za-z0-9_]*/g)) {
       const name = m[0];
