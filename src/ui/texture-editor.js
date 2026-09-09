@@ -912,9 +912,9 @@ export function initTextureEditor() {
   document.getElementById('tex-color-btn').addEventListener('click', (ev) => {
     openColorPicker({
       x: ev.clientX, y: ev.clientY,
-      rgba: [texState.color[0], texState.color[1], texState.color[2], texState.color[3] / 255],
+      rgba: [texState.color[0] / 255, texState.color[1] / 255, texState.color[2] / 255, texState.color[3] / 255],
       onInput: (rgba) => {
-        texState.color = [rgba[0], rgba[1], rgba[2], Math.round(rgba[3] * 255)];
+        texState.color = [Math.round(rgba[0] * 255), Math.round(rgba[1] * 255), Math.round(rgba[2] * 255), Math.round(rgba[3] * 255)];
         updateColorButton();
       },
     });
