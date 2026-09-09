@@ -413,19 +413,6 @@
 }
 #pane-props .chk span { color: var(--muted); font-size: 12px; }
 
-/* ---- 取色板 ---- */
-.color-picker {
-  position: fixed; z-index: 13000; width: 210px; background: var(--panel-2);
-  border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; box-shadow: var(--shadow);
-}
-.color-picker .cp-sv { position: relative; width: 100%; height: 140px; border-radius: var(--radius-sm); cursor: crosshair; touch-action: none; }
-.color-picker .cp-sv-thumb { position: absolute; width: 10px; height: 10px; border: 2px solid #fff; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; box-shadow: 0 0 3px rgba(0,0,0,0.6); }
-.color-picker .cp-hue { width: 100%; height: 12px; margin: 8px 0; border-radius: 6px; cursor: pointer; touch-action: none; }
-.color-picker .cp-alpha { width: 100%; height: 12px; margin: 8px 0; border-radius: 6px; cursor: pointer; background: repeating-conic-gradient(#666 0 25%, #ccc 0 50%) 0 0 / 8px 8px; touch-action: none; }
-.color-picker .cp-row { display: flex; gap: 8px; align-items: center; }
-.color-picker .cp-hex { flex: 1; min-width: 0; background: var(--panel-3); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-sm); padding: 4px 8px; }
-.color-picker .cp-row .mini { flex: none; white-space: nowrap; }
-
 /* ---- 贴图列表（文件管理器预留） ---- */
 .tex-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; min-height: 20px; }
 .tex-item {

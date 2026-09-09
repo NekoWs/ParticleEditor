@@ -26,6 +26,7 @@ import {customSelect} from './select.js';
 import {refreshTexBase64Cache} from '../io/io.js';
 import {modalAlert, modalConfirm, modalPrompt} from './ui.js';
 import {makeFloatWindow} from './float-window.js';
+import {openColorPicker} from './color-picker.js';
 import {isNarrowLayout} from '../core/device.js';
 
 // UV 预览描边 / 选区描边 / 动画帧范围线框：随主题取色
@@ -907,11 +908,15 @@ export function initTextureEditor() {
     renderTexCanvas();
   });
 
-  // 颜色按钮 → 取色板
+  // 颜色按钮 → 复用共享 canvas 取色器（与属性面板一致）
   document.getElementById('tex-color-btn').addEventListener('click', (ev) => {
-    openColorPicker(ev.clientX, ev.clientY, texState.color, (rgba) => {
-      texState.color = rgba;
-      updateColorButton();
+    openColorPicker({
+      x: ev.clientX, y: ev.clientY,
+      rgba: [texState.color[0], texState.color[1], texState.color[2], texState.color[3] / 255],
+      onInput: (rgba) => {
+        texState.color = [rgba[0], rgba[1], rgba[2], Math.round(rgba[3] * 255)];
+        updateColorButton();
+      },
     });
   });
 
@@ -959,138 +964,9 @@ export function paintAt(p, mode) {
   setDirty(true);
 }
 
-// —— 取色板（HSV + alpha） ——
-
+// 颜色按钮底色（RGBA → CSS 字符串）
 export function rgbaToCss(rgba) {
   return 'rgba(' + rgba[0] + ',' + rgba[1] + ',' + rgba[2] + ',' + (rgba[3] / 255).toFixed(3) + ')';
-}
-
-export function openColorPicker(x, y, rgba, onCommit) {
-  closeColorPicker();
-  const box = document.createElement('div');
-  box.className = 'color-picker';
-  box.id = 'color-picker-pop';
-
-  const sv = document.createElement('div'); sv.className = 'cp-sv';
-  const svThumb = document.createElement('div'); svThumb.className = 'cp-sv-thumb';
-  sv.appendChild(svThumb);
-  const hue = document.createElement('div'); hue.className = 'cp-hue';
-  const alpha = document.createElement('div'); alpha.className = 'cp-alpha';
-  const row = document.createElement('div'); row.className = 'cp-row';
-  const hex = document.createElement('input'); hex.className = 'cp-hex'; hex.type = 'text'; hex.maxLength = 9;
-  const okBtn = document.createElement('button');
-  okBtn.className = 'mini'; okBtn.textContent = t('common.ok');
-  row.appendChild(hex); row.appendChild(okBtn);
-
-  let hsv = rgbToHsv(rgba);
-  let a = rgba[3] / 255;
-
-  const paintSV = () => { sv.style.background = 'linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(' + hsv[0] + ',100%,50%))'; };
-  const paintHue = () => { hue.style.background = 'linear-gradient(to right, #f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)'; };
-  const paintAlpha = () => { const c = hsvToRgb([hsv[0], hsv[1], hsv[2]]); alpha.style.background = 'linear-gradient(to right, transparent, rgb(' + c[0] + ',' + c[1] + ',' + c[2] + '))'; };
-  const sync = () => {
-    svThumb.style.left = (hsv[1] * 100) + '%';
-    svThumb.style.top = ((1 - hsv[2]) * 100) + '%';
-    const c = hsvToRgb([hsv[0], hsv[1], hsv[2]]);
-    hex.value = '#' + c.map(v => v.toString(16).padStart(2, '0')).join('') + (a < 1 ? Math.round(a * 255).toString(16).padStart(2, '0') : '');
-    paintAlpha();
-    // 实时同步编辑器颜色：拖动/输入即时生效，无需点确定
-    texState.color = [c[0], c[1], c[2], Math.round(a * 255)];
-    updateColorButton();
-  };
-  paintSV(); paintHue(); sync();
-
-  sv.addEventListener('pointerdown', (ev) => {
-    sv.setPointerCapture(ev.pointerId);
-    const move = (e) => {
-      const r = sv.getBoundingClientRect();
-      hsv[1] = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-      hsv[2] = 1 - Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
-      sync();
-    };
-    move(ev);
-    sv.addEventListener('pointermove', move);
-    sv.addEventListener('pointerup', () => sv.removeEventListener('pointermove', move), { once: true });
-  });
-  hue.addEventListener('pointerdown', (ev) => {
-    hue.setPointerCapture(ev.pointerId);
-    const move = (e) => {
-      const r = hue.getBoundingClientRect();
-      hsv[0] = Math.max(0, Math.min(360, (e.clientX - r.left) / r.width * 360));
-      paintSV(); sync();
-    };
-    move(ev);
-    hue.addEventListener('pointermove', move);
-    hue.addEventListener('pointerup', () => hue.removeEventListener('pointermove', move), { once: true });
-  });
-  alpha.addEventListener('pointerdown', (ev) => {
-    alpha.setPointerCapture(ev.pointerId);
-    const move = (e) => {
-      const r = alpha.getBoundingClientRect();
-      a = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-      sync();
-    };
-    move(ev);
-    alpha.addEventListener('pointermove', move);
-    alpha.addEventListener('pointerup', () => alpha.removeEventListener('pointermove', move), { once: true });
-  });
-
-  const commit = () => {
-    const c = hsvToRgb([hsv[0], hsv[1], hsv[2]]);
-    const out = [c[0], c[1], c[2], Math.round(a * 255)];
-    texState.color = out;
-    updateColorButton();
-    closeColorPicker();
-    if (onCommit) onCommit(out);
-  };
-  hex.addEventListener('change', () => {
-    const v = hex.value.replace('#', '');
-    if (/^[0-9a-fA-F]{6}$/.test(v)) {
-      hsv = rgbToHsv([parseInt(v.slice(0, 2), 16), parseInt(v.slice(2, 4), 16), parseInt(v.slice(4, 6), 16)]);
-      paintSV(); sync();
-    } else if (/^[0-9a-fA-F]{8}$/.test(v)) {
-      hsv = rgbToHsv([parseInt(v.slice(0, 2), 16), parseInt(v.slice(2, 4), 16), parseInt(v.slice(4, 6), 16)]);
-      a = parseInt(v.slice(6, 8), 16) / 255;
-      paintSV(); sync();
-    }
-  });
-  okBtn.onclick = commit;
-
-  box.appendChild(sv); box.appendChild(hue); box.appendChild(alpha); box.appendChild(row);
-  document.body.appendChild(box);
-  // 移动端/窄屏下按实际尺寸双向钳制，让整个取色板都落在屏幕内。
-  const pad = 8;
-  const bw = box.offsetWidth || 210;
-  const bh = box.offsetHeight || 250;
-  const left = Math.max(pad, Math.min(x, window.innerWidth - bw - pad));
-  const top = Math.max(pad, Math.min(y, window.innerHeight - bh - pad));
-  box.style.left = left + 'px';
-  box.style.top = top + 'px';
-}
-export function closeColorPicker() { const b = document.getElementById('color-picker-pop'); if (b) b.remove(); }
-window.addEventListener('pointerdown', (e) => { if (!e.target.closest('#color-picker-pop') && !e.target.closest('#tex-color-btn')) closeColorPicker(); });
-
-export function rgbToHsv(rgb) {
-  const r = rgb[0] / 255, g = rgb[1] / 255, b = rgb[2] / 255;
-  const max = Math.max(r, g, b), min = Math.min(r, g, b);
-  const d = max - min;
-  let h = 0;
-  if (d !== 0) {
-    if (max === r) h = ((g - b) / d) % 6;
-    else if (max === g) h = (b - r) / d + 2;
-    else h = (r - g) / d + 4;
-    h *= 60; if (h < 0) h += 360;
-  }
-  const s = max === 0 ? 0 : d / max;
-  return [h, s, max];
-}
-export function hsvToRgb(hsv) {
-  const h = hsv[0], s = hsv[1], v = hsv[2];
-  const c = v * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = v - c;
-  let r = 0, g = 0, b = 0;
-  if (h < 60) { r = c; g = x; } else if (h < 120) { r = x; g = c; } else if (h < 180) { g = c; b = x; }
-  else if (h < 240) { g = x; b = c; } else if (h < 300) { r = x; b = c; } else { r = c; b = x; }
-  return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
 }
 
 // —— 文件：上传 / 新建 / 保存 ——
