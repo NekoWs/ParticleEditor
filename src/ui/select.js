@@ -1,9 +1,7 @@
-// 触屏自定义下拉框：替换原生 <select>（移动端会弹全屏滚轮/系统面板）。只在 (pointer: coarse)
-// 下启用，桌面仍用原生 select。原生 select 留在 DOM 里（隐藏），选完写回 select.value 并派发
-// change，所以已有代码读 .value / 监听 change 的路径都不变。下拉列表是单例挂在 body 下，
-// 避免被侧栏/抽屉的 transform 或 overflow 裁掉，也保证 fixed 定位相对视口。
-
-import { hasCoarsePointer } from '../core/device.js';
+// 自定义下拉框：替换原生 <select>，桌面与触屏统一使用。原生 select 留在 DOM 里（隐藏），
+// 选完写回 select.value 并派发 change，所以已有代码读 .value / 监听 change 的路径都不变。
+// 下拉列表是单例挂在 body 下，避免被侧栏/抽屉的 transform 或 overflow 裁掉，也保证 fixed
+// 定位相对视口。
 
 let sharedList = null;   // 单例下拉列表
 let activeWrap = null;   // 当前打开的下拉所属 .csel
@@ -52,7 +50,7 @@ function position(btn, list) {
 }
 
 export function customSelect(selectEl) {
-  if (!selectEl || selectEl.dataset.cselApplied || !hasCoarsePointer()) return selectEl;
+  if (!selectEl || selectEl.dataset.cselApplied) return selectEl;
   selectEl.dataset.cselApplied = '1';
   selectEl.style.display = 'none';
   ensureOutsideClose();

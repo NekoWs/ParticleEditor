@@ -2,6 +2,7 @@
 // 新建与导出流程。
 
 import { t } from '../core/i18n.js';
+import { hasCoarsePointer, isNarrowLayout } from '../core/device.js';
 import { state, setDirty, DEFAULT_EASING, UV_MODES, PROP_LABELS, splitCompPr, nextId, clearObjectState } from '../core/constants.js';
 import { pushUndo } from '../state/undo.js';
 import { rebuildPoints } from '../core/animation.js';
@@ -379,7 +380,8 @@ export async function loadFile(file) {
 
 export async function openFile() {
   if ((await confirmDiscardChanges(t('common.open'))) === 'cancel') return;
-  if (window.showOpenFilePicker) {
+  // 移动端 File System Access 选择器提交不可靠，统一走隐藏 <input type=file>
+  if (window.showOpenFilePicker && !hasCoarsePointer() && !isNarrowLayout()) {
     try {
       const [h] = await window.showOpenFilePicker({
         types: [{ description: t('filePicker.project'), accept: { 'application/json': ['.pdraw'] } }],

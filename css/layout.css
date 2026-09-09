@@ -352,7 +352,7 @@
   background: var(--panel-2);
   border: 1px solid var(--border-soft);
   border-radius: 6px;
-  text-align: right;
+  text-align: left;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   box-sizing: border-box;

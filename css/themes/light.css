@@ -25,16 +25,16 @@
   --scrollbar-thumb: #c3c9d2;
   --scrollbar-thumb-hover: #aeb6c2;
   --slider-ring: #ffffff;
-  /* 3D 场景视口随主题变亮，网格/坐标轴用深灰线保持对比 */
-  --stage-grad-1: #eef1f5;
-  --stage-grad-2: #f6f7f9;
+  /* 3D 场景视口用偏暗的灰白，保证白色粒子在亮色模式下可见 */
+  --stage-grad-1: #aeb5bf;
+  --stage-grad-2: #b9bfc8;
   --tex-bg: #e8eaee;
   --tex-cell: #c7cdd6;
   --lane-bg: #eef0f4;
   --code-bg: #ffffff;
   --terminal-bg: #f4f6f9;
-  --stage-clear: #f2f4f7;
-  --grid-color: #c3cad4;
+  --stage-clear: #b7bdc6;
+  --grid-color: #8f97a3;
   --ee-bg: #ffffff;
   --ee-grid: #eef0f4;
   --ee-grid-major: #d4d9e0;

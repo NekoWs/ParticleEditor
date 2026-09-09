@@ -33,7 +33,6 @@ export const lastMouse = { x: 0, y: 0 };
 // 否则放行给 OrbitControls（单指旋转、双指平移缩放）。
 const activeTouchIds = new Set();
 const gatedTouchIds = new Set();
-let touchPending = null; // 触屏选择工具：点中粒子后待命，拖动超过阈值才进入移动
 
 function touchGizmoHit(ev) {
   const derived = selectionHasDerived() && !state.selectedFunction;
@@ -1016,11 +1015,6 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
           promoteGroupSelection();
           rebuildPoints();
           syncSelectionClasses();
-          // 选择工具：鼠标点选后立即进入拖动；触屏先待命，拖动超过阈值再进入移动。
-          if (state.tool === 'select') {
-            if (touch) touchPending = { x0: ev.clientX, y0: ev.clientY };
-            else enterGrab(ev.clientX, ev.clientY);
-          }
           handled = true;
         }
       }
@@ -1080,14 +1074,6 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
   lastMouse.x = ev.clientX; lastMouse.y = ev.clientY;
 
   if (ev.pointerType === 'touch') {
-    // 触屏选择工具：点中粒子后先待命，超过阈值才进入移动（避免点选误拖）。
-    if (touchPending) {
-      if (Math.hypot(ev.clientX - touchPending.x0, ev.clientY - touchPending.y0) > 8) {
-        touchPending = null;
-        enterGrab(ev.clientX, ev.clientY);
-      }
-      return;
-    }
     // OrbitControls 正在旋转/缩放的触控不参与编辑器悬停/预览逻辑。
     if (!gatedTouchIds.has(ev.pointerId)) return;
   }
@@ -1158,7 +1144,6 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
 });
 
 renderer.domElement.addEventListener('pointerup', (ev) => {
-  if (ev.pointerType === 'touch') touchPending = null;
   if (ev.button !== 0) return;
   if (modal) { confirmModal(); return; }
   if (boxSel) {

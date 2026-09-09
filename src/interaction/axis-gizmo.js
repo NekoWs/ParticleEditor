@@ -320,6 +320,13 @@ renderer.domElement.addEventListener('pointerup', (ev) => {
 
 renderer.domElement.addEventListener('pointercancel', () => { midDrag = null; rightPanDrag = null; });
 
+// 触屏 OrbitControls 开始旋转/缩放时，若仍处于轴视图则先恢复 XZ 与轴遮挡，
+// 否则网格/世界轴停留在切换后的平面，随手指旋转会出现错位。
+controls.addEventListener('start', () => {
+  if (camTransition) setCamTransition(null);
+  if (navOriented) { setDrawPlane('XZ'); setWorldAxesOccluded(true); navOriented = false; }
+});
+
 export function setDrawPlane(p) {
   state.drawPlane = p;
   // 同步底部网格到 2D 视图对应的平面
