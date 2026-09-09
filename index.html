@@ -135,7 +135,7 @@
               <div class="vec3-seg"><input id="prop-spin-y" type="number" step="1" value="0" /></div>
               <div class="vec3-seg"><input id="prop-spin-z" type="number" step="1" value="0" /></div>
             </div>
-            <button id="prop-spin-space" class="spin-space-btn" type="button" data-i18n-title="spinSpace.hint" title="切换自转空间：世界 / 局部">世界</button>
+            <button id="prop-spin-space" class="spin-space-btn" type="button" data-i18n-title="spinSpace.hint" title="切换自转空间：世界 / 局部">W</button>
           </div>
         </div>
         <div class="row" id="prop-rot-row"><span data-i18n="prop.rot">公转</span>
@@ -145,7 +145,7 @@
               <div class="vec3-seg"><input id="prop-rot-y" type="number" step="1" value="0" /></div>
               <div class="vec3-seg"><input id="prop-rot-z" type="number" step="1" value="0" /></div>
             </div>
-            <button id="prop-rot-space" class="spin-space-btn" type="button" data-i18n-title="rotSpace.hint" title="切换公转空间：世界 / 局部">世界</button>
+            <button id="prop-rot-space" class="spin-space-btn" type="button" data-i18n-title="rotSpace.hint" title="切换公转空间：世界 / 局部">W</button>
           </div>
         </div>
         <div class="row"><span data-i18n="prop.center">公转中心</span>
@@ -157,7 +157,7 @@
         </div>
         <label class="chk"><input id="prop-glow" type="checkbox" /><span data-i18n="props.glow">发光</span></label>
         <label class="row"><span data-i18n="props.light">光照等级</span> <input id="prop-light" type="range" min="0" max="15" step="1" value="15" /><span id="light-val">15</span></label>
-        <label class="row"><span data-i18n="props.life">寿命(tick)</span> <input id="prop-life" type="number" min="-1" step="1" value="20" data-i18n-title="props.lifeHint" title="-1 或留空 = 无限（活到动画结束）" /></label>
+        <label class="row"><span data-i18n="props.life">寿命(tick)</span> <input id="prop-life" type="number" min="-1" step="1" value="20" size="3" data-i18n-title="props.lifeHint" title="-1 或留空 = 无限（活到动画结束）" /></label>
       </div>
 
       <div class="tab-pane" id="pane-fx">
@@ -194,13 +194,13 @@
           <button id="tex-fullscreen-btn" class="tex-fullscreen-btn" data-i18n-title="tex.fullscreen" title="全屏"><svg viewBox="0 0 18 18"><path d="M3 6V3h3M12 3h3v3M15 12v3h-3M6 15H3v-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
           <div class="tex-meta" id="tex-meta">16 × 16</div>
         </div>
+        <div class="tex-list" id="tex-list"></div>
         <div class="tex-io">
           <input id="tex-upload" type="file" accept=".png" hidden />
           <button id="btn-tex-upload" class="mini" data-i18n="tex.upload">上传贴图</button>
           <button id="btn-tex-new" class="mini" data-i18n="common.new">新建</button>
           <button id="btn-tex-export" class="mini" data-i18n="tex.export">导出</button>
         </div>
-        <div class="tex-list" id="tex-list"></div>
         <div class="uv-panel" id="uv-panel">
           <p class="hint" data-i18n="tex.selectHint">选中对象以编辑贴图 / UV</p>
         </div>

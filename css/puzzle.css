@@ -200,9 +200,9 @@ body.puzzle-mode .fwin { display: flex; }
 /* 贴图编辑器全屏窗口：不受拼图模式限制，始终显示 */
 .fwin.tex-fwin { display: flex; }
 .tex-fwin .fwin-body { display: flex; flex-direction: column; }
-.tex-fwin .tex-editor { flex: 1 1 auto; height: auto; min-height: 0; }
-.tex-fwin .tex-io,
-.tex-fwin .tex-list { flex: 0 0 auto; }
+.tex-fwin .tex-editor { flex: 1 1 auto; height: auto; min-height: 0; border-radius: 0; }
+.tex-fwin .tex-io { flex: 0 0 auto; margin: 6px 10px 10px; }
+.tex-fwin .tex-list { flex: 0 0 auto; margin: 8px 10px 0; }
 /* 移动端全屏窗口：铺满视口，忽略窄屏 .fwin 的 96vw/70vh 上限 */
 .fwin.tex-fwin-fullscreen {
   max-width: none; max-height: none;

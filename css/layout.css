@@ -368,6 +368,21 @@
   text-transform: lowercase;
   box-sizing: border-box;
 }
+/* vec3 组合框内输入随内容自适应宽度 */
+#pane-props .vec3 input {
+  width: auto;
+  min-width: 2.4ch;
+  max-width: 9ch;
+  field-sizing: content;
+}
+/* 寿命输入框：左对齐 + 宽度自适应 */
+#pane-props .row > input#prop-life {
+  width: auto;
+  min-width: 3ch;
+  max-width: 9ch;
+  text-align: left;
+  field-sizing: content;
+}
 #pane-props .row .color-swatch {
   flex: none;
   width: 24px;

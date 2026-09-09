@@ -21,6 +21,13 @@ export function setScaleInputs(vals) {
   setRotTriple(['prop-scale-x', 'prop-scale-y', 'prop-scale-z'], vals);
 }
 
+// 让 number 输入框的 size 跟随内容长度（配合 CSS field-sizing: content 的兜底）
+function fitNumberInput(el) {
+  if (!el) return;
+  const len = Math.max(1, String(el.value || el.placeholder || '').length);
+  el.size = Math.min(9, len + 1);
+}
+
 // 旋转类 XYZ 三输入（vals 为 [x,y,z]；null 元素显示空占位）
 function setRotTriple(ids, vals) {
   ids.forEach((id, i) => {
@@ -29,6 +36,7 @@ function setRotTriple(ids, vals) {
     const v = vals == null ? null : vals[i];
     if (v == null) { el.value = ''; el.placeholder = '-'; }
     else { el.value = (typeof v === 'number' ? Math.round(v * 100) / 100 : v); el.placeholder = ''; }
+    fitNumberInput(el);
   });
 }
 
@@ -152,10 +160,11 @@ export function updatePropPanel() {
       lifeEl.value = (typeof first.life === 'number' ? first.life : -1);
       lifeEl.placeholder = '';
     } else { lifeEl.value = ''; lifeEl.placeholder = '-'; }
+    fitNumberInput(lifeEl);
   }
 
   const pos = currentVisual(first).pos;
-  const setPos = (id, val, sameVal) => { const el = document.getElementById(id); el.value = sameVal ? val : ''; el.placeholder = sameVal ? '' : '-'; };
+  const setPos = (id, val, sameVal) => { const el = document.getElementById(id); el.value = sameVal ? val : ''; el.placeholder = sameVal ? '' : '-'; fitNumberInput(el); };
   const xSame = same(q => currentVisual(q).pos[0].toFixed(2) === pos[0].toFixed(2));
   const ySame = same(q => currentVisual(q).pos[1].toFixed(2) === pos[1].toFixed(2));
   const zSame = same(q => currentVisual(q).pos[2].toFixed(2) === pos[2].toFixed(2));
