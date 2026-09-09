@@ -189,7 +189,7 @@
 .row input[type="range"] { flex: 1; accent-color: var(--accent); }
 .row input[type="color"] { width: 42px; height: 30px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: none; cursor: pointer; }
 .row input#prop-color { flex: 1; min-width: 0; text-transform: lowercase; }
-.color-swatch { flex: none; width: 30px; height: 30px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; background: repeating-conic-gradient(#777 0 25%, #bbb 0 50%) 0 0 / 10px 10px; }
+.color-swatch { flex: none; width: 30px; height: 30px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; background: linear-gradient(#ffffff, #ffffff), repeating-conic-gradient(#777 0 25%, #bbb 0 50%) 0 0 / 10px 10px; }
 .chk { display: flex; align-items: center; gap: 7px; margin: 9px 0; cursor: pointer; }
 .chk input { accent-color: var(--accent); width: 15px; height: 15px; }
 .hint { color: var(--muted); margin: 5px 0; font-size: 12px; }

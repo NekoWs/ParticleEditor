@@ -114,10 +114,12 @@
 
       <div class="tab-pane active" id="pane-props">
         <label class="row"><span data-i18n="common.color">颜色</span> <input id="prop-color" type="text" maxlength="9" spellcheck="false" value="#ffffffff" /><button id="prop-color-btn" class="color-swatch" data-i18n-title="blk.colorPicker" title="取色器"></button></label>
-        <div class="row"><span data-i18n="props.scale">缩放</span>
-          <input id="prop-scale-x" type="number" min="0.05" step="0.05" value="1" title="X" />
-          <input id="prop-scale-y" type="number" min="0.05" step="0.05" value="1" title="Y" />
-          <input id="prop-scale-z" type="number" min="0.05" step="0.05" value="1" title="Z" />
+        <div class="row" id="prop-scale-row"><span data-i18n="props.scale">缩放</span>
+          <div class="vec3">
+            <div class="vec3-seg"><span>X</span><input id="prop-scale-x" type="number" min="0.05" step="0.05" value="1" /></div>
+            <div class="vec3-seg"><span>Y</span><input id="prop-scale-y" type="number" min="0.05" step="0.05" value="1" /></div>
+            <div class="vec3-seg" id="prop-scale-z-seg"><span>Z</span><input id="prop-scale-z" type="number" min="0.05" step="0.05" value="1" /></div>
+          </div>
         </div>
         <div class="row" id="prop-pos-row"><span data-i18n="prop.pos">位置</span>
           <div class="vec3">

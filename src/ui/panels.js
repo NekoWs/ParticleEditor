@@ -44,9 +44,9 @@ export function updatePropPanel() {
     '#pane-props input, #pane-props select, #pane-props textarea, #fx-panel input, #fx-panel select, #fx-panel textarea')) {
     return;
   }
-  // 粒子缩放无 Z 分量：Z 输入仅在函数对象（整体缩放）时显示
-  const scaleZ = document.getElementById('prop-scale-z');
-  if (scaleZ) scaleZ.style.display = isFx ? '' : 'none';
+  // 粒子缩放无 Z 分量：Z 段仅在函数对象（整体缩放）时显示
+  const scaleZSeg = document.getElementById('prop-scale-z-seg');
+  if (scaleZSeg) scaleZSeg.style.display = isFx ? '' : 'none';
   // 派生粒子基础属性只读；函数对象 pos/scl 可编辑（写整体轨道）
   const readOnly = !isFx && !gname && sel.some(isDerivedParticle);
   ['prop-color', 'prop-glow', 'prop-light'].forEach(id => {
