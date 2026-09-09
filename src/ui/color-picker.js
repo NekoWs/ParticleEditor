@@ -41,6 +41,7 @@ function ensureDom() {
   canvas.style.height = H + 'px';
   canvas.style.borderRadius = '8px';
   canvas.style.boxShadow = '0 8px 24px rgba(0,0,0,0.45)';
+  canvas.style.touchAction = 'none';
   document.body.appendChild(canvas);
   ctx = canvas.getContext('2d');
 
@@ -67,6 +68,7 @@ function ensureDom() {
   document.addEventListener('pointerdown', onOutside, true);
   window.addEventListener('pointermove', onMove);
   window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onCancel);
 }
 
 function rgbToHsv(rgb) {
@@ -248,15 +250,21 @@ function onDown(e) {
   e.preventDefault();
   e.stopPropagation();
   const p = localPoint(e);
-  if (p.x >= SV_X && p.x <= SV_X + SV_W && p.y >= SV_Y && p.y <= SV_Y + SV_H) { drag = 'sv'; updateDrag(e); return; }
-  if (p.x >= HUE_X - 3 && p.x <= HUE_X + HUE_W + 3 && p.y >= HUE_Y && p.y <= HUE_Y + HUE_H) { drag = 'hue'; updateDrag(e); return; }
-  if (p.x >= ALPHA_X - 3 && p.x <= ALPHA_X + ALPHA_W + 3 && p.y >= ALPHA_Y && p.y <= ALPHA_Y + ALPHA_H) { drag = 'alpha'; updateDrag(e); return; }
+  let hit = false;
+  if (p.x >= SV_X && p.x <= SV_X + SV_W && p.y >= SV_Y && p.y <= SV_Y + SV_H) { drag = 'sv'; hit = true; }
+  else if (p.x >= HUE_X - 3 && p.x <= HUE_X + HUE_W + 3 && p.y >= HUE_Y && p.y <= HUE_Y + HUE_H) { drag = 'hue'; hit = true; }
+  else if (p.x >= ALPHA_X - 3 && p.x <= ALPHA_X + ALPHA_W + 3 && p.y >= ALPHA_Y && p.y <= ALPHA_Y + ALPHA_H) { drag = 'alpha'; hit = true; }
+  if (!hit) return;
+  // 捕获指针，拖出画布/触屏上被浏览器接管前仍持续收到 move 事件
+  try { canvas.setPointerCapture(e.pointerId); } catch (_) { /* 忽略 */ }
+  updateDrag(e);
 }
 
 function onMove(e) {
   if (drag) { e.preventDefault(); updateDrag(e); }
 }
 function onUp() { drag = null; }
+function onCancel() { drag = null; }
 
 function updateDrag(e) {
   if (!state || !drag) return;

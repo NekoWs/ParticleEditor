@@ -217,13 +217,15 @@ body.ctrl-held .kf-t { cursor: pointer; }
   flex: 0 0 320px; min-width: 240px; max-width: 480px;
   height: 100%; overflow-y: auto; overflow-x: hidden;
   background: var(--panel-2); border: none;
-  border-radius: 0;
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
   /* 上方空出 #timeline 标尺高度 + 间距，保证第一行与 lane 画布第一行对齐 */
   padding-top: 34px;
 }
 .tl-main {
   flex: 1 1 auto; min-width: 0;
   height: 100%; display: flex; flex-direction: column;
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+  overflow: hidden;
 }
 .tl-main #timeline { margin: 0 0 6px; }
 

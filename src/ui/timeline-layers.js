@@ -12,7 +12,7 @@ import { rebuildPoints, maxMs, invalidateMaxMsCache } from '../core/animation.js
 import { findTrackByPr } from '../core/animation-eval.js';
 import { baseValueFor, removeKeyframe } from '../core/edit.js';
 import { saveWorkspaceState } from './blocks-ui.js';
-import { resize, applyTimeChange } from '../main.js';
+import { resize, applyTimeChange, syncPlayButton } from '../main.js';
 import { pushUndo } from '../state/undo.js';
 import { refreshTimelineTree, tlTreeFlatRows, TL_TREE_ROW_H } from './timeline-tree.js';
 import { openKeyframeEditor, openVarKeyframeEditor, removeVarKeyframe, showContextMenu, drawDiamond } from './tree.js';
@@ -402,6 +402,7 @@ export function tlInitLayerEvents() {
       // 空白区域鼠标拖动：scrub 播放头（无关键帧/对象时也能拖动标尺）
       canvas.setPointerCapture(ev.pointerId);
       state.scrubbing = true;
+      if (state.playing) { state.playing = false; syncPlayButton(); }
       state.time = Math.max(0, timelineXToMsL(ev.clientX));
       applyTimeChange();
       tlLayerState.drag = { kind: 'scrub' };

@@ -442,6 +442,7 @@ export function initUI() {
     } else {
       tlDrag = { mode: 'scrub', lastX: ev.clientX };
       state.scrubbing = true;
+      if (state.playing) { state.playing = false; syncPlayButton(); }
       state.time = Math.max(0, timelineXToMs(ev.clientX));
       applyTimeChange();
     }

@@ -282,7 +282,7 @@
   color: var(--text); text-align: center;
 }
 .uv-field .uv-input-wrap input[type="text"] {
-  width: 96px; text-align: left; font-size: 12px;
+  width: 96px; text-align: left; font-size: 12px; padding: 0 6px;
 }
 .uv-field .uv-input-wrap input:focus { outline: none; }
 .uv-field .uv-input-wrap input.uv-error {
@@ -415,13 +415,13 @@
 
 /* ---- 取色板 ---- */
 .color-picker {
-  position: fixed; z-index: 100; width: 210px; background: var(--panel-2);
+  position: fixed; z-index: 13000; width: 210px; background: var(--panel-2);
   border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; box-shadow: var(--shadow);
 }
-.color-picker .cp-sv { position: relative; width: 100%; height: 140px; border-radius: var(--radius-sm); cursor: crosshair; }
+.color-picker .cp-sv { position: relative; width: 100%; height: 140px; border-radius: var(--radius-sm); cursor: crosshair; touch-action: none; }
 .color-picker .cp-sv-thumb { position: absolute; width: 10px; height: 10px; border: 2px solid #fff; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; box-shadow: 0 0 3px rgba(0,0,0,0.6); }
-.color-picker .cp-hue { width: 100%; height: 12px; margin: 8px 0; border-radius: 6px; cursor: pointer; }
-.color-picker .cp-alpha { width: 100%; height: 12px; margin: 8px 0; border-radius: 6px; cursor: pointer; background: repeating-conic-gradient(#666 0 25%, #ccc 0 50%) 0 0 / 8px 8px; }
+.color-picker .cp-hue { width: 100%; height: 12px; margin: 8px 0; border-radius: 6px; cursor: pointer; touch-action: none; }
+.color-picker .cp-alpha { width: 100%; height: 12px; margin: 8px 0; border-radius: 6px; cursor: pointer; background: repeating-conic-gradient(#666 0 25%, #ccc 0 50%) 0 0 / 8px 8px; touch-action: none; }
 .color-picker .cp-row { display: flex; gap: 8px; align-items: center; }
 .color-picker .cp-hex { flex: 1; min-width: 0; background: var(--panel-3); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-sm); padding: 4px 8px; }
 .color-picker .cp-row .mini { flex: none; white-space: nowrap; }
