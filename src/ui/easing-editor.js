@@ -2,6 +2,7 @@
 
 
 import { t } from '../core/i18n.js';
+import { cssColor } from '../core/theme.js';
 import { EASINGS, EASING_NONE } from '../core/constants.js';
 import { easeVal, cubicBezierX, cubicBezierY } from '../core/easing.js';
 import { refreshFunctionPanel } from './panels.js';
@@ -25,7 +26,7 @@ export function easingCurveSVG(easing) {
     const x = t * w, yy = h - 1 - (ys[i] - lo) / (hi - lo) * (h - 2);
     d += (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + yy.toFixed(1);
   }
-  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><path d="${d}" fill="none" stroke="#5b9dff" stroke-width="1.6"/></svg>`;
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><path d="${d}" fill="none" stroke="${cssColor('--accent', '#5b9dff')}" stroke-width="1.6"/></svg>`;
 }
 
 export function makeEasingBtn(easing, applyFn) {
@@ -182,15 +183,15 @@ export function drawEasingEditor() {
   const ctx = canvas.getContext('2d');
   const w = canvas.width, h = canvas.height;
   ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = '#171a20';
+  ctx.fillStyle = cssColor('--ee-bg', '#171a20');
   ctx.fillRect(0, 0, w, h);
 
   // 方框 [0,1]×[0,1]（正方形）
-  ctx.strokeStyle = '#323848';
+  ctx.strokeStyle = cssColor('--ee-grid-major', '#323848');
   ctx.lineWidth = 1;
   ctx.strokeRect(EE_MX, eePy(1), EE_BOX_W, EE_BOX_H);
   // 中线参考线
-  ctx.strokeStyle = '#252b36';
+  ctx.strokeStyle = cssColor('--ee-grid', '#252b36');
   ctx.setLineDash([4, 4]);
   ctx.beginPath();
   ctx.moveTo(EE_MX, eePy(0.5)); ctx.lineTo(EE_MX + EE_BOX_W, eePy(0.5));
@@ -200,7 +201,7 @@ export function drawEasingEditor() {
 
   if (easingEditor.none) {
     // 无缓动：阶跃曲线（0 保持到 x=1，再跳到 1）
-    ctx.strokeStyle = '#5b9dff';
+    ctx.strokeStyle = cssColor('--accent', '#5b9dff');
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(eePx(0), eePy(0));
@@ -211,7 +212,7 @@ export function drawEasingEditor() {
   }
 
   // 曲线（y 超出 [0,1] 时延伸到方框外）
-  ctx.strokeStyle = '#5b9dff';
+  ctx.strokeStyle = cssColor('--accent', '#5b9dff');
   ctx.lineWidth = 2;
   ctx.beginPath();
   for (let i = 0; i <= 48; i++) {
@@ -223,7 +224,7 @@ export function drawEasingEditor() {
   ctx.stroke();
 
   // 控制线（端点 → 控制点）
-  ctx.strokeStyle = '#4a5568';
+  ctx.strokeStyle = cssColor('--muted', '#4a5568');
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(eePx(0), eePy(0)); ctx.lineTo(eePx(x1), eePy(y1));

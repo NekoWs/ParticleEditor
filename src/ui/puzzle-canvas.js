@@ -1509,7 +1509,7 @@ function drawErrorTooltip(ctx, msg) {
   let y = r.top - cRect.top - 6;
   if (x + w > cw - 6) x = Math.max(6, r.left - cRect.left - w - 10);
   if (y + h > ch - VARS_H - 6) y = Math.max(6, ch - VARS_H - h - 6);
-  ctx.fillStyle = 'rgba(47,52,64,0.97)';
+  ctx.fillStyle = cssVar('--panel-3', 'rgba(47,52,64,0.97)');
   rrPath(ctx, x, y, w, h, 6);
   ctx.fill();
   ctx.strokeStyle = 'rgba(255,120,130,0.6)';
@@ -1603,7 +1603,7 @@ function drawDdRegion(ctx, r) {
   ctx.fillStyle = 'rgba(0,0,0,0.3)';
   rrPath(ctx, r.x, r.y, r.w, r.h, 5);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+  ctx.strokeStyle = cssVar('--border', 'rgba(255,255,255,0.22)');
   ctx.lineWidth = 1;
   rrPath(ctx, r.x, r.y, r.w, r.h, 5);
   ctx.stroke();
@@ -1782,10 +1782,10 @@ function drawDropRegion(ctx, r, th) {
 function drawVarRowRegion(ctx, r) {
   ctx.save();
   const disabled = r.varRow && r.varRow.disabled;
-  ctx.fillStyle = disabled ? 'rgba(0,0,0,0.18)' : 'rgba(47,52,64,0.9)';
+  ctx.fillStyle = disabled ? 'rgba(0,0,0,0.18)' : cssVar('--panel-3', 'rgba(47,52,64,0.9)');
   rrPath(ctx, r.x, r.y, r.w, r.h, 6);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.strokeStyle = cssVar('--border-soft', 'rgba(255,255,255,0.08)');
   ctx.lineWidth = 1;
   ctx.stroke();
   drawSegments(ctx, r.segments, disabled ? 'rgba(139,147,167,0.9)' : '#fff');
@@ -2040,7 +2040,7 @@ function renderWorkCanvas() {
 function renderVars(ctx, cw, ch, th) {
   const varTop = ch - VARS_H;
   ctx.setTransform(S.dpr, 0, 0, S.dpr, 0, 0);
-  ctx.fillStyle = 'rgba(18,20,26,0.88)';
+  ctx.fillStyle = cssVar('--panel', 'rgba(18,20,26,0.88)');
   ctx.fillRect(0, varTop, cw, VARS_H);
   ctx.strokeStyle = th.border;
   ctx.lineWidth = 1;
@@ -2142,10 +2142,10 @@ function renderGhost() {
       const vw = window.innerWidth || 1200, vh = window.innerHeight || 800;
       if (bx + wBox > vw - 8) bx = Math.max(8, S.altHover.x - wBox - 14);
       if (by + hBox > vh - 8) by = Math.max(8, S.altHover.y - hBox - 14);
-      ctx.fillStyle = 'rgba(47,52,64,0.97)';
+      ctx.fillStyle = cssVar('--panel-3', 'rgba(47,52,64,0.97)');
       rrPath(ctx, bx, by, wBox, hBox, 6);
       ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+      ctx.strokeStyle = cssVar('--border', 'rgba(255,255,255,0.22)');
       ctx.lineWidth = 1;
       ctx.stroke();
       ctx.fillStyle = '#fff';

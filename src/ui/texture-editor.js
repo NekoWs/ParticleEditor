@@ -4,6 +4,7 @@
 
 
 import {t, tf} from '../core/i18n.js';
+import { cssColor } from '../core/theme.js';
 import {
   autoFramesFor,
   defaultUV,
@@ -27,9 +28,10 @@ import {modalAlert, modalConfirm, modalPrompt} from './ui.js';
 import {makeFloatWindow} from './float-window.js';
 import {isNarrowLayout} from '../core/device.js';
 
-export const TEX_UV_COLOR = '#5b9dff'; // UV 预览描边（实线，与选中态 --accent 一致）
-export const TEX_SEL_COLOR = '#5b9dff'; // 选区描边（虚线，固定显示）
-export const TEX_CELL_COLOR = '#20242c'; // 动画帧范围线框（比像素网格更深的颜色）
+// UV 预览描边 / 选区描边 / 动画帧范围线框：随主题取色
+export function texUvColor() { return cssColor('--accent', '#5b9dff'); }
+export function texSelColor() { return cssColor('--accent', '#5b9dff'); }
+export function texCellColor() { return cssColor('--tex-cell', '#20242c'); }
 
 export const texState = {
   tool: 'select',           // select | pencil | eraser | bucket | picker
@@ -261,7 +263,7 @@ export function updateTexOverlay() {
   if (uvMatches) {
     if (u.mode === 'fill') {
       const s = currentTexSize();
-      setBox(uv, 0, 0, s.w, s.h, TEX_UV_COLOR, false);
+      setBox(uv, 0, 0, s.w, s.h, texUvColor(), false);
     } else {
       let sx = u.uvStart[0], sy = u.uvStart[1];
       if (u.mode === 'animated') {
@@ -275,7 +277,7 @@ export function updateTexOverlay() {
         sx += stepx * (f % cols);
         sy += (u.uvStep[1] || 0) * Math.floor(f / cols);
       }
-      setBox(uv, sx, sy, effFw, effFh, TEX_UV_COLOR, false);
+      setBox(uv, sx, sy, effFw, effFh, texUvColor(), false);
     }
   } else {
     setBox(uv, 0, 0, 0, 0, '', false);
@@ -290,10 +292,11 @@ export function updateTexOverlay() {
     const maxF = effMaxFrame(u, autoFramesFor(u, ttex.width, ttex.height));
     const lastCol = (maxF - 1) % cols, lastRow = Math.floor((maxF - 1) / cols);
     const spanW = stepx * lastCol + effFw, spanH = stepy * lastRow + effFh;
-    setBox(cells, startX, startY, spanW, spanH, TEX_CELL_COLOR, false);
+    setBox(cells, startX, startY, spanW, spanH, texCellColor(), false);
     if (stepx > 0 || stepy > 0) {
-      const gx = stepx > 0 ? 'repeating-linear-gradient(to right, ' + TEX_CELL_COLOR + ' 0, ' + TEX_CELL_COLOR + ' 1px, transparent 1px, transparent ' + (stepx * scaleX) + 'px)' : '';
-      const gy = stepy > 0 ? 'repeating-linear-gradient(to bottom, ' + TEX_CELL_COLOR + ' 0, ' + TEX_CELL_COLOR + ' 1px, transparent 1px, transparent ' + (stepy * scaleY) + 'px)' : '';
+      const cellColor = texCellColor();
+      const gx = stepx > 0 ? 'repeating-linear-gradient(to right, ' + cellColor + ' 0, ' + cellColor + ' 1px, transparent 1px, transparent ' + (stepx * scaleX) + 'px)' : '';
+      const gy = stepy > 0 ? 'repeating-linear-gradient(to bottom, ' + cellColor + ' 0, ' + cellColor + ' 1px, transparent 1px, transparent ' + (stepy * scaleY) + 'px)' : '';
       cells.style.backgroundImage = gx + (gx && gy ? ', ' : '') + gy;
     } else {
       cells.style.backgroundImage = 'none';
@@ -305,7 +308,7 @@ export function updateTexOverlay() {
   // 选区描边：固定显示（不受工具/悬停影响）
   const sr = selectionRect();
   if (sr) {
-    setBox(sel, sr.x, sr.y, sr.w, sr.h, TEX_SEL_COLOR, true);
+    setBox(sel, sr.x, sr.y, sr.w, sr.h, texSelColor(), true);
   } else {
     setBox(sel, 0, 0, 0, 0, '', false);
   }
@@ -481,7 +484,7 @@ export function updateTexMagnifier(x, y) {
   ctx.drawImage(magSrc, 0, 0, size, size, 0, 0, el.width, el.height);
 
   // 邻域网格线
-  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.strokeStyle = cssColor('--border', 'rgba(255,255,255,0.12)');
   ctx.lineWidth = 1;
   for (let i = 1; i < size; i++) {
     const p = Math.round(i * TEX_MAG_CELL) + 0.5;

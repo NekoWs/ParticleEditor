@@ -3,9 +3,17 @@
 
 import * as THREE from 'three';
 import { OrbitControls, state } from '../core/constants.js';
+import { cssVar } from '../core/theme.js';
+
+// 读取主题色（十六进制字符串）并转为 THREE 数值颜色。
+function themeHex(name, fallback) {
+  const c = cssVar(name, fallback).replace('#', '');
+  return parseInt(c, 16);
+}
+
 export const viewport = document.getElementById('viewport');
 export const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
-renderer.setClearColor(0x14161c, 1);
+renderer.setClearColor(themeHex('--stage-clear', '#14161c'), 1);
 viewport.appendChild(renderer.domElement);
 // 触屏上必须禁止浏览器原生手势，否则 OrbitControls 与编辑器手势会同时被滚动/缩放打断。
 renderer.domElement.style.touchAction = 'none';
@@ -51,10 +59,16 @@ export const grid = (function makeGrid() {
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-  return new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0x2c3342, transparent: true, opacity: 0.9 }));
+  return new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: themeHex('--grid-color', '#2c3342'), transparent: true, opacity: 0.9 }));
 })();
 grid.position.y = 0;
 scene.add(grid);
+
+// 主题切换时更新场景底色与地面网格颜色（粒子/坐标轴/gizmo 保持语义色不变）。
+export function applySceneTheme() {
+  renderer.setClearColor(themeHex('--stage-clear', '#14161c'), 1);
+  grid.material.color.setHex(themeHex('--grid-color', '#2c3342'));
+}
 
 // —— 底部世界三轴指示器（无限长，双向） ——
 // 默认只显示 X/Z（与底部网格同面）；操作 Y 轴（移动/旋转拖拽）时才显示 Y。

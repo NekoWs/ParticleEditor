@@ -32,9 +32,15 @@
   --stage-grad-1: #252c3a;
   --stage-grad-2: #0f1218;
   --tex-bg: #0d0f14;
+  --tex-cell: #20242c;
   --lane-bg: #141821;
   --code-bg: #181a1d;
   --terminal-bg: #101216;
+  --stage-clear: #14161c;
+  --grid-color: #2c3342;
+  --ee-bg: #171a20;
+  --ee-grid: #252b36;
+  --ee-grid-major: #323848;
   --grid-dot: rgba(255, 255, 255, 0.10);
   --tooltip-bg: rgba(0, 0, 0, 0.82);
   --tooltip-text: #eceff5;

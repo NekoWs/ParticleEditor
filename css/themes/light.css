@@ -25,13 +25,19 @@
   --scrollbar-thumb: #c3c9d2;
   --scrollbar-thumb-hover: #aeb6c2;
   --slider-ring: #ffffff;
-  /* 3D 场景视口保持暗色舞台，与网格/坐标轴对比度一致 */
-  --stage-grad-1: #2b3342;
-  --stage-grad-2: #121722;
+  /* 3D 场景视口随主题变亮，网格/坐标轴用深灰线保持对比 */
+  --stage-grad-1: #eef1f5;
+  --stage-grad-2: #f6f7f9;
   --tex-bg: #e8eaee;
+  --tex-cell: #c7cdd6;
   --lane-bg: #eef0f4;
   --code-bg: #ffffff;
   --terminal-bg: #f4f6f9;
+  --stage-clear: #f2f4f7;
+  --grid-color: #c3cad4;
+  --ee-bg: #ffffff;
+  --ee-grid: #eef0f4;
+  --ee-grid-major: #d4d9e0;
   --grid-dot: rgba(20, 30, 50, 0.10);
   --tooltip-bg: rgba(30, 35, 45, 0.92);
   --tooltip-text: #f2f5fa;

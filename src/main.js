@@ -12,7 +12,7 @@ import { openColorPicker } from './ui/color-picker.js';
 import { easeInOut } from './core/easing.js';
 import { openEasingEditor, easingCurveSVG } from './ui/easing-editor.js';
 import { customSelect, refreshCustomSelect } from './ui/select.js';
-import { viewport, renderer, camera, controls, scene, pointsMaterial, camTransition, setCamTransition, planePulse, setPlanePulse, updateRenderScale } from './scene/scene.js';
+import { viewport, renderer, camera, controls, scene, pointsMaterial, camTransition, setCamTransition, planePulse, setPlanePulse, updateRenderScale, applySceneTheme } from './scene/scene.js';
 import { rebuildPoints, rebuildPointsTime, maxMs, updateAnimatedUV, updateCameraWidgets } from './core/animation.js';
 import { editSelectionUniform, editSelectionRotationUniform } from './core/edit.js';
 import { pushUndo, undo, redo, beginContinuous, endContinuous } from './state/undo.js';
@@ -270,6 +270,7 @@ export function initUI() {
   });
   // 主题切换（亮/暗配色）
   applyThemeDom();
+  applySceneTheme();
   const updateThemeChecks = () => {
     const cur = getTheme();
     const dark = document.getElementById('theme-check-dark');
@@ -283,6 +284,10 @@ export function initUI() {
     if (!btn) return;
     closeMenus();
     setTheme(btn.dataset.theme);
+    applySceneTheme();
+    drawTimeline();
+    drawTimelineLayers();
+    tlEase.innerHTML = easingCurveSVG(state.defaultEasing);
     updateThemeChecks();
   });
   document.getElementById('btn-new').addEventListener('click', async () => { closeMenus(); await newFile(); refreshCameraTabs(); refreshTimelineTree(); });

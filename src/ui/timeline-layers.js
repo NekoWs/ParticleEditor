@@ -4,6 +4,7 @@
 // 画布，与上方 #timeline 标尺共享 timelineViewStart / TL_PX_PER_MS；垂直滚动由 #tl-tree 驱动。
 
 import { t } from '../core/i18n.js';
+import { cssColor, cssColorAlpha } from '../core/theme.js';
 import { addLongPress, hasTouch } from '../core/device.js';
 import { state, propComps, compPr, getParticle } from '../core/constants.js';
 import { TL_PX_PER_MS, timelineViewStart, setTimelineViewStart, setTLPxPerMs, drawTimeline, scrubAutoPan, tlNiceStep, commitFunctionRebuild } from './panels.js';
@@ -87,7 +88,7 @@ function drawKfsForTrack(ctx, tr, id, prop, comp, w, cy, color, X) {
     const pr = compPr(prop, comp);
     const sel = tlLayerState.selectedKf && tlLayerState.selectedKf.kind === 'track' &&
       tlLayerState.selectedKf.id === id && tlLayerState.selectedKf.pr === pr && tlLayerState.selectedKf.tick === kf[0];
-    drawDiamond(ctx, x, cy, 4, sel ? '#5b9dff' : color);
+    drawDiamond(ctx, x, cy, 4, sel ? cssColor('--accent', '#5b9dff') : color);
     laneKfHits.push({ kind: 'track', x, y: cy, id, pr, tick: kf[0], kf, tr });
   }
 }
@@ -122,7 +123,7 @@ function drawVarLane(ctx, row, y, w, rowH, X) {
     if (x < -6 || x > w + 6) continue;
     const sel = tlLayerState.selectedKf && tlLayerState.selectedKf.kind === 'var' &&
       tlLayerState.selectedKf.fxId === row.fx.id && tlLayerState.selectedKf.name === row.name && tlLayerState.selectedKf.tick === kf[0];
-    drawDiamond(ctx, x, cy, 4, sel ? '#5b9dff' : '#ffcc55');
+    drawDiamond(ctx, x, cy, 4, sel ? cssColor('--accent', '#5b9dff') : '#ffcc55');
     laneKfHits.push({ kind: 'var', x, y: cy, fxId: row.fx.id, name: row.name, tick: kf[0], kf, v, fx: row.fx });
   }
 }
@@ -140,24 +141,24 @@ function drawBarLane(ctx, row, y, w, rowH, X) {
 
   if (inf) {
     const grad = ctx.createLinearGradient(w - 60, 0, w, 0);
-    grad.addColorStop(0, 'rgba(24,27,34,0)');
-    grad.addColorStop(1, '#181b22');
+    grad.addColorStop(0, cssColorAlpha('--lane-bg', '#181b22', 0));
+    grad.addColorStop(1, cssColor('--lane-bg', '#181b22'));
     ctx.fillStyle = grad;
     ctx.fillRect(Math.max(bx, w - 60), y + 3, w - Math.max(bx, w - 60), bh);
     if (bw > 26) {
-      ctx.fillStyle = '#aab3c5';
+      ctx.fillStyle = cssColor('--muted', '#aab3c5');
       ctx.font = '10px sans-serif';
       ctx.textBaseline = 'middle';
       ctx.fillText('∞', Math.min(w - 14, bx + bw - 12), y + rowH / 2);
     }
   } else {
-    ctx.fillStyle = '#dfe6f2';
+    ctx.fillStyle = cssColor('--text', '#dfe6f2');
     ctx.fillRect(X(e) - 1.5, y + 2, 3, rowH - 4);   // 寿命终点手柄
   }
-  ctx.fillStyle = '#e8ecf5';
+  ctx.fillStyle = cssColor('--text', '#e8ecf5');
   ctx.fillRect(bx - 1.5, y + 2, 3, rowH - 4);       // 起点(入场)手柄
   if (state.time < s) {
-    ctx.fillStyle = 'rgba(24,27,34,0.55)';
+    ctx.fillStyle = cssColorAlpha('--lane-bg', '#181b22', 0.55);
     ctx.fillRect(bx, y + 3, Math.max(0, w - bx), bh);
   }
 
@@ -166,7 +167,7 @@ function drawBarLane(ctx, row, y, w, rowH, X) {
 
 function drawLaneRow(ctx, row, y, w, rowH, X) {
   // 行分隔线（HTML 侧行高一致，这里画一条淡线增强对齐感）
-  ctx.strokeStyle = '#232833';
+  ctx.strokeStyle = cssColor('--border-soft', '#232833');
   ctx.beginPath();
   ctx.moveTo(0, y + rowH - 0.5);
   ctx.lineTo(w, y + rowH - 0.5);
@@ -197,7 +198,7 @@ export function drawTimelineLayers() {
   canvas.width = w * dpr; canvas.height = h * dpr;
   const ctx = canvas.getContext('2d');
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = '#181b22';
+  ctx.fillStyle = cssColor('--lane-bg', '#181b22');
   ctx.fillRect(0, 0, w, h);
 
   const pxPerMs = TL_PX_PER_MS;
@@ -209,7 +210,7 @@ export function drawTimelineLayers() {
   const minor = major / 5;
   const start = Math.max(0, Math.floor(timelineViewStart / minor) * minor);
   const count = Math.ceil((viewEnd - start) / minor) + 1;
-  ctx.strokeStyle = '#262b34';
+  ctx.strokeStyle = cssColor('--border-soft', '#262b34');
   for (let i = 0; i < count; i++) {
     const t = start + i * minor;
     if (t < 0 || t > viewEnd + minor) continue;

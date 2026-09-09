@@ -3,6 +3,7 @@
 
 
 import { t } from '../core/i18n.js';
+import { cssColor } from '../core/theme.js';
 import { localizeScriptError } from '../core/script-error-i18n.js';
 import { state, getFunction, isDerivedParticle } from '../core/constants.js';
 import { currentVisual, rotVectorAt, spinVectorAt, orbitCenterAt } from '../core/animation.js';
@@ -203,8 +204,8 @@ export function drawTimeline() {
   ctx.clearRect(0, 0, w, h);
   const pxPerMs = TL_PX_PER_MS;
   const viewEnd = timelineViewStart + w / pxPerMs;
-  ctx.fillStyle = '#1f222a'; ctx.fillRect(0, 0, w, h);
-  ctx.strokeStyle = '#3a3f4b'; ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
+  ctx.fillStyle = cssColor('--panel-2', '#1f222a'); ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = cssColor('--border-soft', '#3a3f4b'); ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
 
   // 缩放自适应的刻度：主刻度带数字；主刻度 ≥ 100ms 时按秒显示，更细（50ms 档）时按毫秒显示。
   const major = tlNiceStep(pxPerMs, 40);
@@ -212,13 +213,13 @@ export function drawTimeline() {
   const minor = major / 5;
   const start = Math.max(0, Math.floor(timelineViewStart / minor) * minor);
   const count = Math.ceil((viewEnd - start) / minor) + 1;
-  ctx.fillStyle = '#9aa0ad'; ctx.font = '10px sans-serif'; ctx.textBaseline = 'top';
+  ctx.fillStyle = cssColor('--muted', '#9aa0ad'); ctx.font = '10px sans-serif'; ctx.textBaseline = 'top';
   for (let i = 0; i < count; i++) {
     const t = start + i * minor;
     if (t < 0 || t > viewEnd + minor) continue;
     const x = (t - timelineViewStart) * pxPerMs;
     const isMajor = Math.abs(t / major - Math.round(t / major)) < 1e-6;
-    ctx.strokeStyle = '#3a3f4b';
+    ctx.strokeStyle = cssColor('--border-soft', '#3a3f4b');
     ctx.beginPath();
     ctx.moveTo(x, h / 2 - (isMajor ? 8 : 4));
     ctx.lineTo(x, h / 2 + (isMajor ? 8 : 4));
