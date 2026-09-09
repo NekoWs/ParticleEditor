@@ -4,12 +4,12 @@
 
 import { hexToRgba, rgbaToHex } from './ui.js';
 
-const W = 200, H = 178;
+const W = 172, H = 178;
 const SV_X = 8, SV_Y = 8, SV_W = 118, SV_H = 118;
-const HUE_X = 134, HUE_Y = 8, HUE_W = 12, HUE_H = 118;
-const ALPHA_X = 154, ALPHA_Y = 8, ALPHA_W = 12, ALPHA_H = 118;
-const SWATCH_X = 8, SWATCH_Y = 136, SWATCH_W = 34, SWATCH_H = 26;
-const HEX_X = 50, HEX_Y = 136, HEX_W = 142, HEX_H = 26;
+const HUE_X = 132, HUE_Y = 8, HUE_W = 12, HUE_H = 118;
+const ALPHA_X = 150, ALPHA_Y = 8, ALPHA_W = 12, ALPHA_H = 118;
+const SWATCH_X = 8, SWATCH_Y = 136, SWATCH_W = 32, SWATCH_H = 26;
+const HEX_X = 48, HEX_Y = 136, HEX_W = 116, HEX_H = 26;
 
 let canvas = null;
 let ctx = null;
@@ -272,7 +272,7 @@ function updateDrag(e) {
   const [r, g, b] = hsvToRgb(state.h, state.s, state.v);
   state.rgba[0] = r; state.rgba[1] = g; state.rgba[2] = b;
   hexInput.value = hexString();
-  emit(false);
+  emit(true);
 }
 
 function onHexInput() {
