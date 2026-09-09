@@ -23,8 +23,9 @@ function themeHex(name, fallback) {
   return parseInt(c, 16);
 }
 
-// 与主场景地面网格同款：跳过 x=0 / z=0 中心线，颜色跟随主题。
+// 与主场景地面网格同款：跳过 x=0 / z=0 中心线（由彩色轴线承担），网格颜色跟随主题。
 function makePreviewGrid() {
+  const group = new THREE.Group();
   const half = 500, step = 1;
   const pts = [];
   for (let i = -half; i <= half; i++) {
@@ -36,7 +37,18 @@ function makePreviewGrid() {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
   const mat = new THREE.LineBasicMaterial({ color: themeHex('--grid-color', '#2c3342'), transparent: true, opacity: 0.9 });
-  return new THREE.LineSegments(geo, mat);
+  group.add(new THREE.LineSegments(geo, mat));
+
+  // 离屏场景没有世界轴，补上 x=0 / z=0 中心线：X 红、Z 蓝，与编辑器世界轴配色一致。
+  const xGeo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(-half, 0, 0), new THREE.Vector3(half, 0, 0),
+  ]);
+  group.add(new THREE.Line(xGeo, new THREE.LineBasicMaterial({ color: 0xff5555 })));
+  const zGeo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 0, -half), new THREE.Vector3(0, 0, half),
+  ]);
+  group.add(new THREE.Line(zGeo, new THREE.LineBasicMaterial({ color: 0x5588ff })));
+  return group;
 }
 
 let offRenderer = null, offScene = null, offCamera = null, offMaterial = null;
