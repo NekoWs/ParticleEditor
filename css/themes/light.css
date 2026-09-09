@@ -42,27 +42,27 @@
   --tooltip-bg: rgba(30, 35, 45, 0.92);
   --tooltip-text: #f2f5fa;
 
-  /* CodeMirror 脚本编辑器配色（亮色） */
+  /* CodeMirror 脚本编辑器配色（亮色，复刻 JetBrains Light.icls） */
   --cm-bg: #ffffff;
-  --cm-gutter: #f2f3f5;
-  --cm-gutter-text: #8a8f98;
-  --cm-text: #24292f;
+  --cm-gutter: #ffffff;
+  --cm-gutter-text: #aeb3c2;
+  --cm-text: #080808;
   --cm-keyword: #0033b3;
   --cm-string: #067d17;
   --cm-number: #1750eb;
   --cm-comment: #8c8c8c;
   --cm-function: #00627a;
-  --cm-variable: #24292f;
+  --cm-variable: #080808;
   --cm-property: #871094;
-  --cm-atom: #0033b3;
-  --cm-operator: #24292f;
-  --cm-selection: #b4d5fe;
-  --cm-active-line: #f0f3f7;
-  --cm-selection-match: rgba(9, 105, 218, 0.18);
+  --cm-atom: #871094;
+  --cm-operator: #080808;
+  --cm-selection: #a6d2ff;
+  --cm-active-line: #f5f8fe;
+  --cm-selection-match: rgba(136, 173, 247, 0.35);
   --cm-tooltip-bg: #ffffff;
-  --cm-tooltip-text: #24292f;
-  --cm-tooltip-border: #d3d9e0;
-  --cm-tooltip-selected: #e5effc;
-  --cm-tooltip-selected-text: #24292f;
-  --cm-highlight: #0969da;
+  --cm-tooltip-text: #080808;
+  --cm-tooltip-border: #d4d4d4;
+  --cm-tooltip-selected: #e7effd;
+  --cm-tooltip-selected-text: #080808;
+  --cm-highlight: #006dcc;
 }

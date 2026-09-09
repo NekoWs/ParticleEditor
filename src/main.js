@@ -228,7 +228,8 @@ export function initUI() {
     // 小屏 menubar 可能横向滚动，absolute 下拉会被裁切；统一按 fixed 相对视口定位。
     dd.style.position = 'fixed';
     dd.style.left = Math.max(4, Math.min(rect.left, window.innerWidth - 200 - 4)) + 'px';
-    dd.style.top = (rect.bottom + 2) + 'px';
+    // 与按钮底部齐平，避免按钮和下拉之间的空隙导致悬停移动时菜单闪关
+    dd.style.top = rect.bottom + 'px';
   };
   const openMenu = (menu) => {
     document.querySelectorAll('.menu').forEach(m => m.classList.remove('open'));
@@ -246,9 +247,16 @@ export function initUI() {
         if (!wasOpen) openMenu(menu);
       });
     } else {
-      // 桌面：悬停展开/离开收起（与既有交互一致）。
-      menu.addEventListener('mouseenter', () => openMenu(menu));
-      menu.addEventListener('mouseleave', () => menu.classList.remove('open'));
+      // 桌面：悬停展开；离开时延迟收起，给指针穿过按钮与下拉之间的空隙留出时间，
+      // 避免快速移动时菜单闪关。
+      let closeTimer = 0;
+      menu.addEventListener('mouseenter', () => {
+        clearTimeout(closeTimer);
+        openMenu(menu);
+      });
+      menu.addEventListener('mouseleave', () => {
+        closeTimer = setTimeout(() => { menu.classList.remove('open'); }, 150);
+      });
     }
   });
   document.addEventListener('pointerdown', (ev) => {

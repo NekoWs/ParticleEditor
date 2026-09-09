@@ -37,7 +37,7 @@
 .menu-btn:hover { background: var(--panel-3); color: var(--text); }
 .dropdown {
   position: absolute;
-  top: calc(100% + 6px);
+  top: 100%;
   left: 0;
   min-width: 190px;
   background: var(--panel-3);
@@ -358,9 +358,9 @@
   box-sizing: border-box;
 }
 #pane-props .row > input#prop-color {
-  flex: 1 1 auto;
-  width: auto;
-  max-width: none;
+  flex: 0 0 100px;
+  width: 100px;
+  max-width: 100px;
   height: 24px;
   padding: 0 8px;
   text-align: left;
