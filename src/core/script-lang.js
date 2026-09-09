@@ -2278,6 +2278,7 @@ const OP = {
   LOAD_LOCAL: 38, STORE_LOCAL: 39,
   STORE_LOCAL_FORCE: 40,
   STORE_LOCAL_COMP: 41,
+  OBJ: 42, WHEN_EQ: 43, RT_EXPR: 44,
 };
 
 const UNARY_OPS = ['-', '!'];
@@ -2332,6 +2333,7 @@ class Compiler {
     this.varNames = varNames;
     this.globalNames = globalNames || [];
     this.syntheticSeq = 0;
+    this.rtNodes = [];
     // 寄存器式局部变量：作用域栈（每帧 name -> slot）+ 槽位分配器。
     this.scopeStack = [new Map()];
     this.slotCount = 0;
@@ -2396,6 +2398,20 @@ class Compiler {
   }
   pushScopeFrame() { this.scopeStack.push(new Map()); }
   popScopeFrame() { this.scopeStack.pop(); }
+
+  /* 委托 AST Runtime 求值的新构造（lambda/apply）：记录当前可见的局部名→槽位对，运行时按槽位同步。 */
+  emitRtExpr(node) {
+    const seen = new Set();
+    const pairs = [];
+    for (let i = this.scopeStack.length - 1; i >= 0; i--) {
+      for (const [name, slot] of this.scopeStack[i]) {
+        if (!seen.has(name)) { seen.add(name); pairs.push([name, slot]); }
+      }
+    }
+    const idx = this.rtNodes.length;
+    this.rtNodes.push({ node, pairs });
+    this.emit2(OP.RT_EXPR, idx, node);
+  }
 
   /* —— 表达式 —— */
 
@@ -2514,12 +2530,74 @@ class Compiler {
         this.emit3(OP.METHOD, this.internName(node.method), node.args.length, node);
         return;
       }
+      case 'obj': {
+        const entries = [...node.fields];
+        for (const [, e] of entries) this.compileExpr(e);
+        this.emit1(OP.OBJ, node);
+        this.code.push(entries.length);
+        for (const [k] of entries) this.code.push(this.internName(k));
+        return;
+      }
+      case 'whenexpr': {
+        this.compileExpr(node.subject);
+        const jumps = [];
+        for (const c of node.cases) {
+          this.emit1(OP.DUP, node);
+          this.compileExpr(c.label);
+          this.emit1(OP.WHEN_EQ, node);
+          jumps.push(this.emit2(OP.JUMP_IF_TRUE, 0, node));
+        }
+        this.emit1(OP.POP, node);
+        this.compileExpr(node.els);
+        const jend = this.emit2(OP.JUMP, 0, node);
+        const endJumps = [];
+        for (let i = 0; i < node.cases.length; i++) {
+          const start = this.pc();
+          this.patchJump(jumps[i], start);
+          this.emit1(OP.POP, node);
+          this.compileExpr(node.cases[i].expr);
+          endJumps.push(this.emit2(OP.JUMP, 0, node));
+        }
+        const end = this.pc();
+        this.patchJump(jend, end);
+        for (const j of endJumps) this.patchJump(j, end);
+        return;
+      }
+      case 'pipe': {
+        const right = node.right;
+        if (right.type === 'call') {
+          const callee = right.callee;
+          if (callee.type === 'var' && BUILTIN_FUNCTIONS.has(callee.name)) {
+            this.compileExpr(node.left);
+            for (const a of right.args) this.compileExpr(a);
+            this.emit3(OP.CALL_BUILTIN, BUILTIN_CODE.get(callee.name), right.args.length + 1, node);
+            return;
+          }
+          if (callee.type === 'var' && this.program.functions.has(callee.name)) {
+            this.compileExpr(node.left);
+            for (const a of right.args) this.compileExpr(a);
+            this.emit3(OP.CALL_USER, this.funcIdxByName.get(callee.name), right.args.length + 1, node);
+            return;
+          }
+          this.compileExpr(callee);
+          this.compileExpr(node.left);
+          for (const a of right.args) this.compileExpr(a);
+          this.emit2(OP.CALL_VALUE, right.args.length + 1, node);
+          return;
+        }
+        if (right.type === 'method') {
+          this.compileExpr(right.object);
+          this.compileExpr(node.left);
+          for (const a of right.args) this.compileExpr(a);
+          this.emit3(OP.METHOD, this.internName(right.method), right.args.length + 1, node);
+          return;
+        }
+        throw parseError(`right side of '|>' must be a function call`, node.line, node.col);
+      }
       case 'lambda':
-      case 'obj':
-      case 'whenexpr':
-      case 'pipe':
       case 'apply':
-        throw new Error(`bytecode: unsupported ${node.type}`);
+        this.emitRtExpr(node);
+        return;
       default:
         throw parseError(`cannot compile expression type '${node.type}'`, node.line, node.col);
     }
@@ -2796,9 +2874,47 @@ class Compiler {
         this.compileAssign(st);
         this.emit1(OP.POP, st);
         return;
-      case 'whenstmt':
-      case 'destructure':
-        throw new Error(`bytecode: unsupported ${st.type}`);
+      case 'whenstmt': {
+        this.compileExpr(st.subject);
+        const jumps = [];
+        for (const c of st.cases) {
+          this.emit1(OP.DUP, st);
+          this.compileExpr(c.label);
+          this.emit1(OP.WHEN_EQ, st);
+          jumps.push(this.emit2(OP.JUMP_IF_TRUE, 0, st));
+        }
+        this.emit1(OP.POP, st);
+        if (st.els) this.compileStmt(st.els);
+        const jend = this.emit2(OP.JUMP, 0, st);
+        const endJumps = [];
+        for (let i = 0; i < st.cases.length; i++) {
+          const start = this.pc();
+          this.patchJump(jumps[i], start);
+          this.emit1(OP.POP, st);
+          this.compileStmt(st.cases[i].body);
+          endJumps.push(this.emit2(OP.JUMP, 0, st));
+        }
+        const end = this.pc();
+        this.patchJump(jend, end);
+        for (const j of endJumps) this.patchJump(j, end);
+        return;
+      }
+      case 'destructure': {
+        this.compileExpr(st.value);
+        for (const name of st.names) {
+          if (this.hasLocalInCurrentScope(name)) {
+            throw parseError(`duplicate declaration '${name}'`, st.line, st.col);
+          }
+          const slot = this.declareLocal(name);
+          if (st.kind === 'const') this.constSlots.set(slot, name);
+          this.emit1(OP.DUP, st);
+          this.emit2(OP.CONST, this.internConst(name), st);
+          this.emit1(OP.INDEX, st);
+          this.emit2(st.kind === 'const' ? OP.STORE_LOCAL_FORCE : OP.STORE_LOCAL, slot, st);
+        }
+        this.emit1(OP.POP, st);
+        return;
+      }
       default:
         throw parseError(`cannot compile statement type '${st.type}'`, st.line, st.col);
     }
@@ -3345,6 +3461,7 @@ function compileProgram(program, varNames, globalNames) {
     loopCounterCount: c.loopCounters,
     localCount: c.slotCount,
     constSlots: c.constSlots,
+    rtNodes: c.rtNodes,
     mainStart, codeEnd, program,
     native: null, // 对象级 process 不再走逐粒子原生快路径（保留字段以免调用方解构失败）
   };
@@ -3360,6 +3477,30 @@ function getCompiledProgram(program, varNames, globalNames) {
 }
 
 /* —— 栈式虚拟机 —— */
+
+// VM → AST 回退作用域：把 process 局部变量槽位按名暴露给 Runtime（lambda/apply 闭包捕获）。
+// 仅在字节码把新构造（lambda/apply）委托给 AST Runtime 求值时压入；出栈后若被闭包持有，
+// 仍通过 _locals 数组按引用读写当前帧的槽位值。
+class SlotScope {
+  constructor(locals, pairs, constSlots, node) {
+    this._locals = locals;
+    this._map = new Map(pairs);
+    this._constSlots = constSlots;
+    this._node = node;
+  }
+  has(name) { return this._map.has(name); }
+  get(name) { return this._locals[this._map.get(name)]; }
+  set(name, value) {
+    const slot = this._map.get(name);
+    if (slot === undefined) return this;
+    const constName = this._constSlots && this._constSlots.get(slot);
+    if (constName !== undefined) {
+      throw runtimeError(`cannot assign to const '${constName}'`, this._node);
+    }
+    this._locals[slot] = value;
+    return this;
+  }
+}
 
 class Vm {
   constructor(compiled, objState, statics, ctx, uniforms, codeArr, locsArr, startPc) {
@@ -3510,6 +3651,31 @@ class Vm {
           const items = new Array(count);
           for (let i = count - 1; i >= 0; i--) items[i] = stack.pop();
           stack.push(items);
+          break;
+        }
+        case OP.OBJ: {
+          const count = code[this.pc++];
+          const names = new Array(count);
+          for (let i = 0; i < count; i++) names[i] = this.names[code[this.pc++]];
+          const fields = new Map();
+          for (let i = count - 1; i >= 0; i--) fields.set(names[i], stack.pop());
+          stack.push({ t: 'obj', fields });
+          break;
+        }
+        case OP.WHEN_EQ: {
+          const b = stack.pop();
+          const a = stack.pop();
+          stack.push(whenEqual(a, b));
+          break;
+        }
+        case OP.RT_EXPR: {
+          const info = this.compiled.rtNodes[code[this.pc++]];
+          const view = new SlotScope(this.locals, info.pairs, this.compiled.constSlots, info.node);
+          this.rt.pushScope(view);
+          let v;
+          try { v = this.rt.evalExpr(info.node); }
+          finally { this.rt.popScope(); }
+          stack.push(v);
           break;
         }
         case OP.INDEX: {
