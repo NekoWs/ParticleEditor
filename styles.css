@@ -828,9 +828,8 @@ body.ctrl-held .kf-t { cursor: pointer; }
 #tl-layers-canvas {
   flex: 1 1 auto; min-height: 60px;
   width: 100%; display: block;
-  border-radius: var(--radius-lg);
+  border-radius: 0;
   background: #141821; cursor: default;
-  border: 1px solid var(--border-soft);
 }
 
 /* ---- 底部时间轴左侧标签轨 + 右侧 lane 画布 ---- */
@@ -841,8 +840,8 @@ body.ctrl-held .kf-t { cursor: pointer; }
 .tl-tree {
   flex: 0 0 320px; min-width: 240px; max-width: 480px;
   height: 100%; overflow-y: auto; overflow-x: hidden;
-  background: var(--panel-2); border: 1px solid var(--border-soft);
-  border-radius: var(--radius-lg);
+  background: var(--panel-2); border: none;
+  border-radius: 0;
   /* 上方空出 #timeline 标尺高度 + 间距，保证第一行与 lane 画布第一行对齐 */
   padding-top: 34px;
 }
