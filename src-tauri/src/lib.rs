@@ -45,8 +45,8 @@ fn apply_rounded_corners(window: &tauri::WebviewWindow) {
       std::mem::size_of_val(&preference) as u32,
     );
 
-    // 0x00BBGGRR：#171B23 → 0x00231B17。
-    let border = COLORREF(0x00231B17);
+    // 0x00BBGGRR：#2B3341（应用边框色，暗色主题下清晰可见，与面板描边一致）。
+    let border = COLORREF(0x0041332B);
     let _ = DwmSetWindowAttribute(
       hwnd,
       DWMWA_BORDER_COLOR,

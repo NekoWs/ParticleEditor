@@ -246,6 +246,8 @@ export function showWelcome() {
   if (welcomeEl && welcomeEl.isConnected) return;
   welcomeEl = document.createElement('div');
   welcomeEl.className = 'welcome-overlay';
+  // 桌面端欢迎页覆盖整个视口（含顶栏），给整页加上拖动区，按钮仍可正常点击。
+  welcomeEl.setAttribute('data-tauri-drag-region', 'deep');
 
   const header = document.createElement('div');
   header.className = 'welcome-header';
