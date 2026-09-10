@@ -6,6 +6,10 @@ import { KEYWORDS, CTX_NAME, LIFECYCLE_FUNCS, CONSTANTS, COMP_NAMES, BUILTIN_FUN
 // 复合赋值运算符 → 对应的二元运算符。
 const COMPOUND_ASSIGN = { '+=': '+', '-=': '-', '*=': '*', '/=': '/', '%=': '%', '^=': '^' };
 
+// 表达式/语句嵌套深度上限：递归下降解析在超深输入（如数万层括号）前主动报错，
+// 避免浏览器端 RangeError 或 Kotlin 端 StackOverflowError。
+const MAX_PARSE_DEPTH = 512;
+
 // —— Tokenizer ——
 
 function isDigit(c) { return c >= '0' && c <= '9'; }
@@ -201,6 +205,7 @@ class Parser {
     this.loopDepth = 0;
     this.allowBareExpr = 0; // >0：lambda 体内允许裸表达式语句
     this.lambdaDepth = 0;   // >0：lambda 体内允许 return
+    this.nestDepth = 0;     // 当前表达式/语句嵌套深度
   }
 
   peek(offset = 0) {
@@ -374,27 +379,36 @@ class Parser {
   /* -- 语句 -- */
 
   parseStatement() {
-    const tok = this.peek();
-
-    if (tok.type === 'punct' && tok.value === '{') return this.parseBlock();
-
-    if (tok.type === 'ident') {
-      switch (tok.value) {
-        case 'if': return this.parseIf();
-        case 'while': return this.parseWhile();
-        case 'do': return this.parseDoWhile();
-        case 'for': return this.parseFor();
-        case 'break': return this.parseBreak(tok);
-        case 'continue': return this.parseContinue(tok);
-        case 'return': return this.parseReturn(tok);
-        case 'let': return this.parseDeclare(tok, 'let');
-        case 'const': return this.parseDeclare(tok, 'const');
-        case 'when': return this.parseWhenStmt();
-        default: break;
-      }
+    this.nestDepth++;
+    if (this.nestDepth > MAX_PARSE_DEPTH) {
+      this.nestDepth--;
+      this.errorAt(this.peek(), 'expression nesting too deep');
     }
+    try {
+      const tok = this.peek();
 
-    return this.parseAssignOrExprStatement();
+      if (tok.type === 'punct' && tok.value === '{') return this.parseBlock();
+
+      if (tok.type === 'ident') {
+        switch (tok.value) {
+          case 'if': return this.parseIf();
+          case 'while': return this.parseWhile();
+          case 'do': return this.parseDoWhile();
+          case 'for': return this.parseFor();
+          case 'break': return this.parseBreak(tok);
+          case 'continue': return this.parseContinue(tok);
+          case 'return': return this.parseReturn(tok);
+          case 'let': return this.parseDeclare(tok, 'let');
+          case 'const': return this.parseDeclare(tok, 'const');
+          case 'when': return this.parseWhenStmt();
+          default: break;
+        }
+      }
+
+      return this.parseAssignOrExprStatement();
+    } finally {
+      this.nestDepth--;
+    }
   }
 
   parseIf() {
@@ -609,15 +623,24 @@ class Parser {
   /* -- 表达式 -- */
 
   parseTernary() {
-    const cond = this.parseOr();
-    if (this.match('?')) {
-      const qTok = this.tokens[this.pos - 1];
-      const thenExpr = this.parseTernary();
-      this.expect(':');
-      const elseExpr = this.parseTernary();
-      return { type: 'ternary', cond, thenExpr, elseExpr, line: qTok.line, col: qTok.col };
+    this.nestDepth++;
+    if (this.nestDepth > MAX_PARSE_DEPTH) {
+      this.nestDepth--;
+      this.errorAt(this.peek(), 'expression nesting too deep');
     }
-    return cond;
+    try {
+      const cond = this.parseOr();
+      if (this.match('?')) {
+        const qTok = this.tokens[this.pos - 1];
+        const thenExpr = this.parseTernary();
+        this.expect(':');
+        const elseExpr = this.parseTernary();
+        return { type: 'ternary', cond, thenExpr, elseExpr, line: qTok.line, col: qTok.col };
+      }
+      return cond;
+    } finally {
+      this.nestDepth--;
+    }
   }
 
   parseOr() {

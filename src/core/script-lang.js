@@ -42,7 +42,10 @@ const CTX_FIELD_BY_CODE = CTX_FIELD_NAMES;
 // 向量分量访问名：r/g/b 是 x/y/z 的别名，a 是 w 的别名。
 
 const MAX_LOOP_ITERATIONS = 100000;
+const MAX_TOTAL_LOOP_ITERATIONS = 1000000;
 const MAX_RECURSION_DEPTH = 64;
+const MAX_VALUE_DEPTH = 128;
+const MAX_FBM_OCTAVES = 64;
 const EQ_TOLERANCE = 1e-6;          // 数组 find/includes/unique 相等容差
 
 // —— 值类型构造与判定 ——
@@ -233,7 +236,8 @@ function noise3D(xin, yin, zin, seed) {
 // —— 相等比较 / 排序比较 ——
 
 // ==/!=：精确比较（无容差）。
-function eqExact(a, b) {
+function eqExact(a, b, depth = 0) {
+  if (depth > MAX_VALUE_DEPTH) throw new Error('value nesting too deep');
   if (a === undefined || b === undefined) return a === undefined && b === undefined;
   if (isNum(a) && isNum(b)) return a === b;
   if (isBool(a) && isBool(b)) return a === b;
@@ -258,14 +262,15 @@ function eqExact(a, b) {
   }
   if (Array.isArray(a) && Array.isArray(b)) {
     if (a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i++) if (!eqExact(a[i], b[i])) return false;
+    for (let i = 0; i < a.length; i++) if (!eqExact(a[i], b[i], depth + 1)) return false;
     return true;
   }
   return false;
 }
 
 // find/includes/unique 相等：数值与向量/矩阵分量按 1e-6 容差，布尔精确，数组递归。
-function eqTol(a, b) {
+function eqTol(a, b, depth = 0) {
+  if (depth > MAX_VALUE_DEPTH) throw new Error('value nesting too deep');
   if (a === undefined || b === undefined) return a === undefined && b === undefined;
   if (isNum(a) && isNum(b)) return Math.abs(a - b) <= EQ_TOLERANCE;
   if (isBool(a) && isBool(b)) return a === b;
@@ -302,14 +307,15 @@ function eqTol(a, b) {
   }
   if (Array.isArray(a) && Array.isArray(b)) {
     if (a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i++) if (!eqTol(a[i], b[i])) return false;
+    for (let i = 0; i < a.length; i++) if (!eqTol(a[i], b[i], depth + 1)) return false;
     return true;
   }
   return false;
 }
 
 // when 的 case 匹配：数值/向量/矩阵/颜色分量按 1e-6 容差，布尔/字符串精确，数组递归。
-function whenEqual(a, b) {
+function whenEqual(a, b, depth = 0) {
+  if (depth > MAX_VALUE_DEPTH) throw new Error('value nesting too deep');
   if (a === undefined || b === undefined) return a === undefined && b === undefined;
   if (isNum(a) && isNum(b)) return Math.abs(a - b) <= EQ_TOLERANCE;
   if (isBool(a) && isBool(b)) return a === b;
@@ -319,14 +325,15 @@ function whenEqual(a, b) {
   if (isColor(a) && isColor(b)) return eqTol(a, b);
   if (Array.isArray(a) && Array.isArray(b)) {
     if (a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i++) if (!whenEqual(a[i], b[i])) return false;
+    for (let i = 0; i < a.length; i++) if (!whenEqual(a[i], b[i], depth + 1)) return false;
     return true;
   }
   return false;
 }
 
 // 默认升序排序比较。返回 -1 / 0 / 1。混合类型直接抛错。
-function defaultCompare(a, b, node) {
+function defaultCompare(a, b, node, depth = 0) {
+  if (depth > MAX_VALUE_DEPTH) throw new Error('value nesting too deep');
   const ta = typeName(a);
   const tb = typeName(b);
   if (ta !== tb) throw runtimeError(`cannot sort mixed types (${ta} vs ${tb})`, node);
@@ -354,7 +361,7 @@ function defaultCompare(a, b, node) {
   if (ta === 'array') {
     const n = Math.min(a.length, b.length);
     for (let i = 0; i < n; i++) {
-      const c = defaultCompare(a[i], b[i], node);
+      const c = defaultCompare(a[i], b[i], node, depth + 1);
       if (c !== 0) return c;
     }
     return a.length < b.length ? -1 : a.length > b.length ? 1 : 0;
@@ -388,6 +395,7 @@ class Runtime {
     this.receiverStack = [];        // apply 块的接收者粒子
     this.funcDepth = 0;
     this.inFunction = false;
+    this.usedIterations = 0;        // 本次运行跨所有循环/重复的全局迭代预算
 
     const varsObj = phase === 'setup' ? (env && env.vars) : (ctx && ctx.vars);
     this.varsMap = new Map();
@@ -421,6 +429,13 @@ class Runtime {
     let cs = this.constSets[this.constSets.length - 1];
     if (!cs) { cs = new Set(); this.constSets[this.constSets.length - 1] = cs; }
     cs.add(name);
+  }
+
+  // 全局迭代预算：所有循环/重复共用，防止嵌套循环把每循环上限相乘放大到无法接受。
+  guardLoop(node) {
+    if (++this.usedIterations > MAX_TOTAL_LOOP_ITERATIONS) {
+      throw runtimeError(`total loop iteration limit (${MAX_TOTAL_LOOP_ITERATIONS}) exceeded`, node);
+    }
   }
 
   /* —— 名称查找 —— */
@@ -681,6 +696,7 @@ class Runtime {
       if (++iter > MAX_LOOP_ITERATIONS) {
         throw runtimeError(`loop iteration limit (${MAX_LOOP_ITERATIONS}) exceeded`, node);
       }
+      this.guardLoop(node);
       try {
         this.execStmt(node.body);
       } catch (f) {
@@ -697,6 +713,7 @@ class Runtime {
       if (++iter > MAX_LOOP_ITERATIONS) {
         throw runtimeError(`loop iteration limit (${MAX_LOOP_ITERATIONS}) exceeded`, node);
       }
+      this.guardLoop(node);
       try {
         this.execStmt(node.body);
       } catch (f) {
@@ -720,6 +737,7 @@ class Runtime {
         if (++iter > MAX_LOOP_ITERATIONS) {
           throw runtimeError(`loop iteration limit (${MAX_LOOP_ITERATIONS}) exceeded`, node);
         }
+        this.guardLoop(node);
         try {
           this.execStmt(node.body);
         } catch (f) {
@@ -758,6 +776,7 @@ class Runtime {
         if (++idx > MAX_LOOP_ITERATIONS) {
           throw runtimeError(`loop iteration limit (${MAX_LOOP_ITERATIONS}) exceeded`, node);
         }
+        this.guardLoop(node);
         // 循环自身的每次迭代直接写回循环变量，不经过 assignName（const 循环变量不因此报错）。
         this.currentScope().set(node.name, isParticleList(iter) ? particleValue(item) : item);
         try {
@@ -1892,6 +1911,7 @@ const BUILTIN_TABLE = new Map([
     const z = expectNum(args[2], 'fbm', node);
     let octaves = Math.trunc(expectNum(args[3], 'fbm octaves', node));
     if (octaves < 1) throw runtimeError('fbm octaves must be at least 1', node);
+    if (octaves > MAX_FBM_OCTAVES) throw runtimeError(`fbm octaves must be at most ${MAX_FBM_OCTAVES}`, node);
     const seed = args.length >= 5 ? (expectNum(args[4], 'fbm seed', node) | 0) : rt.objState.seed;
 
     // lacunarity = 2.0, gain = 0.5；累加后除以幅度和，再 clamp 到 [-1,1]。
@@ -1948,6 +1968,7 @@ const BUILTIN_TABLE = new Map([
       if (i >= MAX_LOOP_ITERATIONS) {
         throw runtimeError(`loop iteration limit (${MAX_LOOP_ITERATIONS}) exceeded`, node);
       }
+      rt.guardLoop(node);
       rt.callValue(fn, [i], node);
     }
     return 0;
@@ -2126,7 +2147,8 @@ function lookAtMat4(eye, target, up, node) {
 
 // —— 值格式化（print）——
 
-function formatValue(v) {
+function formatValue(v, depth = 0) {
+  if (depth > MAX_VALUE_DEPTH) throw new Error('value nesting too deep');
   if (typeof v === 'number') return String(v);
   if (typeof v === 'boolean') return v ? 'true' : 'false';
   if (typeof v === 'string') return v;
@@ -2139,13 +2161,13 @@ function formatValue(v) {
     const name = v.t === 'mat3' ? 'mat3' : 'mat4';
     return `${name}(${v.m.map((row) => `[${row.join(', ')}]`).join(', ')})`;
   }
-  if (Array.isArray(v)) return `[${v.map(formatValue).join(', ')}]`;
+  if (Array.isArray(v)) return `[${v.map((x) => formatValue(x, depth + 1)).join(', ')}]`;
   if (isFunc(v)) return `func ${v.name}`;
   if (isLambda(v)) return `lambda(${v.params.join(', ')})`;
   if (isColor(v)) return `color(${v.r}, ${v.g}, ${v.b}, ${v.a})`;
   if (isObj(v)) {
     const parts = [];
-    for (const [k, val] of v.fields) parts.push(`${k}: ${formatValue(val)}`);
+    for (const [k, val] of v.fields) parts.push(`${k}: ${formatValue(val, depth + 1)}`);
     return `{${parts.join(', ')}}`;
   }
   return String(v);
@@ -3413,6 +3435,7 @@ class Vm {
     rt.receiverStack.length = 0;
     rt.funcDepth = 0;
     rt.inFunction = false;
+    rt.usedIterations = 0;
     this.topScope.clear();
     rt.pushScope(this.topScope);
   }
@@ -3851,6 +3874,7 @@ class Vm {
           if (v > MAX_LOOP_ITERATIONS) {
             throw runtimeError(`loop iteration limit (${MAX_LOOP_ITERATIONS}) exceeded`, node);
           }
+          this.rt.guardLoop(node);
           break;
         }
         case OP.RETURN: {

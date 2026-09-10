@@ -65,6 +65,9 @@ export function buildEnv(vars, ctx) {
 // 动态值（如 this.time）每帧都会产生新行，播放期必须封顶，避免 DOM 与内存无限增长。
 const MAX_TERMINAL_LINES = 200;
 
+// 单个函数对象运行时可持有的粒子数上限：阻止恶意脚本逐帧无限 spawn 造成内存/渲染 DoS。
+const MAX_FX_PARTICLES = 100000;
+
 export function fxTerminalClear(fx) {
   if (fx) {
     fx._terminal = [];
@@ -239,6 +242,9 @@ function attachParticle(fx, w) {
 }
 
 function spawnFor(fx, runtime, config) {
+  if (runtime.particles.length >= MAX_FX_PARTICLES) {
+    throw new Error(`function object particle limit (${MAX_FX_PARTICLES}) exceeded`);
+  }
   const w = newParticleWrapper(fx, runtime);
   if (config != null) applySpawnConfig(w, config);
   runtime.particles.push(w);
@@ -439,6 +445,9 @@ export function validateFunctionScript(fx, sourceOverride) {
   const particles = [];
   let serial = 0;
   const spawn = (config) => {
+    if (particles.length >= MAX_FX_PARTICLES) {
+      throw new Error(`function object particle limit (${MAX_FX_PARTICLES}) exceeded`);
+    }
     const w = {
       pos: [0, 0, 0], color: [1, 1, 1, 1], vel: [0, 0, 0],
       scale: 1, glow: false, light: 0, life: -1,
