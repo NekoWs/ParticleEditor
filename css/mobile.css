@@ -5,7 +5,7 @@
 
 @media (max-width: 1024px) {
   body {
-    grid-template-rows: 44px 1fr var(--tl-h, 360px);
+    grid-template-rows: 44px 1fr;
   }
 
   .topbar {

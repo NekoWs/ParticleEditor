@@ -29,8 +29,8 @@ input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
 
 body {
   display: grid;
-  /* 第三行 = 底部时间轴模块高度：由 --tl-h 驱动（顶边把手拖拽写入，默认 360px） */
-  grid-template-rows: 44px 1fr var(--tl-h, 360px);
+  /* 第二行 = 主工作区（图标栏/侧边槽位/视口/底部坞全部在其中，底部坞高度由 --tl-h 驱动） */
+  grid-template-rows: 44px 1fr;
   overflow: hidden;
 }
 
