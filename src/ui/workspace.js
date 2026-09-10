@@ -71,7 +71,14 @@ function stripOf(id, st) {
   return 'right';
 }
 
+// 图标位于下半区的面板只能在底部坞显示。
+function isBottomHalfPanel(id, st) {
+  const s = st || _state;
+  return s.strips.left.bottom.includes(id) || s.strips.right.bottom.includes(id);
+}
+
 function defaultDockFor(id, st) {
+  if (isBottomHalfPanel(id, st)) return 'bottom';
   if (id === 'timeline') return 'bottom';
   return stripOf(id, st);
 }
@@ -112,23 +119,7 @@ function normalize(s) {
     out.dock[id] = (d === 'left' || d === 'right' || d === 'bottom' || d === 'float') ? d : defaultDockFor(id, out);
   }
 
-  // 展开状态
-  const san = (arr) => (Array.isArray(arr) ? arr.filter((id) => PANELS.includes(id)) : []);
-  out.open.left = san(s.open && s.open.left).filter((id) => out.dock[id] === 'left');
-  out.open.right = san(s.open && s.open.right).filter((id) => out.dock[id] === 'right');
-  out.open.bottom = san(s.open && s.open.bottom).filter((id) => out.dock[id] === 'bottom').slice(0, 2);
-
-  out.bottomDir = s.bottomDir === 'horiz' ? 'horiz' : 'vert';
-  out.sizes.left = normalizeSizes(s.sizes && s.sizes.left, out.open.left.length || 1);
-  out.sizes.right = normalizeSizes(s.sizes && s.sizes.right, out.open.right.length || 1);
-  out.sizes.bottom = normalizeSizes(s.sizes && s.sizes.bottom, out.open.bottom.length || 1);
-
-  out.areaLeftW = numOr(s.areaLeftW, null);
-  out.areaRightW = numOr(s.areaRightW, null);
-  out.bottomH = numOr(s.bottomH, null);
-  out.sidebarVisible = s.sidebarVisible !== false;
-  out.timelineVisible = s.timelineVisible !== false;
-
+  // 浮动窗口
   out.floats = {};
   if (s.floats && typeof s.floats === 'object') {
     for (const id of PANELS) {
@@ -142,9 +133,43 @@ function normalize(s) {
       }
     }
   }
+
+  // 下半区面板只能在底部坞显示：收回侧边与浮动停靠。
+  for (const id of PANELS) {
+    if (out.strips.left.bottom.includes(id) || out.strips.right.bottom.includes(id)) {
+      out.dock[id] = 'bottom';
+      delete out.floats[id];
+    }
+  }
   for (const id of PANELS) {
     if (out.dock[id] === 'float' && !out.floats[id]) out.dock[id] = defaultDockFor(id, out);
   }
+
+  // 展开状态（按最终 dock 过滤）
+  const san = (arr) => (Array.isArray(arr) ? arr.filter((id) => PANELS.includes(id)) : []);
+  out.open.left = san(s.open && s.open.left).filter((id) => out.dock[id] === 'left');
+  out.open.right = san(s.open && s.open.right).filter((id) => out.dock[id] === 'right');
+  out.open.bottom = san(s.open && s.open.bottom).filter((id) => out.dock[id] === 'bottom').slice(0, 2);
+  // 若下半区面板原本在侧边或浮动展开，补进底部坞。
+  const wasSideOrFloat = san(s.open && s.open.left).concat(san(s.open && s.open.right), s.floats ? Object.keys(s.floats) : []);
+  for (const id of PANELS) {
+    if ((out.strips.left.bottom.includes(id) || out.strips.right.bottom.includes(id)) && wasSideOrFloat.includes(id)) {
+      if (!out.open.bottom.includes(id)) out.open.bottom.push(id);
+    }
+  }
+  out.open.bottom = out.open.bottom.slice(0, 2);
+
+  out.bottomDir = s.bottomDir === 'horiz' ? 'horiz' : 'vert';
+  out.sizes.left = normalizeSizes(s.sizes && s.sizes.left, out.open.left.length || 1);
+  out.sizes.right = normalizeSizes(s.sizes && s.sizes.right, out.open.right.length || 1);
+  out.sizes.bottom = normalizeSizes(s.sizes && s.sizes.bottom, out.open.bottom.length || 1);
+
+  out.areaLeftW = numOr(s.areaLeftW, null);
+  out.areaRightW = numOr(s.areaRightW, null);
+  out.bottomH = numOr(s.bottomH, null);
+  out.sidebarVisible = s.sidebarVisible !== false;
+  out.timelineVisible = s.timelineVisible !== false;
+
   return out;
 }
 
@@ -517,12 +542,27 @@ function removeFromOpen(id) {
 }
 
 function applyDrop(id, target, ev) {
+  const bottomOnly = isBottomHalfPanel(id);
+
   if (target.kind === 'strip') {
     movePanelIcon(id, target.strip, target.half, insertionIndex(id, target.strip, target.half, ev.clientY));
-    _state.dock[id] = target.strip;
-    removeFromOpen(id);
-    _state.open[target.strip] = [id];
+    if (bottomOnly || target.half === 'bottom') {
+      // 下半区面板（或刚拖入下半区）只能在底部坞显示。
+      _state.dock[id] = 'bottom';
+      _state.open.left = _state.open.left.filter((p) => p !== id);
+      _state.open.right = _state.open.right.filter((p) => p !== id);
+      delete _state.floats[id];
+      if (!_state.open.bottom.includes(id)) {
+        if (_state.open.bottom.length >= 2) _state.open.bottom.shift();
+        _state.open.bottom.push(id);
+      }
+    } else {
+      _state.dock[id] = target.strip;
+      removeFromOpen(id);
+      _state.open[target.strip] = [id];
+    }
   } else if (target.kind === 'side') {
+    if (bottomOnly) return;
     _state.dock[id] = target.side;
     removeFromOpen(id);
     const cur = _state.open[target.side].filter((p) => p !== id);
@@ -540,6 +580,7 @@ function applyDrop(id, target, ev) {
     const bb = rectOf(el('dock-bottom'));
     _state.bottomDir = (ev.clientX < bb.left + bb.width / 2) ? 'horiz' : 'vert';
   } else if (target.kind === 'float') {
+    if (bottomOnly) return;
     _state.dock[id] = 'float';
     removeFromOpen(id);
     const sz = FLOAT_SIZES[id] || { w: 340, h: 420 };
