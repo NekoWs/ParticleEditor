@@ -599,6 +599,10 @@ function applyDrop(id, target, ev) {
       if (arr.length >= 2) arr.shift();
       arr.push(id);
     }
+    // 图标跟随：按落点在底部坞的左/右半，移到左栏或右栏的下半区。
+    const bb = rectOf(el('dock-bottom'));
+    const strip = (ev.clientX < bb.left + bb.width / 2) ? 'left' : 'right';
+    movePanelIcon(id, strip, 'bottom', _state.strips[strip].bottom.length);
   } else if (target.kind === 'float') {
     if (bottomOnly) return;
     _state.dock[id] = 'float';
