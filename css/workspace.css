@@ -1,0 +1,73 @@
+/* 工作区停靠系统：桌面端侧栏/时间轴停靠、折叠与拖放吸附；窄屏由 mobile.css 接管 */
+
+/* —— 拖拽把手 —— */
+.ws-grip {
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted); cursor: grab; touch-action: none; user-select: none;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.ws-grip:active { cursor: grabbing; }
+.ws-grip::before {
+  content: ''; width: 26px; height: 12px;
+  background-image: radial-gradient(circle, currentColor 1.2px, transparent 1.7px);
+  background-size: 7px 7px; background-position: center; background-repeat: repeat;
+  opacity: 0.8;
+}
+.ws-grip:hover { color: var(--accent); background: var(--panel-2); }
+.ws-grip-sidebar { flex: none; height: 22px; border-bottom: 1px solid var(--border-soft); background: var(--bg); }
+.ws-grip-timeline { flex: none; width: 26px; height: 32px; border-right: 1px solid var(--border-soft); border-radius: var(--radius-sm); }
+.ws-grip-timeline::before { width: 12px; height: 22px; background-size: 6px 6px; }
+
+/* —— 拖放吸附高亮区 —— */
+.ws-drop-zone {
+  position: fixed; z-index: 500; pointer-events: none;
+  background: rgba(91, 157, 255, 0.05);
+  border: 2px dashed transparent; border-radius: 12px;
+  opacity: 0; transition: opacity 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+.ws-drop-zone.visible { opacity: 1; border-color: var(--accent); }
+.ws-drop-zone.active { background: rgba(91, 157, 255, 0.20); border-color: var(--accent); }
+body.ws-dragging .ws-grip { cursor: grabbing; }
+
+/* —— 自定义工作区管理弹层 —— */
+.ws-manage-pop {
+  position: fixed; z-index: 160; top: 64px; right: 12px; width: 250px;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: 8px; box-shadow: var(--shadow); animation: menuPopIn 0.14s ease;
+}
+.ws-manage-title { font-size: 12px; font-weight: 700; color: var(--text); padding: 4px 8px 6px; }
+.ws-manage-list { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; }
+.ws-manage-row { display: flex; align-items: center; gap: 4px; }
+.ws-manage-name {
+  flex: 1; min-width: 0; text-align: left; background: none; border: none;
+  color: var(--text); padding: 6px 8px; cursor: pointer; border-radius: 6px; font-size: 12.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ws-manage-name:hover { background: var(--accent-soft); color: var(--accent-hover); }
+.ws-manage-empty { color: var(--muted); font-size: 12px; padding: 6px 8px; }
+
+/* —— 桌面端停靠布局（窄屏由 mobile.css 全权接管） —— */
+@media (min-width: 1025px) {
+  .layout.ws-sidebar-left { grid-template-columns: var(--right-w, 320px) 5px 1fr; }
+  .layout.ws-sidebar-left #viewport { grid-column: 3; grid-row: 1; }
+  .layout.ws-sidebar-left .resize-handle-r { grid-column: 2; grid-row: 1; }
+  .layout.ws-sidebar-left .sidebar { grid-column: 1; grid-row: 1; border-left: none; border-right: 1px solid var(--border-soft); }
+
+  body.ws-sidebar-hidden .layout { grid-template-columns: 1fr; }
+  body.ws-sidebar-hidden .layout #viewport { grid-column: 1; grid-row: 1; }
+  body.ws-sidebar-hidden .resize-handle-r { display: none; }
+  body.ws-sidebar-hidden .sidebar { display: none; }
+
+  body.ws-timeline-top { grid-template-rows: 44px var(--tl-h, 360px) 1fr; }
+  body.ws-timeline-top .timeline { grid-row: 2; border-top: none; border-bottom: 1px solid var(--border); }
+  body.ws-timeline-top .layout { grid-row: 3; }
+  body.ws-timeline-top #tl-module-resize { top: auto; bottom: -3px; }
+
+  body.ws-timeline-hidden { grid-template-rows: 44px 1fr 0; }
+  body.ws-timeline-hidden .timeline { display: none; }
+}
+
+/* 窄屏：隐藏拖动把手，避免影响抽屉布局 */
+@media (max-width: 1024px) {
+  .ws-grip { display: none; }
+}
