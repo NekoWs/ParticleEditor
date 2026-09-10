@@ -646,10 +646,17 @@ function setupDrag() {
     const origL = win ? (parseInt(win.style.left, 10) || 60) : 0;
     const origT = win ? (parseInt(win.style.top, 10) || 80) : 0;
     let started = false;
+    let hiddenIcon = null;
 
     const move = (ev2) => {
       if (!started && Math.hypot(ev2.clientX - startX, ev2.clientY - startY) < 6) return;
-      if (!started) { started = true; document.body.classList.add('ws-dragging'); }
+      if (!started) {
+        started = true;
+        document.body.classList.add('ws-dragging');
+        // 预览期间隐藏被拖动的图标，让候选位正确挤出其余图标。
+        hiddenIcon = document.querySelector('.ws-icon[data-panel="' + id + '"]');
+        if (hiddenIcon) hiddenIcon.style.display = 'none';
+      }
       if (wasFloat && win) {
         win.style.left = (origL + ev2.clientX - startX) + 'px';
         win.style.top = (origT + ev2.clientY - startY) + 'px';
@@ -662,6 +669,7 @@ function setupDrag() {
       document.body.classList.remove('ws-dragging');
       clearZones();
       hideInsertionSlot();
+      if (hiddenIcon) { hiddenIcon.style.display = ''; hiddenIcon = null; }
       if (!started) return;
       suppressClick = true;
       setTimeout(() => { suppressClick = false; }, 0);
