@@ -327,14 +327,7 @@ export function initUI() {
   camTabs.addEventListener('dblclick', handleCameraTabDblClick);
   refreshCameraTabs();
 
-  // 右侧选项卡切换
-  document.getElementById('sidebar-tabs').addEventListener('click', (ev) => {
-    const btn = ev.target.closest('.tab');
-    if (!btn) return;
-    document.querySelectorAll('#sidebar-tabs .tab').forEach(b => b.classList.toggle('active', b === btn));
-    document.querySelectorAll('.sidebar .tab-pane').forEach(p => p.classList.toggle('active', p.id === 'pane-' + btn.dataset.tab));
-    if (btn.dataset.tab === 'texture') refreshTexturePanel();
-  });
+  // 选项卡切换、停靠与分窗由 workspace.js 管理（initWorkspace 在 initUI 之前运行）。
 
   // 函数对象
   const fxPresetSel = document.getElementById('fx-preset-add');

@@ -1,4 +1,5 @@
-/* 工作区停靠系统：桌面端侧栏/时间轴停靠、折叠、选项卡分离合并、浮动窗口与拖放吸附；窄屏由 mobile.css 接管 */
+/* 工作区停靠系统 v3：侧栏垂直分组栈（上下分窗）、底部坞水平分组行（左右分窗）、
+   选项卡分离/合并、浮动窗口、拖放吸附；窄屏由 mobile.css 接管 */
 
 /* —— 拖拽把手 —— */
 .ws-grip {
@@ -18,8 +19,7 @@
 .ws-grip-timeline { flex: none; width: 26px; height: 32px; border-right: 1px solid var(--border-soft); border-radius: var(--radius-sm); }
 .ws-grip-timeline::before { width: 12px; height: 22px; background-size: 6px 6px; }
 
-/* —— 选项卡可作为拖出手柄 —— */
-.ws-dragging .sidebar .tab { cursor: grabbing; }
+body.ws-dragging .ws-grip, body.ws-dragging .ws-tab { cursor: grabbing; }
 
 /* —— 拖放吸附高亮区（预览尺寸与放置后一致） —— */
 .ws-drop-zone {
@@ -31,7 +31,36 @@
 }
 .ws-drop-zone.visible { opacity: 1; border-color: var(--accent); }
 .ws-drop-zone.active { background: rgba(91, 157, 255, 0.20); border-color: var(--accent); }
-body.ws-dragging .ws-grip { cursor: grabbing; }
+
+/* —— 分组与选项卡 —— */
+.ws-group {
+  display: flex; flex-direction: column;
+  min-width: 0; min-height: 0; overflow: hidden;
+  background: var(--panel);
+}
+.ws-tabs {
+  display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px; flex: none;
+  background: var(--bg); border-bottom: 1px solid var(--border-soft);
+}
+.ws-tab {
+  height: 30px; padding: 0 10px; display: inline-flex; align-items: center;
+  background: transparent; color: var(--muted); border: 1px solid transparent; border-radius: 7px;
+  cursor: pointer; font-size: 12px; white-space: nowrap; transition: all 0.15s ease;
+}
+.ws-tab:hover { color: var(--text); background: var(--panel-2); border-color: var(--border); }
+.ws-tab.active { color: var(--accent); background: var(--accent-soft); border-color: rgba(91, 157, 255, 0.35); }
+.ws-group-body {
+  flex: 1; min-height: 0; min-width: 0; overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.ws-group-body .tab-pane { flex: 1; min-height: 0; overflow: auto; }
+.ws-group-body .timeline { flex: 1; min-height: 0; height: 100%; }
+
+/* —— 分隔条 —— */
+.ws-split { flex: 0 0 6px; background: var(--border-soft); transition: background 0.12s ease; }
+.ws-split:hover { background: var(--accent); }
+.ws-split-h { cursor: ns-resize; }
+.ws-split-v { cursor: ew-resize; }
 
 /* —— 浮动窗口 —— */
 .ws-float {
@@ -71,8 +100,20 @@ body.ws-dragging .ws-grip { cursor: grabbing; }
 .ws-manage-name:hover { background: var(--accent-soft); color: var(--accent-hover); }
 .ws-manage-empty { color: var(--muted); font-size: 12px; padding: 6px 8px; }
 
-/* —— 桌面端停靠布局（窄屏由 mobile.css 全权接管） —— */
+/* —— 桌面端布局（窄屏由 mobile.css 全权接管） —— */
 @media (min-width: 1025px) {
+  .topbar { grid-row: 1; }
+  .layout { grid-row: 2; }
+  #ws-bottom { grid-row: 3; display: flex; flex-direction: row; min-height: 0; min-width: 0; }
+
+  body.ws-timeline-top #ws-bottom { grid-row: 2; }
+  body.ws-timeline-top .layout { grid-row: 3; }
+  body.ws-timeline-top #ws-bottom .timeline { border-top: none; border-bottom: 1px solid var(--border); }
+  body.ws-timeline-top #tl-module-resize { top: auto; bottom: -3px; }
+
+  body.ws-timeline-hidden { grid-template-rows: 44px 1fr 0; }
+  body.ws-timeline-hidden #ws-bottom { display: none; }
+
   .layout.ws-sidebar-left { grid-template-columns: var(--right-w, 320px) 5px 1fr; }
   .layout.ws-sidebar-left #viewport { grid-column: 3; grid-row: 1; }
   .layout.ws-sidebar-left .resize-handle-r { grid-column: 2; grid-row: 1; }
@@ -82,17 +123,14 @@ body.ws-dragging .ws-grip { cursor: grabbing; }
   body.ws-sidebar-hidden .layout #viewport { grid-column: 1; grid-row: 1; }
   body.ws-sidebar-hidden .resize-handle-r { display: none; }
   body.ws-sidebar-hidden .sidebar { display: none; }
-
-  body.ws-timeline-top { grid-template-rows: 44px var(--tl-h, 360px) 1fr; }
-  body.ws-timeline-top .timeline { grid-row: 2; border-top: none; border-bottom: 1px solid var(--border); }
-  body.ws-timeline-top .layout { grid-row: 3; }
-  body.ws-timeline-top #tl-module-resize { top: auto; bottom: -3px; }
-
-  body.ws-timeline-hidden { grid-template-rows: 44px 1fr 0; }
-  body.ws-timeline-hidden .timeline { display: none; }
 }
 
 /* 窄屏：隐藏拖动把手，避免影响抽屉布局 */
 @media (max-width: 1024px) {
-  .ws-grip { display: none; }
+  .ws-grip, .ws-split { display: none; }
+}
+
+/* 触屏：加大选项卡点击目标 */
+@media (pointer: coarse) {
+  .ws-tab { height: 40px; padding: 0 12px; font-size: 13px; }
 }
