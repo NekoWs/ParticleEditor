@@ -24,6 +24,7 @@ import {pushUndo} from '../state/undo.js';
 import {showContextMenu} from './tree.js';
 import {customSelect} from './select.js';
 import {refreshTexBase64Cache} from '../io/io.js';
+import * as tauriBridge from '../io/tauri-bridge.js';
 import {modalAlert, modalConfirm, modalPrompt} from './ui.js';
 import {makeFloatWindow} from './float-window.js';
 import {openColorPicker} from './color-picker.js';
@@ -1027,6 +1028,13 @@ export async function exportTexture() {
   cnv.getContext('2d').putImageData(new ImageData(tex.data.slice(), tex.width, tex.height), 0, 0);
   const blob = await new Promise(r => cnv.toBlob(r, 'image/png'));
   if (!blob) { await modalAlert(t('alert.exportFailed'), t('alert.pngGenFail')); return; }
+  if (tauriBridge.isTauri()) {
+    try {
+      const buf = new Uint8Array(await blob.arrayBuffer());
+      await tauriBridge.saveFilePicker(tex.name + '.png', '.png', buf);
+    } catch (e) { /* 取消则忽略 */ }
+    return;
+  }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = tex.name + '.png';

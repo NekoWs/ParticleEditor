@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:interop": "node test/run-pdrawc-interop.mjs",
-    "deploy": "deno -Ar https://host.retiehe.com/cli deploy"
+    "deploy": "deno -Ar https://host.retiehe.com/cli deploy",
+    "tauri": "tauri"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
@@ -20,10 +21,14 @@
     "@codemirror/state": "^6.7.2",
     "@codemirror/view": "^6.43.10",
     "@lezer/highlight": "^1.2.3",
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.7.3",
+    "@tauri-apps/plugin-fs": "^2.5.2",
     "codemirror": "^6.0.2",
     "three": "^0.185.1"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
     "vite": "^8.2.2",
     "vitest": "^4.1.11"
   }

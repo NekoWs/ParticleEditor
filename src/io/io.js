@@ -14,6 +14,7 @@ import { markTextureChanged, refreshTexturePanel } from '../ui/texture-editor.js
 import { buildModal, modalPrompt, modalAlert } from '../ui/ui.js';
 import { generateKeyPair, KEY_ALG, base64ToBytes, bytesToBase64 } from '../core/crypto.js';
 import { buildPdrawc } from '../core/pdrawc.js';
+import * as tauriBridge from './tauri-bridge.js';
 
 export const r3 = x => Math.round(x * 1000) / 1000;
 export const roundArr = a => a.map(r3);
@@ -381,6 +382,18 @@ export async function loadFile(file) {
 
 export async function openFile() {
   if ((await confirmDiscardChanges(t('common.open'))) === 'cancel') return;
+  // Tauri 客户端：走系统原生文件对话框读取工程。
+  if (tauriBridge.isTauri()) {
+    try {
+      const picked = await tauriBridge.openProjectPicker();
+      if (!picked) return;
+      await loadFile({ name: picked.name, text: () => Promise.resolve(picked.text) });
+      refreshTexBase64Cache();
+      markTextureChanged();
+      refreshTexturePanel();
+    } catch (e) { /* 取消或读取失败则忽略 */ }
+    return;
+  }
   // 移动端 File System Access 选择器提交不可靠，统一走隐藏 <input type=file>
   if (window.showOpenFilePicker && !hasCoarsePointer() && !isNarrowLayout()) {
     try {
@@ -401,6 +414,14 @@ export async function openFile() {
 
 
 export async function saveFile() {
+  if (tauriBridge.isTauri()) {
+    if (!tauriBridge.lastPath()) { await saveFileAs(); return; }
+    await ensureProjectKey();
+    await refreshTexBase64Cache();
+    await tauriBridge.writeProjectText(tauriBridge.lastPath(), JSON.stringify(exportProject()));
+    setDirty(false);
+    return;
+  }
   if (!state.fileHandle || !state.fileHandle.createWritable) {
     await saveFileAs();
     return;
@@ -424,6 +445,15 @@ export async function writeProjectText(handle, json) {
 // 通过系统保存选择器写文件，或在不支持 File System Access API 时回退为下载。
 // keepHandle=true 会更新 state.fileHandle（另存为）；markSaved=true 会在成功后清除 dirty。
 async function writeWithPicker(data, { suggestedName, description, mime, ext, keepHandle, markSaved }) {
+  if (tauriBridge.isTauri()) {
+    try {
+      const path = await tauriBridge.saveFilePicker(suggestedName, ext, data);
+      if (!path) return;
+      if (keepHandle) tauriBridge.setLastPath(path);
+      if (markSaved) setDirty(false);
+    } catch (e) { /* 取消则忽略 */ }
+    return;
+  }
   if (window.showSaveFilePicker) {
     try {
       const h = await window.showSaveFilePicker({
@@ -484,6 +514,7 @@ export async function createBlankProject(name) {
   clearObjectState();
   state.name = name.trim() || 'my_animation';
   state.fileHandle = null;
+  tauriBridge.clearLastPath();
   state.loop = false;
   state.key = null;
   try {
@@ -519,6 +550,7 @@ export async function createProjectFromPreset(presetId, name) {
   clearObjectState();
   state.name = name.trim() || 'my_animation';
   state.fileHandle = null;
+  tauriBridge.clearLastPath();
   state.loop = false;
   state.key = null;
   try {
