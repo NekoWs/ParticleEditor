@@ -10,7 +10,11 @@
     "test": "vitest run",
     "test:interop": "node test/run-pdrawc-interop.mjs",
     "deploy": "deno -Ar https://host.retiehe.com/cli deploy",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build --bundles nsis,msi",
+    "tauri:android:dev": "tauri android dev",
+    "tauri:android:build": "tauri android build --apk --aab"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
