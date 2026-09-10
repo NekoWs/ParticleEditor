@@ -19,12 +19,17 @@ import { texUndo, texRedo, texActive } from '../ui/texture-editor.js';
 import { togglePlay, refreshCameraTabs } from '../main.js';
 import { saveFile, openFile, newFile } from '../io/io.js';
 import { nextCameraId, nextCameraName } from '../core/constants.js';
-import { createCameraAt, lockCamera, camOrientationQuaternion, cameraPoseAt } from '../core/cameras.js';
+import { createCameraAt, camOrientationQuaternion, cameraPoseAt } from '../core/cameras.js';
 
 export let drag = null;
 export let modal = null;
 export let boxSel = null;
 export const lastMouse = { x: 0, y: 0 };
+
+// 锁定到某摄像机时视角由关键帧驱动，编辑类交互与工具一律禁用。
+export function cameraViewLocked() {
+  return !!state.activeCamera && state.activeCamera !== DEFAULT_CAMERA_ID;
+}
 
 // —— 触屏手势协调 ——
 // OrbitControls 在 renderer.domElement 上以 bubble 阶段监听 pointerdown，本模块的选择/绘制逻辑
@@ -843,6 +848,8 @@ export function raycastGizmoMeshes(clientX, clientY, meshes) {
   return raycaster.intersectObjects(meshes, false);
 }
 
+const GIZMO_AXIS_HIT_PX = 10; // 移动箭头命中宽度（屏幕像素）
+
 export function hitGizmoAxis(clientX, clientY) {
   if (!gizmoGroup.visible) return null;
   // 使用 gizmo 实际显示位置（函数对象在 center，粒子/组在质心），与 updateGizmo 一致
@@ -850,13 +857,17 @@ export function hitGizmoAxis(clientX, clientY) {
   const rect = renderer.domElement.getBoundingClientRect();
   const px = clientX - rect.left, py = clientY - rect.top;
   const scale = gizmoGroup.scale.x || 1;
+  let bestAxis = null, bestDist = Infinity;
   for (const [axis, v] of Object.entries(AXIS_VECTORS)) {
-    // 世界坐标系（局部坐标系已移除）：直接用世界轴向量做命中检测
+    // 世界坐标系（局部坐标系已移除）：直接用世界轴向量做命中检测。
+    // 箭头长度与场景构建一致（柱身 0.9 + 锥头 0.16），并取屏幕距离最近的轴，
+    // 避免斜视时多轴投影重叠、先遍历到的轴抢到命中。
     const s = projectToScreen(c[0], c[1], c[2]);
-    const e = projectToScreen(c[0] + v[0] * 1.5 * scale, c[1] + v[1] * 1.5 * scale, c[2] + v[2] * 1.5 * scale);
-    if (distToSegment(px, py, s.x, s.y, e.x, e.y) < 20) return axis;
+    const e = projectToScreen(c[0] + v[0] * 1.06 * scale, c[1] + v[1] * 1.06 * scale, c[2] + v[2] * 1.06 * scale);
+    const d = distToSegment(px, py, s.x, s.y, e.x, e.y);
+    if (d < bestDist) { bestDist = d; bestAxis = axis; }
   }
-  return null;
+  return bestDist <= GIZMO_AXIS_HIT_PX ? bestAxis : null;
 }
 
 // 鼠标到轴环的最小距离 + 命中的轴（null 表示未命中）。
@@ -979,6 +990,8 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
   if (ev.button === 1 || ev.button === 2) { renderer.domElement.style.cursor = 'grabbing'; return; }
   if (ev.button !== 0) return;
   if (modal) { confirmModal(); return; }
+  // 锁定摄像机时不做点选/框选/工具操作
+  if (cameraViewLocked()) return;
 
   if (['select', 'move', 'rotate'].includes(state.tool)) {
     const derived = selectionHasDerived() && !state.selectedFunction;
@@ -1046,7 +1059,6 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
       pushUndo();
       const cam = createCameraAt(pt, nextCameraId(), nextCameraName());
       state.cameras.push(cam);
-      lockCamera(cam.id);
       refreshCameraTabs();
       refreshTimelineTree();
       state.tool = 'select';
@@ -1210,6 +1222,11 @@ window.addEventListener('keydown', (ev) => {
   }
   // 非输入框内 Alt+Left 会触发浏览器后退，屏蔽；输入框内保留按词移动光标。
   if (ev.altKey && ev.key === 'ArrowLeft') { ev.preventDefault(); return; }
+  // 锁定摄像机时保留文件/播放/撤回等全局快捷键，屏蔽编辑类快捷键
+  if (cameraViewLocked()) {
+    if (ev.ctrlKey && (k === 'g' || k === 'a' || k === 'd' || k === 'c' || k === 'v')) { ev.preventDefault(); return; }
+    if (k === 's' || k === 'delete' || k === 'escape') { ev.preventDefault(); return; }
+  }
   if (ev.ctrlKey && k === 'z') { ev.preventDefault(); if (typeof texActive !== 'undefined' && texActive) { texUndo(); return; } if (ev.shiftKey) redo(); else undo(); return; }
   if (ev.ctrlKey && k === 'y') { ev.preventDefault(); if (typeof texActive !== 'undefined' && texActive) { texRedo(); return; } redo(); return; }
   if (ev.ctrlKey && k === 'n') { ev.preventDefault(); newFile(); return; }

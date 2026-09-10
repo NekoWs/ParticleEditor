@@ -3,14 +3,14 @@
 
 import { t } from '../core/i18n.js';
 import { hasCoarsePointer, isNarrowLayout } from '../core/device.js';
-import { state, setDirty, DEFAULT_EASING, UV_MODES, PROP_LABELS, splitCompPr, nextId, clearObjectState } from '../core/constants.js';
+import { state, setDirty, DEFAULT_EASING, UV_MODES, PROP_LABELS, splitCompPr, nextId, clearObjectState, MAX_PROJECT_NAME_LEN } from '../core/constants.js';
 import { pushUndo } from '../state/undo.js';
 import { rebuildPoints } from '../core/animation.js';
 import { updateLoopIndicator, refreshFunctionPanel } from '../ui/panels.js';
 import { updateTimeUI, refreshCameraTabs } from '../main.js';
 import { rebuildFunctionObject, createFunctionObject } from '../core/generators.js';
 import { rotToTarget } from '../core/cam-math.js';
-import { markTextureChanged, refreshTexturePanel } from '../ui/texture-editor.js';
+import { refreshLoadedTextures, refreshTexturePanel } from '../ui/texture-editor.js';
 import { buildModal, modalPrompt, modalAlert } from '../ui/ui.js';
 import { generateKeyPair, KEY_ALG, base64ToBytes, bytesToBase64 } from '../core/crypto.js';
 import { buildPdrawc } from '../core/pdrawc.js';
@@ -340,7 +340,7 @@ export async function importProject(obj) {
     Promise.all(pending).then(results => {
       for (const t of results) state.textures[t.name] = t;
       refreshTexBase64Cache();
-      markTextureChanged(); refreshTexturePanel();
+      refreshLoadedTextures(); refreshTexturePanel();
     });
   }
   state.hasProject = true;
@@ -376,7 +376,7 @@ export async function loadFile(file) {
     modalAlert(t('filePicker.oldVersionTitle'), t('filePicker.oldVersionMsg'));
     return;
   }
-  state.name = file.name.replace(/\.(json|pdraw)$/i, '');
+  state.name = file.name.replace(/\.(json|pdraw)$/i, '').slice(0, MAX_PROJECT_NAME_LEN);
   setDirty(state.dirty); // 刷新标题（导入后无修改，标题不带未保存标记）
 }
 
@@ -388,9 +388,6 @@ export async function openFile() {
       const picked = await tauriBridge.openProjectPicker();
       if (!picked) return;
       await loadFile({ name: picked.name, text: () => Promise.resolve(picked.text) });
-      refreshTexBase64Cache();
-      markTextureChanged();
-      refreshTexturePanel();
     } catch (e) { /* 取消或读取失败则忽略 */ }
     return;
   }
@@ -403,9 +400,6 @@ export async function openFile() {
       });
       state.fileHandle = h;
       await loadFile(await h.getFile());
-      refreshTexBase64Cache();
-      markTextureChanged();
-      refreshTexturePanel();
     } catch (e) { /* 取消则忽略 */ }
     return;
   }
@@ -512,7 +506,7 @@ export async function exportAnimation() {
 export async function createBlankProject(name) {
   pushUndo();
   clearObjectState();
-  state.name = name.trim() || 'my_animation';
+  state.name = (name || 'my_animation').trim().slice(0, MAX_PROJECT_NAME_LEN) || 'my_animation';
   state.fileHandle = null;
   tauriBridge.clearLastPath();
   state.loop = false;
@@ -534,12 +528,21 @@ export async function createBlankProject(name) {
   setDirty(false);
 }
 
+// 询问项目名：空名视为取消（红框 + 提示），返回裁剪后的名称或 null。
+export async function promptProjectName(title, def) {
+  const name = await modalPrompt(title, def, t('newProject.name'), {
+    maxlength: MAX_PROJECT_NAME_LEN,
+    validate: v => (v && v.trim()) ? { ok: true } : { ok: false, message: t('newProject.nameEmpty') },
+  });
+  return name ? name.trim().slice(0, MAX_PROJECT_NAME_LEN) : null;
+}
+
 // 新建空白动画（左上角「新建」入口）：先确认未保存更改，再询问项目名。
 export async function newFile() {
   const r = await confirmDiscardChanges(t('common.new'));
   if (r === 'cancel') return;
-  const name = await modalPrompt(t('newProject.title'), 'my_animation', t('newProject.name'));
-  if (!name || !name.trim()) return;
+  const name = await promptProjectName(t('newProject.title'), 'my_animation');
+  if (!name) return;
   await createBlankProject(name);
 }
 
@@ -548,7 +551,7 @@ export async function newFile() {
 export async function createProjectFromPreset(presetId, name) {
   pushUndo();
   clearObjectState();
-  state.name = name.trim() || 'my_animation';
+  state.name = (name || 'my_animation').trim().slice(0, MAX_PROJECT_NAME_LEN) || 'my_animation';
   state.fileHandle = null;
   tauriBridge.clearLastPath();
   state.loop = false;
@@ -582,6 +585,7 @@ export async function confirmDiscardChanges(actionLabel) {
       { label: t('confirm.discard'), value: 'discard', danger: true },
       { label: t('confirm.saveAnd') + actionLabel, value: 'save', primary: true },
     ],
+    cancelValue: 'cancel',
   });
   if (r === 'save') await saveFile();
   return r;

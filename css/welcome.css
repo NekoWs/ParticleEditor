@@ -8,7 +8,6 @@
   flex-direction: column;
   overflow: auto;
   color: var(--text);
-  animation: modalFadeIn 0.16s ease-out;
 }
 
 .welcome-header {

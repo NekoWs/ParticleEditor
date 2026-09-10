@@ -50,7 +50,7 @@ export function closeUIModal() {
 // 底层：构建弹窗，返回 Promise<resolve 值>。input 为单输入框；fields 为多输入框表单。
 // 可选 status(fields) 显示普通状态文本；validate(fields) 校验：返回 { ok, message }，
 // ok=false 时显示红字并禁用 primary 确认按钮。
-export async function buildModal({ title, message, input, fields, buttons, content, status, validate }) {
+export async function buildModal({ title, message, input, fields, buttons, content, status, validate, cancelValue = null }) {
   closeUIModal();          // 触发旧弹窗关闭动画
   await uiModalClosePromise; // 等旧弹窗动画结束再显示新弹窗（避免重叠）
   return new Promise((resolve) => {
@@ -67,14 +67,21 @@ export async function buildModal({ title, message, input, fields, buttons, conte
       box.appendChild(m);
     }
     if (content) box.appendChild(content);
-    let inp = null;
+    let inp = null, inpErr = null;
     if (input) {
       inp = document.createElement('input');
       inp.className = 'ui-modal-input';
       inp.type = 'text';
+      if (input.maxlength) inp.maxLength = input.maxlength;
       inp.value = input.value != null ? String(input.value) : '';
       if (input.placeholder) inp.placeholder = input.placeholder;
       box.appendChild(inp);
+      if (typeof input.validate === 'function') {
+        inpErr = document.createElement('div');
+        inpErr.className = 'ui-modal-error';
+        inpErr.hidden = true;
+        box.appendChild(inpErr);
+      }
     }
     const fieldInputs = {};
     let statusEl = null, errorEl = null;
@@ -132,6 +139,19 @@ export async function buildModal({ title, message, input, fields, buttons, conte
       }
       if (primaryBtnEl) primaryBtnEl.disabled = bad;
     };
+    // 单输入框校验：非法时红框 + 错误提示，并禁用 primary 按钮。
+    const validateInput = () => {
+      if (!inp || typeof input.validate !== 'function') return true;
+      const res = input.validate(inp.value);
+      const bad = !!res && res.ok === false;
+      inp.classList.toggle('input-invalid', bad);
+      if (inpErr) {
+        inpErr.textContent = bad ? (res.message || '') : '';
+        inpErr.hidden = !bad;
+      }
+      if (primaryBtnEl) primaryBtnEl.disabled = bad;
+      return !bad;
+    };
     const close = (v) => { if (settled) return; settled = true; resolve(v); closeUIModal(); };
     for (const b of buttons) {
       const btn = document.createElement('button');
@@ -139,11 +159,22 @@ export async function buildModal({ title, message, input, fields, buttons, conte
       btn.textContent = b.label;
       if (b.primary) primaryBtnEl = btn;
       btn.onclick = () => {
-        if (b.inputValue && fields && fields.length && typeof validate === 'function') {
-          const res = validate(readFields());
-          if (res && res.ok === false) return;
+        if (b.inputValue) {
+          if (inp) {
+            if (!validateInput()) return;
+            close(inp.value);
+          } else if (fields && fields.length) {
+            if (typeof validate === 'function') {
+              const res = validate(readFields());
+              if (res && res.ok === false) return;
+            }
+            close(readFields());
+          } else {
+            close(b.value);
+          }
+          return;
         }
-        close(b.inputValue ? (fields && fields.length ? readFields() : inp.value) : b.value);
+        close(b.value);
       };
       btns.appendChild(btn);
     }
@@ -151,12 +182,13 @@ export async function buildModal({ title, message, input, fields, buttons, conte
     overlay.appendChild(box);
     document.body.appendChild(overlay);
     uiModalOverlay = overlay;
-    overlay.addEventListener('pointerdown', (e) => { if (e.target === overlay) close(null); });
+    overlay.addEventListener('pointerdown', (e) => { if (e.target === overlay) close(cancelValue); });
     const onKey = (e) => {
-      if (e.key === 'Escape') { close(null); return; }
+      if (e.key === 'Escape') { close(cancelValue); return; }
       if (e.key === 'Enter' && (inp || (fields && fields.length))) {
         const primary = buttons.find(b => b.primary);
         if (!primary || !primary.inputValue) return;
+        if (inp) { if (!validateInput()) return; close(inp.value); return; }
         if (fields && fields.length && typeof validate === 'function') {
           const res = validate(readFields());
           if (res && res.ok === false) return;
@@ -168,9 +200,11 @@ export async function buildModal({ title, message, input, fields, buttons, conte
     if (fields && fields.length) {
       for (const k in fieldInputs) fieldInputs[k].addEventListener('input', refreshStatus);
     }
+    if (inp && typeof input.validate === 'function') inp.addEventListener('input', validateInput);
     if (inp) setTimeout(() => { inp.focus(); inp.select(); }, 0);
     else if (fields && fields.length) setTimeout(() => { fieldInputs[fields[0].id].focus(); fieldInputs[fields[0].id].select(); }, 0);
     refreshStatus();
+    validateInput();
     invisibleFocus(overlay);
   });
 }
@@ -180,10 +214,15 @@ export function invisibleFocus(el) {
   el.focus();
 }
 
-export function modalPrompt(title, def, placeholder) {
+export function modalPrompt(title, def, placeholder, opts = {}) {
   return buildModal({
     title,
-    input: { value: def, placeholder },
+    input: {
+      value: def,
+      placeholder,
+      maxlength: opts.maxlength,
+      validate: opts.validate,
+    },
     buttons: [{ label: t('common.cancel'), value: null }, { label: t('common.ok'), value: null, primary: true, inputValue: true }],
   });
 }

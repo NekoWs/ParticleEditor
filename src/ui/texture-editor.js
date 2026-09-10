@@ -66,6 +66,12 @@ export function markTextureChanged() {
   setDirty(true);
 }
 
+// 打开工程/导入后贴图数据就绪：重建 atlas 与粒子缓冲，但不把工程标为未保存。
+export function refreshLoadedTextures() {
+  if (typeof rebuildAtlas === 'function') rebuildAtlas();
+  if (typeof rebuildPoints === 'function') rebuildPoints();
+}
+
 // 当前空/新贴图尺寸（无贴图时 16×16）
 export function currentTexSize() {
   const t = getCurrentTexture();

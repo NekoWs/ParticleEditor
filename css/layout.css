@@ -104,7 +104,12 @@
   margin-left: auto;
   flex: none;
   height: 100%;
+  /* 欢迎面板覆盖整页（z-index 180）时仍露出窗口按钮，保证无边框窗口可操作 */
+  position: relative;
+  z-index: 190;
 }
+/* 欢迎面板头部右移，给窗口按钮留出空间，避免与「打开项目」按钮重叠 */
+body.win-titlebar .welcome-header { padding-right: 140px; }
 .titlebar-controls[hidden] { display: none; }
 .tb-btn {
   width: 36px;
@@ -157,7 +162,10 @@
   background: var(--panel);
   border: 1px solid var(--border); border-radius: var(--radius-lg);
   padding: 3px; box-shadow: var(--shadow); max-width: calc(100% - 160px);
+  overflow-x: auto;
 }
+.cam-tabs[hidden] { display: none; }
+.cam-tabs::-webkit-scrollbar { height: 6px; }
 .cam-tab {
   display: inline-flex; align-items: center; gap: 4px;
   height: 26px; padding: 0 10px; white-space: nowrap;
@@ -459,6 +467,7 @@
 .ui-modal-msg { color: var(--muted); font-size: 13px; white-space: pre-wrap; word-break: break-word; line-height: 1.6; }
 .ui-modal-input { background: var(--panel-3); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 8px 11px; font-size: 13px; }
 .ui-modal-input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 2px var(--accent-soft); }
+.ui-modal-input.input-invalid { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-soft); }
 .ui-modal-fields { display: flex; flex-direction: column; gap: 8px; margin-top: 2px; }
 .ui-modal-field-row { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
 .ui-modal-field-row span { color: var(--text); font-size: 13px; }
@@ -505,6 +514,7 @@
 .tool:hover { background: var(--panel-3); color: var(--text); }
 .tool:active { transform: scale(0.94); }
 .tool.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tool:disabled { opacity: 0.35; pointer-events: none; }
 
 .btn {
   background: var(--panel-3); color: var(--text); border: 1px solid var(--border);

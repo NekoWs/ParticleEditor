@@ -116,6 +116,15 @@ export function refreshCameraTabs() {
   const host = document.getElementById('camera-tabs');
   if (!host) return;
   host.innerHTML = '';
+  // 没有用户摄像机时整条切换栏隐藏；锁定到某摄像机时禁用全部工具，回默认后恢复。
+  host.hidden = state.cameras.length === 0;
+  const camActive = !!state.activeCamera && state.activeCamera !== DEFAULT_CAMERA_ID;
+  document.querySelectorAll('.tool').forEach(b => { b.disabled = camActive; });
+  if (camActive && state.tool !== 'select') {
+    state.tool = 'select';
+    document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active', b.dataset.tool === 'select'));
+    updateGizmo();
+  }
 
   const mkTab = (id, label, isDefault) => {
     const el = document.createElement('button');

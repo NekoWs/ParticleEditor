@@ -20,10 +20,11 @@ export async function initTitleBar() {
   const closeBtn = document.getElementById('tb-close');
   if (!controls || !minimizeBtn || !maximizeBtn || !closeBtn) return;
 
+  controls.hidden = false;
+  document.body.classList.add('win-titlebar');
+
   const { getCurrentWindow } = await import('@tauri-apps/api/window');
   const appWindow = getCurrentWindow();
-
-  controls.hidden = false;
 
   let lastMaximized = null;
   const updateMaximizeBtn = async () => {

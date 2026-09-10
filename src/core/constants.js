@@ -133,6 +133,7 @@ export function defaultUV(texWidth, texHeight) {
 }
 
 export const SNAP_STEP = 1.0;
+export const MAX_PROJECT_NAME_LEN = 50; // 项目名称最大长度（字符）
 export const DEG2RAD = Math.PI / 180;
 export const RAD2DEG = 180 / Math.PI;
 export const ROT_SNAP = 45; // 按住 Shift 时旋转吸附的步长（角度）
@@ -204,9 +205,13 @@ export function clearObjectState() {
 }
 
 // 顶栏标题：工程名 + 未保存标记（setDirty / 打开 / 保存后调用）。
+// 名称超过 10 字符时省略，避免挤压顶栏其他元素；完整名称放在 title 供悬停查看。
 export function updateTopbarTitle() {
   const el = document.getElementById('topbar-title');
-  if (el) el.textContent = state.name + '.pdraw' + (state.dirty ? ' *' : '');
+  if (!el) return;
+  const display = state.name.length > 10 ? state.name.slice(0, 10) + '…' : state.name;
+  el.textContent = display + '.pdraw' + (state.dirty ? ' *' : '');
+  el.title = state.name + '.pdraw';
 }
 
 export function nextId() {

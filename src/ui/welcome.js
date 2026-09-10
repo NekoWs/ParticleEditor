@@ -10,8 +10,7 @@ import { cssVar } from '../core/theme.js';
 import { pointsMaterial, makeParticleQuadGeometry, camera, controls } from '../scene/scene.js';
 import { applyPreset, evaluateFxFrame } from '../core/generators.js';
 import { invalidateMaxMsCache } from '../core/animation.js';
-import { confirmDiscardChanges, createBlankProject, createProjectFromPreset, openFile, loadFile } from '../io/io.js';
-import { modalPrompt } from './ui.js';
+import { confirmDiscardChanges, createBlankProject, createProjectFromPreset, openFile, loadFile, promptProjectName } from '../io/io.js';
 
 const PREVIEW_SIZE = 256;
 
@@ -218,12 +217,12 @@ async function onPresetClick(id) {
   const r = await confirmDiscardChanges(t('common.new'));
   if (r === 'cancel') return;
   if (id === 'blank') {
-    const name = await modalPrompt(t('newProject.title'), 'my_animation', t('newProject.name'));
-    if (!name || !name.trim()) return;
+    const name = await promptProjectName(t('newProject.title'), 'my_animation');
+    if (!name) return;
     await createBlankProject(name);
   } else {
-    const name = await modalPrompt(t('welcome.createTitle'), autoProjectName(id), t('newProject.name'));
-    if (!name || !name.trim()) return;
+    const name = await promptProjectName(t('welcome.createTitle'), autoProjectName(id));
+    if (!name) return;
     await createProjectFromPreset(id, name);
   }
   await finishCreate();
@@ -246,11 +245,11 @@ export function showWelcome() {
   if (welcomeEl && welcomeEl.isConnected) return;
   welcomeEl = document.createElement('div');
   welcomeEl.className = 'welcome-overlay';
-  // 桌面端欢迎页覆盖整个视口（含顶栏），给整页加上拖动区，按钮仍可正常点击。
-  welcomeEl.setAttribute('data-tauri-drag-region', 'deep');
 
   const header = document.createElement('div');
   header.className = 'welcome-header';
+  // 拖动区只放在头部，避免覆盖整页后滚动条被当成窗口拖动区域。
+  header.setAttribute('data-tauri-drag-region', 'deep');
   const titleBox = document.createElement('div');
   const title = document.createElement('div');
   title.className = 'welcome-title';
