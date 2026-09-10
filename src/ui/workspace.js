@@ -366,10 +366,10 @@ function commit(persist = true) {
   l.classList.toggle('area-right-open', showR);
   l.style.setProperty('--area-left-w', showL ? (_state.areaLeftW || 300) + 'px' : '0px');
   l.style.setProperty('--area-right-w', showR ? (_state.areaRightW || 320) + 'px' : '0px');
-  // 底部坞：时间轴可见但无面板时保留 6px 细条作为拖放目标；整体隐藏仅由菜单开关控制。
-  document.body.style.setProperty('--tl-h', _state.timelineVisible ? (showB ? (_state.bottomH || 360) + 'px' : '6px') : '0px');
+  // 底部坞：无面板时整体隐藏（连同顶部高度调整把手），不残留可拖控件。
+  document.body.style.setProperty('--tl-h', showB ? (_state.bottomH || 360) + 'px' : '0px');
   const db = el('dock-bottom');
-  if (db) db.style.display = _state.timelineVisible ? '' : 'none';
+  if (db) db.style.display = showB ? '' : 'none';
 
   applyI18nDom();
   if (persist) persistActive();
