@@ -44,3 +44,23 @@ export async function saveFilePicker(suggestedName, ext, data) {
 export async function writeProjectText(path, text) {
   await writeTextFile(path, text);
 }
+
+// 桌面端原生关窗不会触发浏览器 beforeunload；拦截关窗做未保存确认。
+// 移动端无此 API 时静默跳过，不改变原有行为。
+export async function installCloseGuard() {
+  if (!isTauri()) return;
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    const appWindow = getCurrentWindow();
+    await appWindow.onCloseRequested(async (event) => {
+      const { state } = await import('../core/constants.js');
+      if (!state.dirty) return;
+      event.preventDefault();
+      const { confirmDiscardChanges } = await import('./io.js');
+      const { t } = await import('../core/i18n.js');
+      const r = await confirmDiscardChanges(t('common.close'));
+      if (r === 'cancel') return;
+      await appWindow.destroy();
+    });
+  } catch (e) { /* 忽略：非桌面端或无该 API */ }
+}

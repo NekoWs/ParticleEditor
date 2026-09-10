@@ -694,6 +694,9 @@ window.addEventListener('beforeunload', (ev) => {
   }
 });
 
+// Tauri 桌面端原生关窗不触发 beforeunload，交给桥接层做同样的未保存拦截。
+import('./io/tauri-bridge.js').then(m => m.installCloseGuard()).catch(() => {});
+
 // 拖拽文件到窗口即可打开
 (function setupDragDrop() {
   window.addEventListener('dragover', (ev) => { ev.preventDefault(); });
