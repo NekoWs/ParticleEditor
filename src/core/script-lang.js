@@ -397,7 +397,7 @@ class Runtime {
     this.inFunction = false;
     this.usedIterations = 0;        // 本次运行跨所有循环/重复的全局迭代预算
 
-    const varsObj = phase === 'setup' ? (env && env.vars) : (ctx && ctx.vars);
+    const varsObj = (phase === 'setup' || phase === 'toplevel') ? (env && env.vars) : (ctx && ctx.vars);
     this.varsMap = new Map();
     if (varsObj) {
       for (const k of Object.keys(varsObj)) this.varsMap.set(k, varsObj[k]);
@@ -1103,8 +1103,11 @@ class Runtime {
       if (args.length === 0) this.currentScope().set('it', IT_NOT_BOUND);
       else this.currentScope().set('it', args[0]);
     } else {
+      if (args.length !== fn.params.length) {
+        throw runtimeError(`lambda expects ${fn.params.length} argument(s), got ${args.length}`, node);
+      }
       for (let i = 0; i < fn.params.length; i++) {
-        this.currentScope().set(fn.params[i], i < args.length ? args[i] : undefined);
+        this.currentScope().set(fn.params[i], args[i]);
       }
     }
 
@@ -1845,12 +1848,12 @@ const BUILTIN_TABLE = new Map([
   }),
   builtin('int', 1, 1, (args, rt, node) => {
     const v = args[0];
-    if (isBool(v)) return v ? 1 : 0;
+    if (isBool(v)) throw runtimeError(`int does not accept bool`, node);
     return mapComponents(v, Math.trunc, node);
   }),
   builtin('float', 1, 1, (args, rt, node) => {
     const v = args[0];
-    if (isBool(v)) return v ? 1 : 0;
+    if (isBool(v)) throw runtimeError(`float does not accept bool`, node);
     return mapComponents(v, (x) => x, node);
   }),
   builtin('bool', 1, 1, (args, rt, node) => {
