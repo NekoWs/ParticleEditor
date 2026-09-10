@@ -8,6 +8,7 @@ export var LANGS = {
     'common.close': '关闭', 'common.color': '颜色',
     // —— 窗口 / 工作区 ——
     'menu.window': '窗口',
+    'titlebar.minimize': '最小化', 'titlebar.maximize': '最大化', 'titlebar.restore': '还原', 'titlebar.close': '关闭',
     'ws.presets': '工作区预设', 'ws.preset.default': '默认', 'ws.preset.left': '面板居左', 'ws.preset.draw': '专注绘制',
     'ws.preset.animate': '动画编辑', 'ws.preset.timelineTop': '时间轴上置',
     'ws.toggleSidebar': '显示/隐藏侧栏', 'ws.toggleTimeline': '显示/隐藏时间轴',
@@ -382,6 +383,7 @@ export var LANGS = {
     'common.close': 'Close', 'common.color': 'Color',
     // —— Window / Workspace ——
     'menu.window': 'Window',
+    'titlebar.minimize': 'Minimize', 'titlebar.maximize': 'Maximize', 'titlebar.restore': 'Restore', 'titlebar.close': 'Close',
     'ws.presets': 'Workspace Presets', 'ws.preset.default': 'Default', 'ws.preset.left': 'Panel Left', 'ws.preset.draw': 'Draw Focus',
     'ws.preset.animate': 'Animation', 'ws.preset.timelineTop': 'Timeline Top',
     'ws.toggleSidebar': 'Show/Hide Sidebar', 'ws.toggleTimeline': 'Show/Hide Timeline',

@@ -17,7 +17,7 @@
   </script>
 </head>
 <body>
-  <header class="topbar">
+  <header class="topbar" data-tauri-drag-region>
     <nav class="menubar">
       <div class="menu">
         <button class="menu-btn" data-menu="file" data-i18n="menu.file">文件</button>
@@ -76,7 +76,19 @@
         <svg viewBox="0 0 18 18"><rect x="2" y="4" width="14" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 4v10M9 4v10M13 4v10" stroke="currentColor" stroke-width="1"/><circle cx="7" cy="9" r="1.5" fill="currentColor"/></svg>
       </button>
     </div>
-    <span id="topbar-title">my_animation.pdraw</span>
+    <span id="topbar-title" data-tauri-drag-region>my_animation.pdraw</span>
+    <div class="titlebar-controls" id="titlebar-controls" hidden>
+      <button class="tb-btn" id="tb-minimize" type="button" data-i18n-title="titlebar.minimize" title="最小化">
+        <svg viewBox="0 0 10 10"><path d="M0.5 5h9" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>
+      </button>
+      <button class="tb-btn" id="tb-maximize" type="button" data-i18n-title="titlebar.maximize" title="最大化">
+        <svg class="tb-icon-max" viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1"/></svg>
+        <svg class="tb-icon-restore" viewBox="0 0 10 10"><path d="M2.5 2.5V0.5h7v7h-2" fill="none" stroke="currentColor" stroke-width="1"/><rect x="0.5" y="2.5" width="7" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1"/></svg>
+      </button>
+      <button class="tb-btn tb-close" id="tb-close" type="button" data-i18n-title="titlebar.close" title="关闭">
+        <svg viewBox="0 0 10 10"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
+      </button>
+    </div>
   </header>
 
   <main class="layout">

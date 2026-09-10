@@ -96,6 +96,38 @@
 }
 .topbar input[type="text"]:focus { border-color: var(--accent); outline: none; box-shadow: var(--focus-ring); }
 
+/* Windows 自定义标题栏：无边框窗口的窗口控制按钮（仅桌面端显示，由 titlebar.js 切换） */
+.titlebar-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  flex: none;
+  height: 100%;
+}
+.titlebar-controls[hidden] { display: none; }
+.tb-btn {
+  width: 36px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--text);
+  border: none;
+  border-radius: 6px;
+  padding: 0;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.tb-btn:hover { background: var(--panel-3); }
+.tb-btn:active { opacity: 0.8; }
+.tb-close:hover { background: #e81123; color: #fff; }
+.tb-btn svg { width: 12px; height: 12px; }
+.tb-icon-restore { display: none; }
+.tb-btn.restored .tb-icon-max { display: none; }
+.tb-btn.restored .tb-icon-restore { display: block; }
+
 /* ---- layout ---- */
 .layout {
   display: grid;

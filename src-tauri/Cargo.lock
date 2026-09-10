@@ -76,6 +76,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-fs",
  "tauri-plugin-log",
+ "windows",
 ]
 
 [[package]]

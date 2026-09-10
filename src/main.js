@@ -29,6 +29,7 @@ import { initMobileUI } from './ui/mobile.js';
 import { initImportMenu } from './ui/import-image.js';
 import { showWelcome } from './ui/welcome.js';
 import { initWorkspace } from './ui/workspace.js';
+import { initTitleBar } from './ui/titlebar.js';
 import { newFile, openFile, saveFile, saveFileAs, exportAnimation, loadFile, confirmDiscardChanges, ensureProjectKey } from './io/io.js';
 import { drawAxisGizmo, slerp } from './interaction/axis-gizmo.js';
 import { updateGizmo, updateGizmoFrame, restoreAxisColors, setAxisGlow } from './interaction/gizmo.js';
@@ -677,6 +678,7 @@ export function animate(now) {
 
 initWorkspace();
 initUI();
+initTitleBar();
 updateTopbarTitle();
 if (!state.hasProject) showWelcome();
 requestAnimationFrame(animate);
