@@ -9,7 +9,7 @@
 import { t, applyI18nDom } from '../core/i18n.js';
 import { modalPrompt, modalConfirm } from './ui.js';
 
-const LS_ACTIVE = 'pdraw-workspace-active';
+const LS_ACTIVE = 'pdraw-workspace-active-v2';
 const LS_CUSTOM = 'pdraw-workspace-custom';
 
 const PANELS = ['props', 'fx', 'texEditor', 'uv', 'tlControls', 'timeline'];
@@ -89,19 +89,23 @@ function normalizeSizes(arr, n) {
 function normalize(s) {
   const out = defaultState();
   if (!s || typeof s !== 'object') return out;
+  // 旧版(v3)工作区状态没有图标栏结构，直接退回默认，避免旧字段被误读成错误分布。
+  if (!s.strips || typeof s.strips !== 'object') return out;
 
-  // 图标布局：每个面板恰好在四个半区之一出现一次。
-  const seen = new Set();
-  for (const strip of ['left', 'right']) {
-    for (const half of ['top', 'bottom']) {
-      const arr = (s.strips && s.strips[strip] && Array.isArray(s.strips[strip][half])) ? s.strips[strip][half] : [];
-      out.strips[strip][half] = [];
-      for (const id of arr) {
-        if (PANELS.includes(id) && !seen.has(id)) { out.strips[strip][half].push(id); seen.add(id); }
+  // 图标布局：每个面板恰好在四个半区之一出现一次；旧版状态缺 strips 时沿用默认分布。
+  if (s.strips && typeof s.strips === 'object') {
+    const seen = new Set();
+    for (const strip of ['left', 'right']) {
+      for (const half of ['top', 'bottom']) {
+        const arr = (s.strips[strip] && Array.isArray(s.strips[strip][half])) ? s.strips[strip][half] : [];
+        out.strips[strip][half] = [];
+        for (const id of arr) {
+          if (PANELS.includes(id) && !seen.has(id)) { out.strips[strip][half].push(id); seen.add(id); }
+        }
       }
     }
+    for (const id of PANELS) if (!seen.has(id)) out.strips.right.top.push(id);
   }
-  for (const id of PANELS) if (!seen.has(id)) out.strips.right.top.push(id);
 
   // 停靠归属
   for (const id of PANELS) {
