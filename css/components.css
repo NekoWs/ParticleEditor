@@ -208,13 +208,18 @@ body.ctrl-held .kf-t { cursor: pointer; }
   display: flex; margin-top: 6px;
 }
 .tl-tree {
-  flex: 0 0 320px; min-width: 240px; max-width: 480px;
+  flex: 0 0 var(--tl-tree-w, 320px); min-width: 140px; max-width: 900px;
   height: 100%; overflow-y: auto; overflow-x: hidden;
   background: var(--panel-2); border: none;
   border-radius: var(--radius-lg) 0 0 var(--radius-lg);
   /* 上方空出 #timeline 标尺高度 + 间距，保证第一行与 lane 画布第一行对齐 */
   padding-top: 34px;
 }
+.tl-tree-resize {
+  flex: 0 0 5px; cursor: col-resize; background: transparent;
+  transition: background 0.12s ease;
+}
+.tl-tree-resize:hover, .tl-tree-resize.dragging { background: var(--accent); }
 .tl-main {
   flex: 1 1 auto; min-width: 0;
   height: 100%; display: flex; flex-direction: column;

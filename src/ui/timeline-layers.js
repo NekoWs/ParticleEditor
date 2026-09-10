@@ -306,6 +306,41 @@ export function tlInitLayerEvents() {
   const canvas = document.getElementById('tl-layers-canvas');
   if (!canvas) return;
 
+  // 粒子列表（标签轨）与时间轴 lane 之间的左右宽度分隔条。
+  const treeResize = document.getElementById('tl-tree-resize');
+  const tlTreeEl = document.getElementById('tl-tree');
+  if (tlTreeEl) {
+    try {
+      const w = parseInt(localStorage.getItem('pdraw-tl-tree-width'), 10);
+      if (w >= 140 && w <= 900) tlTreeEl.style.setProperty('--tl-tree-w', w + 'px');
+    } catch (e) { /* 忽略 */ }
+  }
+  if (treeResize && tlTreeEl) {
+    let resizing = false, startX = 0, startW = 0;
+    treeResize.addEventListener('pointerdown', (e) => {
+      resizing = true; startX = e.clientX;
+      startW = tlTreeEl.getBoundingClientRect().width;
+      treeResize.setPointerCapture(e.pointerId);
+      treeResize.classList.add('dragging');
+      e.preventDefault();
+    });
+    treeResize.addEventListener('pointermove', (e) => {
+      if (!resizing) return;
+      const w = Math.max(140, Math.min(900, startW + (e.clientX - startX)));
+      tlTreeEl.style.setProperty('--tl-tree-w', w + 'px');
+      drawTimelineLayers();
+    });
+    const stopResize = () => {
+      if (!resizing) return;
+      resizing = false;
+      treeResize.classList.remove('dragging');
+      try { localStorage.setItem('pdraw-tl-tree-width', String(tlTreeEl.getBoundingClientRect().width)); } catch (err) { /* 忽略 */ }
+      drawTimelineLayers();
+    };
+    treeResize.addEventListener('pointerup', stopResize);
+    treeResize.addEventListener('pointercancel', stopResize);
+  }
+
   // 触屏手势（移动端优化）：单指在空白处拖动 = 平移时间轴视图（与 #timeline 中键拖动一致，
   // 不再 scrub）；双指捏合 = 以两指中点为锚点缩放每毫秒像素，双指中点移动同步平移。
   // 关键帧/寿命条拖拽与鼠标左键 scrub 行为不变。

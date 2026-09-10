@@ -52,6 +52,7 @@ function defaultState() {
 let _state = defaultState();
 let initialized = false;
 let suppressClick = false;
+let insertionSlot = null;
 const zones = {};
 
 const el = (id) => document.getElementById(id);
@@ -501,10 +502,31 @@ const ZONE_NODE = {
   bottom: 'dock-bottom', float: 'viewport',
 };
 
-function updateZones(ev) {
+function hideInsertionSlot() {
+  if (insertionSlot) { insertionSlot.remove(); insertionSlot = null; }
+}
+
+function showInsertionSlot(id, strip, half, clientY) {
+  hideInsertionSlot();
+  const box = el('strip-' + strip + '-' + half);
+  if (!box) return;
+  const idx = insertionIndex(id, strip, half, clientY);
+  const icons = [...box.querySelectorAll('.ws-icon')].filter((b) => b.dataset.panel !== id);
+  const slot = document.createElement('div');
+  slot.className = 'ws-insert-slot';
+  box.insertBefore(slot, icons[idx] || null);
+  insertionSlot = slot;
+}
+
+function updateZones(id, ev) {
   clearZones();
+  hideInsertionSlot();
   const target = resolveDrop(ev);
   if (!target) return;
+  if (target.kind === 'strip') {
+    showInsertionSlot(id, target.strip, target.half, ev.clientY);
+    return;
+  }
   const node = el(ZONE_NODE[target.zoneKey] || target.zoneKey);
   if (!node) return;
   placeZone(target.zoneKey, rectOf(node));
@@ -625,9 +647,6 @@ function setupDrag() {
     const origT = win ? (parseInt(win.style.top, 10) || 80) : 0;
     let started = false;
 
-    // 按下即显示落点预览，不等待位移阈值。
-    updateZones(ev);
-
     const move = (ev2) => {
       if (!started && Math.hypot(ev2.clientX - startX, ev2.clientY - startY) < 6) return;
       if (!started) { started = true; document.body.classList.add('ws-dragging'); }
@@ -635,13 +654,14 @@ function setupDrag() {
         win.style.left = (origL + ev2.clientX - startX) + 'px';
         win.style.top = (origT + ev2.clientY - startY) + 'px';
       }
-      updateZones(ev2);
+      updateZones(id, ev2);
     };
     const up = (ev2) => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       document.body.classList.remove('ws-dragging');
       clearZones();
+      hideInsertionSlot();
       if (!started) return;
       suppressClick = true;
       setTimeout(() => { suppressClick = false; }, 0);

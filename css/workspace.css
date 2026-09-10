@@ -26,6 +26,13 @@
 .ws-icon:hover { color: var(--text); background: var(--panel-2); border-color: var(--border); }
 .ws-icon.active { color: var(--accent); background: var(--accent-soft); border-color: rgba(91, 157, 255, 0.35); }
 body.ws-dragging .ws-icon { cursor: grabbing; }
+/* 图标栏内的落点候选位：与图标同尺寸，插入后把原有图标挤开 */
+.ws-insert-slot {
+  flex: none; width: 36px; height: 36px; align-self: center;
+  background: rgba(91, 157, 255, 0.22);
+  border: 2px dashed var(--accent); border-radius: 9px;
+  box-sizing: border-box; pointer-events: none;
+}
 
 /* —— 侧边面板区（手风琴单槽位，槽位内可上下叠 2 个面板） —— */
 .side-area {
@@ -83,6 +90,8 @@ body.ws-dragging .ws-pane-head { cursor: grabbing; }
 .ws-float-body #pane-timeline.tab-pane { padding: 0; }
 #pane-timeline .tl-controls { border: none; border-radius: 0; border-bottom: 1px solid var(--border-soft); }
 #pane-timeline .tl-body { margin-top: 0; border-radius: 0; }
+#pane-timeline .tl-tree,
+#pane-timeline .tl-main { border-radius: 0; }
 /* 时间轴面板需为纵向 flex，让 .tl-body 填满可用高度 */
 .ws-pane-wrap #pane-timeline.tab-pane.active,
 .ws-float-body #pane-timeline.tab-pane { display: flex; flex-direction: column; }
@@ -184,11 +193,13 @@ body.ws-dragging .ws-pane-head { cursor: grabbing; }
   .strip-half { padding: 6px 3px; gap: 3px; }
   .ws-icon { width: 32px; height: 32px; border-radius: 8px; }
   .ws-icon svg { width: 16px; height: 16px; }
+  .ws-insert-slot { width: 32px; height: 32px; border-radius: 8px; }
 }
 
 /* 触屏：加大图标点击目标 */
 @media (pointer: coarse) {
   .ws-icon { width: 42px; height: 42px; }
+  .ws-insert-slot { width: 42px; height: 42px; }
   .ws-pane-close { width: 28px; height: 28px; }
   .ws-pane-head { height: 40px; }
 }
