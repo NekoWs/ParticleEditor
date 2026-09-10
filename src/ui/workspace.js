@@ -12,14 +12,14 @@ import { modalPrompt, modalConfirm } from './ui.js';
 const LS_ACTIVE = 'pdraw-workspace-active-v2';
 const LS_CUSTOM = 'pdraw-workspace-custom';
 
-const PANELS = ['props', 'fx', 'texEditor', 'uv', 'tlControls', 'timeline'];
+const PANELS = ['props', 'fx', 'texEditor', 'uv', 'timeline'];
 const PANE_EL_ID = {
   props: 'pane-props', fx: 'pane-fx', texEditor: 'pane-tex-editor', uv: 'pane-uv',
-  tlControls: 'pane-tl-controls', timeline: 'pane-timeline',
+  timeline: 'pane-timeline',
 };
 const FLOAT_SIZES = {
   props: { w: 340, h: 480 }, fx: { w: 340, h: 480 }, texEditor: { w: 560, h: 460 },
-  uv: { w: 380, h: 460 }, tlControls: { w: 480, h: 130 }, timeline: { w: 780, h: 380 },
+  uv: { w: 380, h: 460 }, timeline: { w: 780, h: 420 },
 };
 
 const ICONS = {
@@ -27,23 +27,22 @@ const ICONS = {
   fx: '<svg viewBox="0 0 18 18"><path d="M4 14c1.5-4 2.5-6 4-6s2.5 4 4 4 2.5-4 4-6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><text x="9" y="5" font-size="5.5" fill="currentColor" text-anchor="middle" font-family="monospace">f(x)</text></svg>',
   texEditor: '<svg viewBox="0 0 18 18"><rect x="3" y="3" width="12" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 7h12M7 3v12M11 3v12M3 11h12" stroke="currentColor" stroke-width="1"/></svg>',
   uv: '<svg viewBox="0 0 18 18"><rect x="3" y="3" width="12" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 9h12M9 3v12" stroke="currentColor" stroke-width="1.2"/><circle cx="9" cy="9" r="1.4" fill="currentColor"/></svg>',
-  tlControls: '<svg viewBox="0 0 18 18"><path d="M4.5 5.5v7l7-3.5-7-3.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M2.5 3.5h13M2.5 14.5h13" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
   timeline: '<svg viewBox="0 0 18 18"><rect x="2" y="4" width="14" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 4v10M9 4v10M13 4v10" stroke="currentColor" stroke-width="1"/><circle cx="7" cy="9" r="1.5" fill="currentColor"/></svg>',
 };
 
 function defaultState() {
   return {
     strips: {
-      left: { top: [], bottom: ['tlControls', 'timeline'] },
+      left: { top: [], bottom: ['timeline'] },
       right: { top: ['props', 'fx', 'texEditor', 'uv'], bottom: [] },
     },
     dock: {
       props: 'right', fx: 'right', texEditor: 'right', uv: 'right',
-      tlControls: 'bottom', timeline: 'bottom',
+      timeline: 'bottom',
     },
-    open: { left: [], right: ['props'], bottom: ['tlControls', 'timeline'] },
+    open: { left: [], right: ['props'], bottom: ['timeline'] },
     bottomDir: 'vert',
-    sizes: { left: [100], right: [100], bottom: [50, 50] },
+    sizes: { left: [100], right: [100], bottom: [100] },
     areaLeftW: null, areaRightW: null, bottomH: null,
     sidebarVisible: true, timelineVisible: true,
     floats: {},
@@ -73,7 +72,7 @@ function stripOf(id, st) {
 }
 
 function defaultDockFor(id, st) {
-  if (id === 'tlControls' || id === 'timeline') return 'bottom';
+  if (id === 'timeline') return 'bottom';
   return stripOf(id, st);
 }
 
@@ -187,7 +186,7 @@ function buildPaneWrap(id, pane) {
   const wrap = document.createElement('div');
   wrap.className = 'ws-pane-wrap';
   wrap.dataset.panel = id;
-  if (id !== 'tlControls') {
+  if (id !== 'timeline') {
     const head = document.createElement('div');
     head.className = 'ws-tabs ws-pane-head';
     head.dataset.panel = id;
@@ -281,25 +280,14 @@ function renderBottom(panes) {
   _state.open.bottom = ids;
   const dir = _state.bottomDir;
   dock.dataset.dir = dir;
-  const hasControls = ids.includes('tlControls');
 
   ids.forEach((id, i) => {
     const wrap = buildPaneWrap(id, panes[id]);
-    if (dir === 'vert') {
-      if (id === 'tlControls') wrap.style.flex = '0 0 auto';
-      else if (hasControls && ids.length === 2) wrap.style.flex = '1 1 auto';
-      else wrap.style.flex = '1 1 0';
-    } else {
-      wrap.style.flex = '1 1 0';
-    }
+    wrap.style.flex = '0 0 ' + (_state.sizes.bottom[i] != null ? _state.sizes.bottom[i] : 100) + '%';
     const pane = panes[id];
     if (pane) pane.classList.add('active');
     dock.appendChild(wrap);
-    // 分隔条：仅在同为可伸缩面板之间插入（控制面板为自然高度时不参与）。
-    const next = ids[i + 1];
-    if (next && !(dir === 'vert' && (id === 'tlControls' || next === 'tlControls'))) {
-      dock.appendChild(buildSplit('bottom', dir === 'vert' ? 'h' : 'v', i));
-    }
+    if (i < ids.length - 1) dock.appendChild(buildSplit('bottom', dir === 'vert' ? 'h' : 'v', i));
   });
 }
 
@@ -353,7 +341,19 @@ function syncFloats(panes) {
   }
 }
 
+// 展开数量变化时把对应比例重置为均分；数量不变则保留分隔条拖出的比例。
+function ensureSizes() {
+  for (const key of ['left', 'right', 'bottom']) {
+    const n = _state.open[key].length || 1;
+    const arr = _state.sizes[key];
+    if (!arr || arr.length !== n) {
+      _state.sizes[key] = Array.from({ length: n }, () => Math.round(100 / n));
+    }
+  }
+}
+
 function commit(persist = true) {
+  ensureSizes();
   const panes = capturePanes();
   renderStrips();
   renderDocks(panes);
@@ -565,8 +565,10 @@ function setupDrag() {
       if (head && !ev.target.closest('button')) id = head.dataset.panel;
       else {
         const tc = ev.target.closest('.tl-controls');
-        if (tc && !ev.target.closest('button, input, select, label')) id = 'tlControls';
-        else {
+        if (tc && !ev.target.closest('button, input, select, label')) {
+          const wrap = tc.closest('.ws-pane-wrap');
+          id = (wrap && wrap.dataset.panel) || 'timeline';
+        } else {
           const fb = ev.target.closest('.ws-float-titlebar');
           if (fb && !ev.target.closest('button')) {
             const win = fb.closest('.ws-float');

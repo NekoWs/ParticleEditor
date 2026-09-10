@@ -2,6 +2,7 @@
 
 /* —— 竖向图标栏 —— */
 .icon-strip {
+  position: relative; z-index: 40;
   display: flex; flex-direction: column;
   width: 46px; min-width: 46px; min-height: 0;
   background: var(--panel); overflow: hidden;
@@ -79,11 +80,9 @@ body.ws-dragging .ws-pane-head { cursor: grabbing; }
 .ws-pane-wrap .tab-pane {
   flex: 1 1 auto; min-height: 0; min-width: 0; overflow: auto; padding: 12px;
 }
-.ws-pane-wrap #pane-tl-controls.tab-pane,
 .ws-pane-wrap #pane-timeline.tab-pane,
-.ws-float-body #pane-tl-controls.tab-pane,
 .ws-float-body #pane-timeline.tab-pane { padding: 0; }
-#pane-tl-controls .tl-controls { border: none; border-radius: 0; border-bottom: 1px solid var(--border-soft); }
+#pane-timeline .tl-controls { border: none; border-radius: 0; border-bottom: 1px solid var(--border-soft); }
 #pane-timeline .tl-body { margin-top: 0; border-radius: 0; }
 /* 时间轴面板需为纵向 flex，让 .tl-body 填满可用高度 */
 .ws-pane-wrap #pane-timeline.tab-pane.active,
