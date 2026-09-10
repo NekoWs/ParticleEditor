@@ -41,7 +41,7 @@ function defaultState() {
       timeline: 'bottom',
     },
     open: { left: [], right: ['props'], bottom: ['timeline'] },
-    bottomDir: 'vert',
+    bottomDir: 'horiz',
     sizes: { left: [100], right: [100], bottom: [100] },
     areaLeftW: null, areaRightW: null, bottomH: null,
     sidebarVisible: true, timelineVisible: true,
@@ -79,7 +79,6 @@ function isBottomHalfPanel(id, st) {
 
 function defaultDockFor(id, st) {
   if (isBottomHalfPanel(id, st)) return 'bottom';
-  if (id === 'timeline') return 'bottom';
   return stripOf(id, st);
 }
 
@@ -159,7 +158,7 @@ function normalize(s) {
   }
   out.open.bottom = out.open.bottom.slice(0, 2);
 
-  out.bottomDir = s.bottomDir === 'horiz' ? 'horiz' : 'vert';
+  out.bottomDir = 'horiz';
   out.sizes.left = normalizeSizes(s.sizes && s.sizes.left, out.open.left.length || 1);
   out.sizes.right = normalizeSizes(s.sizes && s.sizes.right, out.open.right.length || 1);
   out.sizes.bottom = normalizeSizes(s.sizes && s.sizes.bottom, out.open.bottom.length || 1);
@@ -303,8 +302,8 @@ function renderBottom(panes) {
   [...dock.children].forEach((c) => { if (c.id !== 'tl-module-resize') c.remove(); });
   const ids = _state.open.bottom.filter((id) => panes[id] && _state.dock[id] === 'bottom');
   _state.open.bottom = ids;
-  const dir = _state.bottomDir;
-  dock.dataset.dir = dir;
+  // 底部坞仅左右排列。
+  dock.dataset.dir = 'horiz';
 
   ids.forEach((id, i) => {
     const wrap = buildPaneWrap(id, panes[id]);
@@ -312,7 +311,7 @@ function renderBottom(panes) {
     const pane = panes[id];
     if (pane) pane.classList.add('active');
     dock.appendChild(wrap);
-    if (i < ids.length - 1) dock.appendChild(buildSplit('bottom', dir === 'vert' ? 'h' : 'v', i));
+    if (i < ids.length - 1) dock.appendChild(buildSplit('bottom', 'v', i));
   });
 }
 
@@ -546,8 +545,8 @@ function applyDrop(id, target, ev) {
 
   if (target.kind === 'strip') {
     movePanelIcon(id, target.strip, target.half, insertionIndex(id, target.strip, target.half, ev.clientY));
-    if (bottomOnly || target.half === 'bottom') {
-      // 下半区面板（或刚拖入下半区）只能在底部坞显示。
+    if (target.half === 'bottom') {
+      // 落入下半区：只能在底部坞显示。
       _state.dock[id] = 'bottom';
       _state.open.left = _state.open.left.filter((p) => p !== id);
       _state.open.right = _state.open.right.filter((p) => p !== id);
@@ -557,6 +556,7 @@ function applyDrop(id, target, ev) {
         _state.open.bottom.push(id);
       }
     } else {
+      // 落入上半区：停靠到该侧栏。
       _state.dock[id] = target.strip;
       removeFromOpen(id);
       _state.open[target.strip] = [id];
@@ -577,8 +577,6 @@ function applyDrop(id, target, ev) {
       if (arr.length >= 2) arr.shift();
       arr.push(id);
     }
-    const bb = rectOf(el('dock-bottom'));
-    _state.bottomDir = (ev.clientX < bb.left + bb.width / 2) ? 'horiz' : 'vert';
   } else if (target.kind === 'float') {
     if (bottomOnly) return;
     _state.dock[id] = 'float';
@@ -626,6 +624,9 @@ function setupDrag() {
     const origL = win ? (parseInt(win.style.left, 10) || 60) : 0;
     const origT = win ? (parseInt(win.style.top, 10) || 80) : 0;
     let started = false;
+
+    // 按下即显示落点预览，不等待位移阈值。
+    updateZones(ev);
 
     const move = (ev2) => {
       if (!started && Math.hypot(ev2.clientX - startX, ev2.clientY - startY) < 6) return;
