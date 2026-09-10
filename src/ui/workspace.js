@@ -1,6 +1,9 @@
-// 工作区系统：桌面端侧栏 / 时间轴可拖放停靠（左/右、上/下）与折叠，
-// 内置一键预设工作区，并支持自定义工作区的本地保存 / 应用 / 重命名 / 删除。
-// 窄屏（≤1024px）由 mobile.css 的抽屉布局接管，本模块只注入菜单与把手、不做布局干预。
+// 工作区系统 v2：
+// - 桌面端侧栏可停靠左/右、时间轴可停靠上/下，支持折叠；
+// - 侧栏选项卡（属性/函数对象/贴图）可拖出为浮动窗口（分离），浮动窗口可拖回侧栏合并为标签；
+// - 内置一键预设 + 自动布局 + 自定义工作区本地保存；
+// - 所有吸附预览按放置后的真实尺寸渲染，放置后尺寸与预览一致。
+// 窄屏（≤1024px）由 mobile.css 抽屉布局接管，本模块不做布局干预。
 
 import { isNarrowLayout } from '../core/device.js';
 import { t, applyI18nDom } from '../core/i18n.js';
@@ -9,7 +12,10 @@ import { modalPrompt, modalConfirm } from './ui.js';
 const LS_ACTIVE = 'pdraw-workspace-active';
 const LS_CUSTOM = 'pdraw-workspace-custom';
 
-// 内置预设：仅覆盖停靠边与可见性；宽/高沿用当前值或默认值。
+const PANES = ['props', 'fx', 'texture'];
+const FLOAT_SIZES = { props: { w: 340, h: 480 }, fx: { w: 340, h: 480 }, texture: { w: 560, h: 460 } };
+
+// 预设：停靠边与可见性；浮动的面板一律收回到侧栏。
 const PRESETS = {
   default:     { sidebarDock: 'right', sidebarVisible: true,  timelineDock: 'bottom', timelineVisible: true },
   left:        { sidebarDock: 'left',  sidebarVisible: true,  timelineDock: 'bottom', timelineVisible: true },
@@ -20,14 +26,18 @@ const PRESETS = {
 
 const layoutEl = () => document.querySelector('.layout');
 const sidebarEl = () => document.querySelector('.sidebar');
-const timelineEl = () => document.querySelector('.timeline');
+const tabsEl = () => document.getElementById('sidebar-tabs');
+const paneEl = (id) => document.getElementById('pane-' + id);
+const tabEl = (id) => tabsEl() && tabsEl().querySelector('.tab[data-tab="' + id + '"]');
 
-// 停靠边单独记录：折叠时对应类会被移除，不能从 DOM 类反推。
 let _dock = { sidebar: 'right', timeline: 'bottom' };
 let initialized = false;
+let suppressTabClick = false;
+
+const zones = {};
 
 function normalize(s) {
-  return {
+  const out = {
     sidebarDock: s.sidebarDock === 'left' ? 'left' : 'right',
     sidebarVisible: s.sidebarVisible !== false,
     timelineDock: s.timelineDock === 'top' ? 'top' : 'bottom',
@@ -35,10 +45,21 @@ function normalize(s) {
     sidebarWidth: s.sidebarWidth || null,
     timelineHeight: s.timelineHeight || null,
   };
+  out.floats = {};
+  if (s.floats && typeof s.floats === 'object') {
+    for (const id of PANES) {
+      if (s.floats[id]) out.floats[id] = { x: Math.round(s.floats[id].x || 60), y: Math.round(s.floats[id].y || 80) };
+    }
+  }
+  return out;
 }
 
 export function currentWorkspaceState() {
   const l = layoutEl(), b = document.body;
+  const floats = {};
+  document.querySelectorAll('.ws-float[data-pane]').forEach((w) => {
+    floats[w.dataset.pane] = { x: parseInt(w.style.left, 10) || 60, y: parseInt(w.style.top, 10) || 80 };
+  });
   return {
     sidebarDock: _dock.sidebar,
     sidebarVisible: !b.classList.contains('ws-sidebar-hidden'),
@@ -46,6 +67,7 @@ export function currentWorkspaceState() {
     timelineVisible: !b.classList.contains('ws-timeline-hidden'),
     sidebarWidth: parseInt(l.style.getPropertyValue('--right-w'), 10) || 320,
     timelineHeight: parseInt(b.style.getPropertyValue('--tl-h'), 10) || 360,
+    floats,
   };
 }
 
@@ -68,12 +90,98 @@ export function applyWorkspaceState(state, persist = true) {
   if (s.sidebarWidth) l.style.setProperty('--right-w', s.sidebarWidth + 'px');
   if (s.timelineHeight) b.style.setProperty('--tl-h', s.timelineHeight + 'px');
 
+  syncFloats(s.floats);
+  syncSidebarActive();
+
   if (persist) { try { localStorage.setItem(LS_ACTIVE, JSON.stringify(s)); } catch (e) { /* 忽略 */ } }
 }
 
 function loadActive() { try { return JSON.parse(localStorage.getItem(LS_ACTIVE)) || null; } catch (e) { return null; } }
 function customMap() { try { return JSON.parse(localStorage.getItem(LS_CUSTOM)) || {}; } catch (e) { return {}; } }
 function saveCustomMap(m) { try { localStorage.setItem(LS_CUSTOM, JSON.stringify(m)); } catch (e) { /* 忽略 */ } }
+
+/* —— 浮动 / 合并 —— */
+
+function floatWindow(id) { return document.querySelector('.ws-float[data-pane="' + id + '"]'); }
+
+function floatPane(id, x, y) {
+  if (!paneEl(id)) return;
+  if (isNarrowLayout()) return;
+  let win = floatWindow(id);
+  if (!win) {
+    win = document.createElement('div');
+    win.className = 'ws-float';
+    win.dataset.pane = id;
+    win.style.width = FLOAT_SIZES[id].w + 'px';
+    win.style.height = FLOAT_SIZES[id].h + 'px';
+
+    const bar = document.createElement('div');
+    bar.className = 'ws-float-titlebar';
+    const title = document.createElement('span');
+    title.className = 'ws-float-title';
+    title.textContent = t('tab.' + id);
+    const dockBtn = document.createElement('button');
+    dockBtn.className = 'ws-float-dock';
+    dockBtn.dataset.i18nTitle = 'ws.dockBack';
+    dockBtn.title = t('ws.dockBack');
+    dockBtn.textContent = t('ws.dockBack');
+    dockBtn.addEventListener('click', () => { dockPane(id); applyWorkspaceState(currentWorkspaceState(), true); });
+    bar.append(title, dockBtn);
+
+    const body = document.createElement('div');
+    body.className = 'ws-float-body';
+    body.appendChild(paneEl(id));
+    win.append(bar, body);
+    document.body.appendChild(win);
+
+    paneEl(id).classList.add('active'); // 贴图等面板浮动后仍需按需刷新
+    const tb = tabEl(id);
+    if (tb) tb.style.display = 'none';
+  }
+  win.style.left = x + 'px';
+  win.style.top = y + 'px';
+  syncSidebarActive();
+}
+
+function dockPane(id) {
+  const win = floatWindow(id);
+  if (win) win.remove();
+  const pane = paneEl(id);
+  if (pane && !pane.closest('.sidebar')) sidebarEl().appendChild(pane);
+  const tb = tabEl(id);
+  if (tb) tb.style.display = '';
+  if (pane) pane.classList.remove('active');
+  syncSidebarActive();
+}
+
+function dockAll() {
+  for (const id of PANES) dockPane(id);
+}
+
+function syncFloats(floats) {
+  const map = floats || {};
+  for (const id of PANES) {
+    if (map[id] && !isNarrowLayout()) floatPane(id, map[id].x, map[id].y);
+    else dockPane(id);
+  }
+  syncSidebarActive();
+}
+
+function syncSidebarActive() {
+  const strip = tabsEl();
+  if (!strip) return;
+  const visible = [...strip.querySelectorAll('.tab[data-tab]')].filter((tb) => tb.style.display !== 'none');
+  let activeTab = visible.find((tb) => tb.classList.contains('active'));
+  if (!activeTab && visible.length) { activeTab = visible[0]; activeTab.classList.add('active'); }
+  visible.forEach((tb) => tb.classList.toggle('active', tb === activeTab));
+  for (const id of PANES) {
+    const pane = paneEl(id);
+    const tb = tabEl(id);
+    if (pane && pane.closest('.sidebar')) {
+      pane.classList.toggle('active', !!tb && tb.classList.contains('active'));
+    }
+  }
+}
 
 /* —— DOM 注入 —— */
 
@@ -92,6 +200,7 @@ function injectMenu() {
       <button class="dd-item ws-preset" data-ws-preset="animate"><span data-i18n="ws.preset.animate">动画编辑</span></button>
       <button class="dd-item ws-preset" data-ws-preset="timelineTop"><span data-i18n="ws.preset.timelineTop">时间轴上置</span></button>
       <div class="dd-sep"></div>
+      <button class="dd-item" id="ws-auto"><span data-i18n="ws.autoLayout">自动布局</span></button>
       <button class="dd-item" id="ws-toggle-sidebar"><span data-i18n="ws.toggleSidebar">显示/隐藏侧栏</span></button>
       <button class="dd-item" id="ws-toggle-timeline"><span data-i18n="ws.toggleTimeline">显示/隐藏时间轴</span></button>
       <div class="dd-sep"></div>
@@ -123,54 +232,81 @@ function injectGrips() {
   controls.insertBefore(tg, controls.firstChild);
 }
 
-/* —— 拖放吸附 —— */
-
-const zones = {};
+/* —— 吸附区与预览 —— */
 
 function buildZones() {
   const defs = {
-    left:   'left:0;top:0;width:30%;height:100%;',
-    right:  'right:0;top:0;width:30%;height:100%;',
-    top:    'left:0;top:0;width:100%;height:24%;',
-    bottom: 'left:0;bottom:0;width:100%;height:24%;',
+    left:   { rect: () => ({ left: 0, top: 0, width: sidebarWidthPx(), height: window.innerHeight }) },
+    right:  { rect: () => ({ left: window.innerWidth - sidebarWidthPx(), top: 0, width: sidebarWidthPx(), height: window.innerHeight }) },
+    top:    { rect: () => ({ left: 0, top: 0, width: window.innerWidth, height: timelineHeightPx() }) },
+    bottom: { rect: () => ({ left: 0, top: window.innerHeight - timelineHeightPx(), width: window.innerWidth, height: timelineHeightPx() }) },
   };
   for (const key in defs) {
     const el = document.createElement('div');
     el.className = 'ws-drop-zone';
     el.dataset.wsZone = key;
-    el.style.cssText = defs[key];
+    el.style.cssText = 'position:fixed;z-index:500;pointer-events:none;';
     document.body.appendChild(el);
     zones[key] = el;
   }
+  // 浮动预览区：尺寸在拖拽时按面板目标尺寸设置
+  const fz = document.createElement('div');
+  fz.className = 'ws-drop-zone';
+  fz.dataset.wsZone = 'float';
+  fz.style.cssText = 'position:fixed;z-index:500;pointer-events:none;';
+  document.body.appendChild(fz);
+  zones.float = fz;
+  // 合并预览区：浮动窗口拖回侧栏时高亮标签栏（放置后的真实位置）
+  const mz = document.createElement('div');
+  mz.className = 'ws-drop-zone';
+  mz.dataset.wsZone = 'merge';
+  mz.style.cssText = 'position:fixed;z-index:500;pointer-events:none;';
+  document.body.appendChild(mz);
+  zones.merge = mz;
 }
 
-function zonesFor(panel) {
-  return panel === 'sidebar' ? [zones.left, zones.right] : [zones.top, zones.bottom];
+function sidebarWidthPx() {
+  return parseInt(layoutEl().style.getPropertyValue('--right-w'), 10) || 320;
+}
+function timelineHeightPx() {
+  return parseInt(document.body.style.getPropertyValue('--tl-h'), 10) || 360;
 }
 
-function setupDrag(panel) {
+function placeZone(key, rect) {
+  const z = zones[key];
+  if (!z || !rect) return;
+  z.style.left = rect.left + 'px';
+  z.style.top = rect.top + 'px';
+  z.style.width = rect.width + 'px';
+  z.style.height = rect.height + 'px';
+}
+function showZones(keys) {
+  Object.keys(zones).forEach((k) => zones[k].classList.toggle('visible', keys.includes(k)));
+}
+function clearZones() {
+  Object.keys(zones).forEach((k) => zones[k].classList.remove('visible', 'active'));
+}
+
+function inRect(x, y, r) {
+  return x >= r.left && x <= r.left + r.width && y >= r.top && y <= r.top + r.height;
+}
+
+/* —— 侧栏 / 时间轴把手：停靠到边 —— */
+
+function setupEdgeDrag(panel) {
   const grip = document.getElementById(panel === 'sidebar' ? 'ws-grip-sidebar' : 'ws-grip-timeline');
   if (!grip) return;
   let dragging = false;
   let activeKey = null;
-
-  const setVisible = (on) => zonesFor(panel).forEach(z => z.classList.toggle('visible', on));
-  const setActive = (k) => zonesFor(panel).forEach(z => z.classList.toggle('active', z.dataset.wsZone === k));
-
-  const update = (ev) => {
-    const k = panel === 'sidebar'
-      ? (ev.clientX < window.innerWidth * 0.3 ? 'left' : ev.clientX > window.innerWidth * 0.7 ? 'right' : null)
-      : (ev.clientY < window.innerHeight * 0.24 ? 'top' : ev.clientY > window.innerHeight * 0.76 ? 'bottom' : null);
-    activeKey = k;
-    setActive(k);
-  };
 
   grip.addEventListener('pointerdown', (ev) => {
     if (ev.button !== 0 || isNarrowLayout()) return;
     dragging = true; activeKey = null;
     grip.setPointerCapture(ev.pointerId);
     document.body.classList.add('ws-dragging');
-    setVisible(true);
+    const keys = panel === 'sidebar' ? ['left', 'right'] : ['top', 'bottom'];
+    keys.forEach((k) => placeZone(k, rectForKey(k)));
+    showZones(keys);
     update(ev);
   });
   grip.addEventListener('pointermove', (ev) => { if (dragging) update(ev); });
@@ -185,11 +321,129 @@ function setupDrag(panel) {
     }
     dragging = false; activeKey = null;
     document.body.classList.remove('ws-dragging');
-    setVisible(false);
-    setActive(null);
+    clearZones();
   };
   grip.addEventListener('pointerup', end);
   grip.addEventListener('pointercancel', end);
+
+  function update(ev) {
+    const keys = panel === 'sidebar' ? ['left', 'right'] : ['top', 'bottom'];
+    let hit = null;
+    for (const k of keys) if (inRect(ev.clientX, ev.clientY, rectForKey(k))) { hit = k; break; }
+    activeKey = hit;
+    keys.forEach((k) => zones[k].classList.toggle('active', k === hit));
+  }
+}
+
+function rectForKey(key) {
+  const sw = sidebarWidthPx(), th = timelineHeightPx();
+  if (key === 'left') return { left: 0, top: 0, width: sw, height: window.innerHeight };
+  if (key === 'right') return { left: window.innerWidth - sw, top: 0, width: sw, height: window.innerHeight };
+  if (key === 'top') return { left: 0, top: 0, width: window.innerWidth, height: th };
+  if (key === 'bottom') return { left: 0, top: window.innerHeight - th, width: window.innerWidth, height: th };
+  return null;
+}
+
+/* —— 选项卡拖出 → 浮动（分离） —— */
+
+function setupTabDrag() {
+  const strip = tabsEl();
+  if (!strip) return;
+  strip.addEventListener('pointerdown', (ev) => {
+    const tab = ev.target.closest('.tab[data-tab]');
+    if (!tab || isNarrowLayout() || ev.button !== 0) return;
+    const id = tab.dataset.tab;
+    const pane = paneEl(id);
+    if (!pane || !pane.closest('.sidebar')) return;
+
+    const sz = FLOAT_SIZES[id];
+    let started = false;
+    const startX = ev.clientX, startY = ev.clientY;
+
+    const move = (ev2) => {
+      if (!started && Math.hypot(ev2.clientX - startX, ev2.clientY - startY) < 6) return;
+      started = true;
+      document.body.classList.add('ws-dragging');
+      const rect = { left: Math.max(4, ev2.clientX - sz.w / 2), top: Math.max(44, ev2.clientY - sz.h / 2), width: sz.w, height: sz.h };
+      placeZone('float', rect);
+      showZones(['float']);
+      zones.float.classList.toggle('active', inFloatRegion(ev2));
+    };
+    const up = (ev2) => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      document.body.classList.remove('ws-dragging');
+      clearZones();
+      if (started) suppressTabClick = true;
+      if (started && inFloatRegion(ev2)) {
+        floatPane(id, Math.round(ev2.clientX - sz.w / 2), Math.round(ev2.clientY - sz.h / 2));
+        applyWorkspaceState(currentWorkspaceState(), true);
+      }
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  });
+
+  // 拖拽完成后抑制「点击切换标签」。
+  strip.addEventListener('click', (ev) => {
+    if (suppressTabClick) { suppressTabClick = false; ev.stopPropagation(); ev.preventDefault(); }
+  }, true);
+}
+
+function inFloatRegion(ev) {
+  const sb = sidebarEl().getBoundingClientRect();
+  const overSidebar = ev.clientX >= sb.left && ev.clientX <= sb.right && ev.clientY >= sb.top && ev.clientY <= sb.bottom;
+  return !overSidebar && ev.clientY > 50 && ev.clientY < window.innerHeight - 40;
+}
+
+/* —— 浮动窗口拖动 → 合并 / 移动 —— */
+
+function setupFloatDrag() {
+  document.addEventListener('pointerdown', (ev) => {
+    const bar = ev.target.closest('.ws-float-titlebar');
+    if (!bar || ev.target.closest('.ws-float-dock') || ev.button !== 0) return;
+    const win = bar.closest('.ws-float');
+    const id = win.dataset.pane;
+    let moved = false;
+    const startX = ev.clientX, startY = ev.clientY;
+    const origL = parseInt(win.style.left, 10) || 60;
+    const origT = parseInt(win.style.top, 10) || 80;
+
+    // 预览区 = 侧栏标签栏（合并回标签后的真实位置）。
+    const tabStripRect = () => {
+      const r = tabsEl().getBoundingClientRect();
+      return { left: r.left, top: r.top, width: r.width, height: r.height };
+    };
+
+    const move = (ev2) => {
+      if (!moved && Math.hypot(ev2.clientX - startX, ev2.clientY - startY) < 6) return;
+      moved = true;
+      document.body.classList.add('ws-dragging');
+      win.style.left = (origL + ev2.clientX - startX) + 'px';
+      win.style.top = (origT + ev2.clientY - startY) + 'px';
+      const over = inRect(ev2.clientX, ev2.clientY, tabStripRect());
+      if (over) {
+        placeZone('merge', tabStripRect());
+        showZones(['merge']);
+        zones.merge.classList.add('active');
+      } else {
+        showZones([]);
+      }
+    };
+    const up = (ev2) => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      document.body.classList.remove('ws-dragging');
+      clearZones();
+      const over = inRect(ev2.clientX, ev2.clientY, tabStripRect());
+      if (over) {
+        dockPane(id);
+      }
+      applyWorkspaceState(currentWorkspaceState(), true);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  });
 }
 
 /* —— 菜单与自定义工作区 —— */
@@ -237,7 +491,7 @@ async function saveCustomFlow() {
   renderCustomList();
 }
 
-function closeManage() { document.querySelectorAll('.ws-manage-pop').forEach(p => p.remove()); }
+function closeManage() { document.querySelectorAll('.ws-manage-pop').forEach((p) => p.remove()); }
 
 function openManage() {
   closeManage();
@@ -306,6 +560,15 @@ function openManage() {
   }, { once: true }), 0);
 }
 
+function autoLayout() {
+  dockAll();
+  applyWorkspaceState({
+    sidebarDock: 'right', sidebarVisible: true, sidebarWidth: 320,
+    timelineDock: 'bottom', timelineVisible: true, timelineHeight: 360,
+    floats: {},
+  }, true);
+}
+
 function bindMenu() {
   document.getElementById('menu-window').addEventListener('click', (ev) => {
     const preset = ev.target.closest('.ws-preset');
@@ -313,7 +576,7 @@ function bindMenu() {
       const p = PRESETS[preset.dataset.wsPreset];
       if (p) {
         closeMenuWindow();
-        applyWorkspaceState(Object.assign({}, p), true);
+        applyWorkspaceState(Object.assign({}, p, { floats: {} }), true);
       }
       return;
     }
@@ -327,7 +590,8 @@ function bindMenu() {
     const btn = ev.target.closest('button');
     if (!btn) return;
     const id = btn.id;
-    if (id === 'ws-toggle-sidebar') {
+    if (id === 'ws-auto') { closeMenuWindow(); autoLayout(); }
+    else if (id === 'ws-toggle-sidebar') {
       const s = currentWorkspaceState();
       s.sidebarVisible = !s.sidebarVisible;
       applyWorkspaceState(s, true);
@@ -335,15 +599,12 @@ function bindMenu() {
       const s = currentWorkspaceState();
       s.timelineVisible = !s.timelineVisible;
       applyWorkspaceState(s, true);
-    } else if (id === 'ws-save') {
+    } else if (id === 'ws-save') { closeMenuWindow(); saveCustomFlow(); }
+    else if (id === 'ws-manage') { closeMenuWindow(); openManage(); }
+    else if (id === 'ws-reset') {
       closeMenuWindow();
-      saveCustomFlow();
-    } else if (id === 'ws-manage') {
-      closeMenuWindow();
-      openManage();
-    } else if (id === 'ws-reset') {
-      closeMenuWindow();
-      applyWorkspaceState(Object.assign({}, PRESETS.default), true);
+      dockAll();
+      applyWorkspaceState(Object.assign({}, PRESETS.default, { floats: {} }), true);
     }
   });
 }
@@ -356,11 +617,13 @@ export function initWorkspace() {
   injectGrips();
   buildZones();
   bindMenu();
-  setupDrag('sidebar');
-  setupDrag('timeline');
+  setupEdgeDrag('sidebar');
+  setupEdgeDrag('timeline');
+  setupTabDrag();
+  setupFloatDrag();
 
   const saved = loadActive();
-  applyWorkspaceState(saved && typeof saved === 'object' ? saved : PRESETS.default, false);
+  applyWorkspaceState(saved && typeof saved === 'object' ? saved : Object.assign({}, PRESETS.default, { floats: {} }), false);
   renderCustomList();
   applyI18nDom();
 }

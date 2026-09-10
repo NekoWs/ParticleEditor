@@ -332,7 +332,7 @@ export function initUI() {
     const btn = ev.target.closest('.tab');
     if (!btn) return;
     document.querySelectorAll('#sidebar-tabs .tab').forEach(b => b.classList.toggle('active', b === btn));
-    document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'pane-' + btn.dataset.tab));
+    document.querySelectorAll('.sidebar .tab-pane').forEach(p => p.classList.toggle('active', p.id === 'pane-' + btn.dataset.tab));
     if (btn.dataset.tab === 'texture') refreshTexturePanel();
   });
 

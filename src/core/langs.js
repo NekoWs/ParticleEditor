@@ -18,6 +18,8 @@ export var LANGS = {
     'ws.renameTitle': '重命名工作区', 'ws.renameMsg': '新的名字',
     'ws.deleteTitle': '删除工作区', 'ws.deleteMsg': '确定删除该工作区？',
     'ws.gripSidebar': '拖动以停靠侧栏（左/右）', 'ws.gripTimeline': '拖动以停靠时间轴（上/下）',
+    'ws.autoLayout': '自动布局', 'ws.dockBack': '停靠',
+    'ws.floatHint': '拖到中间区域浮动', 'ws.mergeHint': '拖回侧栏标签合并',
     // —— 菜单 ——
     'menu.file': '文件', 'menu.import': '导入', 'menu.edit': '编辑', 'menu.lang': '语言', 'menu.theme': '配色', 'menu.about': '关于',
     'theme.dark': '暗色', 'theme.light': '亮色',
@@ -390,6 +392,8 @@ export var LANGS = {
     'ws.renameTitle': 'Rename Workspace', 'ws.renameMsg': 'New name',
     'ws.deleteTitle': 'Delete Workspace', 'ws.deleteMsg': 'Delete this workspace?',
     'ws.gripSidebar': 'Drag to dock sidebar (left/right)', 'ws.gripTimeline': 'Drag to dock timeline (top/bottom)',
+    'ws.autoLayout': 'Auto Layout', 'ws.dockBack': 'Dock',
+    'ws.floatHint': 'Drag to center to float', 'ws.mergeHint': 'Drag back to sidebar to dock',
     // —— 菜单 ——
     'menu.file': 'File', 'menu.import': 'Import', 'menu.edit': 'Edit', 'menu.lang': 'Language', 'menu.theme': 'Theme', 'menu.about': 'About',
     'theme.dark': 'Dark', 'theme.light': 'Light',

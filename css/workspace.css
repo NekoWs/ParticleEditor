@@ -1,4 +1,4 @@
-/* 工作区停靠系统：桌面端侧栏/时间轴停靠、折叠与拖放吸附；窄屏由 mobile.css 接管 */
+/* 工作区停靠系统：桌面端侧栏/时间轴停靠、折叠、选项卡分离合并、浮动窗口与拖放吸附；窄屏由 mobile.css 接管 */
 
 /* —— 拖拽把手 —— */
 .ws-grip {
@@ -18,16 +18,41 @@
 .ws-grip-timeline { flex: none; width: 26px; height: 32px; border-right: 1px solid var(--border-soft); border-radius: var(--radius-sm); }
 .ws-grip-timeline::before { width: 12px; height: 22px; background-size: 6px 6px; }
 
-/* —— 拖放吸附高亮区 —— */
+/* —— 选项卡可作为拖出手柄 —— */
+.ws-dragging .sidebar .tab { cursor: grabbing; }
+
+/* —— 拖放吸附高亮区（预览尺寸与放置后一致） —— */
 .ws-drop-zone {
   position: fixed; z-index: 500; pointer-events: none;
   background: rgba(91, 157, 255, 0.05);
   border: 2px dashed transparent; border-radius: 12px;
   opacity: 0; transition: opacity 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+  box-sizing: border-box;
 }
 .ws-drop-zone.visible { opacity: 1; border-color: var(--accent); }
 .ws-drop-zone.active { background: rgba(91, 157, 255, 0.20); border-color: var(--accent); }
 body.ws-dragging .ws-grip { cursor: grabbing; }
+
+/* —— 浮动窗口 —— */
+.ws-float {
+  position: fixed; z-index: 140;
+  display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow); overflow: hidden;
+}
+.ws-float-titlebar {
+  display: flex; align-items: center; gap: 8px; padding: 0 8px 0 12px; height: 34px; flex: none;
+  background: var(--panel-2); border-bottom: 1px solid var(--border-soft); cursor: grab; touch-action: none;
+}
+.ws-float-titlebar:active { cursor: grabbing; }
+.ws-float-title { flex: 1; min-width: 0; font-size: 12px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-float-dock {
+  flex: none; border: 1px solid var(--border); background: var(--panel-3); color: var(--text);
+  border-radius: 6px; padding: 3px 10px; font-size: 12px; cursor: pointer;
+}
+.ws-float-dock:hover { border-color: var(--accent); color: var(--accent-hover); }
+.ws-float-body { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+.ws-float-body .tab-pane { display: block; flex: 1; min-height: 0; overflow: auto; padding: 12px; }
 
 /* —— 自定义工作区管理弹层 —— */
 .ws-manage-pop {
