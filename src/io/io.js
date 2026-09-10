@@ -39,7 +39,7 @@ export async function ensureProjectKey() {
   }
 }
 
-// 应用工程密钥：有则采用；无则自动生成并返回 true（调用方据此标记未保存）。
+// 应用工程密钥：有则采用；无则自动生成。返回是否生成了新密钥。
 export async function applyProjectKey(obj) {
   const existing = parseProjectKey(obj.key);
   if (existing) { state.key = existing; return false; }
@@ -317,7 +317,7 @@ export function parseParticlesTracks(obj) {
 export async function importProject(obj) {
   pushUndo();
   parseParticlesTracks(obj);
-  const keyGenerated = await applyProjectKey(obj);
+  await applyProjectKey(obj);
   state.functions = (obj.f || []).map(parseFunction);
   state.textures = {};
   state.currentTexture = null;
@@ -345,7 +345,7 @@ export async function importProject(obj) {
   state.hasProject = true;
   updateTimeUI(); rebuildPoints();
   refreshCameraTabs();
-  setDirty(keyGenerated);
+  setDirty(false);
 }
 
 function downloadBlob(data, mime, filename) {
@@ -376,7 +376,7 @@ export async function loadFile(file) {
     return;
   }
   state.name = file.name.replace(/\.(json|pdraw)$/i, '');
-  setDirty(state.dirty); // 刷新标题，保留导入阶段「自动生成密钥」的未保存标记
+  setDirty(state.dirty); // 刷新标题（导入后无修改，标题不带未保存标记）
 }
 
 export async function openFile() {
