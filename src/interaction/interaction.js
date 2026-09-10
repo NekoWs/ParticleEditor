@@ -1175,6 +1175,16 @@ renderer.domElement.addEventListener('pointerup', (ev) => {
 });
 
 renderer.domElement.addEventListener('contextmenu', (ev) => { ev.preventDefault(); if (modal) cancelModal(); });
+
+// 屏蔽浏览器右键菜单：空白处/按钮等不再弹出系统菜单；输入框与可编辑区保留复制/粘贴菜单。
+window.addEventListener('contextmenu', (ev) => {
+  const el = ev.target;
+  const editable = el instanceof Element && (
+    el.matches('input, textarea') ||
+    !!el.closest('[contenteditable="true"]')
+  );
+  if (!editable) ev.preventDefault();
+});
 renderer.domElement.addEventListener('pointercancel', () => {
   if (boxSel) {
     boxSel = null;
@@ -1190,12 +1200,16 @@ window.addEventListener('keydown', (ev) => {
     el.matches('input, textarea, select') ||
     !!el.closest('.cm-content, [contenteditable="true"]')
   );
+  // 浏览器默认快捷键：Ctrl+R 刷新、Ctrl+P 打印，任何焦点下都屏蔽。
+  if (ev.ctrlKey && (k === 'r' || k === 'p')) { ev.preventDefault(); return; }
   // 文本框内：文件级快捷键（保存/打开）依然生效，避免 Ctrl+S 触发浏览器保存对话框
   if (isTextInput) {
     if (ev.ctrlKey && k === 's') { ev.preventDefault(); saveFile(); return; }
     if (ev.ctrlKey && k === 'o') { ev.preventDefault(); openFile(); return; }
     return; // 其余保留默认文本操作（Ctrl+A/C/V/Z/Y 等）
   }
+  // 非输入框内 Alt+Left 会触发浏览器后退，屏蔽；输入框内保留按词移动光标。
+  if (ev.altKey && ev.key === 'ArrowLeft') { ev.preventDefault(); return; }
   if (ev.ctrlKey && k === 'z') { ev.preventDefault(); if (typeof texActive !== 'undefined' && texActive) { texUndo(); return; } if (ev.shiftKey) redo(); else undo(); return; }
   if (ev.ctrlKey && k === 'y') { ev.preventDefault(); if (typeof texActive !== 'undefined' && texActive) { texRedo(); return; } redo(); return; }
   if (ev.ctrlKey && k === 'n') { ev.preventDefault(); newFile(); return; }

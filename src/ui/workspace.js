@@ -290,6 +290,9 @@ function commit(persist = true) {
   syncFloatsWindows(panes);
   applyI18nDom();
   if (persist) persistActive();
+  // 布局变化后按新尺寸重排 3D 视口/标尺并重绘 lane 画布，避免旧尺寸画布露出空白。
+  window.dispatchEvent(new Event('resize'));
+  import('./timeline-layers.js').then((m) => m.drawTimelineLayers()).catch(() => {});
 }
 
 /* —— 面板归属变更 —— */
@@ -756,7 +759,14 @@ async function saveCustomFlow() {
   renderCustomList();
 }
 
-function closeManage() { document.querySelectorAll('.ws-manage-pop').forEach((p) => p.remove()); }
+function onManageDocPointerDown(ev) {
+  if (!ev.target.closest('.ws-manage-pop')) closeManage();
+}
+
+function closeManage() {
+  document.removeEventListener('pointerdown', onManageDocPointerDown);
+  document.querySelectorAll('.ws-manage-pop').forEach((p) => p.remove());
+}
 
 function openManage() {
   closeManage();
@@ -764,7 +774,16 @@ function openManage() {
   pop.className = 'ws-manage-pop';
   const head = document.createElement('div');
   head.className = 'ws-manage-title';
-  head.textContent = t('ws.manage');
+  const title = document.createElement('span');
+  title.textContent = t('ws.manage');
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'ws-manage-close';
+  closeBtn.textContent = '✕';
+  closeBtn.dataset.i18nTitle = 'common.close';
+  closeBtn.title = t('common.close');
+  closeBtn.addEventListener('click', closeManage);
+  head.append(title, closeBtn);
   pop.appendChild(head);
 
   const list = document.createElement('div');
@@ -814,9 +833,7 @@ function openManage() {
   }
   pop.appendChild(list);
   document.body.appendChild(pop);
-  setTimeout(() => document.addEventListener('pointerdown', (ev) => {
-    if (!ev.target.closest('.ws-manage-pop')) closeManage();
-  }, { once: true }), 0);
+  document.addEventListener('pointerdown', onManageDocPointerDown);
 }
 
 function autoLayout() {

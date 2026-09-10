@@ -89,7 +89,12 @@ body.ws-dragging .ws-grip, body.ws-dragging .ws-tab { cursor: grabbing; }
   background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-lg);
   padding: 8px; box-shadow: var(--shadow); animation: menuPopIn 0.14s ease;
 }
-.ws-manage-title { font-size: 12px; font-weight: 700; color: var(--text); padding: 4px 8px 6px; }
+.ws-manage-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; font-weight: 700; color: var(--text); padding: 4px 8px 6px; }
+.ws-manage-close {
+  flex: none; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: none; color: var(--muted); border-radius: 6px; cursor: pointer; font-size: 13px; padding: 0;
+}
+.ws-manage-close:hover { background: var(--panel-3); color: var(--text); }
 .ws-manage-list { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; }
 .ws-manage-row { display: flex; align-items: center; gap: 4px; }
 .ws-manage-name {
