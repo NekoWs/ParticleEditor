@@ -2,17 +2,17 @@
 :root[data-theme="light"] {
   color-scheme: light;
 
-  --bg: #f5f6f8;
+  --bg: #f7faff;
   --panel: #ffffff;
-  --panel-2: #eceef2;
-  --panel-3: #e2e5ea;
-  --border: #d4d9e0;
-  --border-soft: #e4e7ec;
-  --text: #24292f;
-  --muted: #6a737d;
-  --accent: #2f6fed;
+  --panel-2: #f4f5f8;
+  --panel-3: #edf4ff;
+  --border: #dcdcdc;
+  --border-soft: #efefef;
+  --text: #000000;
+  --muted: #000000;
+  --accent: #256af1;
   --accent-hover: #1e5fd9;
-  --accent-soft: rgba(47, 111, 237, 0.12);
+  --accent-soft: rgb(39 112 255 / 17%);
   --orange: #c96f16;
   --orange-soft: rgba(201, 111, 22, 0.14);
   --danger: #d93025;
