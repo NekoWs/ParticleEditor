@@ -23,7 +23,7 @@ import { syncFunctionVarValues, drawTimeline, updateLoopIndicator, TL_PX_PER_MS,
 import { drawTimelineLayers, tlInitLayerEvents, refreshAllPanelsLight } from './ui/timeline-layers.js';
 import { initTimelineTree, refreshTimelineTree, tlTreeState } from './ui/timeline-tree.js';
 import { initTextureEditor, syncTextureSelection, updateTexOverlay, texAnimOverlayActive, refreshTexturePanel } from './ui/texture-editor.js';
-import { applyWorkspaceState, saveWorkspaceState } from './ui/blocks-ui.js';
+import { applyWorkspaceState } from './ui/blocks-ui.js';
 import { initTooltip } from './ui/tooltip.js';
 import { initMobileUI } from './ui/mobile.js';
 import { initImportMenu } from './ui/import-image.js';
@@ -549,27 +549,7 @@ export function applyCenterFromInputs() {
   if (v) editSelectionRotationUniform('center', v);
 }
 
-// 右侧栏拖拽调整大小（左侧粒子列表已移除，只剩时间轴粒子列表）
-(function setupPanelResizeAndDrop() {
-  const handleR = document.getElementById('resize-handle-r');
-  if (!handleR) return;
-  let resizingR = false;
-  handleR.addEventListener('pointerdown', (e) => {
-    resizingR = true;
-    handleR.classList.add('dragging');
-    handleR.setPointerCapture(e.pointerId);
-  });
-  handleR.addEventListener('pointermove', (e) => {
-    if (!resizingR) return;
-    const layout = document.querySelector('.layout');
-    const rect = layout.getBoundingClientRect();
-    let w = rect.right - e.clientX;
-    w = Math.max(240, Math.min(640, w));
-    layout.style.setProperty('--right-w', w + 'px');
-    resize();
-  });
-  handleR.addEventListener('pointerup', () => { resizingR = false; handleR.classList.remove('dragging'); if (typeof saveWorkspaceState === 'function') saveWorkspaceState(); });
-})();
+// 侧边区域宽度 / 底部坞高度调整由 workspace.js 管理。
 
 export function resize() {
   const w = viewport.clientWidth, h = viewport.clientHeight;

@@ -220,7 +220,7 @@ body.puzzle-mode .fwin { display: flex; }
   overflow: hidden;
 }
 body.puzzle-mode #puzzle-overlay { display: block; }
-body.puzzle-mode .topbar, body.puzzle-mode .layout, body.puzzle-mode .timeline { display: none; }
+body.puzzle-mode .topbar, body.puzzle-mode .layout, body.puzzle-mode .dock-bottom { display: none; }
 
 #puzzle-toolbar {
   position: fixed; top: 0; left: 0; right: 0; height: 44px; z-index: 950;

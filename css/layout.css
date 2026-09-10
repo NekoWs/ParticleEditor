@@ -131,23 +131,8 @@
 /* ---- layout ---- */
 .layout {
   display: grid;
-  grid-template-columns: 1fr 5px var(--right-w, 320px);
   min-height: 0;
 }
-.left-panel {
-  background: var(--panel);
-  border-right: 1px solid var(--border);
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-}
-.resize-handle {
-  cursor: col-resize;
-  background: transparent;
-  border-right: 1px solid var(--border);
-  transition: background 0.12s ease;
-}
-.resize-handle:hover, .resize-handle.dragging { background: var(--accent); }
 .resize-handle-r {
   cursor: col-resize;
   background: transparent;
@@ -155,15 +140,6 @@
   transition: background 0.12s ease;
 }
 .resize-handle-r:hover, .resize-handle-r.dragging { background: var(--accent); }
-.panel-title {
-  font-weight: 600;
-  font-size: 12px;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  color: var(--muted);
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
-}
 .viewport { position: relative; background: radial-gradient(circle at 50% 38%, var(--stage-grad-1), var(--stage-grad-2)); overflow: hidden; }
 .viewport canvas { display: block; }
 #fps-counter { position: absolute; right: 10px; bottom: 10px; z-index: 20; padding: 3px 8px; font: 11px/1.4 ui-monospace, Consolas, monospace; color: #d8e0f0; background: rgba(12, 14, 18, 0.55); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 6px; pointer-events: none; backdrop-filter: blur(4px); }
@@ -171,19 +147,6 @@
 #axis-gizmo { position: absolute; top: 10px; right: 10px; width: 112px; height: 112px; pointer-events: auto; cursor: pointer; }
 #box-overlay { position: absolute; border: 1px dashed var(--accent); background: var(--accent-soft); display: none; pointer-events: none; }
 
-.sidebar { display: flex; flex-direction: column; background: var(--panel); border-left: 1px solid var(--border-soft); width: var(--right-w, 320px); min-width: 0; overflow: hidden; }
-.tabs {
-  display: flex; gap: 4px; padding: 8px 10px;
-  border-bottom: 1px solid var(--border-soft); background: var(--bg);
-}
-.tab {
-  width: 46px; height: 38px; flex: none; display: flex; align-items: center; justify-content: center;
-  background: transparent; color: var(--muted); border: 1px solid transparent; border-radius: 9px;
-  cursor: pointer; transition: all 0.15s ease;
-}
-.tab svg { width: 19px; height: 19px; }
-.tab:hover { color: var(--text); background: var(--panel-2); border-color: var(--border); }
-.tab.active { color: var(--accent); background: var(--accent-soft); border-color: rgba(91, 157, 255, 0.35); }
 .tab-pane { display: none; overflow-y: auto; padding: 12px; flex: 1; min-height: 0; }
 .tab-pane.active { display: block; }
 

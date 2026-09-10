@@ -586,14 +586,14 @@ window.addEventListener('blur', () => texAltPreview(false));
 
 // —— 贴图编辑器全屏窗口：把编辑器（除 UV 面板外）移入悬浮窗 ——
 function texFullscreenParts() {
-  const pane = document.getElementById('pane-texture');
+  const pane = document.getElementById('pane-tex-editor');
   if (!pane) return [];
-  return [...pane.children].filter(el => el.id !== 'uv-panel');
+  return [...pane.children];
 }
 
 export function openTexFullscreen() {
   if (texFwin) return;
-  const pane = document.getElementById('pane-texture');
+  const pane = document.getElementById('pane-tex-editor');
   if (!pane) return;
   const mobile = isNarrowLayout();
 
@@ -631,13 +631,9 @@ export function openTexFullscreen() {
 
 export function closeTexFullscreen() {
   if (!texFwin) return;
-  const pane = document.getElementById('pane-texture');
-  const uv = document.getElementById('uv-panel');
+  const pane = document.getElementById('pane-tex-editor');
   if (pane) {
-    for (const el of texFwinMoved || []) {
-      if (uv && uv.parentElement === pane) pane.insertBefore(el, uv);
-      else pane.appendChild(el);
-    }
+    for (const el of texFwinMoved || []) pane.appendChild(el);
     pane.classList.remove('tex-fullscreen-active');
   }
   if (texFwin.dispose) texFwin.dispose();
@@ -1312,7 +1308,7 @@ export function refreshAutoFrameHint() {
 // 仅当贴图 tab 激活、当前编辑目标的 UV 为动画模式、且其贴图 == 当前打开的贴图时才逐帧刷新
 // （与 updateTexOverlay 的显示条件一致，避免画布打开其它贴图时无谓逐帧重算与错误显示）。
 export function texAnimOverlayActive() {
-  const pane = document.getElementById('pane-texture');
+  const pane = document.getElementById('pane-tex-editor');
   if (!pane || !pane.classList.contains('active')) return false;
   const t = currentUVTarget();
   if (!t) return false;

@@ -30,6 +30,7 @@ export var LANGS = {
     'panel.particleList': '粒子列表',
     'mobile.panels': '属性 / 函数 / 贴图', 'mobile.timeline': '时间轴',
     'tab.props': '属性', 'tab.fx': '函数对象', 'tab.texture': '贴图 / UV', 'tab.import': '导入',
+    'tab.texEditor': '贴图编辑器', 'tab.uv': 'UV', 'tab.tlControls': '控制面板', 'tab.timeline': '时间轴',
     // —— 场景工具栏 ——
     'tool.select': '选择（框选）', 'tool.move': '移动', 'tool.rotate': '旋转',
     'tool.rotateSpin': '旋转（自转模式，按 R 切换）', 'tool.rotateOrbit': '旋转（公转模式，按 R 切换）',
@@ -405,6 +406,7 @@ export var LANGS = {
     'panel.particleList': 'Particle List',
     'mobile.panels': 'Properties / FX / Texture', 'mobile.timeline': 'Timeline',
     'tab.props': 'Properties', 'tab.fx': 'Function Object', 'tab.texture': 'Texture / UV', 'tab.import': 'Import',
+    'tab.texEditor': 'Texture Editor', 'tab.uv': 'UV', 'tab.tlControls': 'Controls', 'tab.timeline': 'Timeline',
     // —— 场景工具栏 ——
     'tool.select': 'Select (Box)', 'tool.move': 'Move', 'tool.rotate': 'Rotate',
     'tool.rotateSpin': 'Rotate (Spin mode, press R to toggle)', 'tool.rotateOrbit': 'Rotate (Orbit mode, press R to toggle)',

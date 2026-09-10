@@ -1190,33 +1190,16 @@ export function saveWorkspaceState() {
   }
   const mainEl = document.querySelector('.puzzle-main');
   if (mainEl) s.paletteWidth = mainEl.style.getPropertyValue('--pal-w') || null;
-  const layout = document.querySelector('.layout');
-  if (layout) s.particleListWidth = layout.style.getPropertyValue('--left-w') || null;
-  if (layout) s.rightPanelWidth = layout.style.getPropertyValue('--right-w') || null;
-  let curTlH = '';
-  try {
-    const bs = document.body && document.body.style;
-    if (bs && typeof bs.getPropertyValue === 'function') curTlH = bs.getPropertyValue('--tl-h').trim();
-    else if (typeof getComputedStyle === 'function') curTlH = getComputedStyle(document.body).getPropertyValue('--tl-h').trim();
-  } catch (_) {}
-  if (curTlH) s.tlModuleH = curTlH;
   try { localStorage.setItem(WS_KEY, JSON.stringify(s)); } catch (e) {}
 }
 export function applyWorkspaceState() {
   const s = loadWorkspaceState();
-  const layout = document.querySelector('.layout');
-  if (layout && s.particleListWidth) layout.style.setProperty('--left-w', s.particleListWidth);
-  if (layout && s.rightPanelWidth) layout.style.setProperty('--right-w', s.rightPanelWidth);
   const mainEl = document.querySelector('.puzzle-main');
   if (mainEl && s.paletteWidth) {
     let pw = parseInt(s.paletteWidth, 10);
     if (isNarrowLayout() && pw > window.innerWidth * 0.7) pw = Math.round(window.innerWidth * 0.56);
     if (Number.isFinite(pw) && pw > 0) mainEl.style.setProperty('--pal-w', pw + 'px');
   }
-  try {
-    const bs = document.body && document.body.style;
-    if (s.tlModuleH && bs && typeof bs.setProperty === 'function') bs.setProperty('--tl-h', s.tlModuleH);
-  } catch (_) {}
   if (puzzleWin && s.sceneWin) {
     puzzleWin.scene.setPos(s.sceneWin.x, s.sceneWin.y);
     puzzleWin.scene.setSize(s.sceneWin.w, s.sceneWin.h);

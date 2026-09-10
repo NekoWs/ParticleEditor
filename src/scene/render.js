@@ -452,7 +452,7 @@ function writePointBuffers(full) {
   drawTimeline();
   if (full !== false) {
     updatePropPanel();
-    if (typeof refreshUVPanel === 'function' && document.getElementById('pane-texture') && document.getElementById('pane-texture').classList.contains('active')) refreshUVPanel();
+    if (typeof refreshUVPanel === 'function' && document.getElementById('pane-uv') && document.getElementById('pane-uv').classList.contains('active')) refreshUVPanel();
   }
 }
 

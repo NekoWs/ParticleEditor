@@ -1,11 +1,11 @@
-/* 移动端 / 触屏响应式 */
+/* 移动端 / 触屏响应式：窄屏同样使用左右图标栏 + 侧边槽位 + 底部坞模型 */
 /* =========================================================================
- * 移动端 / 平板响应式布局：视口优先 + 抽屉式面板
+ * 移动端 / 平板响应式布局
  * ======================================================================= */
 
 @media (max-width: 1024px) {
   body {
-    grid-template-rows: 44px 1fr 0px;
+    grid-template-rows: 44px 1fr var(--tl-h, 360px);
   }
 
   .topbar {
@@ -25,83 +25,13 @@
   .menubar::-webkit-scrollbar { display: none; }
   .menu-btn { padding: 9px 10px; white-space: nowrap; }
   #topbar-title { display: none; }
+  /* 窄屏由左右图标栏承担面板开关，顶栏抽屉按钮不再需要 */
+  .mobile-top-actions { display: none; }
+  .mobile-action-btn { display: none; }
 
-  .mobile-top-actions {
-    display: flex;
-    gap: 6px;
-    margin-left: auto;
-    flex: none;
-  }
-  .mobile-action-btn {
-    width: 38px; height: 34px;
-    display: inline-flex; align-items: center; justify-content: center;
-    background: var(--panel-2);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    padding: 0;
-  }
-  .mobile-action-btn svg { width: 19px; height: 19px; }
-  .mobile-action-btn:active { background: var(--panel-3); border-color: var(--accent); }
-
-  .layout { grid-template-columns: 1fr; }
-  .resize-handle-r { display: none; }
   .fwin { max-width: 96vw; max-height: 70vh; }
 
-  /* 侧栏 → 右侧抽屉 */
-  .sidebar {
-    position: fixed;
-    top: 44px; right: 0; bottom: 0;
-    width: min(88vw, 360px);
-    transform: translateX(102%);
-    transition: transform 0.24s ease;
-    z-index: 110;
-    box-shadow: -10px 0 30px rgba(0, 0, 0, 0.35);
-  }
-  body.drawer-panel-open .sidebar { transform: translateX(0); }
-
-  /* 时间轴 → 底部常驻控件条 + 可展开抽屉（控件始终可见，树/图层展开后在其上方） */
-  .timeline {
-    position: fixed;
-    left: 0; right: 0; bottom: 0;
-    height: var(--tl-controls-h, 62px);
-    overflow: hidden;
-    z-index: 110;
-    padding: 6px 8px;
-    box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.35);
-    display: flex; flex-direction: column;
-  }
-  .tl-body {
-    order: 1; display: flex; flex: 0 0 0; min-height: 0; overflow: hidden;
-    margin-top: 0; opacity: 0; pointer-events: none;
-    transition: opacity 0.2s ease;
-  }
-  .tl-controls { order: 2; margin-top: 0; }
-  /* 小屏下控件不要被压缩，放不下时整体换行而不是挤出 */
-  .tl-controls > * { flex: 0 0 auto; }
-  body.drawer-timeline-open .timeline { height: clamp(220px, 68vh, 460px); }
-  body.drawer-timeline-open .tl-body { flex: 1 1 auto; margin-top: 6px; opacity: 1; pointer-events: auto; }
-  body.drawer-timeline-open .tl-controls { margin-top: 6px; }
-  #tl-module-resize { display: none; }
-
-  .drawer-backdrop {
-    display: block;
-    position: fixed;
-    top: 44px; left: 0; right: 0; bottom: 0;
-    z-index: 100;
-    background: rgba(5, 7, 10, 0.5);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.2s ease;
-  }
-  body.drawer-panel-open .drawer-backdrop,
-  body.drawer-timeline-open .drawer-backdrop {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  /* 时间轴内部重排 */
+  /* 时间轴内部：控件允许换行，树/图层在小屏下更紧凑 */
   .tl-controls {
     flex-wrap: wrap;
     height: auto;
@@ -114,9 +44,6 @@
   .tl-controls .tl-speed-group { height: 36px; }
   .tl-controls .tl-loop { height: 36px; }
   .tl-controls .ease-btn { height: 36px; width: 36px; }
-  /* 时间轴抽屉：控件常驻底部（先绘制树/图层，再绘制控件） */
-  .tl-body { order: 1; }
-  .tl-controls { order: 2; }
 
   .tl-tree {
     flex: 0 0 42vw;

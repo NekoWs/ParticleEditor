@@ -1,283 +1,348 @@
-// 工作区系统 v3：
-// - 桌面端侧栏（左/右）为「垂直分组栈」，支持上下分窗（多个面板组上下堆叠、可拖分隔条改高）；
-// - 底部坞为「水平分组行」，支持左右分窗（时间轴与其他面板左右并排、可拖分隔条改宽）；
-// - 侧栏标签可拖出为浮动窗口，浮动窗口可拖回侧栏/底部坞或合并为标签；
-// - 内置预设 + 自动布局 + 自定义工作区本地保存；
-// - 吸附预览按放置后的真实尺寸渲染，放置后尺寸与预览一致。
-// 窄屏（≤1024px）由 mobile.css 抽屉布局接管。
+// 工作区系统 v4：
+// - 左右竖向图标栏（各分上/下半区），图标点击展开/收起面板；
+// - 侧边区域（左/右）为「手风琴 + 单槽位」：同侧同一时刻显示一个槽位，槽位内最多上下叠 2 个面板；
+// - 底部坞可上下/左右排列面板（默认：控制面板在上、时间轴面板在下）；
+// - 图标/面板头/时间轴控制条背景可拖动：同栏重排、跨半区/跨栏移动、停靠侧边/底部、拖出浮动；
+// - 面板头背景拖动等价于拖动其图标；
+// - 自定义工作区保存/管理/自动布局/重置保留，自动记住上一次布局；预设已移除。
 
-import { isNarrowLayout } from '../core/device.js';
 import { t, applyI18nDom } from '../core/i18n.js';
 import { modalPrompt, modalConfirm } from './ui.js';
 
 const LS_ACTIVE = 'pdraw-workspace-active';
 const LS_CUSTOM = 'pdraw-workspace-custom';
 
-const PANES = ['props', 'fx', 'texture'];
-const FLOAT_SIZES = { props: { w: 340, h: 480 }, fx: { w: 340, h: 480 }, texture: { w: 560, h: 460 } };
-
-const PRESETS = {
-  default:     { sidebarDock: 'right', sidebarVisible: true,  timelineDock: 'bottom', timelineVisible: true },
-  left:        { sidebarDock: 'left',  sidebarVisible: true,  timelineDock: 'bottom', timelineVisible: true },
-  draw:        { sidebarDock: 'right', sidebarVisible: false, timelineDock: 'bottom', timelineVisible: true },
-  animate:     { sidebarDock: 'right', sidebarVisible: true,  timelineDock: 'bottom', timelineVisible: true, timelineHeight: 480 },
-  timelineTop: { sidebarDock: 'right', sidebarVisible: true,  timelineDock: 'top',    timelineVisible: true },
+const PANELS = ['props', 'fx', 'texEditor', 'uv', 'tlControls', 'timeline'];
+const PANE_EL_ID = {
+  props: 'pane-props', fx: 'pane-fx', texEditor: 'pane-tex-editor', uv: 'pane-uv',
+  tlControls: 'pane-tl-controls', timeline: 'pane-timeline',
+};
+const FLOAT_SIZES = {
+  props: { w: 340, h: 480 }, fx: { w: 340, h: 480 }, texEditor: { w: 560, h: 460 },
+  uv: { w: 380, h: 460 }, tlControls: { w: 480, h: 130 }, timeline: { w: 780, h: 380 },
 };
 
-function defaultGroups() {
+const ICONS = {
+  props: '<svg viewBox="0 0 18 18"><path d="M5 2.5h6l2.5 2.5V15a.5.5 0 0 1-.5.5H5a.5.5 0 0 1-.5-.5V3a.5.5 0 0 1 .5-.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M11 2.5V5h2.5M7 8.5h4M7 11h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+  fx: '<svg viewBox="0 0 18 18"><path d="M4 14c1.5-4 2.5-6 4-6s2.5 4 4 4 2.5-4 4-6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><text x="9" y="5" font-size="5.5" fill="currentColor" text-anchor="middle" font-family="monospace">f(x)</text></svg>',
+  texEditor: '<svg viewBox="0 0 18 18"><rect x="3" y="3" width="12" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 7h12M7 3v12M11 3v12M3 11h12" stroke="currentColor" stroke-width="1"/></svg>',
+  uv: '<svg viewBox="0 0 18 18"><rect x="3" y="3" width="12" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 9h12M9 3v12" stroke="currentColor" stroke-width="1.2"/><circle cx="9" cy="9" r="1.4" fill="currentColor"/></svg>',
+  tlControls: '<svg viewBox="0 0 18 18"><path d="M4.5 5.5v7l7-3.5-7-3.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M2.5 3.5h13M2.5 14.5h13" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
+  timeline: '<svg viewBox="0 0 18 18"><rect x="2" y="4" width="14" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 4v10M9 4v10M13 4v10" stroke="currentColor" stroke-width="1"/><circle cx="7" cy="9" r="1.5" fill="currentColor"/></svg>',
+};
+
+function defaultState() {
   return {
-    sideGroups: [{ panes: ['props', 'fx', 'texture'], active: 'props' }],
-    sideSizes: [100],
-    bottomGroups: [{ panes: ['timeline'], active: 'timeline' }],
-    bottomSizes: [100],
+    strips: {
+      left: { top: [], bottom: ['tlControls', 'timeline'] },
+      right: { top: ['props', 'fx', 'texEditor', 'uv'], bottom: [] },
+    },
+    dock: {
+      props: 'right', fx: 'right', texEditor: 'right', uv: 'right',
+      tlControls: 'bottom', timeline: 'bottom',
+    },
+    open: { left: [], right: ['props'], bottom: ['tlControls', 'timeline'] },
+    bottomDir: 'vert',
+    sizes: { left: [100], right: [100], bottom: [50, 50] },
+    areaLeftW: null, areaRightW: null, bottomH: null,
+    sidebarVisible: true, timelineVisible: true,
+    floats: {},
   };
 }
 
-const layoutEl = () => document.querySelector('.layout');
-const sidebarEl = () => document.querySelector('.sidebar');
-const bottomEl = () => document.getElementById('ws-bottom');
-const floatWindow = (id) => document.querySelector('.ws-float[data-pane="' + id + '"]');
-
-let _dock = { sidebar: 'right', timeline: 'bottom' };
-let _state = Object.assign({}, PRESETS.default, defaultGroups(), { sidebarWidth: 320, timelineHeight: 360, floats: {} });
+let _state = defaultState();
 let initialized = false;
-let suppressTabClick = false;
-
+let suppressClick = false;
 const zones = {};
 
-function normalize(s) {
-  const out = {
-    sidebarDock: s.sidebarDock === 'left' ? 'left' : 'right',
-    sidebarVisible: s.sidebarVisible !== false,
-    timelineDock: s.timelineDock === 'top' ? 'top' : 'bottom',
-    timelineVisible: s.timelineVisible !== false,
-    sidebarWidth: s.sidebarWidth || null,
-    timelineHeight: s.timelineHeight || null,
-  };
-  const g = defaultGroups();
-  out.sideGroups = normalizeGroups(s.sideGroups, true) || g.sideGroups;
-  out.bottomGroups = normalizeGroups(s.bottomGroups, false) || g.bottomGroups;
-  out.floats = {};
-  if (s.floats && typeof s.floats === 'object') {
-    for (const id of PANES) {
-      if (s.floats[id]) out.floats[id] = { x: Math.round(s.floats[id].x || 60), y: Math.round(s.floats[id].y || 80) };
-    }
+const el = (id) => document.getElementById(id);
+const layoutEl = () => document.querySelector('.layout');
+
+/* —— 工具 —— */
+
+function rectOf(node) { const r = node.getBoundingClientRect(); return { left: r.left, top: r.top, width: r.width, height: r.height }; }
+function inRect(x, y, r) { return x >= r.left && x <= r.left + r.width && y >= r.top && y <= r.top + r.height; }
+function numOr(v, fallback) { return (typeof v === 'number' && isFinite(v)) ? v : fallback; }
+
+function stripOf(id, st) {
+  const s = st || _state;
+  for (const strip of ['left', 'right']) for (const half of ['top', 'bottom']) {
+    if (s.strips[strip][half].includes(id)) return strip;
   }
-  // 每个面板恰好在「侧栏/底部/浮动」之一。
-  const placed = new Set();
-  out.sideGroups.forEach((gr) => gr.panes.forEach((p) => placed.add(p)));
-  out.bottomGroups.forEach((gr) => gr.panes.forEach((p) => placed.add(p)));
-  for (const id of PANES) if (out.floats[id]) placed.add(id);
-  for (const id of PANES) {
-    if (!placed.has(id)) { out.sideGroups[0].panes.push(id); placed.add(id); }
-  }
-  for (const id of PANES) {
-    if (out.floats[id]) {
-      out.sideGroups.forEach((gr) => { gr.panes = gr.panes.filter((p) => p !== id); });
-      out.bottomGroups.forEach((gr) => { gr.panes = gr.panes.filter((p) => p !== id); });
-    }
-  }
-  out.sideGroups = out.sideGroups.filter((gr) => gr.panes.length);
-  out.bottomGroups = out.bottomGroups.filter((gr) => gr.panes.length);
-  if (!out.sideGroups.length && !Object.keys(out.floats).length) {
-    out.sideGroups = [{ panes: ['props', 'fx', 'texture'], active: 'props' }];
-  }
-  if (!out.bottomGroups.length) out.bottomGroups = [{ panes: ['timeline'], active: 'timeline' }];
-  out.sideSizes = normalizeSizes(s.sideSizes, out.sideGroups.length);
-  out.bottomSizes = normalizeSizes(s.bottomSizes, out.bottomGroups.length);
-  return out;
+  return 'right';
 }
 
-function normalizeGroups(list, side) {
-  if (!Array.isArray(list) || !list.length) return null;
-  const out = [];
-  for (const gr of list) {
-    if (!gr || !Array.isArray(gr.panes) || !gr.panes.length) continue;
-    const panes = gr.panes.filter((p) => (side ? PANES.includes(p) : (p === 'timeline' || PANES.includes(p))));
-    if (!panes.length) continue;
-    out.push({ panes, active: panes.includes(gr.active) ? gr.active : panes[0] });
-  }
-  return out.length ? out : null;
+function defaultDockFor(id, st) {
+  if (id === 'tlControls' || id === 'timeline') return 'bottom';
+  return stripOf(id, st);
 }
 
-function normalizeSizes(sizes, n) {
-  const arr = Array.isArray(sizes) ? sizes.map((x) => +x || 0) : [];
-  while (arr.length < n) arr.push(0);
-  const used = arr.slice(0, n);
-  const sum = used.reduce((a, b) => a + b, 0);
-  if (sum > 0) return used.map((x) => Math.round(x / sum * 100));
+function normalizeSizes(arr, n) {
+  const a = Array.isArray(arr) ? arr.map((x) => +x || 0) : [];
+  while (a.length < n) a.push(0);
+  const used = a.slice(0, n);
+  const sum = used.reduce((x, y) => x + y, 0);
+  if (sum > 0) return used.map((x) => Math.round((x / sum) * 100));
   return used.map((_, i) => Math.round(100 / n));
 }
 
-export function currentWorkspaceState() {
-  const l = layoutEl(), b = document.body;
-  const floats = {};
-  document.querySelectorAll('.ws-float[data-pane]').forEach((w) => {
-    floats[w.dataset.pane] = { x: parseInt(w.style.left, 10) || 60, y: parseInt(w.style.top, 10) || 80 };
-  });
+function normalize(s) {
+  const out = defaultState();
+  if (!s || typeof s !== 'object') return out;
+
+  // 图标布局：每个面板恰好在四个半区之一出现一次。
+  const seen = new Set();
+  for (const strip of ['left', 'right']) {
+    for (const half of ['top', 'bottom']) {
+      const arr = (s.strips && s.strips[strip] && Array.isArray(s.strips[strip][half])) ? s.strips[strip][half] : [];
+      out.strips[strip][half] = [];
+      for (const id of arr) {
+        if (PANELS.includes(id) && !seen.has(id)) { out.strips[strip][half].push(id); seen.add(id); }
+      }
+    }
+  }
+  for (const id of PANELS) if (!seen.has(id)) out.strips.right.top.push(id);
+
+  // 停靠归属
+  for (const id of PANELS) {
+    const d = s.dock && s.dock[id];
+    out.dock[id] = (d === 'left' || d === 'right' || d === 'bottom' || d === 'float') ? d : defaultDockFor(id, out);
+  }
+
+  // 展开状态
+  const san = (arr) => (Array.isArray(arr) ? arr.filter((id) => PANELS.includes(id)) : []);
+  out.open.left = san(s.open && s.open.left).filter((id) => out.dock[id] === 'left');
+  out.open.right = san(s.open && s.open.right).filter((id) => out.dock[id] === 'right');
+  out.open.bottom = san(s.open && s.open.bottom).filter((id) => out.dock[id] === 'bottom').slice(0, 2);
+
+  out.bottomDir = s.bottomDir === 'horiz' ? 'horiz' : 'vert';
+  out.sizes.left = normalizeSizes(s.sizes && s.sizes.left, out.open.left.length || 1);
+  out.sizes.right = normalizeSizes(s.sizes && s.sizes.right, out.open.right.length || 1);
+  out.sizes.bottom = normalizeSizes(s.sizes && s.sizes.bottom, out.open.bottom.length || 1);
+
+  out.areaLeftW = numOr(s.areaLeftW, null);
+  out.areaRightW = numOr(s.areaRightW, null);
+  out.bottomH = numOr(s.bottomH, null);
+  out.sidebarVisible = s.sidebarVisible !== false;
+  out.timelineVisible = s.timelineVisible !== false;
+
+  out.floats = {};
+  if (s.floats && typeof s.floats === 'object') {
+    for (const id of PANELS) {
+      if (s.floats[id]) {
+        const f = s.floats[id];
+        out.floats[id] = {
+          x: Math.round(f.x || 60), y: Math.round(f.y || 80),
+          w: Math.round(f.w || FLOAT_SIZES[id].w), h: Math.round(f.h || FLOAT_SIZES[id].h),
+        };
+        out.dock[id] = 'float';
+      }
+    }
+  }
+  for (const id of PANELS) {
+    if (out.dock[id] === 'float' && !out.floats[id]) out.dock[id] = defaultDockFor(id, out);
+  }
+  return out;
+}
+
+function currentState() {
   return {
-    sidebarDock: _dock.sidebar,
-    sidebarVisible: !b.classList.contains('ws-sidebar-hidden'),
-    timelineDock: _dock.timeline,
-    timelineVisible: !b.classList.contains('ws-timeline-hidden'),
-    sidebarWidth: parseInt(l.style.getPropertyValue('--right-w'), 10) || 320,
-    timelineHeight: parseInt(b.style.getPropertyValue('--tl-h'), 10) || 360,
-    sideGroups: _state.sideGroups.map((g) => ({ panes: g.panes.slice(), active: g.active })),
-    sideSizes: _state.sideSizes.slice(),
-    bottomGroups: _state.bottomGroups.map((g) => ({ panes: g.panes.slice(), active: g.active })),
-    bottomSizes: _state.bottomSizes.slice(),
-    floats,
+    strips: JSON.parse(JSON.stringify(_state.strips)),
+    dock: Object.assign({}, _state.dock),
+    open: { left: _state.open.left.slice(), right: _state.open.right.slice(), bottom: _state.open.bottom.slice() },
+    bottomDir: _state.bottomDir,
+    sizes: { left: _state.sizes.left.slice(), right: _state.sizes.right.slice(), bottom: _state.sizes.bottom.slice() },
+    areaLeftW: _state.areaLeftW, areaRightW: _state.areaRightW, bottomH: _state.bottomH,
+    sidebarVisible: _state.sidebarVisible, timelineVisible: _state.timelineVisible,
+    floats: JSON.parse(JSON.stringify(_state.floats)),
   };
 }
 
-export function applyWorkspaceState(state, persist = true) {
-  _state = normalize(state);
-  if (isNarrowLayout()) {
-    for (const id of PANES) {
-      if (_state.floats[id]) {
-        delete _state.floats[id];
-        if (!_state.sideGroups[0].panes.includes(id)) _state.sideGroups[0].panes.push(id);
-      }
-    }
-    _state.sideSizes = normalizeSizes(_state.sideSizes, _state.sideGroups.length);
-    _state.bottomSizes = normalizeSizes(_state.bottomSizes, _state.bottomGroups.length);
-  }
-  _dock.sidebar = _state.sidebarDock;
-  _dock.timeline = _state.timelineDock;
-
-  const l = layoutEl(), b = document.body;
-  b.classList.remove('ws-sidebar-hidden', 'ws-timeline-top', 'ws-timeline-hidden');
-  l.classList.remove('ws-sidebar-left');
-  if (!_state.sidebarVisible) b.classList.add('ws-sidebar-hidden');
-  else if (_state.sidebarDock === 'left') l.classList.add('ws-sidebar-left');
-  if (!_state.timelineVisible) b.classList.add('ws-timeline-hidden');
-  else if (_state.timelineDock === 'top') b.classList.add('ws-timeline-top');
-
-  if (_state.sidebarWidth) l.style.setProperty('--right-w', _state.sidebarWidth + 'px');
-  if (_state.timelineHeight) b.style.setProperty('--tl-h', _state.timelineHeight + 'px');
-
-  commit(persist);
-}
-
-function loadActive() { try { return JSON.parse(localStorage.getItem(LS_ACTIVE)) || null; } catch (e) { return null; } }
+function persistActive() { try { localStorage.setItem(LS_ACTIVE, JSON.stringify(currentState())); } catch (e) { /* 忽略 */ } }
 function customMap() { try { return JSON.parse(localStorage.getItem(LS_CUSTOM)) || {}; } catch (e) { return {}; } }
 function saveCustomMap(m) { try { localStorage.setItem(LS_CUSTOM, JSON.stringify(m)); } catch (e) { /* 忽略 */ } }
-function persistActive() { try { localStorage.setItem(LS_ACTIVE, JSON.stringify(currentWorkspaceState())); } catch (e) { /* 忽略 */ } }
 
-/* —— 渲染（先取 DOM 引用再清空容器，避免 getElementById 失效） —— */
+/* —— 渲染 —— */
 
 function capturePanes() {
-  const map = { timeline: document.querySelector('.timeline') };
-  for (const id of PANES) map[id] = document.getElementById('pane-' + id);
+  const map = {};
+  for (const id of PANELS) map[id] = el(PANE_EL_ID[id]);
   return map;
 }
 
-function ensureBottomDock() {
-  let b = document.getElementById('ws-bottom');
-  if (!b) {
-    b = document.createElement('div');
-    b.id = 'ws-bottom';
-    document.body.appendChild(b);
-  }
-  return b;
+function isOpen(id) {
+  const d = _state.dock[id];
+  if (d === 'left') return _state.open.left.includes(id);
+  if (d === 'right') return _state.open.right.includes(id);
+  if (d === 'bottom') return _state.open.bottom.includes(id);
+  if (d === 'float') return !!_state.floats[id];
+  return false;
 }
 
-function buildGroup(group, dock, index, panes) {
+function buildPaneWrap(id, pane) {
   const wrap = document.createElement('div');
-  wrap.className = 'ws-group';
-  wrap.dataset.dock = dock;
-  wrap.dataset.index = index;
-  const sizes = dock === 'side' ? _state.sideSizes : _state.bottomSizes;
-  wrap.style.flex = '0 0 ' + (sizes[index] || 0) + '%';
-
-  const hasTabs = group.panes.some((p) => p !== 'timeline');
-  if (hasTabs) {
-    const tabs = document.createElement('div');
-    tabs.className = 'ws-tabs';
-    for (const id of group.panes) {
-      if (id === 'timeline') continue;
-      const tb = document.createElement('button');
-      tb.className = 'ws-tab' + (id === group.active ? ' active' : '');
-      tb.dataset.pane = id;
-      tb.dataset.i18n = 'tab.' + id;
-      tabs.appendChild(tb);
-    }
-    wrap.appendChild(tabs);
+  wrap.className = 'ws-pane-wrap';
+  wrap.dataset.panel = id;
+  if (id !== 'tlControls') {
+    const head = document.createElement('div');
+    head.className = 'ws-tabs ws-pane-head';
+    head.dataset.panel = id;
+    const title = document.createElement('span');
+    title.className = 'ws-tab ws-tab-title';
+    title.dataset.i18n = 'tab.' + id;
+    title.textContent = t('tab.' + id);
+    head.appendChild(title);
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'ws-pane-close';
+    close.textContent = '✕';
+    close.dataset.i18nTitle = 'common.close';
+    close.title = t('common.close');
+    close.addEventListener('click', () => collapsePanel(id));
+    head.appendChild(close);
+    wrap.appendChild(head);
   }
-
-  const body = document.createElement('div');
-  body.className = 'ws-group-body';
-  for (const id of group.panes) {
-    const el = panes[id];
-    if (!el) continue;
-    el.classList.toggle('active', id === group.active);
-    body.appendChild(el);
-  }
-  wrap.appendChild(body);
+  wrap.appendChild(pane);
   return wrap;
 }
 
-function buildSplit(dock, index) {
-  const s = document.createElement('div');
-  s.className = 'ws-split ' + (dock === 'side' ? 'ws-split-h' : 'ws-split-v');
-  s.dataset.dock = dock;
-  s.dataset.index = index;
-  return s;
+function buildSplit(dock, dir, index) {
+  const sp = document.createElement('div');
+  sp.className = 'ws-split ' + (dir === 'h' ? 'ws-split-h' : 'ws-split-v');
+  sp.dataset.dock = dock;
+  sp.dataset.index = index;
+  return sp;
+}
+
+function renderStrips() {
+  for (const strip of ['left', 'right']) {
+    for (const half of ['top', 'bottom']) {
+      const box = el('strip-' + strip + '-' + half);
+      if (!box) continue;
+      box.innerHTML = '';
+      for (const id of _state.strips[strip][half]) {
+        const btn = document.createElement('button');
+        btn.className = 'ws-icon';
+        btn.type = 'button';
+        btn.dataset.panel = id;
+        btn.innerHTML = ICONS[id];
+        btn.dataset.i18nTitle = 'tab.' + id;
+        btn.title = t('tab.' + id);
+        btn.classList.toggle('active', isOpen(id));
+        btn.addEventListener('click', () => {
+          if (suppressClick) return;
+          togglePanel(id);
+        });
+        box.appendChild(btn);
+      }
+    }
+  }
 }
 
 function renderDocks(panes) {
-  const sb = sidebarEl();
-  [...sb.children].forEach((el) => { if (!el.classList.contains('ws-grip')) el.remove(); });
-  _state.sideGroups.forEach((g, i) => {
-    sb.appendChild(buildGroup(g, 'side', i, panes));
-    if (i < _state.sideGroups.length - 1) sb.appendChild(buildSplit('side', i));
-  });
+  const holder = el('panes');
+  for (const id of PANELS) {
+    const p = panes[id];
+    if (!p) continue;
+    p.classList.remove('active');
+    if (p.parentElement !== holder) holder.appendChild(p);
+  }
+  renderArea('left', panes);
+  renderArea('right', panes);
+  renderBottom(panes);
+  syncFloats(panes);
+}
 
-  const bb = ensureBottomDock();
-  [...bb.children].forEach((el) => el.remove());
-  _state.bottomGroups.forEach((g, i) => {
-    bb.appendChild(buildGroup(g, 'bottom', i, panes));
-    if (i < _state.bottomGroups.length - 1) bb.appendChild(buildSplit('bottom', i));
+function renderArea(side, panes) {
+  const area = el('area-' + side);
+  if (!area) return;
+  [...area.children].forEach((c) => { if (!c.classList.contains('resize-handle-l') && !c.classList.contains('resize-handle-r')) c.remove(); });
+  const ids = _state.open[side].filter((id) => panes[id] && _state.dock[id] === side);
+  _state.open[side] = ids;
+  ids.forEach((id, i) => {
+    const wrap = buildPaneWrap(id, panes[id]);
+    wrap.style.flex = '0 0 ' + (_state.sizes[side][i] != null ? _state.sizes[side][i] : 100) + '%';
+    const pane = panes[id];
+    if (pane) pane.classList.add('active');
+    area.appendChild(wrap);
+    if (i < ids.length - 1) area.appendChild(buildSplit(side, 'h', i));
   });
 }
 
-function createFloatWindow(id, el) {
+function renderBottom(panes) {
+  const dock = el('dock-bottom');
+  if (!dock) return;
+  [...dock.children].forEach((c) => { if (c.id !== 'tl-module-resize') c.remove(); });
+  const ids = _state.open.bottom.filter((id) => panes[id] && _state.dock[id] === 'bottom');
+  _state.open.bottom = ids;
+  const dir = _state.bottomDir;
+  dock.dataset.dir = dir;
+  const hasControls = ids.includes('tlControls');
+
+  ids.forEach((id, i) => {
+    const wrap = buildPaneWrap(id, panes[id]);
+    if (dir === 'vert') {
+      if (id === 'tlControls') wrap.style.flex = '0 0 auto';
+      else if (hasControls && ids.length === 2) wrap.style.flex = '1 1 auto';
+      else wrap.style.flex = '1 1 0';
+    } else {
+      wrap.style.flex = '1 1 0';
+    }
+    const pane = panes[id];
+    if (pane) pane.classList.add('active');
+    dock.appendChild(wrap);
+    // 分隔条：仅在同为可伸缩面板之间插入（控制面板为自然高度时不参与）。
+    const next = ids[i + 1];
+    if (next && !(dir === 'vert' && (id === 'tlControls' || next === 'tlControls'))) {
+      dock.appendChild(buildSplit('bottom', dir === 'vert' ? 'h' : 'v', i));
+    }
+  });
+}
+
+function createFloat(id, pane) {
   const win = document.createElement('div');
   win.className = 'ws-float';
   win.dataset.pane = id;
-  win.style.width = FLOAT_SIZES[id].w + 'px';
-  win.style.height = FLOAT_SIZES[id].h + 'px';
+  const sz = FLOAT_SIZES[id] || { w: 340, h: 420 };
+  win.style.width = sz.w + 'px';
+  win.style.height = sz.h + 'px';
 
   const bar = document.createElement('div');
   bar.className = 'ws-float-titlebar';
   const title = document.createElement('span');
   title.className = 'ws-float-title';
   title.dataset.i18n = 'tab.' + id;
+  title.textContent = t('tab.' + id);
   const dockBtn = document.createElement('button');
   dockBtn.className = 'ws-float-dock';
-  dockBtn.dataset.i18nTitle = 'ws.dockBack';
-  dockBtn.title = t('ws.dockBack');
+  dockBtn.dataset.i18n = 'ws.dockBack';
   dockBtn.textContent = t('ws.dockBack');
-  dockBtn.addEventListener('click', () => { dockFloat(id); });
+  dockBtn.addEventListener('click', () => dockFloatBack(id));
   bar.append(title, dockBtn);
 
   const body = document.createElement('div');
   body.className = 'ws-float-body';
-  body.appendChild(el);
+  body.appendChild(pane);
   win.append(bar, body);
   document.body.appendChild(win);
-  el.classList.add('active');
+  pane.classList.add('active');
+  return win;
 }
 
-function syncFloatsWindows(panes) {
-  for (const id of PANES) {
-    const inFloat = !!_state.floats[id];
-    let win = floatWindow(id);
-    if (inFloat) {
-      if (!win) createFloatWindow(id, panes[id]);
-      win = floatWindow(id);
-      win.style.left = _state.floats[id].x + 'px';
-      win.style.top = _state.floats[id].y + 'px';
+function syncFloats(panes) {
+  for (const id of PANELS) {
+    const f = _state.floats[id];
+    let win = document.querySelector('.ws-float[data-pane="' + id + '"]');
+    if (f) {
+      if (!win) win = createFloat(id, panes[id]);
+      const body = win.querySelector('.ws-float-body');
+      const pane = panes[id];
+      if (body && pane && pane.parentElement !== body) body.appendChild(pane);
+      if (pane) pane.classList.add('active');
+      win.style.left = f.x + 'px';
+      win.style.top = f.y + 'px';
+      win.style.width = f.w + 'px';
+      win.style.height = f.h + 'px';
     } else if (win) {
       win.remove();
     }
@@ -286,83 +351,92 @@ function syncFloatsWindows(panes) {
 
 function commit(persist = true) {
   const panes = capturePanes();
+  renderStrips();
   renderDocks(panes);
-  syncFloatsWindows(panes);
+
+  const l = layoutEl();
+  const showL = _state.sidebarVisible && _state.open.left.length > 0;
+  const showR = _state.sidebarVisible && _state.open.right.length > 0;
+  const showB = _state.timelineVisible && _state.open.bottom.length > 0;
+  l.classList.toggle('area-left-open', showL);
+  l.classList.toggle('area-right-open', showR);
+  l.style.setProperty('--area-left-w', showL ? (_state.areaLeftW || 300) + 'px' : '0px');
+  l.style.setProperty('--area-right-w', showR ? (_state.areaRightW || 320) + 'px' : '0px');
+  // 底部坞：时间轴可见但无面板时保留 6px 细条作为拖放目标；整体隐藏仅由菜单开关控制。
+  document.body.style.setProperty('--tl-h', _state.timelineVisible ? (showB ? (_state.bottomH || 360) + 'px' : '6px') : '0px');
+  const db = el('dock-bottom');
+  if (db) db.style.display = _state.timelineVisible ? '' : 'none';
+
   applyI18nDom();
   if (persist) persistActive();
-  // 布局变化后按新尺寸重排 3D 视口/标尺并重绘 lane 画布，避免旧尺寸画布露出空白。
+  // 布局变化后按新尺寸重排 3D 视口/标尺并重绘 lane 画布。
   window.dispatchEvent(new Event('resize'));
   import('./timeline-layers.js').then((m) => m.drawTimelineLayers()).catch(() => {});
 }
 
-/* —— 面板归属变更 —— */
+/* —— 面板开关 —— */
 
-function removePaneFromCurrent(id) {
-  const win = floatWindow(id);
-  if (win) { win.remove(); delete _state.floats[id]; }
-  for (const dock of ['side', 'bottom']) {
-    const list = dock === 'side' ? _state.sideGroups : _state.bottomGroups;
-    const sizes = dock === 'side' ? _state.sideSizes : _state.bottomSizes;
-    for (let i = 0; i < list.length; i++) {
-      const g = list[i];
-      const k = g.panes.indexOf(id);
-      if (k >= 0) {
-        g.panes.splice(k, 1);
-        if (g.active === id) g.active = g.panes[0] || null;
-        if (!g.panes.length) { list.splice(i, 1); sizes.splice(i, 1); }
-        return;
-      }
-    }
-  }
-}
-
-function mergeInto(id, targetGroup) {
-  removePaneFromCurrent(id);
-  if (!targetGroup.panes.includes(id)) targetGroup.panes.push(id);
-  targetGroup.active = id;
-}
-
-function splitInto(dock, id, position) {
-  removePaneFromCurrent(id);
-  const list = dock === 'side' ? _state.sideGroups : _state.bottomGroups;
-  const sizes = dock === 'side' ? _state.sideSizes : _state.bottomSizes;
-  const ng = { panes: [id], active: id };
-  if (position === 'start') {
-    list.unshift(ng);
-    sizes.unshift(50);
-    for (let i = 1; i < sizes.length; i++) sizes[i] = Math.round(sizes[i] * 0.5);
-  } else {
-    list.push(ng);
-    sizes.push(50);
-    for (let i = 0; i < sizes.length - 1; i++) sizes[i] = Math.round(sizes[i] * 0.5);
-  }
-  const sum = sizes.reduce((a, b) => a + b, 0);
-  if (sum !== 100) sizes[sizes.length - 1] += 100 - sum;
-}
-
-function floatPane(id, x, y) {
-  if (isNarrowLayout()) return;
-  removePaneFromCurrent(id);
-  _state.floats[id] = { x, y };
-}
-
-function dockFloat(id) {
+function collapsePanel(id) {
+  _state.open.left = _state.open.left.filter((p) => p !== id);
+  _state.open.right = _state.open.right.filter((p) => p !== id);
+  _state.open.bottom = _state.open.bottom.filter((p) => p !== id);
   delete _state.floats[id];
-  splitInto('side', id, 'end');
+  if (_state.dock[id] === 'float') _state.dock[id] = defaultDockFor(id);
+  commit(true);
+}
+
+function togglePanel(id) {
+  const d = _state.dock[id];
+  if (d === 'float') { dockFloatBack(id); return; }
+  if (d === 'left' || d === 'right') {
+    const arr = _state.open[d];
+    const i = arr.indexOf(id);
+    if (i >= 0) arr.splice(i, 1);
+    else { arr.length = 0; arr.push(id); }
+  } else if (d === 'bottom') {
+    const arr = _state.open.bottom;
+    const i = arr.indexOf(id);
+    if (i >= 0) arr.splice(i, 1);
+    else { if (arr.length >= 2) arr.shift(); arr.push(id); }
+  }
+  refreshPanelHook(id);
+  commit(true);
+}
+
+function refreshPanelHook(id) {
+  if (!isOpen(id)) return;
+  if (id === 'texEditor') import('./texture-editor.js').then((m) => m.refreshTexturePanel()).catch(() => {});
+  else if (id === 'uv') import('./texture-editor.js').then((m) => { m.refreshUVPanel(); m.renderTexCanvas(); }).catch(() => {});
+  else if (id === 'timeline') import('./timeline-layers.js').then((m) => m.drawTimelineLayers()).catch(() => {});
+}
+
+function dockFloatBack(id) {
+  delete _state.floats[id];
+  _state.dock[id] = defaultDockFor(id);
+  const d = _state.dock[id];
+  if (d === 'bottom') {
+    _state.open.bottom = _state.open.bottom.filter((p) => p !== id);
+    _state.open.bottom.push(id);
+  } else {
+    _state.open.left = _state.open.left.filter((p) => p !== id);
+    _state.open.right = _state.open.right.filter((p) => p !== id);
+    _state.open[d] = [id];
+  }
+  refreshPanelHook(id);
   commit(true);
 }
 
 /* —— 吸附区 —— */
 
 function buildZones() {
-  const keys = ['side-top', 'side-bottom', 'bottom-left', 'bottom-right', 'float', 'merge', 'edge-left', 'edge-right', 'edge-top', 'edge-bottom'];
+  const keys = ['sl-top', 'sl-bottom', 'sr-top', 'sr-bottom', 'area-left', 'area-right', 'bottom', 'float'];
   for (const key of keys) {
-    const el = document.createElement('div');
-    el.className = 'ws-drop-zone';
-    el.dataset.wsZone = key;
-    el.style.cssText = 'position:fixed;z-index:500;pointer-events:none;';
-    document.body.appendChild(el);
-    zones[key] = el;
+    const z = document.createElement('div');
+    z.className = 'ws-drop-zone';
+    z.dataset.wsZone = key;
+    z.style.cssText = 'position:fixed;z-index:500;pointer-events:none;';
+    document.body.appendChild(z);
+    zones[key] = z;
   }
 }
 function placeZone(key, r) {
@@ -373,33 +447,147 @@ function placeZone(key, r) {
 }
 function showZones(keys) { Object.keys(zones).forEach((k) => zones[k].classList.toggle('visible', keys.includes(k))); }
 function clearZones() { Object.keys(zones).forEach((k) => zones[k].classList.remove('visible', 'active')); }
-function inRect(x, y, r) { return x >= r.left && x <= r.left + r.width && y >= r.top && y <= r.top + r.height; }
-function rectOf(el) { const r = el.getBoundingClientRect(); return { left: r.left, top: r.top, width: r.width, height: r.height }; }
-function halfRect(r, part) {
-  if (part === 'top') return { left: r.left, top: r.top, width: r.width, height: r.height / 2 };
-  if (part === 'bottom') return { left: r.left, top: r.top + r.height / 2, width: r.width, height: r.height / 2 };
-  if (part === 'left') return { left: r.left, top: r.top, width: r.width / 2, height: r.height };
-  return { left: r.left + r.width / 2, top: r.top, width: r.width / 2, height: r.height };
+
+function resolveDrop(ev) {
+  const x = ev.clientX, y = ev.clientY;
+  const checks = [
+    ['sl-top', el('strip-left-top'), { kind: 'strip', strip: 'left', half: 'top' }],
+    ['sl-bottom', el('strip-left-bottom'), { kind: 'strip', strip: 'left', half: 'bottom' }],
+    ['sr-top', el('strip-right-top'), { kind: 'strip', strip: 'right', half: 'top' }],
+    ['sr-bottom', el('strip-right-bottom'), { kind: 'strip', strip: 'right', half: 'bottom' }],
+    ['area-left', el('area-left'), { kind: 'side', side: 'left' }],
+    ['area-right', el('area-right'), { kind: 'side', side: 'right' }],
+    ['bottom', el('dock-bottom'), { kind: 'bottom' }],
+    ['float', el('viewport'), { kind: 'float' }],
+  ];
+  for (const [key, node, data] of checks) {
+    if (node && inRect(x, y, rectOf(node))) return Object.assign({ zoneKey: key }, data);
+  }
+  return null;
 }
-function sidebarRect() { return rectOf(sidebarEl()); }
-function bottomRect() { return rectOf(bottomEl()); }
 
-/* —— 选项卡拖拽（分离 / 分窗 / 合并） —— */
+const ZONE_NODE = {
+  'sl-top': 'strip-left-top', 'sl-bottom': 'strip-left-bottom',
+  'sr-top': 'strip-right-top', 'sr-bottom': 'strip-right-bottom',
+  'area-left': 'area-left', 'area-right': 'area-right',
+  bottom: 'dock-bottom', float: 'viewport',
+};
 
-function setupTabDrag() {
+function updateZones(ev) {
+  clearZones();
+  const target = resolveDrop(ev);
+  if (!target) return;
+  const node = el(ZONE_NODE[target.zoneKey] || target.zoneKey);
+  if (!node) return;
+  placeZone(target.zoneKey, rectOf(node));
+  showZones([target.zoneKey]);
+  zones[target.zoneKey].classList.add('active');
+}
+
+function insertionIndex(id, strip, half, clientY) {
+  const box = el('strip-' + strip + '-' + half);
+  const icons = [...box.querySelectorAll('.ws-icon')].filter((b) => b.dataset.panel !== id);
+  let idx = icons.length;
+  for (let i = 0; i < icons.length; i++) {
+    const r = icons[i].getBoundingClientRect();
+    if (clientY < r.top + r.height / 2) { idx = i; break; }
+  }
+  return idx;
+}
+
+function movePanelIcon(id, strip, half, idx) {
+  for (const st of ['left', 'right']) for (const hf of ['top', 'bottom']) {
+    const arr = _state.strips[st][hf];
+    const i = arr.indexOf(id);
+    if (i >= 0) arr.splice(i, 1);
+  }
+  const target = _state.strips[strip][half];
+  target.splice(Math.max(0, Math.min(idx, target.length)), 0, id);
+}
+
+function removeFromOpen(id) {
+  _state.open.left = _state.open.left.filter((p) => p !== id);
+  _state.open.right = _state.open.right.filter((p) => p !== id);
+  _state.open.bottom = _state.open.bottom.filter((p) => p !== id);
+  delete _state.floats[id];
+}
+
+function applyDrop(id, target, ev) {
+  if (target.kind === 'strip') {
+    movePanelIcon(id, target.strip, target.half, insertionIndex(id, target.strip, target.half, ev.clientY));
+    _state.dock[id] = target.strip;
+    removeFromOpen(id);
+    _state.open[target.strip] = [id];
+  } else if (target.kind === 'side') {
+    _state.dock[id] = target.side;
+    removeFromOpen(id);
+    const cur = _state.open[target.side].filter((p) => p !== id);
+    if (cur.length === 0) _state.open[target.side] = [id];
+    else if (cur.length === 1) _state.open[target.side] = [cur[0], id];
+    else _state.open[target.side] = [id];
+  } else if (target.kind === 'bottom') {
+    _state.dock[id] = 'bottom';
+    removeFromOpen(id);
+    const arr = _state.open.bottom;
+    if (!arr.includes(id)) {
+      if (arr.length >= 2) arr.shift();
+      arr.push(id);
+    }
+    const bb = rectOf(el('dock-bottom'));
+    _state.bottomDir = (ev.clientX < bb.left + bb.width / 2) ? 'horiz' : 'vert';
+  } else if (target.kind === 'float') {
+    _state.dock[id] = 'float';
+    removeFromOpen(id);
+    const sz = FLOAT_SIZES[id] || { w: 340, h: 420 };
+    _state.floats[id] = {
+      x: Math.round(ev.clientX - sz.w / 2), y: Math.round(ev.clientY - 24),
+      w: sz.w, h: sz.h,
+    };
+  }
+  refreshPanelHook(id);
+  commit(true);
+}
+
+/* —— 拖动（图标 / 面板头 / 时间轴控制条背景 / 浮动窗标题栏） —— */
+
+function setupDrag() {
   document.addEventListener('pointerdown', (ev) => {
-    const tb = ev.target.closest('.ws-tab');
-    if (!tb || isNarrowLayout() || ev.button !== 0) return;
-    const paneId = tb.dataset.pane;
-    const sz = FLOAT_SIZES[paneId] || { w: 340, h: 420 };
-    let started = false;
+    if (ev.button !== 0) return;
+    let id = null;
+    const icon = ev.target.closest('.ws-icon');
+    if (icon) id = icon.dataset.panel;
+    else {
+      const head = ev.target.closest('.ws-pane-head');
+      if (head && !ev.target.closest('button')) id = head.dataset.panel;
+      else {
+        const tc = ev.target.closest('.tl-controls');
+        if (tc && !ev.target.closest('button, input, select, label')) id = 'tlControls';
+        else {
+          const fb = ev.target.closest('.ws-float-titlebar');
+          if (fb && !ev.target.closest('button')) {
+            const win = fb.closest('.ws-float');
+            if (win) id = win.dataset.pane;
+          }
+        }
+      }
+    }
+    if (!id) return;
+
     const startX = ev.clientX, startY = ev.clientY;
+    const wasFloat = _state.dock[id] === 'float';
+    const win = wasFloat ? document.querySelector('.ws-float[data-pane="' + id + '"]') : null;
+    const origL = win ? (parseInt(win.style.left, 10) || 60) : 0;
+    const origT = win ? (parseInt(win.style.top, 10) || 80) : 0;
+    let started = false;
 
     const move = (ev2) => {
       if (!started && Math.hypot(ev2.clientX - startX, ev2.clientY - startY) < 6) return;
-      started = true;
-      document.body.classList.add('ws-dragging');
-      renderPreview(paneId, ev2, sz, resolveDrop(paneId, ev2));
+      if (!started) { started = true; document.body.classList.add('ws-dragging'); }
+      if (wasFloat && win) {
+        win.style.left = (origL + ev2.clientX - startX) + 'px';
+        win.style.top = (origT + ev2.clientY - startY) + 'px';
+      }
+      updateZones(ev2);
     };
     const up = (ev2) => {
       window.removeEventListener('pointermove', move);
@@ -407,150 +595,26 @@ function setupTabDrag() {
       document.body.classList.remove('ws-dragging');
       clearZones();
       if (!started) return;
-      suppressTabClick = true;
-      const target = resolveDrop(paneId, ev2);
-      if (target) { target.action(); commit(true); }
-    };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
-  });
-}
-
-function findTargetGroup(ev) {
-  for (const el of document.querySelectorAll('.ws-group .ws-tabs')) {
-    if (inRect(ev.clientX, ev.clientY, rectOf(el))) {
-      const gEl = el.closest('.ws-group');
-      const list = gEl.dataset.dock === 'side' ? _state.sideGroups : _state.bottomGroups;
-      return list[+gEl.dataset.index];
-    }
-  }
-  return null;
-}
-
-function resolveDrop(paneId, ev) {
-  const group = findTargetGroup(ev);
-  if (group && group.panes.includes(paneId)) return null;
-  if (group && group.panes.some((p) => p !== 'timeline')) {
-    return { kind: 'merge', action: () => mergeInto(paneId, group) };
-  }
-  const sb = sidebarRect();
-  if (inRect(ev.clientX, ev.clientY, sb)) {
-    const pos = ev.clientY < sb.top + sb.height / 2 ? 'start' : 'end';
-    return { kind: pos === 'start' ? 'side-top' : 'side-bottom', action: () => splitInto('side', paneId, pos) };
-  }
-  const bb = bottomRect();
-  if (inRect(ev.clientX, ev.clientY, bb)) {
-    const pos = ev.clientX < bb.left + bb.width / 2 ? 'start' : 'end';
-    return { kind: pos === 'start' ? 'bottom-left' : 'bottom-right', action: () => splitInto('bottom', paneId, pos) };
-  }
-  if (ev.clientY > 50 && ev.clientY < window.innerHeight - 40) {
-    return { kind: 'float', action: () => floatPane(paneId, Math.round(ev.clientX - sz0(paneId).w / 2), Math.round(ev.clientY - sz0(paneId).h / 2)) };
-  }
-  return null;
-}
-function sz0(id) { return FLOAT_SIZES[id] || { w: 340, h: 420 }; }
-
-function renderPreview(paneId, ev, sz, target) {
-  if (!target) { showZones([]); return; }
-  const sb = sidebarRect(), bb = bottomRect();
-  if (target.kind === 'merge') {
-    for (const el of document.querySelectorAll('.ws-group .ws-tabs')) {
-      if (inRect(ev.clientX, ev.clientY, rectOf(el))) { placeZone('merge', rectOf(el)); showZones(['merge']); zones.merge.classList.add('active'); return; }
-    }
-  } else if (target.kind === 'side-top' || target.kind === 'side-bottom') {
-    placeZone('side-top', halfRect(sb, 'top'));
-    placeZone('side-bottom', halfRect(sb, 'bottom'));
-    showZones(['side-top', 'side-bottom']);
-    zones[target.kind].classList.add('active');
-  } else if (target.kind === 'bottom-left' || target.kind === 'bottom-right') {
-    placeZone('bottom-left', halfRect(bb, 'left'));
-    placeZone('bottom-right', halfRect(bb, 'right'));
-    showZones(['bottom-left', 'bottom-right']);
-    zones[target.kind].classList.add('active');
-  } else if (target.kind === 'float') {
-    const r = { left: Math.max(4, ev.clientX - sz.w / 2), top: Math.max(44, ev.clientY - sz.h / 2), width: sz.w, height: sz.h };
-    placeZone('float', r);
-    showZones(['float']);
-    zones.float.classList.add('active');
-  }
-}
-
-/* —— 浮动窗口拖动（合并 / 分窗 / 移动） —— */
-
-function setupFloatDrag() {
-  document.addEventListener('pointerdown', (ev) => {
-    const bar = ev.target.closest('.ws-float-titlebar');
-    if (!bar || ev.target.closest('.ws-float-dock') || ev.button !== 0) return;
-    const win = bar.closest('.ws-float');
-    const id = win.dataset.pane;
-    let moved = false;
-    const startX = ev.clientX, startY = ev.clientY;
-    const origL = parseInt(win.style.left, 10) || 60;
-    const origT = parseInt(win.style.top, 10) || 80;
-
-    const move = (ev2) => {
-      if (!moved && Math.hypot(ev2.clientX - startX, ev2.clientY - startY) < 6) return;
-      moved = true;
-      document.body.classList.add('ws-dragging');
-      win.style.left = (origL + ev2.clientX - startX) + 'px';
-      win.style.top = (origT + ev2.clientY - startY) + 'px';
-      const target = resolveFloatDrop(id, ev2);
-      if (target) {
-        if (target.kind === 'merge') {
-          for (const el of document.querySelectorAll('.ws-group .ws-tabs')) {
-            if (inRect(ev2.clientX, ev2.clientY, rectOf(el))) { placeZone('merge', rectOf(el)); break; }
-          }
-          showZones(['merge']); zones.merge.classList.add('active');
-        } else if (target.kind.startsWith('side-')) {
-          placeZone('side-top', halfRect(sidebarRect(), 'top'));
-          placeZone('side-bottom', halfRect(sidebarRect(), 'bottom'));
-          showZones(['side-top', 'side-bottom']);
-          zones[target.kind].classList.add('active');
-        } else if (target.kind.startsWith('bottom-')) {
-          placeZone('bottom-left', halfRect(bottomRect(), 'left'));
-          placeZone('bottom-right', halfRect(bottomRect(), 'right'));
-          showZones(['bottom-left', 'bottom-right']);
-          zones[target.kind].classList.add('active');
+      suppressClick = true;
+      setTimeout(() => { suppressClick = false; }, 0);
+      const target = resolveDrop(ev2);
+      if (wasFloat && win) {
+        if (target && target.kind !== 'float') {
+          delete _state.floats[id];
+          applyDrop(id, target, ev2);
+        } else {
+          _state.floats[id] = { x: parseInt(win.style.left, 10) || 60, y: parseInt(win.style.top, 10) || 80, w: win.offsetWidth, h: win.offsetHeight };
+          commit(true);
         }
+      } else if (target) {
+        applyDrop(id, target, ev2);
       } else {
-        showZones([]);
+        commit(false);
       }
-    };
-    const up = (ev2) => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-      document.body.classList.remove('ws-dragging');
-      clearZones();
-      const target = resolveFloatDrop(id, ev2);
-      if (target) {
-        delete _state.floats[id];
-        target.action();
-      } else if (moved) {
-        _state.floats[id] = { x: parseInt(win.style.left, 10) || 60, y: parseInt(win.style.top, 10) || 80 };
-      }
-      commit(true);
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
   });
-}
-
-function resolveFloatDrop(id, ev) {
-  const group = findTargetGroup(ev);
-  if (group && group.panes.some((p) => p !== 'timeline')) {
-    return { kind: 'merge', action: () => mergeInto(id, group) };
-  }
-  const sb = sidebarRect();
-  if (inRect(ev.clientX, ev.clientY, sb)) {
-    const pos = ev.clientY < sb.top + sb.height / 2 ? 'start' : 'end';
-    return { kind: pos === 'start' ? 'side-top' : 'side-bottom', action: () => splitInto('side', id, pos) };
-  }
-  const bb = bottomRect();
-  if (inRect(ev.clientX, ev.clientY, bb)) {
-    const pos = ev.clientX < bb.left + bb.width / 2 ? 'start' : 'end';
-    return { kind: pos === 'start' ? 'bottom-left' : 'bottom-right', action: () => splitInto('bottom', id, pos) };
-  }
-  return null;
 }
 
 /* —— 分隔条拖拽 —— */
@@ -561,17 +625,19 @@ function setupSplitDrag() {
     if (!sp || ev.button !== 0) return;
     const dock = sp.dataset.dock;
     const index = +sp.dataset.index;
-    const sizes = dock === 'side' ? _state.sideSizes : _state.bottomSizes;
-    const container = dock === 'side' ? sidebarEl() : bottomEl();
-    const groups = [...container.querySelectorAll('.ws-group')];
-    const a = groups[index], b = groups[index + 1];
+    const horizontal = sp.classList.contains('ws-split-h');
+    const container = sp.parentElement;
+    const wraps = [...container.querySelectorAll(':scope > .ws-pane-wrap')];
+    const a = wraps[index], b = wraps[index + 1];
     if (!a || !b) return;
-    const total = dock === 'side' ? container.getBoundingClientRect().height : container.getBoundingClientRect().width;
-    const start = dock === 'side' ? ev.clientY : ev.clientX;
-    const startA = sizes[index], startB = sizes[index + 1];
+    const sizes = dock === 'bottom' ? _state.sizes.bottom : _state.sizes[dock];
+    const total = horizontal ? container.getBoundingClientRect().height : container.getBoundingClientRect().width;
+    const start = horizontal ? ev.clientY : ev.clientX;
+    const startA = sizes[index] != null ? sizes[index] : 50;
+    const startB = sizes[index + 1] != null ? sizes[index + 1] : 50;
 
     const move = (ev2) => {
-      const delta = ((dock === 'side' ? ev2.clientY : ev2.clientX) - start) / total * 100;
+      const delta = ((horizontal ? ev2.clientY : ev2.clientX) - start) / total * 100;
       const na = Math.max(8, Math.min(startA + startB - 8, startA + delta));
       const nb = startA + startB - na;
       sizes[index] = Math.round(na);
@@ -583,107 +649,88 @@ function setupSplitDrag() {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       persistActive();
+      window.dispatchEvent(new Event('resize'));
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
   });
 }
 
-/* —— 侧栏 / 时间轴把手：整体停靠到边 —— */
+/* —— 侧边区域宽度 / 底部坞高度 —— */
 
-function sidebarWidthPx() { return parseInt(layoutEl().style.getPropertyValue('--right-w'), 10) || 320; }
-function timelineHeightPx() { return parseInt(document.body.style.getPropertyValue('--tl-h'), 10) || 360; }
-
-function setupEdgeDrag(panel) {
-  const grip = document.getElementById(panel === 'sidebar' ? 'ws-grip-sidebar' : 'ws-grip-timeline');
-  if (!grip) return;
-  let dragging = false;
-  let activeKey = null;
-
-  grip.addEventListener('pointerdown', (ev) => {
-    if (ev.button !== 0 || isNarrowLayout()) return;
-    dragging = true; activeKey = null;
-    grip.setPointerCapture(ev.pointerId);
-    document.body.classList.add('ws-dragging');
-    if (panel === 'sidebar') {
-      const sw = sidebarWidthPx();
-      placeZone('edge-left', { left: 0, top: 0, width: sw, height: window.innerHeight });
-      placeZone('edge-right', { left: window.innerWidth - sw, top: 0, width: sw, height: window.innerHeight });
-      showZones(['edge-left', 'edge-right']);
-    } else {
-      const th = timelineHeightPx();
-      placeZone('edge-top', { left: 0, top: 0, width: window.innerWidth, height: th });
-      placeZone('edge-bottom', { left: 0, top: window.innerHeight - th, width: window.innerWidth, height: th });
-      showZones(['edge-top', 'edge-bottom']);
-    }
-    update(ev);
-  });
-  grip.addEventListener('pointermove', (ev) => { if (dragging) update(ev); });
-  const end = () => {
-    if (!dragging) return;
-    if (activeKey) {
-      const s = currentWorkspaceState();
-      if (panel === 'sidebar') s.sidebarDock = (activeKey === 'edge-left') ? 'left' : 'right';
-      else s.timelineDock = (activeKey === 'edge-top') ? 'top' : 'bottom';
-      applyWorkspaceState(s, true);
-    }
-    dragging = false; activeKey = null;
-    document.body.classList.remove('ws-dragging');
-    clearZones();
+function setupResize() {
+  const bind = (handleId, isLeft) => {
+    const handle = el(handleId);
+    if (!handle) return;
+    let resizing = false, startX = 0, startW = 0;
+    handle.addEventListener('pointerdown', (e) => {
+      resizing = true; startX = e.clientX;
+      startW = isLeft ? (_state.areaLeftW || 300) : (_state.areaRightW || 320);
+      handle.setPointerCapture(e.pointerId);
+      handle.classList.add('dragging');
+      e.preventDefault();
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if (!resizing) return;
+      const dx = e.clientX - startX;
+      let w = isLeft ? startW + dx : startW - dx;
+      w = Math.max(220, Math.min(720, w));
+      if (isLeft) _state.areaLeftW = w; else _state.areaRightW = w;
+      layoutEl().style.setProperty(isLeft ? '--area-left-w' : '--area-right-w', w + 'px');
+      window.dispatchEvent(new Event('resize'));
+    });
+    const stop = () => {
+      if (!resizing) return;
+      resizing = false;
+      handle.classList.remove('dragging');
+      persistActive();
+    };
+    handle.addEventListener('pointerup', stop);
+    handle.addEventListener('pointercancel', stop);
   };
-  grip.addEventListener('pointerup', end);
-  grip.addEventListener('pointercancel', end);
+  bind('resize-handle-l', true);
+  bind('resize-handle-r', false);
 
-  function update(ev) {
-    let key = null;
-    if (panel === 'sidebar') {
-      key = ev.clientX < window.innerWidth / 2 ? 'edge-left' : 'edge-right';
-    } else {
-      key = ev.clientY < window.innerHeight / 2 ? 'edge-top' : 'edge-bottom';
-    }
-    activeKey = key;
-    ['edge-left', 'edge-right', 'edge-top', 'edge-bottom'].forEach((k) => zones[k].classList.toggle('active', k === key));
+  // 底部坞高度（顶边把手）
+  const grip = el('tl-module-resize');
+  if (grip) {
+    let resizing = false, lastY = 0;
+    grip.addEventListener('pointerdown', (e) => {
+      resizing = true; lastY = e.clientY;
+      grip.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+    grip.addEventListener('pointermove', (e) => {
+      if (!resizing) return;
+      const dy = e.clientY - lastY;
+      lastY = e.clientY;
+      const cur = _state.bottomH || 360;
+      const nh = Math.min(window.innerHeight * 0.78, Math.max(140, cur - dy));
+      _state.bottomH = nh;
+      document.body.style.setProperty('--tl-h', nh + 'px');
+      window.dispatchEvent(new Event('resize'));
+      import('./timeline-layers.js').then((m) => m.drawTimelineLayers()).catch(() => {});
+    });
+    const stop = () => {
+      if (!resizing) return;
+      resizing = false;
+      persistActive();
+    };
+    grip.addEventListener('pointerup', stop);
+    grip.addEventListener('pointercancel', stop);
   }
-}
-
-/* —— 选项卡点击切换（分组内） —— */
-
-function setupTabClick() {
-  document.addEventListener('click', (ev) => {
-    const tb = ev.target.closest('.ws-tab');
-    if (!tb || suppressTabClick) return;
-    const gEl = tb.closest('.ws-group');
-    const list = gEl.dataset.dock === 'side' ? _state.sideGroups : _state.bottomGroups;
-    const g = list[+gEl.dataset.index];
-    g.active = tb.dataset.pane;
-    gEl.querySelectorAll('.ws-tab').forEach((b) => b.classList.toggle('active', b === tb));
-    gEl.querySelectorAll('.tab-pane').forEach((p) => p.classList.toggle('active', p.id === 'pane-' + tb.dataset.pane));
-    if (tb.dataset.pane === 'texture') {
-      import('./texture-editor.js').then((m) => m.refreshTexturePanel()).catch(() => {});
-    }
-  });
-  document.addEventListener('click', (ev) => {
-    if (suppressTabClick) { suppressTabClick = false; ev.stopPropagation(); ev.preventDefault(); }
-  }, true);
 }
 
 /* —— 菜单与自定义工作区 —— */
 
 function injectMenu() {
   const menubar = document.querySelector('.menubar');
-  const about = document.getElementById('btn-about').closest('.menu');
+  const about = el('btn-about').closest('.menu');
   const menu = document.createElement('div');
   menu.className = 'menu';
   menu.innerHTML = `
     <button class="menu-btn" data-menu="window" data-i18n="menu.window">窗口</button>
     <div class="dropdown" id="menu-window">
-      <div class="dd-text" data-i18n="ws.presets">工作区预设</div>
-      <button class="dd-item ws-preset" data-ws-preset="default"><span data-i18n="ws.preset.default">默认</span></button>
-      <button class="dd-item ws-preset" data-ws-preset="left"><span data-i18n="ws.preset.left">面板居左</span></button>
-      <button class="dd-item ws-preset" data-ws-preset="draw"><span data-i18n="ws.preset.draw">专注绘制</span></button>
-      <button class="dd-item ws-preset" data-ws-preset="animate"><span data-i18n="ws.preset.animate">动画编辑</span></button>
-      <button class="dd-item ws-preset" data-ws-preset="timelineTop"><span data-i18n="ws.preset.timelineTop">时间轴上置</span></button>
-      <div class="dd-sep"></div>
       <button class="dd-item" id="ws-auto"><span data-i18n="ws.autoLayout">自动布局</span></button>
       <button class="dd-item" id="ws-toggle-sidebar"><span data-i18n="ws.toggleSidebar">显示/隐藏侧栏</span></button>
       <button class="dd-item" id="ws-toggle-timeline"><span data-i18n="ws.toggleTimeline">显示/隐藏时间轴</span></button>
@@ -698,31 +745,13 @@ function injectMenu() {
   menubar.insertBefore(menu, about);
 }
 
-function injectGrips() {
-  const sb = sidebarEl();
-  const grip = document.createElement('div');
-  grip.className = 'ws-grip ws-grip-sidebar';
-  grip.id = 'ws-grip-sidebar';
-  grip.dataset.wsPanel = 'sidebar';
-  grip.dataset.i18nTitle = 'ws.gripSidebar';
-  sb.insertBefore(grip, sb.firstChild);
-
-  const controls = document.querySelector('.tl-controls');
-  const tg = document.createElement('div');
-  tg.className = 'ws-grip ws-grip-timeline';
-  tg.id = 'ws-grip-timeline';
-  tg.dataset.wsPanel = 'timeline';
-  tg.dataset.i18nTitle = 'ws.gripTimeline';
-  controls.insertBefore(tg, controls.firstChild);
-}
-
 function closeMenuWindow() {
-  const dd = document.getElementById('menu-window');
+  const dd = el('menu-window');
   if (dd) dd.closest('.menu').classList.remove('open');
 }
 
 function renderCustomList() {
-  const box = document.getElementById('ws-custom-list');
+  const box = el('ws-custom-list');
   if (!box) return;
   box.innerHTML = '';
   const m = customMap();
@@ -754,7 +783,7 @@ async function saveCustomFlow() {
     const ok = await modalConfirm(t('ws.saveTitle'), t('ws.overwriteMsg'));
     if (!ok) return;
   }
-  m[n] = currentWorkspaceState();
+  m[n] = currentState();
   saveCustomMap(m);
   renderCustomList();
 }
@@ -836,29 +865,10 @@ function openManage() {
   document.addEventListener('pointerdown', onManageDocPointerDown);
 }
 
-function autoLayout() {
-  const g = defaultGroups();
-  applyWorkspaceState({
-    sidebarDock: 'right', sidebarVisible: true, sidebarWidth: 320,
-    timelineDock: 'bottom', timelineVisible: true, timelineHeight: 360,
-    sideGroups: g.sideGroups, sideSizes: g.sideSizes,
-    bottomGroups: g.bottomGroups, bottomSizes: g.bottomSizes,
-    floats: {},
-  }, true);
-}
+function autoLayout() { applyWorkspaceState(defaultState(), true); }
 
 function bindMenu() {
-  document.getElementById('menu-window').addEventListener('click', (ev) => {
-    const preset = ev.target.closest('.ws-preset');
-    if (preset) {
-      const p = PRESETS[preset.dataset.wsPreset];
-      if (p) {
-        closeMenuWindow();
-        const g = defaultGroups();
-        applyWorkspaceState(Object.assign({}, p, g, { floats: {} }), true);
-      }
-      return;
-    }
+  el('menu-window').addEventListener('click', (ev) => {
     const custom = ev.target.closest('.ws-custom');
     if (custom) {
       const m = customMap();
@@ -871,17 +881,22 @@ function bindMenu() {
     const id = btn.id;
     if (id === 'ws-auto') { closeMenuWindow(); autoLayout(); }
     else if (id === 'ws-toggle-sidebar') {
-      const s = currentWorkspaceState();
-      s.sidebarVisible = !s.sidebarVisible;
-      applyWorkspaceState(s, true);
+      _state.sidebarVisible = !_state.sidebarVisible;
+      commit(true);
     } else if (id === 'ws-toggle-timeline') {
-      const s = currentWorkspaceState();
-      s.timelineVisible = !s.timelineVisible;
-      applyWorkspaceState(s, true);
+      _state.timelineVisible = !_state.timelineVisible;
+      commit(true);
     } else if (id === 'ws-save') { closeMenuWindow(); saveCustomFlow(); }
     else if (id === 'ws-manage') { closeMenuWindow(); openManage(); }
     else if (id === 'ws-reset') { closeMenuWindow(); autoLayout(); }
   });
+}
+
+/* —— 对外 —— */
+
+export function applyWorkspaceState(state, persist = true) {
+  _state = normalize(state);
+  commit(persist);
 }
 
 export function initWorkspace() {
@@ -889,18 +904,14 @@ export function initWorkspace() {
   initialized = true;
 
   injectMenu();
-  injectGrips();
   buildZones();
   bindMenu();
-  setupEdgeDrag('sidebar');
-  setupEdgeDrag('timeline');
-  setupTabDrag();
-  setupFloatDrag();
+  setupDrag();
   setupSplitDrag();
-  setupTabClick();
+  setupResize();
 
-  const saved = loadActive();
-  applyWorkspaceState(saved && typeof saved === 'object' ? saved : Object.assign({}, PRESETS.default, defaultGroups(), { floats: {} }), false);
+  const saved = (() => { try { return JSON.parse(localStorage.getItem(LS_ACTIVE)) || null; } catch (e) { return null; } })();
+  applyWorkspaceState(saved && typeof saved === 'object' ? saved : defaultState(), false);
   renderCustomList();
   applyI18nDom();
 }

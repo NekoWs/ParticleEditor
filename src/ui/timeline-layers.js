@@ -11,8 +11,7 @@ import { TL_PX_PER_MS, timelineViewStart, setTimelineViewStart, setTLPxPerMs, dr
 import { rebuildPoints, maxMs, invalidateMaxMsCache } from '../core/animation.js';
 import { findTrackByPr } from '../core/animation-eval.js';
 import { baseValueFor, removeKeyframe } from '../core/edit.js';
-import { saveWorkspaceState } from './blocks-ui.js';
-import { resize, applyTimeChange, syncPlayButton } from '../main.js';
+import { applyTimeChange, syncPlayButton } from '../main.js';
 import { pushUndo } from '../state/undo.js';
 import { refreshTimelineTree, tlTreeFlatRows, TL_TREE_ROW_H } from './timeline-tree.js';
 import { openKeyframeEditor, openVarKeyframeEditor, removeVarKeyframe, showContextMenu, drawDiamond } from './tree.js';
@@ -659,33 +658,4 @@ export function tlInitLayerEvents() {
     tree.scrollTop = Math.max(0, tree.scrollTop + delta);
   }, { passive: false });
 
-  // 时间轴模块整体高度拖拽（模块顶边）：clientY 差分驱动，方向=向上拖增高。
-  const moduleGrip = document.getElementById('tl-module-resize');
-  if (moduleGrip) {
-    let resizing = false, lastY = 0;
-    moduleGrip.addEventListener('pointerdown', (e) => {
-      resizing = true;
-      lastY = e.clientY;
-      moduleGrip.setPointerCapture(e.pointerId);
-      e.preventDefault();
-    });
-    moduleGrip.addEventListener('pointermove', (e) => {
-      if (!resizing) return;
-      const dy = e.clientY - lastY;
-      lastY = e.clientY;
-      const cur = parseFloat(getComputedStyle(document.body).getPropertyValue('--tl-h')) || 360;
-      const nh = Math.min(window.innerHeight * 0.75, Math.max(160, cur - dy));
-      document.body.style.setProperty('--tl-h', nh + 'px');
-      resize();               // .layout 1fr 行随之收缩，会影响 3D 视口
-      drawTimelineLayers();
-    });
-    const stopResize = () => {
-      if (!resizing) return;
-      resizing = false;
-      resize();
-      if (typeof saveWorkspaceState === 'function') saveWorkspaceState();
-    };
-    moduleGrip.addEventListener('pointerup', stopResize);
-    moduleGrip.addEventListener('pointercancel', stopResize);
   }
-}
