@@ -30,6 +30,7 @@ import { initImportMenu } from './ui/import-image.js';
 import { showWelcome } from './ui/welcome.js';
 import { initWorkspace } from './ui/workspace.js';
 import { initTitleBar } from './ui/titlebar.js';
+import { initPresetPanel, refreshPresetPanel } from './ui/preset-panel.js';
 import { newFile, openFile, saveFile, saveFileAs, exportAnimation, loadFile, confirmDiscardChanges, ensureProjectKey } from './io/io.js';
 import { drawAxisGizmo, slerp } from './interaction/axis-gizmo.js';
 import { updateGizmo, updateGizmoFrame, restoreAxisColors, setAxisGlow } from './interaction/gizmo.js';
@@ -287,6 +288,7 @@ export function initUI() {
     refreshTimelineTree();
     drawTimelineLayers();
     refreshCameraTabs();
+    refreshPresetPanel();
   });
   // 主题切换（亮/暗配色）
   applyThemeDom();
@@ -316,8 +318,8 @@ export function initUI() {
   document.getElementById('btn-saveas').addEventListener('click', () => { closeMenus(); saveFileAs(); });
   document.getElementById('btn-export').addEventListener('click', () => { closeMenus(); exportAnimation(); });
   document.getElementById('btn-clear').addEventListener('click', () => { closeMenus(); clearAll(); });
-  document.getElementById('btn-undo').addEventListener('click', () => { closeMenus(); undo(); });
-  document.getElementById('btn-redo').addEventListener('click', () => { closeMenus(); redo(); });
+  document.getElementById('btn-undo').addEventListener('click', () => { closeMenus(); undo(); refreshPresetPanel(); });
+  document.getElementById('btn-redo').addEventListener('click', () => { closeMenus(); redo(); refreshPresetPanel(); });
   document.getElementById('btn-selall').addEventListener('click', () => { closeMenus(); selectAll(); });
   document.getElementById('btn-delete-selected').addEventListener('click', () => { closeMenus(); deleteSelected(); });
   document.getElementById('btn-group').addEventListener('click', () => { closeMenus(); createGroup(); });
@@ -356,6 +358,7 @@ export function initUI() {
     if (fxPresetSel.value) createFunctionObject(fxPresetSel.value);
   });
   refreshFunctionPanel();
+  initPresetPanel();
 
   // 属性
   document.getElementById('prop-glow').addEventListener('change', (ev) => { pushUndo(); currentSelected().forEach(p => { p.glow = ev.target.checked; }); rebuildPoints(); });
@@ -506,6 +509,7 @@ export function clearAll() {
   clearObjectState();
   if (tlTreeState && tlTreeState.expanded) tlTreeState.expanded.clear();
   updateTimeUI(); rebuildPoints(); refreshTimelineTree(); refreshFunctionPanel();
+  refreshPresetPanel();
   refreshCameraTabs();
 }
 

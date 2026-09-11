@@ -1,0 +1,126 @@
+/* —— 预设修改：面板卡片 + 预览/参数窗口 —— */
+
+#preset-panel {
+  display: flex; flex-direction: column; gap: 10px;
+  font-size: 12px; padding: 8px 10px;
+}
+
+.preset-target {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+}
+.preset-target > span {
+  color: var(--muted); font-size: 12px; white-space: nowrap;
+}
+.preset-target select {
+  flex: 1; min-width: 0; background: var(--panel-3);
+  border: 1px solid var(--border-soft); color: var(--text);
+  border-radius: 6px; padding: 3px 26px 3px 10px; font-size: 12px; height: 24px;
+}
+.preset-target select:focus { border-color: var(--accent); outline: none; }
+.preset-target .csel { flex: 1; width: auto; min-width: 0; }
+
+.preset-list { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+.preset-cat-title {
+  color: var(--accent); font-size: 12px; font-weight: 600; margin-bottom: 6px;
+  padding-bottom: 4px; border-bottom: 1px solid var(--border-soft);
+}
+.preset-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px;
+}
+.preset-card {
+  position: relative; display: flex; flex-direction: column; gap: 4px; text-align: left;
+  background: var(--panel-2); border: 1px solid var(--border-soft); border-radius: 10px;
+  padding: 9px 11px; cursor: pointer; color: var(--text);
+  transition: border-color 0.14s ease, background 0.14s ease, transform 0.1s ease;
+}
+.preset-card:hover { border-color: var(--accent); background: var(--panel-3); }
+.preset-card:active { transform: scale(0.97); }
+.preset-card-name { font-size: 13px; font-weight: 600; }
+.preset-card-desc { font-size: 11px; color: var(--muted); line-height: 1.45; }
+.preset-card-badge {
+  position: absolute; top: 6px; right: 6px;
+  font-size: 10px; padding: 1px 6px; border-radius: 8px;
+  background: var(--accent-soft); color: var(--accent);
+}
+
+/* —— 窗口 —— */
+.preset-modal {
+  width: 920px; max-width: 96vw; height: min(620px, 88vh);
+  padding: 16px 18px 12px; gap: 10px;
+}
+.preset-body { display: flex; gap: 12px; flex: 1; min-height: 0; }
+.preset-preview {
+  position: relative; flex: 1; min-width: 0; border-radius: 10px; overflow: hidden;
+  background: var(--stage-clear); border: 1px solid var(--border-soft);
+}
+.preset-preview canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.preset-preview-hint {
+  position: absolute; left: 8px; bottom: 8px; pointer-events: none;
+  font-size: 11px; color: var(--muted); background: rgba(10, 12, 16, 0.55);
+  padding: 2px 8px; border-radius: 8px;
+}
+.preset-preview-error {
+  position: absolute; left: 8px; top: 8px; right: 8px; max-height: 40%; overflow: auto;
+  font-size: 11.5px; color: var(--danger); background: rgba(30, 8, 10, 0.82);
+  border: 1px solid var(--danger); border-radius: 8px; padding: 6px 9px;
+  white-space: pre-wrap; word-break: break-word;
+}
+
+.preset-params {
+  width: 330px; flex: 0 0 auto; display: flex; flex-direction: column; gap: 7px;
+  overflow-y: auto; padding-right: 4px;
+}
+.preset-section-title {
+  font-size: 11px; color: var(--muted); font-weight: 600; letter-spacing: 0.4px;
+}
+.preset-target-row { justify-content: flex-start; }
+.preset-target-name {
+  color: var(--accent); font-weight: 600; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.preset-param-row {
+  display: flex; align-items: center; gap: 8px; justify-content: space-between; min-width: 0;
+}
+.preset-param-label {
+  flex: none; max-width: 55%; color: var(--text); font-size: 12px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.preset-param-row input[type="number"] {
+  width: 84px; flex: 0 0 auto; background: var(--panel-3);
+  border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 4px 7px; font-size: 12px; height: 24px; box-sizing: border-box;
+}
+.preset-param-row input[type="text"] {
+  flex: 1; min-width: 0; background: var(--panel-3);
+  border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 4px 7px; font-size: 12px; height: 24px; box-sizing: border-box;
+}
+.preset-param-row input:focus { border-color: var(--accent); outline: none; box-shadow: var(--focus-ring); }
+.preset-param-row input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); }
+.preset-param-row select {
+  flex: 1; min-width: 0; background: var(--panel-3);
+  border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 2px 6px; font-size: 12px; height: 24px;
+}
+.preset-param-row select:focus { border-color: var(--accent); outline: none; }
+.preset-param-row .csel { flex: 1; width: auto; min-width: 0; }
+.preset-swatch {
+  flex: 0 0 auto; width: 24px; height: 24px; border-radius: 6px;
+  border: 1px solid var(--border); cursor: pointer; padding: 0;
+}
+.preset-swatch:hover { border-color: var(--accent); }
+.preset-more-toggle {
+  align-self: flex-start; background: transparent; border: none; color: var(--accent);
+  font-size: 12px; padding: 2px 0; cursor: pointer;
+}
+.preset-more-toggle:hover { color: var(--accent-hover); text-decoration: underline; }
+.preset-advanced { display: none; flex-direction: column; gap: 7px; }
+.preset-advanced.open { display: flex; }
+
+/* 窄屏：预览在上、参数在下 */
+@media (max-width: 900px) {
+  .preset-modal { height: min(92vh, 800px); }
+  .preset-body { flex-direction: column; }
+  .preset-preview { flex: 1 1 45%; }
+  .preset-params { width: auto; flex: 1 1 auto; overflow-y: auto; }
+}

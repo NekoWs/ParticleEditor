@@ -240,6 +240,9 @@ export function closeColorPicker() {
   if (cb) cb();
 }
 
+/** 取色器当前是否打开（供其它浮层协调 Esc 行为）。 */
+export function colorPickerOpen() { return !!state; }
+
 function localPoint(e) {
   const rect = canvas.getBoundingClientRect();
   return { x: e.clientX - rect.left, y: e.clientY - rect.top };

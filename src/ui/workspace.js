@@ -12,14 +12,14 @@ import { modalPrompt, modalConfirm } from './ui.js';
 const LS_ACTIVE = 'pdraw-workspace-active-v2';
 const LS_CUSTOM = 'pdraw-workspace-custom';
 
-const PANELS = ['props', 'fx', 'texEditor', 'uv', 'timeline'];
+const PANELS = ['props', 'fx', 'texEditor', 'uv', 'preset', 'timeline'];
 const PANE_EL_ID = {
   props: 'pane-props', fx: 'pane-fx', texEditor: 'pane-tex-editor', uv: 'pane-uv',
-  timeline: 'pane-timeline',
+  preset: 'pane-preset', timeline: 'pane-timeline',
 };
 const FLOAT_SIZES = {
   props: { w: 340, h: 480 }, fx: { w: 340, h: 480 }, texEditor: { w: 560, h: 460 },
-  uv: { w: 380, h: 460 }, timeline: { w: 780, h: 420 },
+  uv: { w: 380, h: 460 }, preset: { w: 360, h: 520 }, timeline: { w: 780, h: 420 },
 };
 
 const ICONS = {
@@ -27,6 +27,7 @@ const ICONS = {
   fx: '<svg viewBox="0 0 18 18"><path d="M4 14c1.5-4 2.5-6 4-6s2.5 4 4 4 2.5-4 4-6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><text x="9" y="5" font-size="5.5" fill="currentColor" text-anchor="middle" font-family="monospace">f(x)</text></svg>',
   texEditor: '<svg viewBox="0 0 18 18"><rect x="3" y="3" width="12" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 7h12M7 3v12M11 3v12M3 11h12" stroke="currentColor" stroke-width="1"/></svg>',
   uv: '<svg viewBox="0 0 18 18"><rect x="3" y="3" width="12" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 9h12M9 3v12" stroke="currentColor" stroke-width="1.2"/><circle cx="9" cy="9" r="1.4" fill="currentColor"/></svg>',
+  preset: '<svg viewBox="0 0 18 18"><path d="M4 14l1-1.5c2.5.5 4.5-1.5 4.5-4s-1.5-4-3.5-4S3 6 3.5 8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.5 9.5l4.8 4.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="3.2" cy="14.8" r="0.4" fill="currentColor"/><circle cx="5" cy="6" r="0.4" fill="currentColor"/><circle cx="9" cy="5" r="0.4" fill="currentColor"/><circle cx="12" cy="8.5" r="0.4" fill="currentColor"/><circle cx="10" cy="11.5" r="0.4" fill="currentColor"/></svg>',
   timeline: '<svg viewBox="0 0 18 18"><rect x="2" y="4" width="14" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 4v10M9 4v10M13 4v10" stroke="currentColor" stroke-width="1"/><circle cx="7" cy="9" r="1.5" fill="currentColor"/></svg>',
 };
 
@@ -34,10 +35,10 @@ function defaultState() {
   return {
     strips: {
       left: { top: [], bottom: ['timeline'] },
-      right: { top: ['props', 'fx', 'texEditor', 'uv'], bottom: [] },
+      right: { top: ['props', 'fx', 'texEditor', 'uv', 'preset'], bottom: [] },
     },
     dock: {
-      props: 'right', fx: 'right', texEditor: 'right', uv: 'right',
+      props: 'right', fx: 'right', texEditor: 'right', uv: 'right', preset: 'right',
       timeline: 'bottom',
     },
     open: { left: [], right: ['props'], bottom: ['timeline'] },
@@ -436,6 +437,7 @@ function refreshPanelHook(id) {
   if (!isOpen(id)) return;
   if (id === 'texEditor') import('./texture-editor.js').then((m) => m.refreshTexturePanel()).catch(() => {});
   else if (id === 'uv') import('./texture-editor.js').then((m) => { m.refreshUVPanel(); m.renderTexCanvas(); }).catch(() => {});
+  else if (id === 'preset') import('./preset-panel.js').then((m) => m.refreshPresetPanel()).catch(() => {});
   else if (id === 'timeline') import('./timeline-layers.js').then((m) => m.drawTimelineLayers()).catch(() => {});
 }
 

@@ -513,6 +513,7 @@ export function createFunctionObject(presetId) {
     modalAlert(t('fx.exprError'), e.message);
   }
   refreshFunctionPanel();
+  import('../ui/preset-panel.js').then((m) => { if (m.refreshPresetPanel) m.refreshPresetPanel(); }).catch(() => {});
   return fx;
 }
 
@@ -526,4 +527,5 @@ export function deleteFunctionObject(fxId) {
   state.expandedParticles.delete('f:' + fxId);
   rebuildPoints();
   refreshFunctionPanel();
+  import('../ui/preset-panel.js').then((m) => { if (m.refreshPresetPanel) m.refreshPresetPanel(); }).catch(() => {});
 }
