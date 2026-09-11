@@ -1115,7 +1115,7 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
   }
 
   if (modal) {
-    if (modal.type === 'grab' || modal.type === 'fx-grab') updateGrab(ev.clientX, ev.clientY);
+    if (modal.type === 'grab' || modal.type === 'fx-grab' || modal.type === 'camera-grab') updateGrab(ev.clientX, ev.clientY);
     else if (modal.type === 'scale' || modal.type === 'fx-scale') updateScale(ev.clientX);
     else if (modal.type === 'rotate' || modal.type === 'group-rotate' || modal.type === 'fx-rotate' || modal.type === 'camera-rotate') updateRotate(ev.clientX, ev.clientY);
     else if (modal.type === 'view-rotate' || modal.type === 'group-view-rotate' || modal.type === 'fx-view-rotate' || modal.type === 'camera-view-rotate') updateViewRotate(ev.clientX, ev.clientY);
