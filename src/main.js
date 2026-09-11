@@ -335,6 +335,15 @@ export function initUI() {
   const camTabs = document.getElementById('camera-tabs');
   camTabs.addEventListener('click', handleCameraTabClick);
   camTabs.addEventListener('dblclick', handleCameraTabDblClick);
+  // 鼠标滚轮横向滚动：向下 → 向右，向上 → 向左（列表溢出时才有内容可滚）
+  camTabs.addEventListener('wheel', (ev) => {
+    if (camTabs.scrollWidth <= camTabs.clientWidth) return;
+    ev.preventDefault();
+    let dx = ev.deltaY;
+    if (ev.deltaMode === 1) dx *= 16;
+    else if (ev.deltaMode === 2) dx *= camTabs.clientWidth;
+    camTabs.scrollLeft += dx;
+  }, { passive: false });
   refreshCameraTabs();
 
   // 选项卡切换、停靠与分窗由 workspace.js 管理（initWorkspace 在 initUI 之前运行）。
