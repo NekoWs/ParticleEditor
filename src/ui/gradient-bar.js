@@ -6,8 +6,8 @@
 import { t } from '../core/i18n.js';
 import { cssVar } from '../core/theme.js';
 
-const STOP_HALF_W = 8;    // 色标命中/拖动半宽（CSS px）
-const MIN_GAP = 0.002;   // 相邻色标最小间距（防止完全重叠后无法选中）
+const STOP_HALF_W = 9;    // 色标命中/拖动半宽（CSS px）
+const BAR_PAD = 10;      // 色条左右内边距：端点色块不被截断
 
 // 硬钳制：非数值分量回退为默认（1 视为不透明），避免 NaN 写进 rgba 导致色条漏出棋盘格。
 function clamp01(v) {
@@ -114,8 +114,8 @@ export function createGradientBar({ stops, onChange, onSelect, onEditColor }) {
   function fireSelect() { if (typeof onSelect === 'function') onSelect(sel); }
 
   // —— 色条绘制 ——
-  // 色条左右各留 6px 给端点色标，渐变区 [6, w-6]，span = w-12
-  const spanOf = (w) => Math.max(7, w - 12);
+  // 色条左右各留 BAR_PAD 给端点色标，渐变区 [BAR_PAD, w-BAR_PAD]，span = w-2*BAR_PAD
+  const spanOf = (w) => Math.max(7, w - BAR_PAD * 2);
   function drawBar() {
     const w = Math.max(2, Math.round(canvas.clientWidth));
     const h = Math.max(2, Math.round(canvas.clientHeight));
@@ -143,7 +143,7 @@ export function createGradientBar({ stops, onChange, onSelect, onEditColor }) {
     const span = spanOf(w);
     const grad = ctx.createLinearGradient(0, 0, w, 0);
     for (const s of state) {
-      grad.addColorStop(Math.max(0, Math.min(1, (6 + s.pos * (span - 1)) / w)), cssRgba(s.color));
+      grad.addColorStop(Math.max(0, Math.min(1, (BAR_PAD + s.pos * (span - 1)) / w)), cssRgba(s.color));
     }
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
@@ -158,7 +158,7 @@ export function createGradientBar({ stops, onChange, onSelect, onEditColor }) {
     state.forEach((s, i) => {
       const el = document.createElement('div');
       el.className = 'gbar-stop' + (i === sel ? ' sel' : '');
-      // 指示层左缘 = 色条渐变区起点（6px），像素映射保证箭头精确指到色标位置
+      // 指示层左缘 = 色条渐变区起点（BAR_PAD），像素映射保证箭头精确指到色标位置
       el.style.left = (s.pos * (spanOf(canvas.clientWidth) - 1)) + 'px';
       const chip = document.createElement('div');
       chip.className = 'gbar-stop-chip';
@@ -184,7 +184,7 @@ export function createGradientBar({ stops, onChange, onSelect, onEditColor }) {
   function posFromX(clientX) {
     const r = canvas.getBoundingClientRect();
     const span = spanOf(r.width);
-    return clamp01((clientX - r.left - 6) / Math.max(1, span - 1));
+    return clamp01((clientX - r.left - BAR_PAD) / Math.max(1, span - 1));
   }
   function hitStop(clientX, clientY) {
     const barRect = canvas.getBoundingClientRect();
@@ -207,8 +207,10 @@ export function createGradientBar({ stops, onChange, onSelect, onEditColor }) {
       sel = idx;
       fireSelect();
       renderAll();
-      drag = { idx, moved: false };
-      try { layer.children[idx].setPointerCapture(ev.pointerId); } catch (e) { /* 忽略 */ }
+      drag = { idx };
+      // 捕获在 host 上：拖动期间指示层会重建 DOM，捕获到子元素会随重建丢失，
+      // 导致在区域外松开后 drag 残留（再次悬停就像按着鼠标拖动）。
+      try { host.setPointerCapture(ev.pointerId); } catch (e) { /* 忽略 */ }
       return;
     }
     // 点击色条空白处添加色标（颜色取该处插值），随后可直接拖动
@@ -216,14 +218,15 @@ export function createGradientBar({ stops, onChange, onSelect, onEditColor }) {
     if (ev.clientY >= barRect.top - 2 && ev.clientY <= barRect.bottom + 2 && ev.detail <= 1) {
       ev.preventDefault();
       const t = posFromX(ev.clientX);
-      state.push({ pos: t, color: sampleAt(state, t) });
+      const added = { pos: t, color: sampleAt(state, t) };
+      state.push(added);
       state.sort((a, b) => a.pos - b.pos);
-      sel = state.findIndex((s) => s.pos === t);
+      sel = state.indexOf(added);
       fireSelect();
       renderAll();
       fireChange();
-      drag = { idx: sel, moved: false };
-      try { layer.children[sel].setPointerCapture(ev.pointerId); } catch (e) { /* 忽略 */ }
+      drag = { idx: sel };
+      try { host.setPointerCapture(ev.pointerId); } catch (e) { /* 忽略 */ }
     }
   });
 
@@ -231,13 +234,16 @@ export function createGradientBar({ stops, onChange, onSelect, onEditColor }) {
     if (!drag) return;
     ev.preventDefault();
     const t = posFromX(ev.clientX);
-    let lo = 0, hi = 1;
-    if (drag.idx > 0) lo = state[drag.idx - 1].pos + MIN_GAP;
-    if (drag.idx < state.length - 1) hi = state[drag.idx + 1].pos - MIN_GAP;
-    if (hi < lo) { lo = 0; hi = 1; }
-    const np = Math.max(lo, Math.min(hi, t));
-    if (Math.abs(np - state[drag.idx].pos) > 0.0005) drag.moved = true;
-    state[drag.idx].pos = np;
+    const np = clamp01(t);
+    const moved = state[drag.idx];
+    if (!moved) return;
+    if (Math.abs(np - moved.pos) > 0.0005) {
+      moved.pos = np;
+      // 允许越过相邻色标：按位置重排，拖动的色标跟随指针换位（PS 行为）
+      state.sort((a, b) => a.pos - b.pos);
+      drag.idx = state.indexOf(moved);
+      sel = drag.idx;
+    }
     renderAll();
     fireChange();
   });
@@ -250,6 +256,7 @@ export function createGradientBar({ stops, onChange, onSelect, onEditColor }) {
   };
   host.addEventListener('pointerup', endDrag);
   host.addEventListener('pointercancel', endDrag);
+  host.addEventListener('lostpointercapture', endDrag);
 
   host.addEventListener('dblclick', (ev) => {
     const idx = hitStop(ev.clientX, ev.clientY);
@@ -292,7 +299,7 @@ export function createGradientBar({ stops, onChange, onSelect, onEditColor }) {
       sel = idx;
       fireSelect();
       renderAll();
-      if (typeof onEditColor === 'function') onEditColor(idx);
+      if (typeof onEditColor === 'function') onEditColor(idx, ev.clientX, ev.clientY);
     });
     const del = document.createElement('button');
     del.type = 'button';

@@ -261,82 +261,26 @@ export function openPresetWindow(fxId, presetId) {
       row.appendChild(inp);
       row.appendChild(sw);
     } else if (param.type === 'gradient') {
-      // PS 式渐变条：点击加色标、拖动移动、双击/右键菜单删除；选中色标颜色用取色器编辑
+      // PS 式渐变条：点击加色标、拖动移动（可越位换序）、双击/右键菜单删除；颜色一律走右键菜单「编辑颜色」取色器
       row.classList.add('preset-grad-row');
       const block = document.createElement('div');
       block.className = 'preset-grad';
       const bar = createGradientBar({
         stops: val,
-        onChange: (stops) => { values[param.key] = stops; syncColorRow(); scheduleRefresh(); },
-        onSelect: () => syncColorRow(),
-        onEditColor: (i) => openStopColorPicker(i),
+        onChange: (stops) => { values[param.key] = stops; scheduleRefresh(); },
+        onEditColor: (i, x, y) => {
+          const stops = bar.getStops();
+          if (!stops[i]) return;
+          openColorPicker({
+            x, y,
+            rgba: stops[i].color,
+            onInput: (out) => bar.setColorAt(i, out),
+          });
+        },
       });
       block.appendChild(bar.host);
-
-      const colorRow = document.createElement('div');
-      colorRow.className = 'preset-grad-color';
-      const sw = document.createElement('button');
-      sw.type = 'button';
-      sw.className = 'preset-swatch';
-      sw.title = t('blk.colorPicker');
-      const inp = document.createElement('input');
-      inp.type = 'text';
-      inp.maxLength = 9;
-      inp.spellcheck = false;
-      const posLabel = document.createElement('span');
-      posLabel.className = 'preset-grad-pos';
-      const del = document.createElement('button');
-      del.type = 'button';
-      del.className = 'preset-grad-del';
-      del.textContent = '×';
-      del.title = t('common.delete');
-      const paintSw = () => {
-        const rgba = hexToRgba(inp.value);
-        if (rgba) {
-          sw.style.background = 'linear-gradient(rgba(' +
-            Math.round(rgba[0] * 255) + ',' + Math.round(rgba[1] * 255) + ',' + Math.round(rgba[2] * 255) + ',' + rgba[3] + '), rgba(' +
-            Math.round(rgba[0] * 255) + ',' + Math.round(rgba[1] * 255) + ',' + Math.round(rgba[2] * 255) + ',' + rgba[3] + ')), ' +
-            'repeating-conic-gradient(#777 0 25%, #bbb 0 50%) 0 0 / 10px 10px';
-        }
-      };
-      const syncColorRow = () => {
-        const stops = bar.getStops();
-        const i = Math.min(bar.selectedIndex(), stops.length - 1);
-        const c = stops[i].color;
-        inp.value = rgbaToHex(c[0], c[1], c[2], c[3]);
-        paintSw();
-        posLabel.textContent = Math.round(stops[i].pos * 100) + '%';
-        del.disabled = stops.length <= 2;
-      };
-      inp.addEventListener('input', () => {
-        const rgba = hexToRgba(inp.value);
-        if (rgba) { bar.setSelectedColor(rgba); paintSw(); }
-      });
-      // 取色器编辑指定色标（色块按钮与右键菜单「编辑颜色」共用）
-      function openStopColorPicker(i) {
-        const stops = bar.getStops();
-        if (!stops[i]) return;
-        openColorPicker({
-          x: sw.getBoundingClientRect().left, y: sw.getBoundingClientRect().top,
-          rgba: stops[i].color,
-          onInput: (out) => {
-            inp.value = rgbaToHex(out[0], out[1], out[2], out[3]);
-            bar.setColorAt(i, out);
-            paintSw();
-          },
-        });
-      }
-      sw.addEventListener('click', () => openStopColorPicker(bar.selectedIndex()));
-      del.addEventListener('click', () => bar.removeSelected());
-      colorRow.appendChild(sw);
-      colorRow.appendChild(inp);
-      colorRow.appendChild(posLabel);
-      colorRow.appendChild(del);
-      block.appendChild(colorRow);
-
       row.appendChild(block);
-      inputs[param.key] = { bar, inp, paintSw, sync: syncColorRow };
-      syncColorRow();
+      inputs[param.key] = { bar };
     } else if (param.type === 'angle') {
       // 三个角度拨盘（X/Y/Z）：图标+数值°，点击弹出圆形表盘
       const wrap = document.createElement('span');
@@ -732,7 +676,6 @@ export function openPresetWindow(fxId, presetId) {
         if (ctl.sel._cselRefresh) refreshCustomSelect(ctl.sel);
       } else if (p.type === 'gradient') {
         ctl.bar.setStops(values[p.key]);
-        ctl.sync();
       } else if (p.type === 'angle') {
         ctl.dials.x.setValue(values[p.key].x);
         ctl.dials.y.setValue(values[p.key].y);
