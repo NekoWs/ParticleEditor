@@ -85,11 +85,6 @@
   flex: none; max-width: 55%; color: var(--text); font-size: 12px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.preset-param-row input[type="number"] {
-  width: 84px; flex: 0 0 auto; background: var(--panel-3);
-  border: 1px solid var(--border); color: var(--text);
-  border-radius: 6px; padding: 4px 7px; font-size: 12px; height: 24px; box-sizing: border-box;
-}
 .preset-param-row input[type="text"] {
   flex: 1; min-width: 0; background: var(--panel-3);
   border: 1px solid var(--border); color: var(--text);
@@ -97,6 +92,38 @@
 }
 .preset-param-row input:focus { border-color: var(--accent); outline: none; box-shadow: var(--focus-ring); }
 .preset-param-row input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); }
+
+/* 数值参数：滑块拖动为主 + 紧凑数字框 */
+.preset-num { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.preset-num input[type="range"] { flex: 1; min-width: 40px; accent-color: var(--accent); height: 18px; }
+.preset-num input[type="number"] {
+  flex: 0 0 auto; width: 56px; background: var(--panel-3);
+  border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 4px 6px; font-size: 12px; height: 24px; box-sizing: border-box;
+}
+.preset-num input[type="number"]:focus { border-color: var(--accent); outline: none; box-shadow: var(--focus-ring); }
+
+/* 渐变条（PS 式） */
+.preset-grad-row { flex-direction: column; align-items: stretch; gap: 6px; }
+.preset-grad-row .preset-param-label { max-width: none; }
+.preset-grad { display: flex; flex-direction: column; gap: 6px; }
+.gbar {
+  height: 30px; border: 1px solid var(--border); border-radius: 8px;
+  overflow: hidden; cursor: crosshair; touch-action: none; user-select: none;
+}
+.gbar canvas { display: block; width: 100%; height: 100%; }
+.preset-grad-color { display: flex; align-items: center; gap: 6px; }
+.preset-grad-color .preset-swatch { width: 22px; height: 22px; }
+.preset-grad-color input[type="text"] { flex: 1; min-width: 0; }
+.preset-grad-pos { flex: none; width: 36px; text-align: right; color: var(--muted); font-size: 11px; }
+.preset-grad-del {
+  flex: none; width: 22px; height: 22px; border-radius: 6px; padding: 0;
+  background: var(--panel-3); border: 1px solid var(--border); color: var(--muted);
+  font-size: 13px; line-height: 1; cursor: pointer;
+}
+.preset-grad-del:hover { border-color: var(--danger); color: var(--danger); }
+.preset-grad-del:disabled { opacity: 0.4; cursor: default; border-color: var(--border); color: var(--muted); }
+.preset-grad-hint { font-size: 11px; color: var(--muted); line-height: 1.5; }
 .preset-param-row select {
   flex: 1; min-width: 0; background: var(--panel-3);
   border: 1px solid var(--border); color: var(--text);

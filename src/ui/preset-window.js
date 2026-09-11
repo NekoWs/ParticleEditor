@@ -17,7 +17,8 @@ import { customSelect, refreshCustomSelect } from './select.js';
 import { pushUndo } from '../state/undo.js';
 import { refreshFunctionPanel } from './panels.js';
 import { localizeScriptError } from '../core/script-error-i18n.js';
-import { buildPresetCode, applyPresetToSource, defaultPresetValues, getPreset } from '../core/presets.js';
+import { buildPresetCode, applyPresetToSource, defaultPresetValues, getPreset, extractGradientStops } from '../core/presets.js';
+import { createGradientBar } from './gradient-bar.js';
 
 const SZF = PARTICLE_SIZE_FACTOR;
 let current = null; // 单例窗口
@@ -108,6 +109,13 @@ export function openPresetWindow(fxId, presetId) {
   closePresetWindow();
 
   const values = defaultPresetValues(preset);
+  // 已应用过该预设时，从源码块注释还原色标，让色条延续上次设置
+  for (const p of preset.params) {
+    if (p.type === 'gradient') {
+      const applied = extractGradientStops(fx.source, preset.id);
+      if (applied && applied.length >= 2) values[p.key] = applied;
+    }
+  }
   const overlay = document.createElement('div');
   overlay.className = 'ui-modal-overlay preset-overlay';
 
@@ -173,7 +181,7 @@ export function openPresetWindow(fxId, presetId) {
       chk.type = 'checkbox';
       chk.checked = !!val;
       chk.addEventListener('change', () => { values[param.key] = chk.checked; scheduleRefresh(); });
-      inputs[param.key] = chk;
+      inputs[param.key] = { chk };
       row.appendChild(chk);
     } else if (param.type === 'enum') {
       const sel = document.createElement('select');
@@ -187,7 +195,7 @@ export function openPresetWindow(fxId, presetId) {
       sel.addEventListener('change', () => { values[param.key] = sel.value; scheduleRefresh(); });
       row.appendChild(sel);
       customSelect(sel);
-      inputs[param.key] = sel;
+      inputs[param.key] = { sel };
       return row;
     } else if (param.type === 'color') {
       const inp = document.createElement('input');
@@ -226,22 +234,122 @@ export function openPresetWindow(fxId, presetId) {
           },
         });
       });
-      inputs[param.key] = inp;
+      inputs[param.key] = { inp, paint };
       row.appendChild(inp);
       row.appendChild(sw);
-    } else {
-      const inp = document.createElement('input');
-      inp.type = 'number';
-      if (param.min != null) inp.min = param.min;
-      if (param.max != null) inp.max = param.max;
-      inp.step = param.step != null ? param.step : 'any';
-      inp.value = String(val);
-      inp.addEventListener('input', () => {
-        const n = parseFloat(inp.value);
-        if (Number.isFinite(n)) { values[param.key] = n; scheduleRefresh(); }
+    } else if (param.type === 'gradient') {
+      // PS 式渐变条：点击加色标、拖动移动、双击删除；选中色标颜色用取色器编辑
+      row.classList.add('preset-grad-row');
+      const block = document.createElement('div');
+      block.className = 'preset-grad';
+      const bar = createGradientBar({
+        stops: val,
+        onChange: (stops) => { values[param.key] = stops; syncColorRow(); scheduleRefresh(); },
+        onSelect: () => syncColorRow(),
       });
-      inputs[param.key] = inp;
-      row.appendChild(inp);
+      block.appendChild(bar.host);
+
+      const colorRow = document.createElement('div');
+      colorRow.className = 'preset-grad-color';
+      const sw = document.createElement('button');
+      sw.type = 'button';
+      sw.className = 'preset-swatch';
+      sw.title = t('blk.colorPicker');
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.maxLength = 9;
+      inp.spellcheck = false;
+      const posLabel = document.createElement('span');
+      posLabel.className = 'preset-grad-pos';
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'preset-grad-del';
+      del.textContent = '×';
+      del.title = t('common.delete');
+      const paintSw = () => {
+        const rgba = hexToRgba(inp.value);
+        if (rgba) {
+          sw.style.background = 'linear-gradient(rgba(' +
+            Math.round(rgba[0] * 255) + ',' + Math.round(rgba[1] * 255) + ',' + Math.round(rgba[2] * 255) + ',' + rgba[3] + '), rgba(' +
+            Math.round(rgba[0] * 255) + ',' + Math.round(rgba[1] * 255) + ',' + Math.round(rgba[2] * 255) + ',' + rgba[3] + ')), ' +
+            'repeating-conic-gradient(#777 0 25%, #bbb 0 50%) 0 0 / 10px 10px';
+        }
+      };
+      const syncColorRow = () => {
+        const stops = bar.getStops();
+        const i = Math.min(bar.selectedIndex(), stops.length - 1);
+        const c = stops[i].color;
+        inp.value = rgbaToHex(c[0], c[1], c[2], c[3]);
+        paintSw();
+        posLabel.textContent = Math.round(stops[i].pos * 100) + '%';
+        del.disabled = stops.length <= 2;
+      };
+      inp.addEventListener('input', () => {
+        const rgba = hexToRgba(inp.value);
+        if (rgba) { bar.setSelectedColor(rgba); paintSw(); }
+      });
+      sw.addEventListener('click', (ev) => {
+        const stops = bar.getStops();
+        const c = stops[Math.min(bar.selectedIndex(), stops.length - 1)].color;
+        openColorPicker({
+          x: ev.clientX, y: ev.clientY,
+          rgba: c,
+          onInput: (out) => {
+            inp.value = rgbaToHex(out[0], out[1], out[2], out[3]);
+            bar.setSelectedColor(out);
+            paintSw();
+          },
+        });
+      });
+      del.addEventListener('click', () => bar.removeSelected());
+      colorRow.appendChild(sw);
+      colorRow.appendChild(inp);
+      colorRow.appendChild(posLabel);
+      colorRow.appendChild(del);
+      block.appendChild(colorRow);
+
+      const hint = document.createElement('div');
+      hint.className = 'preset-grad-hint';
+      hint.textContent = t('preset.gbar.hint');
+      block.appendChild(hint);
+
+      row.appendChild(block);
+      inputs[param.key] = { bar, inp, paintSw, sync: syncColorRow };
+      syncColorRow();
+    } else {
+      // 数值参数：滑块拖动为主，紧凑数字框做精确输入
+      const wrap = document.createElement('span');
+      wrap.className = 'preset-num';
+      const range = document.createElement('input');
+      range.type = 'range';
+      if (param.min != null) range.min = param.min;
+      if (param.max != null) range.max = param.max;
+      range.step = param.step != null ? param.step : 'any';
+      range.value = String(val);
+      const num = document.createElement('input');
+      num.type = 'number';
+      if (param.min != null) num.min = param.min;
+      if (param.max != null) num.max = param.max;
+      num.step = param.step != null ? param.step : 'any';
+      num.value = String(val);
+      const clampNum = (n) => {
+        let v = n;
+        if (param.min != null && v < param.min) v = param.min;
+        if (param.max != null && v > param.max) v = param.max;
+        return v;
+      };
+      range.addEventListener('input', () => {
+        const n = parseFloat(range.value);
+        if (Number.isFinite(n)) { values[param.key] = n; num.value = String(n); scheduleRefresh(); }
+      });
+      num.addEventListener('input', () => {
+        const n = clampNum(parseFloat(num.value));
+        if (Number.isFinite(n)) { values[param.key] = n; range.value = String(n); scheduleRefresh(); }
+      });
+      wrap.appendChild(range);
+      wrap.appendChild(num);
+      inputs[param.key] = { range, num };
+      row.appendChild(wrap);
     }
     return row;
   };
@@ -414,13 +522,25 @@ export function openPresetWindow(fxId, presetId) {
   resetBtn.addEventListener('click', () => {
     const defs = defaultPresetValues(preset);
     for (const p of preset.params) {
-      values[p.key] = p.type === 'color' ? defs[p.key].slice() : defs[p.key];
-      const el = inputs[p.key];
-      if (!el) continue;
-      if (p.type === 'bool') el.checked = !!values[p.key];
-      else if (p.type === 'color') el.value = rgbaToHex(values[p.key][0], values[p.key][1], values[p.key][2], values[p.key][3]);
-      else el.value = String(values[p.key]);
-      if (el._cselRefresh) refreshCustomSelect(el);
+      values[p.key] = p.type === 'color' ? defs[p.key].slice()
+        : p.type === 'gradient' ? defs[p.key].map((s) => ({ pos: s.pos, color: s.color.slice() }))
+          : defs[p.key];
+      const ctl = inputs[p.key];
+      if (!ctl) continue;
+      if (p.type === 'bool') ctl.chk.checked = !!values[p.key];
+      else if (p.type === 'color') {
+        ctl.inp.value = rgbaToHex(values[p.key][0], values[p.key][1], values[p.key][2], values[p.key][3]);
+        ctl.paint();
+      } else if (p.type === 'enum') {
+        ctl.sel.value = String(values[p.key]);
+        if (ctl.sel._cselRefresh) refreshCustomSelect(ctl.sel);
+      } else if (p.type === 'gradient') {
+        ctl.bar.setStops(values[p.key]);
+        ctl.sync();
+      } else {
+        ctl.range.value = String(values[p.key]);
+        ctl.num.value = String(values[p.key]);
+      }
     }
     scheduleRefresh();
   });

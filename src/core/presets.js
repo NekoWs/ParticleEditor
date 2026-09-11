@@ -20,6 +20,49 @@ const N = (v, fallback = 0) => {
 // 颜色分量（0..1 数组）
 const C = (v) => [0, 1, 2, 3].map((i) => N((v || [])[i], 1));
 
+// —— 渐变停止点（stops，PS 式渐变条的色标模型）——
+
+// 归一化：排序、钳制位置与颜色分量，不足 2 个时补默认白。
+export function normalizeStops(stops) {
+  const raw = Array.isArray(stops) ? stops : [];
+  const out = raw
+    .filter((s) => s && Number.isFinite(Number(s.pos)))
+    .map((s) => ({
+      pos: Math.max(0, Math.min(1, Number(s.pos))),
+      color: [0, 1, 2, 3].map((i) => Math.max(0, Math.min(1, Number((s.color || [])[i])))),
+    }));
+  out.sort((a, b) => a.pos - b.pos);
+  if (out.length < 2) {
+    out.length = 0;
+    out.push({ pos: 0, color: [1, 1, 1, 1] }, { pos: 1, color: [1, 1, 1, 1] });
+  }
+  return out;
+}
+
+// 色标元数据行（写进块内注释，重开窗口时用来还原色条）
+export function stopsMetaLine(stops) {
+  const data = normalizeStops(stops).map((s) => [N(s.pos), N(s.color[0], 1), N(s.color[1], 1), N(s.color[2], 1), N(s.color[3], 1)]);
+  return '// ==pdraw-stops:' + JSON.stringify({ s: data }) + '==';
+}
+
+// 从源码里指定预设的块注释还原色标；没有/损坏返回 null。
+export function extractGradientStops(src, presetId) {
+  const s = String(src || '');
+  const bi = s.indexOf(PRESET_MARK_BEGIN + presetId + '==');
+  if (bi < 0) return null;
+  const ei = s.indexOf(PRESET_MARK_END, bi);
+  const block = ei < 0 ? s.slice(bi) : s.slice(bi, ei);
+  const m = /\/\/ ==pdraw-stops:(\{.*?\})==/.exec(block);
+  if (!m) return null;
+  try {
+    const o = JSON.parse(m[1]);
+    if (Array.isArray(o.s)) {
+      return o.s.map((x) => ({ pos: Number(x[0]), color: [Number(x[1]), Number(x[2]), Number(x[3]), Number(x[4])] }));
+    }
+  } catch (e) { /* 元数据损坏：忽略 */ }
+  return null;
+}
+
 // 依据轴/距离/序号/时间的原始取值表达式（进程内，0..1 归一化前）
 const AXIS_RAW = {
   x: 'p.position.x',
@@ -51,55 +94,66 @@ export const MODIFY_PRESETS = [
     cat: 'color',
     target: 'process',
     params: [
-      { key: 'c1', type: 'color', def: [1, 0.478, 0.161, 1] },
-      { key: 'c2', type: 'color', def: [0.227, 0.549, 1, 1] },
+      {
+        key: 'stops', type: 'gradient',
+        def: [
+          { pos: 0, color: [1, 0.478, 0.161, 1] },
+          { pos: 1, color: [0.227, 0.549, 1, 1] },
+        ],
+      },
       { key: 'basis', type: 'enum', options: AXIS_OPTIONS, def: 'y' },
       { key: 'strength', type: 'num', min: 0, max: 1, step: 0.05, def: 1 },
       { key: 'power', type: 'num', min: 0.1, max: 10, step: 0.1, def: 1 },
-      { key: 'midOn', type: 'bool', def: false, advanced: true },
-      { key: 'mid', type: 'color', def: [1, 1, 1, 1], advanced: true },
-      { key: 'midPos', type: 'num', min: 0, max: 1, step: 0.05, def: 0.5, advanced: true },
-      { key: 'a1', type: 'num', min: 0, max: 1, step: 0.05, def: 1, advanced: true },
-      { key: 'a2', type: 'num', min: 0, max: 1, step: 0.05, def: 1, advanced: true },
       { key: 'reverse', type: 'bool', def: false, advanced: true },
       { key: 'range', type: 'num', min: 0.1, max: 100, step: 0.5, def: 8, advanced: true },
     ],
     build(v) {
-      const [c1r, c1g, c1b] = C(v.c1);
-      const [c2r, c2g, c2b] = C(v.c2);
-      const [midr, midg, midb] = C(v.mid);
+      const stops = normalizeStops(v.stops);
       const strength = N(v.strength, 1);
       const power = N(v.power, 1);
-      const midOn = !!v.midOn;
-      const midPos = Math.min(0.999, Math.max(0.001, N(v.midPos, 0.5)));
-      const a1 = N(v.a1, 1), a2 = N(v.a2, 1);
       const reverse = !!v.reverse;
       const lines = [
+        stopsMetaLine(stops),
         'for (const p of this.particles) {',
         '  let po = p.color',
         '  let gv = ' + axisNormExpr(v.basis, v.range),
       ];
       if (reverse) lines.push('  gv = 1 - gv');
       lines.push('  gv = pow(gv, ' + power + ')');
-      lines.push('  let sr = ' + c1r, '  let sg = ' + c1g, '  let sb = ' + c1b);
-      lines.push('  let er = ' + c2r, '  let eg = ' + c2g, '  let eb = ' + c2b);
-      if (midOn) {
-        lines.push('  let gr = ' + midr, '  let gg = ' + midg, '  let gb = ' + midb);
-        lines.push('  if (gv < ' + midPos + ') {');
-        lines.push('    let s = gv / ' + midPos);
-        lines.push('    gr = sr + (gr - sr) * s', '    gg = sg + (gg - sg) * s', '    gb = sb + (gb - sb) * s');
-        lines.push('  } else {');
-        lines.push('    let s = (gv - ' + midPos + ') / ' + N(1 - midPos));
-        lines.push('    gr = gr + (er - gr) * s', '    gg = gg + (eg - gg) * s', '    gb = gb + (eb - gb) * s');
-        lines.push('  }');
+      const s0 = stops[0];
+      lines.push(
+        '  let cr = ' + N(s0.color[0]),
+        '  let cg = ' + N(s0.color[1]),
+        '  let cb = ' + N(s0.color[2]),
+        '  let ca = ' + N(s0.color[3], 1),
+      );
+      const n = stops.length;
+      const seg = (a, b, indent) => {
+        const d = Math.max(1e-4, N(b.pos - a.pos));
+        const p = ' '.repeat(indent);
+        return [
+          p + 'let s = clamp((gv - ' + N(a.pos) + ') / ' + d + ', 0, 1)',
+          p + 'cr = ' + N(a.color[0]) + ' + ' + N(b.color[0] - a.color[0]) + ' * s',
+          p + 'cg = ' + N(a.color[1]) + ' + ' + N(b.color[1] - a.color[1]) + ' * s',
+          p + 'cb = ' + N(a.color[2]) + ' + ' + N(b.color[2] - a.color[2]) + ' * s',
+          p + 'ca = ' + N(a.color[3], 1) + ' + ' + N(b.color[3] - a.color[3]) + ' * s',
+        ];
+      };
+      if (n === 2) {
+        lines.push(...seg(stops[0], stops[1], 2));
       } else {
-        lines.push('  let gr = sr + (er - sr) * gv', '  let gg = sg + (eg - sg) * gv', '  let gb = sb + (eb - sb) * gv');
+        for (let i = 0; i < n - 1; i++) {
+          lines.push(i === 0 ? '  if (gv < ' + N(stops[i + 1].pos) + ') {' : '  } else if (gv < ' + N(stops[i + 1].pos) + ') {');
+          lines.push(...seg(stops[i], stops[i + 1], 4));
+        }
+        lines.push('  } else {');
+        lines.push(...seg(stops[n - 2], stops[n - 1], 4));
+        lines.push('  }');
       }
-      lines.push('  let ga = ' + a1 + ' + ' + N(a2 - a1) + ' * gv');
-      lines.push('  let br = po.r * ' + N(1 - strength) + ' + gr * ' + strength);
-      lines.push('  let bg = po.g * ' + N(1 - strength) + ' + gg * ' + strength);
-      lines.push('  let bb = po.b * ' + N(1 - strength) + ' + gb * ' + strength);
-      lines.push('  let ba = po.a * ' + N(1 - strength) + ' + ga * ' + strength);
+      lines.push('  let br = po.r * ' + N(1 - strength) + ' + cr * ' + strength);
+      lines.push('  let bg = po.g * ' + N(1 - strength) + ' + cg * ' + strength);
+      lines.push('  let bb = po.b * ' + N(1 - strength) + ' + cb * ' + strength);
+      lines.push('  let ba = po.a * ' + N(1 - strength) + ' + ca * ' + strength);
       lines.push('  p.color = color(br, bg, bb, ba)');
       lines.push('}');
       return lines.join('\n');
@@ -392,7 +446,13 @@ export function getPreset(id) {
 export function defaultPresetValues(preset) {
   const out = {};
   for (const p of preset.params) {
-    out[p.key] = p.type === 'color' ? (p.def || [1, 1, 1, 1]).slice() : p.def;
+    if (p.type === 'gradient') {
+      out[p.key] = (p.def || []).map((s) => ({ pos: Number(s.pos), color: (s.color || [1, 1, 1, 1]).slice() }));
+    } else if (p.type === 'color') {
+      out[p.key] = (p.def || [1, 1, 1, 1]).slice();
+    } else {
+      out[p.key] = p.def;
+    }
   }
   return out;
 }
