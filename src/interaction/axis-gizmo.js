@@ -210,14 +210,15 @@ export function turntableRotate(dx, dy) {
 }
 
 // 右键拖拽平移：相机与 controls.target 同步平移（纯平移，不改变朝向）。
-// dx>0 向右拖：相机沿右方向反向平移，场景跟手向右；dy>0 向下拖：相机沿上方向平移。
+// 方向取相机局部轴（屏幕右 = 局部 X、屏幕上方 = 局部 Y），上下拖动落在视平面内：
+// 俯视时沿地面平移视角，而不是只改变相机高度。正俯视时视线与世界 Y 平行，
+// 叉积会退化，局部轴来自四元数因此始终有定义。
 export function panCamera(dx, dy) {
   const dist = Math.max(1e-4, camera.position.distanceTo(controls.target));
   const halfH = dist * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
   const scale = 2 * halfH / (renderer.domElement.clientHeight || 1);
-  const dir = camera.getWorldDirection(new THREE.Vector3());
-  const right = new THREE.Vector3().crossVectors(dir, camera.up).normalize();
-  const up = camera.up.clone().normalize();
+  const right = _right.set(1, 0, 0).applyQuaternion(camera.quaternion);
+  const up = _pv.set(0, 1, 0).applyQuaternion(camera.quaternion);
   const pan = new THREE.Vector3()
     .addScaledVector(right, -dx * scale)
     .addScaledVector(up, dy * scale);
@@ -280,7 +281,7 @@ gizmoCanvas.addEventListener('pointerup', (ev) => {
   gizmoCanvas.style.cursor = inside ? 'pointer' : 'default';
 });
 
-// 中键自由旋转（与 gizmo 共用 turntable，方向一致）；右键平移（保持 target 在原点）。
+// 中键自由旋转（与 gizmo 共用 turntable，方向一致）；右键平移（相机与 target 同步平移）。
 // 摄像机视角（activeCamera）下禁用中键旋转/右键平移：视角由关键帧驱动，不在此手动改姿态。
 renderer.domElement.addEventListener('pointerdown', (ev) => {
   if (state.activeCamera && state.activeCamera !== DEFAULT_CAMERA_ID) return;
