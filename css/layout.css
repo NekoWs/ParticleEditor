@@ -166,13 +166,16 @@ body.win-titlebar .welcome-header { padding-right: 140px; }
 }
 .cam-tabs[hidden] { display: none; }
 .cam-tabs::-webkit-scrollbar { height: 6px; }
+.cam-tabs::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border: none; border-radius: 4px; }
 .cam-tab {
   display: inline-flex; align-items: center; gap: 4px;
+  flex: 0 0 auto;
   height: 26px; padding: 0 10px; white-space: nowrap;
   background: transparent; color: var(--muted); border: 1px solid transparent;
   border-radius: 7px; cursor: pointer; font-size: 12px;
   transition: all 0.14s ease; max-width: 160px; overflow: hidden; text-overflow: ellipsis;
 }
+.cam-tab > span:first-child { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .cam-tab:hover { background: var(--panel-3); color: var(--text); }
 .cam-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .cam-tab .cam-del { display: none; width: 14px; height: 14px; line-height: 12px; text-align: center; border-radius: 3px; margin-left: 2px; font-size: 11px; }

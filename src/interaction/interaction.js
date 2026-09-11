@@ -1061,8 +1061,6 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
       state.cameras.push(cam);
       refreshCameraTabs();
       refreshTimelineTree();
-      state.tool = 'select';
-      document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active', b.dataset.tool === 'select'));
     }
     return;
   }
