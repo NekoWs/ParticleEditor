@@ -109,9 +109,13 @@ export function updateGizmo() {
   let c = null;
   const cam = selectedCameraForRotate();
   if (cam && state.tool === 'rotate') {
-    // 摄像机：旋转 gizmo 定位到看向目标点（仅旋转工具；移动工具仍隐藏）
+    // 摄像机：旋转 gizmo 定位到看向目标点
     const pose = cameraPoseAt(cam.id, state.time);
     if (pose) c = pose.target;
+  } else if (cam && state.tool === 'move') {
+    // 摄像机：移动 gizmo 定位到摄像机当前位置
+    const pose = cameraPoseAt(cam.id, state.time);
+    if (pose) c = pose.pos;
   } else {
     const fx = getFunction(state.selectedFunction);
     if (fx) {
@@ -215,7 +219,7 @@ export function updateGizmoFrame() {
   // 面移动器：固定朝向该面（构建时已设定），不做 billboard
 
   const m = modal;
-  const isGrab = m && (m.type === 'grab' || m.type === 'fx-grab');
+  const isGrab = m && (m.type === 'grab' || m.type === 'fx-grab' || m.type === 'camera-grab');
   const rotDragging = m && (m.type === 'rotate' || m.type === 'group-rotate' || m.type === 'fx-rotate'
     || m.type === 'view-rotate' || m.type === 'group-view-rotate' || m.type === 'fx-view-rotate'
     || m.type === 'camera-rotate' || m.type === 'camera-view-rotate');

@@ -208,6 +208,20 @@ export function rotateVector(v, axis, angle) {
 }
 
 export function enterGrab(clientX, clientY, axis, face) {
+  // 仅选中摄像机：移动 gizmo 定位在摄像机当前位置，拖动写 pos 关键帧
+  const cam = selectedCameraForRotate();
+  if (cam && state.tool === 'move') {
+    pushUndo();
+    const T = Math.round(state.time);
+    const pose = cameraPoseAt(cam.id, T);
+    if (!pose) return;
+    const c = pose.pos;
+    const pt = planePointAt(clientX, clientY);
+    modal = { type: 'camera-grab', camId: cam.id, startPos: c, centroid: c, axis: axis || null, axisKey: axis, face: face || null, startWorld: pt ? { x: pt.x, z: pt.z } : null, startClient: { x: clientX, y: clientY }, y: c[1], faceStart: null };
+    setDragAxisHighlight(modal);
+    controls.enabled = false;
+    return;
+  }
   const fx = getFunction(state.selectedFunction);
   if (fx) {
     pushUndo();
@@ -633,10 +647,22 @@ export function grabDelta(clientX, clientY, m) {
 
 export function updateGrab(clientX, clientY) {
   const m = modal;
-  if (!m || (m.type !== 'grab' && m.type !== 'fx-grab')) return;
+  if (!m || (m.type !== 'grab' && m.type !== 'fx-grab' && m.type !== 'camera-grab')) return;
   const fxMode = m.type === 'fx-grab';
   const delta = grabDelta(clientX, clientY, m);
   if (!delta) return;
+  if (m.type === 'camera-grab') {
+    const cam = getCamera(m.camId);
+    const t = state.captureKeyframes ? Math.round(state.time) : 0;
+    ['x', 'y', 'z'].forEach((comp, i) => {
+      const v = shiftHeld ? snapValue(m.startPos[i] + delta[i]) : m.startPos[i] + delta[i];
+      if (t === 0 && cam) cam.pos[i] = v; // 0t 拖动同步基值，与时间轴数值编辑一致
+      setComponentKeyframe('c:' + m.camId, 'pos', comp, t, v, 'set');
+    });
+    rebuildPoints();
+    refreshTimelineTree();
+    return;
+  }
   if (fxMode) {
     const fx = getFunction(m.fxId);
     const d = m.startDelta || [0, 0, 0];
@@ -1239,7 +1265,7 @@ window.addEventListener('keydown', (ev) => {
   if (modal) {
     if (k === 'escape') cancelModal();
     else if (k === 'enter') confirmModal();
-    else if ((modal.type === 'grab' || modal.type === 'fx-grab') && (k === 'x' || k === 'y' || k === 'z')) {
+    else if ((modal.type === 'grab' || modal.type === 'fx-grab' || modal.type === 'camera-grab') && (k === 'x' || k === 'y' || k === 'z')) {
       modal.axis = modal.axis === k.toUpperCase() ? null : k.toUpperCase();
       if (modal.axis) modal.face = null; // 切换为单轴约束时放弃面移动
       setDragAxisHighlight(modal);
