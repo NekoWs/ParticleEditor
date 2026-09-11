@@ -9,7 +9,7 @@ import { t } from '../core/i18n.js';
 import { state, getFunction, PARTICLE_SIZE_FACTOR } from '../core/constants.js';
 import { pointsMaterial, makeParticleQuadGeometry } from '../scene/scene.js';
 import { evaluateFxFrame, rebuildFunctionObject } from '../core/generators.js';
-import { invalidateMaxMsCache } from '../core/animation.js';
+import { invalidateMaxMsCache, maxMs } from '../core/animation.js';
 import { cssVar } from '../core/theme.js';
 import { rgbaToHex, hexToRgba } from './ui.js';
 import { openColorPicker, closeColorPicker, colorPickerOpen } from './color-picker.js';
@@ -87,8 +87,10 @@ export function closePresetWindow() {
   if (!current) return;
   const w = current;
   current = null;
+  if (w.rafId) cancelAnimationFrame(w.rafId);
   window.removeEventListener('keydown', w.onKey, true);
   if (w.resizeObs) w.resizeObs.disconnect();
+  if (w.seekObs) w.seekObs.disconnect();
   if (w.controls) w.controls.dispose();
   closeColorPicker();
   if (w.renderer) {
@@ -134,16 +136,35 @@ export function openPresetWindow(fxId, presetId) {
 
   const previewBox = document.createElement('div');
   previewBox.className = 'preset-preview';
+  const canvasWrap = document.createElement('div');
+  canvasWrap.className = 'preset-canvas-wrap';
   const canvas = document.createElement('canvas');
-  previewBox.appendChild(canvas);
+  canvasWrap.appendChild(canvas);
   const errHint = document.createElement('div');
   errHint.className = 'preset-preview-error';
   errHint.hidden = true;
-  previewBox.appendChild(errHint);
-  const hint = document.createElement('div');
-  hint.className = 'preset-preview-hint';
-  hint.textContent = t('preset.win.preview');
-  previewBox.appendChild(hint);
+  canvasWrap.appendChild(errHint);
+  previewBox.appendChild(canvasWrap);
+
+  // —— 播放条（PR 式）：左侧 时间/长度、中间按钮、右侧悬停时间，下方细进度条 + 每秒标尺 ——
+  const playbar = document.createElement('div');
+  playbar.className = 'preset-playbar';
+  const playRow = document.createElement('div');
+  playRow.className = 'preset-playrow';
+  const timeLabel = document.createElement('span');
+  timeLabel.className = 'preset-time';
+  const btnsRow = document.createElement('div');
+  btnsRow.className = 'preset-btns';
+  const hoverLabel = document.createElement('span');
+  hoverLabel.className = 'preset-hover-time';
+  playRow.appendChild(timeLabel);
+  playRow.appendChild(btnsRow);
+  playRow.appendChild(hoverLabel);
+  playbar.appendChild(playRow);
+  const seekCanvas = document.createElement('canvas');
+  seekCanvas.className = 'preset-seek';
+  playbar.appendChild(seekCanvas);
+  previewBox.appendChild(playbar);
   body.appendChild(previewBox);
 
   // —— 参数区 ——
@@ -488,8 +509,8 @@ export function openPresetWindow(fxId, presetId) {
   }
 
   function sizePreview() {
-    const w = previewBox.clientWidth || 2;
-    const h = previewBox.clientHeight || 2;
+    const w = canvasWrap.clientWidth || 2;
+    const h = canvasWrap.clientHeight || 2;
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
@@ -501,21 +522,160 @@ export function openPresetWindow(fxId, presetId) {
 
   controls.addEventListener('change', renderPreview);
 
-  let timer = 0;
+  // —— 播放条：时间/长度 + 按钮 + 悬停时间 + 细进度条（每秒标尺） ——
+  const st = fx.st || 0;
+  const durMs = fx.duration > 0 ? fx.duration : (maxMs() || 5000);
+  const endT = st + Math.max(0, durMs - 1);
+  const FRAME_STEP = 50; // 一帧 = 50ms（脚本 tick 周期）
+  let previewT = Math.max(st, Math.min(endT, Math.round(previewTick(fx))));
+  let playing = false;
+  let lastNow = 0;
+  let seeking = false;
+
+  const fmtT = (ms) => ((Math.max(0, ms)) / 1000).toFixed(2) + 's';
+  const clampT = (t) => Math.max(st, Math.min(endT, Math.round(t)));
+
+  function updateTimeUI() {
+    timeLabel.textContent = fmtT(previewT - st) + ' / ' + fmtT(durMs);
+  }
+
+  const mkPlayBtn = (glyph, titleKey, fn) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'preset-pbtn';
+    b.title = t(titleKey);
+    b.textContent = glyph;
+    b.addEventListener('click', fn);
+    btnsRow.appendChild(b);
+    return b;
+  };
+  const playBtn = mkPlayBtn('▶', 'preset.play.play', () => {
+    playing = !playing;
+    lastNow = 0;
+    playBtn.textContent = playing ? '❚❚' : '▶';
+    if (playing && previewT >= endT) { previewT = st; refreshPreview(); updateTimeUI(); drawSeek(); }
+  });
+  // 上一秒、上一帧 | 播放/暂停 | 下一帧、下一秒（播放键居中）
+  mkPlayBtn('«', 'preset.play.prevSec', () => seekBy(-1000));
+  mkPlayBtn('‹', 'preset.play.prevFrame', () => seekBy(-FRAME_STEP));
+  btnsRow.appendChild(playBtn);
+  mkPlayBtn('›', 'preset.play.nextFrame', () => seekBy(FRAME_STEP));
+  mkPlayBtn('»', 'preset.play.nextSec', () => seekBy(1000));
+
+  function seekBy(dt) {
+    previewT = clampT(previewT + dt);
+    refreshPreview();
+    updateTimeUI();
+    drawSeek();
+  }
+
+  function seekFromEvent(ev) {
+    const rect = seekCanvas.getBoundingClientRect();
+    const t = Math.max(0, Math.min(1, (ev.clientX - rect.left) / Math.max(1, rect.width)));
+    previewT = clampT(st + Math.round(t * durMs));
+    refreshPreview();
+    updateTimeUI();
+    drawSeek();
+  }
+  seekCanvas.addEventListener('pointerdown', (ev) => {
+    if (ev.button !== 0) return;
+    seeking = true;
+    try { seekCanvas.setPointerCapture(ev.pointerId); } catch (e) { /* 忽略 */ }
+    seekFromEvent(ev);
+  });
+  seekCanvas.addEventListener('pointermove', (ev) => {
+    const rect = seekCanvas.getBoundingClientRect();
+    const t = Math.max(0, Math.min(1, (ev.clientX - rect.left) / Math.max(1, rect.width)));
+    hoverLabel.textContent = fmtT(Math.round(t * durMs));
+    if (seeking) seekFromEvent(ev);
+  });
+  const endSeek = () => { seeking = false; };
+  seekCanvas.addEventListener('pointerup', endSeek);
+  seekCanvas.addEventListener('pointercancel', endSeek);
+  seekCanvas.addEventListener('pointerleave', () => { if (!seeking) hoverLabel.textContent = ''; });
+
+  function drawSeek() {
+    const w = Math.max(2, Math.round(seekCanvas.clientWidth));
+    const h = Math.max(2, Math.round(seekCanvas.clientHeight));
+    if (seekCanvas.width !== w || seekCanvas.height !== h) {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      seekCanvas.width = Math.round(w * dpr);
+      seekCanvas.height = Math.round(h * dpr);
+    }
+    const dpr = seekCanvas.width / w;
+    const ctx = seekCanvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const cy = h / 2;
+    const bh = 4;
+    let accent = '#5b9dff', track = '#29303c', tick = '#3a4250';
+    try {
+      accent = cssVar('--accent', '#5b9dff').trim() || accent;
+      track = cssVar('--panel-3', '#29303c').trim() || track;
+      tick = cssVar('--border-soft', '#3a4250').trim() || tick;
+    } catch (e) { /* 用默认 */ }
+    // 轨道
+    ctx.fillStyle = track;
+    ctx.beginPath();
+    ctx.roundRect(0, cy - bh / 2, w, bh, 2);
+    ctx.fill();
+    // 每秒刻度
+    const pxPerSec = durMs > 0 ? w / (durMs / 1000) : 0;
+    if (Number.isFinite(pxPerSec) && pxPerSec >= 5) {
+      ctx.strokeStyle = tick;
+      ctx.lineWidth = 1;
+      for (let i = 1; i * pxPerSec < w; i++) {
+        const x = Math.round(i * pxPerSec) + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(x, cy - 4);
+        ctx.lineTo(x, cy + 4);
+        ctx.stroke();
+      }
+    }
+    // 进度填充
+    const px = (previewT - st) / Math.max(1, durMs) * w;
+    ctx.fillStyle = accent;
+    ctx.beginPath();
+    ctx.roundRect(0, cy - bh / 2, Math.max(bh, px), bh, 2);
+    ctx.fill();
+    // 播放头
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(px - 1, cy - 6, 2, 12);
+  }
+  const seekObs = new ResizeObserver(drawSeek);
+  seekObs.observe(seekCanvas);
+
+  // 参数改动即时生成预览（不再防抖，拖动丝滑）
   function scheduleRefresh() {
-    clearTimeout(timer);
-    timer = setTimeout(refreshPreview, 80);
+    refreshPreview();
   }
 
   function refreshPreview() {
     const code = buildPresetCode(preset, values);
     const source = applyPresetToSource(fx.source, preset.id, code, preset.target);
-    const T = previewTick(fx);
-    const { parts, error } = evalIsolated(fx, source, T);
+    const { parts, error } = evalIsolated(fx, source, previewT);
     errHint.hidden = !error;
     errHint.textContent = error ? localizeScriptError(error) : '';
     applyParts(parts);
     renderPreview();
+    drawSeek();
+  }
+
+  function loop(now) {
+    if (current !== win) return;
+    if (playing) {
+      if (lastNow) {
+        previewT = clampT(previewT + (now - lastNow));
+        refreshPreview();
+        updateTimeUI();
+        if (previewT >= endT) {
+          playing = false;
+          playBtn.textContent = '▶';
+        }
+      }
+      lastNow = now;
+    }
+    win.rafId = requestAnimationFrame(loop);
   }
 
   // —— 事件 ——
@@ -575,10 +735,13 @@ export function openPresetWindow(fxId, presetId) {
   };
   window.addEventListener('keydown', onKey, true);
 
-  current = {
-    overlay, renderer, scene, camera, controls, mesh, geo, resizeObs, onKey,
+  const win = {
+    overlay, renderer, scene, camera, controls, mesh, geo, resizeObs, seekObs, onKey, rafId: 0,
   };
+  current = win;
 
   sizePreview();
+  updateTimeUI();
   refreshPreview();
+  win.rafId = requestAnimationFrame(loop);
 }
