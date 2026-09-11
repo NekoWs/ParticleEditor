@@ -73,12 +73,39 @@ const AXIS_RAW = {
   time: 'this.time / 1000',
 };
 
-// 依据 expr + range 生成 0..1 归一化进度（坐标轴以世界原点为中心、跨 range 归一）
-function axisNormExpr(axis, range) {
+// 依据轴方向向量经 XYZ 角度（度）旋转后的单位方向：先绕世界 X、再绕 Y、最后绕 Z。
+// 角度全 0 时与原依据轴一致。非空间轴返回 null。
+export function axisDirWithRot(axis, rot) {
+  let x = 0, y = 0, z = 0;
+  if (axis === 'x') x = 1;
+  else if (axis === 'y') y = 1;
+  else if (axis === 'z') z = 1;
+  else return null;
+  const r = rot || {};
+  const rx = N(r.x, 0) * (Math.PI / 180);
+  const ry = N(r.y, 0) * (Math.PI / 180);
+  const rz = N(r.z, 0) * (Math.PI / 180);
+  // 绕 X
+  const y1 = y * Math.cos(rx) - z * Math.sin(rx);
+  const z1 = y * Math.sin(rx) + z * Math.cos(rx);
+  // 绕 Y
+  const x2 = x * Math.cos(ry) + z1 * Math.sin(ry);
+  const z2 = -x * Math.sin(ry) + z1 * Math.cos(ry);
+  // 绕 Z
+  const x3 = x2 * Math.cos(rz) - y1 * Math.sin(rz);
+  const y3 = x2 * Math.sin(rz) + y1 * Math.cos(rz);
+  const len = Math.hypot(x3, y3, z2) || 1;
+  return [x3 / len, y3 / len, z2 / len];
+}
+
+// 依据 expr + range 生成 0..1 归一化进度（坐标轴以世界原点为中心、跨 range 归一；可带角度旋转）
+function axisNormExpr(axis, range, rot) {
   if (axis === 'index') return 'clamp(norm(p.index, this.particles.size()), 0, 1)';
   if (axis === 'dist') return 'clamp(' + AXIS_RAW.dist + ' / ' + N(range, 8) + ', 0, 1)';
   if (axis === 'time') return 'mod(' + AXIS_RAW.time + ' / ' + Math.max(0.01, N(range, 4)) + ', 1)';
-  return 'clamp(' + AXIS_RAW[axis] + ' / ' + N(range, 8) + ' + 0.5, 0, 1)';
+  const d = axisDirWithRot(axis, rot);
+  const proj = ['x', 'y', 'z'].map((a, i) => AXIS_RAW[a] + ' * ' + N(d[i])).join(' + ');
+  return 'clamp((' + proj + ') / ' + N(range, 8) + ' + 0.5, 0, 1)';
 }
 
 // —— 预设目录 ——
@@ -102,6 +129,7 @@ export const MODIFY_PRESETS = [
         ],
       },
       { key: 'basis', type: 'enum', options: AXIS_OPTIONS, def: 'y' },
+      { key: 'angle', type: 'angle', def: { x: 0, y: 0, z: 0 }, visibleIf: (v) => ['x', 'y', 'z'].includes(v.basis) },
       { key: 'strength', type: 'num', min: 0, max: 1, step: 0.05, def: 1 },
       { key: 'power', type: 'num', min: 0.1, max: 10, step: 0.1, def: 1 },
       { key: 'reverse', type: 'bool', def: false, advanced: true },
@@ -116,7 +144,7 @@ export const MODIFY_PRESETS = [
         stopsMetaLine(stops),
         'for (const p of this.particles) {',
         '  let po = p.color',
-        '  let gv = ' + axisNormExpr(v.basis, v.range),
+        '  let gv = ' + axisNormExpr(v.basis, v.range, v.angle),
       ];
       if (reverse) lines.push('  gv = 1 - gv');
       lines.push('  gv = pow(gv, ' + power + ')');
@@ -167,6 +195,7 @@ export const MODIFY_PRESETS = [
       { key: 'hueOffset', type: 'num', min: 0, max: 360, step: 5, def: 0 },
       { key: 'range', type: 'num', min: 0, max: 1440, step: 30, def: 360 },
       { key: 'basis', type: 'enum', options: AXIS_OPTIONS, def: 'x' },
+      { key: 'angle', type: 'angle', def: { x: 0, y: 0, z: 0 }, visibleIf: (v) => ['x', 'y', 'z'].includes(v.basis) },
       { key: 'sat', type: 'num', min: 0, max: 1, step: 0.05, def: 1 },
       { key: 'bright', type: 'num', min: 0, max: 1, step: 0.05, def: 1 },
       { key: 'power', type: 'num', min: 0.1, max: 10, step: 0.1, def: 1, advanced: true },
@@ -185,7 +214,7 @@ export const MODIFY_PRESETS = [
       if (v.useTime) {
         lines.push('  let gv = mod(' + AXIS_RAW.time + ' / ' + Math.max(0.01, N(v.period, 4)) + ', 1)');
       } else {
-        lines.push('  let gv = ' + axisNormExpr(v.basis, v.range));
+        lines.push('  let gv = ' + axisNormExpr(v.basis, v.range, v.angle));
       }
       lines.push('  gv = pow(gv, ' + power + ')');
       lines.push('  let hh = ' + N(hueStart) + ' + ' + N(hueSpan) + ' * gv');
@@ -201,6 +230,7 @@ export const MODIFY_PRESETS = [
     target: 'process',
     params: [
       { key: 'basis', type: 'enum', options: AXIS_TIME_OPTIONS, def: 'dist' },
+      { key: 'angle', type: 'angle', def: { x: 0, y: 0, z: 0 }, visibleIf: (v) => ['x', 'y', 'z'].includes(v.basis) },
       { key: 'range', type: 'num', min: 0.1, max: 100, step: 0.5, def: 8 },
       { key: 'a0', type: 'num', min: 0, max: 1, step: 0.05, def: 1 },
       { key: 'a1', type: 'num', min: 0, max: 1, step: 0.05, def: 0 },
@@ -212,7 +242,7 @@ export const MODIFY_PRESETS = [
       const power = N(v.power, 1), shift = N(v.shift, 0);
       const lines = [
         'for (const p of this.particles) {',
-        '  let gv = ' + axisNormExpr(v.basis, v.range),
+        '  let gv = ' + axisNormExpr(v.basis, v.range, v.angle),
       ];
       if (shift !== 0) lines.push('  gv = clamp(gv + ' + shift + ', 0, 1)');
       lines.push('  gv = pow(gv, ' + power + ')');
@@ -450,6 +480,9 @@ export function defaultPresetValues(preset) {
       out[p.key] = (p.def || []).map((s) => ({ pos: Number(s.pos), color: (s.color || [1, 1, 1, 1]).slice() }));
     } else if (p.type === 'color') {
       out[p.key] = (p.def || [1, 1, 1, 1]).slice();
+    } else if (p.type === 'angle') {
+      const d = p.def || {};
+      out[p.key] = { x: Number(d.x) || 0, y: Number(d.y) || 0, z: Number(d.z) || 0 };
     } else {
       out[p.key] = p.def;
     }

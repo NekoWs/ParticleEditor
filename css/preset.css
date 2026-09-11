@@ -124,15 +124,37 @@
 }
 .preset-num input[type="number"]:focus { border-color: var(--accent); outline: none; box-shadow: var(--focus-ring); }
 
-/* 渐变条（PS 式） */
+/* 渐变条（PS 式：上方外置方形色块 + 指向三角，下方色条） */
 .preset-grad-row { flex-direction: column; align-items: stretch; gap: 6px; }
 .preset-grad-row .preset-param-label { max-width: none; }
 .preset-grad { display: flex; flex-direction: column; gap: 6px; }
-.gbar {
-  height: 30px; border: 1px solid var(--border); border-radius: 8px;
-  overflow: hidden; cursor: crosshair; touch-action: none; user-select: none;
+.gbar { position: relative; height: 50px; cursor: crosshair; touch-action: none; user-select: none; }
+.gbar-canvas { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 26px; display: block; }
+.gbar-stops { position: absolute; left: 6px; right: 6px; top: 0; height: 24px; }
+.gbar-stop {
+  position: absolute; top: 0; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; cursor: ew-resize;
 }
-.gbar canvas { display: block; width: 100%; height: 100%; }
+.gbar-stop-chip {
+  width: 12px; height: 12px; border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.92); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+.gbar-stop.sel .gbar-stop-chip { border-width: 2px; }
+.gbar-stop-arrow {
+  width: 0; height: 0; margin-top: -1px;
+  border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 6px solid #fff;
+}
+.gbar-menu {
+  position: fixed; z-index: 3400; min-width: 120px;
+  background: var(--panel-3); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: var(--shadow); padding: 4px;
+}
+.gbar-menu-item {
+  display: block; width: 100%; text-align: left; background: transparent; border: none;
+  border-radius: 5px; color: var(--text); font-size: 12px; padding: 7px 10px; cursor: pointer;
+}
+.gbar-menu-item:hover { background: var(--accent-soft); color: var(--accent); }
+.gbar-menu-item:disabled { opacity: 0.4; cursor: default; }
 .preset-grad-color { display: flex; align-items: center; gap: 6px; }
 .preset-grad-color .preset-swatch { width: 22px; height: 22px; }
 .preset-grad-color input[type="text"] { flex: 1; min-width: 0; }
@@ -144,7 +166,32 @@
 }
 .preset-grad-del:hover { border-color: var(--danger); color: var(--danger); }
 .preset-grad-del:disabled { opacity: 0.4; cursor: default; border-color: var(--border); color: var(--muted); }
-.preset-grad-hint { font-size: 11px; color: var(--muted); line-height: 1.5; }
+
+/* 角度拨盘（X/Y/Z 三组：图标+数值°） */
+.preset-angle { display: flex; gap: 6px; flex: 1; min-width: 0; }
+.preset-angle-seg { display: flex; align-items: center; gap: 3px; }
+.preset-angle-name { font-size: 11px; color: var(--muted); }
+.angle-ctl {
+  display: inline-flex; align-items: center; gap: 3px; height: 24px;
+  background: var(--panel-3); border: 1px solid var(--border); border-radius: 6px;
+  padding: 1px 7px 1px 4px; color: var(--text); cursor: pointer;
+}
+.angle-ctl:hover { border-color: var(--accent); background: var(--panel-2); }
+.angle-ctl-icon { display: inline-flex; }
+.angle-ctl-val { font-size: 11.5px; font-variant-numeric: tabular-nums; min-width: 30px; text-align: right; }
+.angle-dial-pop {
+  position: fixed; z-index: 3400; background: var(--panel-2);
+  border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow);
+  padding: 8px; display: flex; flex-direction: column; align-items: center; gap: 6px;
+}
+.angle-dial-pop canvas { width: 132px; height: 132px; cursor: crosshair; touch-action: none; }
+.angle-dial-input { display: flex; align-items: center; gap: 4px; }
+.angle-dial-input input {
+  width: 56px; background: var(--panel-3); border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 3px 6px; font-size: 12px; height: 24px; box-sizing: border-box;
+}
+.angle-dial-input input:focus { border-color: var(--accent); outline: none; box-shadow: var(--focus-ring); }
+.angle-dial-input span { color: var(--muted); font-size: 12px; }
 .preset-param-row select {
   flex: 1; min-width: 0; background: var(--panel-3);
   border: 1px solid var(--border); color: var(--text);

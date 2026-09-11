@@ -1,13 +1,19 @@
-// PS 式渐变条：canvas 绘制带透明棋盘格的渐变色条与色标。
-// 交互：点击色条空白处添加色标（颜色取该处插值）、拖动色标移动、双击色标删除；
+// PS 式渐变条：下方色条（canvas，透明处棋盘格），上方外置色标——方形色块 + 指向
+// 精确位置的三角箭头；中间色同样样式。交互：点击色条空白添加色标（颜色取该处插值）、
+// 拖动色块移动、双击删除；右键色标弹出菜单（编辑颜色 / 删除色标，剩 2 个时删除禁用）。
 // 选中色标高亮，颜色由宿主（预设窗口）用取色器编辑。状态变更/选中通过回调上报。
 
+import { t } from '../core/i18n.js';
 import { cssVar } from '../core/theme.js';
 
-const STOP_HALF_W = 7;   // 色标命中/绘制半宽（CSS px）
+const STOP_HALF_W = 8;    // 色标命中/拖动半宽（CSS px）
 const MIN_GAP = 0.002;   // 相邻色标最小间距（防止完全重叠后无法选中）
 
-function clamp01(v) { return Math.max(0, Math.min(1, v)); }
+// 硬钳制：非数值分量回退为默认（1 视为不透明），避免 NaN 写进 rgba 导致色条漏出棋盘格。
+function clamp01(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 1;
+}
 
 function normalize(stops) {
   const raw = Array.isArray(stops) ? stops : [];
@@ -15,7 +21,7 @@ function normalize(stops) {
     .filter((s) => s && Number.isFinite(Number(s.pos)))
     .map((s) => ({
       pos: clamp01(Number(s.pos)),
-      color: [0, 1, 2, 3].map((i) => clamp01(Number((s.color || [])[i]))),
+      color: [0, 1, 2, 3].map((i) => clamp01((s.color || [])[i])),
     }));
   out.sort((a, b) => a.pos - b.pos);
   if (out.length < 2) {
@@ -40,17 +46,24 @@ function sampleAt(state, t) {
   return state[state.length - 1].color.slice();
 }
 
-export function createGradientBar({ stops, onChange, onSelect }) {
+const cssRgba = (c) => 'rgba(' + Math.round(c[0] * 255) + ',' + Math.round(c[1] * 255) + ',' +
+  Math.round(c[2] * 255) + ',' + c[3] + ')';
+
+export function createGradientBar({ stops, onChange, onSelect, onEditColor }) {
   const host = document.createElement('div');
   host.className = 'gbar';
   const canvas = document.createElement('canvas');
+  canvas.className = 'gbar-canvas';
   host.appendChild(canvas);
+  const layer = document.createElement('div');
+  layer.className = 'gbar-stops';
+  host.appendChild(layer);
   const ctx = canvas.getContext('2d');
 
   let state = normalize(stops);
   let sel = 0;
   let drag = null; // { idx, moved }
-  let accent = '#5b9dff';
+  let menuEl = null;
 
   const api = {
     host,
@@ -58,22 +71,37 @@ export function createGradientBar({ stops, onChange, onSelect }) {
     setStops(next) {
       state = normalize(next);
       if (sel >= state.length) sel = state.length - 1;
-      redraw();
+      renderAll();
       fireChange();
     },
     selectedIndex() { return sel; },
     setSelectedColor(rgba) {
       const s = state[sel];
       if (!s) return;
-      s.color = [0, 1, 2, 3].map((i) => clamp01(Number(rgba[i])));
-      redraw();
+      s.color = [0, 1, 2, 3].map((i) => clamp01(rgba[i]));
+      renderAll();
+      fireChange();
+    },
+    setColorAt(i, rgba) {
+      const s = state[i];
+      if (!s) return;
+      s.color = [0, 1, 2, 3].map((i) => clamp01(rgba[i]));
+      renderAll();
       fireChange();
     },
     removeSelected() {
       if (state.length <= 2) return;
       state.splice(sel, 1);
       sel = Math.max(0, Math.min(sel, state.length - 1));
-      redraw();
+      renderAll();
+      fireSelect();
+      fireChange();
+    },
+    removeAt(i) {
+      if (state.length <= 2 || i < 0 || i >= state.length) return;
+      state.splice(i, 1);
+      sel = Math.max(0, Math.min(sel, state.length - 1));
+      renderAll();
       fireSelect();
       fireChange();
     },
@@ -85,7 +113,10 @@ export function createGradientBar({ stops, onChange, onSelect }) {
   }
   function fireSelect() { if (typeof onSelect === 'function') onSelect(sel); }
 
-  function redraw() {
+  // —— 色条绘制 ——
+  // 色条左右各留 6px 给端点色标，渐变区 [6, w-6]，span = w-12
+  const spanOf = (w) => Math.max(7, w - 12);
+  function drawBar() {
     const w = Math.max(2, Math.round(canvas.clientWidth));
     const h = Math.max(2, Math.round(canvas.clientHeight));
     if (canvas.width !== w || canvas.height !== h) {
@@ -96,15 +127,10 @@ export function createGradientBar({ stops, onChange, onSelect }) {
     const dpr = canvas.width / w;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    host.dataset.stopCount = String(state.length);
-    host.dataset.stops = JSON.stringify(state.map((s) => [s.pos, ...s.color]));
-
-    // 圆角裁剪
     ctx.save();
     ctx.beginPath();
-    ctx.roundRect(0, 0, w, h, 7);
+    ctx.roundRect(0, 0, w, h, 6);
     ctx.clip();
-
     // 透明棋盘格
     const cs = 6;
     for (let y = 0; y < h; y += cs) {
@@ -113,85 +139,98 @@ export function createGradientBar({ stops, onChange, onSelect }) {
         ctx.fillRect(x, y, cs, cs);
       }
     }
-
-    // 渐变（逐列采样，色标可任意数量）
-    for (let x = 0; x < w; x++) {
-      const c = sampleAt(state, x / Math.max(1, w - 1));
-      ctx.fillStyle = 'rgba(' + Math.round(c[0] * 255) + ',' + Math.round(c[1] * 255) + ',' +
-        Math.round(c[2] * 255) + ',' + c[3] + ')';
-      ctx.fillRect(x, 0, 1, h);
+    // 渐变：画布原生线性插值（含透明度），颜色区与指示层坐标一致
+    const span = spanOf(w);
+    const grad = ctx.createLinearGradient(0, 0, w, 0);
+    for (const s of state) {
+      grad.addColorStop(Math.max(0, Math.min(1, (6 + s.pos * (span - 1)) / w)), cssRgba(s.color));
     }
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
     ctx.restore();
+  }
 
-    // 色标
-    try { accent = cssVar('--accent', '#5b9dff').trim() || '#5b9dff'; } catch (e) { /* 保持默认 */ }
+  // —— 外置色标（方形色块 + 三角箭头） ——
+  function renderIndicators() {
+    layer.textContent = '';
+    let accent = '#5b9dff';
+    try { accent = cssVar('--accent', '#5b9dff').trim() || accent; } catch (e) { /* 用默认 */ }
     state.forEach((s, i) => {
-      const x = Math.round(s.pos * (w - 1));
-      const markW = STOP_HALF_W * 2;
-      const markH = h - 4;
-      ctx.fillStyle = 'rgba(' + Math.round(s.color[0] * 255) + ',' + Math.round(s.color[1] * 255) + ',' +
-        Math.round(s.color[2] * 255) + ',' + s.color[3] + ')';
-      ctx.beginPath();
-      ctx.roundRect(x - STOP_HALF_W, 2, markW, markH, 4);
-      ctx.fill();
-      if (i === sel) {
-        ctx.strokeStyle = accent;
-        ctx.lineWidth = 2.5;
-        ctx.shadowColor = accent;
-        ctx.shadowBlur = 5;
-      } else {
-        ctx.strokeStyle = 'rgba(255,255,255,0.95)';
-        ctx.lineWidth = 1.6;
-        ctx.shadowBlur = 0;
-      }
-      ctx.stroke();
-      ctx.shadowBlur = 0;
+      const el = document.createElement('div');
+      el.className = 'gbar-stop' + (i === sel ? ' sel' : '');
+      // 指示层左缘 = 色条渐变区起点（6px），像素映射保证箭头精确指到色标位置
+      el.style.left = (s.pos * (spanOf(canvas.clientWidth) - 1)) + 'px';
+      const chip = document.createElement('div');
+      chip.className = 'gbar-stop-chip';
+      chip.style.background = cssRgba(s.color);
+      if (i === sel) chip.style.boxShadow = '0 0 0 2px ' + accent;
+      const arrow = document.createElement('div');
+      arrow.className = 'gbar-stop-arrow';
+      arrow.style.borderTopColor = cssRgba([s.color[0], s.color[1], s.color[2], 1]);
+      el.appendChild(chip);
+      el.appendChild(arrow);
+      layer.appendChild(el);
     });
   }
 
-  function hitStop(x, y) {
-    if (y < -3 || y > canvas.clientHeight + 3) return -1;
-    const w = Math.max(1, canvas.clientWidth);
+  function renderAll() {
+    drawBar();
+    renderIndicators();
+    host.dataset.stopCount = String(state.length);
+    host.dataset.stops = JSON.stringify(state.map((s) => [s.pos, ...s.color]));
+  }
+
+  // —— 命中/拖动/点击 ——
+  function posFromX(clientX) {
+    const r = canvas.getBoundingClientRect();
+    const span = spanOf(r.width);
+    return clamp01((clientX - r.left - 6) / Math.max(1, span - 1));
+  }
+  function hitStop(clientX, clientY) {
+    const barRect = canvas.getBoundingClientRect();
     for (let i = state.length - 1; i >= 0; i--) {
-      const sx = state[i].pos * (w - 1);
-      if (Math.abs(x - sx) <= STOP_HALF_W + 2) return i;
+      const el = layer.children[i];
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      // 命中色块或箭头附近（箭头向下伸入色条上方）
+      if (clientX >= r.left - STOP_HALF_W && clientX <= r.right + STOP_HALF_W &&
+        clientY >= r.top - 4 && clientY <= barRect.top + 6) return i;
     }
     return -1;
   }
 
   host.addEventListener('pointerdown', (ev) => {
     if (ev.button !== 0) return;
-    ev.preventDefault();
-    const rect = canvas.getBoundingClientRect();
-    const x = ev.clientX - rect.left;
-    const y = ev.clientY - rect.top;
-    const idx = hitStop(x, y);
+    const idx = hitStop(ev.clientX, ev.clientY);
     if (idx >= 0) {
+      ev.preventDefault();
       sel = idx;
       fireSelect();
-      redraw();
+      renderAll();
       drag = { idx, moved: false };
-    } else if (y >= -3 && y <= rect.height + 3 && ev.detail <= 1) {
-      // 点击空白处：添加色标（颜色取该处插值），随后可直接拖动
-      const t = clamp01(x / Math.max(1, rect.width - 1));
+      try { layer.children[idx].setPointerCapture(ev.pointerId); } catch (e) { /* 忽略 */ }
+      return;
+    }
+    // 点击色条空白处添加色标（颜色取该处插值），随后可直接拖动
+    const barRect = canvas.getBoundingClientRect();
+    if (ev.clientY >= barRect.top - 2 && ev.clientY <= barRect.bottom + 2 && ev.detail <= 1) {
+      ev.preventDefault();
+      const t = posFromX(ev.clientX);
       state.push({ pos: t, color: sampleAt(state, t) });
       state.sort((a, b) => a.pos - b.pos);
       sel = state.findIndex((s) => s.pos === t);
       fireSelect();
-      redraw();
+      renderAll();
       fireChange();
       drag = { idx: sel, moved: false };
-    } else {
-      return;
+      try { layer.children[sel].setPointerCapture(ev.pointerId); } catch (e) { /* 忽略 */ }
     }
-    try { host.setPointerCapture(ev.pointerId); } catch (e) { /* 忽略 */ }
   });
 
   host.addEventListener('pointermove', (ev) => {
     if (!drag) return;
     ev.preventDefault();
-    const rect = canvas.getBoundingClientRect();
-    const t = clamp01((ev.clientX - rect.left) / Math.max(1, rect.width - 1));
+    const t = posFromX(ev.clientX);
     let lo = 0, hi = 1;
     if (drag.idx > 0) lo = state[drag.idx - 1].pos + MIN_GAP;
     if (drag.idx < state.length - 1) hi = state[drag.idx + 1].pos - MIN_GAP;
@@ -199,35 +238,86 @@ export function createGradientBar({ stops, onChange, onSelect }) {
     const np = Math.max(lo, Math.min(hi, t));
     if (Math.abs(np - state[drag.idx].pos) > 0.0005) drag.moved = true;
     state[drag.idx].pos = np;
-    redraw();
+    renderAll();
     fireChange();
   });
 
   const endDrag = () => {
     if (!drag) return;
     drag = null;
-    redraw();
+    renderAll();
     fireChange();
   };
   host.addEventListener('pointerup', endDrag);
   host.addEventListener('pointercancel', endDrag);
 
   host.addEventListener('dblclick', (ev) => {
-    const rect = canvas.getBoundingClientRect();
-    const idx = hitStop(ev.clientX - rect.left, ev.clientY - rect.top);
+    const idx = hitStop(ev.clientX, ev.clientY);
     if (idx < 0 || state.length <= 2) return;
     ev.preventDefault();
     state.splice(idx, 1);
     sel = Math.max(0, Math.min(sel, state.length - 1));
-    redraw();
+    renderAll();
     fireSelect();
     fireChange();
   });
 
-  const obs = new ResizeObserver(redraw);
+  // —— 右键菜单：编辑颜色 / 删除色标 ——
+  function closeMenu() {
+    if (menuEl) { menuEl.remove(); menuEl = null; }
+    document.removeEventListener('pointerdown', onOutMenu, true);
+    window.removeEventListener('keydown', onKeyMenu, true);
+  }
+  function onOutMenu(ev) {
+    if (menuEl && ev.target && menuEl.contains(ev.target)) return;
+    closeMenu();
+  }
+  function onKeyMenu(ev) {
+    if (ev.key === 'Escape') { ev.stopPropagation(); closeMenu(); }
+  }
+  host.addEventListener('contextmenu', (ev) => {
+    const idx = hitStop(ev.clientX, ev.clientY);
+    if (idx < 0) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    closeMenu();
+    const menu = document.createElement('div');
+    menu.className = 'gbar-menu';
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'gbar-menu-item';
+    edit.textContent = t('preset.gbar.editColor');
+    edit.addEventListener('click', () => {
+      closeMenu();
+      sel = idx;
+      fireSelect();
+      renderAll();
+      if (typeof onEditColor === 'function') onEditColor(idx);
+    });
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'gbar-menu-item';
+    del.textContent = t('preset.gbar.delete');
+    del.disabled = state.length <= 2;
+    del.addEventListener('click', () => {
+      closeMenu();
+      api.removeAt(idx);
+    });
+    menu.appendChild(edit);
+    menu.appendChild(del);
+    document.body.appendChild(menu);
+    const mr = menu.getBoundingClientRect();
+    menu.style.left = Math.max(8, Math.min(ev.clientX, window.innerWidth - mr.width - 8)) + 'px';
+    menu.style.top = Math.max(8, Math.min(ev.clientY, window.innerHeight - mr.height - 8)) + 'px';
+    menuEl = menu;
+    document.addEventListener('pointerdown', onOutMenu, true);
+    window.addEventListener('keydown', onKeyMenu, true);
+  });
+
+  const obs = new ResizeObserver(renderAll);
   obs.observe(host);
   host.__gbarObs = obs;
 
-  redraw();
+  renderAll();
   return api;
 }

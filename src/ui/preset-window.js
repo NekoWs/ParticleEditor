@@ -19,6 +19,7 @@ import { refreshFunctionPanel } from './panels.js';
 import { localizeScriptError } from '../core/script-error-i18n.js';
 import { buildPresetCode, applyPresetToSource, defaultPresetValues, getPreset, extractGradientStops } from '../core/presets.js';
 import { createGradientBar } from './gradient-bar.js';
+import { createAngleControl, closeAngleDial, angleDialOpen } from './angle-dial.js';
 
 const SZF = PARTICLE_SIZE_FACTOR;
 let current = null; // 单例窗口
@@ -93,6 +94,7 @@ export function closePresetWindow() {
   if (w.seekObs) w.seekObs.disconnect();
   if (w.controls) w.controls.dispose();
   closeColorPicker();
+  closeAngleDial();
   if (w.renderer) {
     try { w.renderer.dispose(); } catch (e) { /* 忽略 */ }
     try { w.renderer.forceContextLoss(); } catch (e) { /* 忽略 */ }
@@ -259,7 +261,7 @@ export function openPresetWindow(fxId, presetId) {
       row.appendChild(inp);
       row.appendChild(sw);
     } else if (param.type === 'gradient') {
-      // PS 式渐变条：点击加色标、拖动移动、双击删除；选中色标颜色用取色器编辑
+      // PS 式渐变条：点击加色标、拖动移动、双击/右键菜单删除；选中色标颜色用取色器编辑
       row.classList.add('preset-grad-row');
       const block = document.createElement('div');
       block.className = 'preset-grad';
@@ -267,6 +269,7 @@ export function openPresetWindow(fxId, presetId) {
         stops: val,
         onChange: (stops) => { values[param.key] = stops; syncColorRow(); scheduleRefresh(); },
         onSelect: () => syncColorRow(),
+        onEditColor: (i) => openStopColorPicker(i),
       });
       block.appendChild(bar.host);
 
@@ -309,19 +312,21 @@ export function openPresetWindow(fxId, presetId) {
         const rgba = hexToRgba(inp.value);
         if (rgba) { bar.setSelectedColor(rgba); paintSw(); }
       });
-      sw.addEventListener('click', (ev) => {
+      // 取色器编辑指定色标（色块按钮与右键菜单「编辑颜色」共用）
+      function openStopColorPicker(i) {
         const stops = bar.getStops();
-        const c = stops[Math.min(bar.selectedIndex(), stops.length - 1)].color;
+        if (!stops[i]) return;
         openColorPicker({
-          x: ev.clientX, y: ev.clientY,
-          rgba: c,
+          x: sw.getBoundingClientRect().left, y: sw.getBoundingClientRect().top,
+          rgba: stops[i].color,
           onInput: (out) => {
             inp.value = rgbaToHex(out[0], out[1], out[2], out[3]);
-            bar.setSelectedColor(out);
+            bar.setColorAt(i, out);
             paintSw();
           },
         });
-      });
+      }
+      sw.addEventListener('click', () => openStopColorPicker(bar.selectedIndex()));
       del.addEventListener('click', () => bar.removeSelected());
       colorRow.appendChild(sw);
       colorRow.appendChild(inp);
@@ -329,14 +334,34 @@ export function openPresetWindow(fxId, presetId) {
       colorRow.appendChild(del);
       block.appendChild(colorRow);
 
-      const hint = document.createElement('div');
-      hint.className = 'preset-grad-hint';
-      hint.textContent = t('preset.gbar.hint');
-      block.appendChild(hint);
-
       row.appendChild(block);
       inputs[param.key] = { bar, inp, paintSw, sync: syncColorRow };
       syncColorRow();
+    } else if (param.type === 'angle') {
+      // 三个角度拨盘（X/Y/Z）：图标+数值°，点击弹出圆形表盘
+      const wrap = document.createElement('span');
+      wrap.className = 'preset-angle';
+      const dials = {};
+      ['x', 'y', 'z'].forEach((axis) => {
+        const seg = document.createElement('span');
+        seg.className = 'preset-angle-seg';
+        const name = document.createElement('span');
+        name.className = 'preset-angle-name';
+        name.textContent = axis.toUpperCase();
+        seg.appendChild(name);
+        const ctl = createAngleControl({
+          value: val ? val[axis] : 0,
+          onChange: (n) => {
+            values[param.key][axis] = n;
+            scheduleRefresh();
+          },
+        });
+        seg.appendChild(ctl.host);
+        wrap.appendChild(seg);
+        dials[axis] = ctl;
+      });
+      inputs[param.key] = { dials };
+      row.appendChild(wrap);
     } else {
       // 数值参数：滑块拖动为主，紧凑数字框做精确输入
       const wrap = document.createElement('span');
@@ -371,6 +396,12 @@ export function openPresetWindow(fxId, presetId) {
       wrap.appendChild(num);
       inputs[param.key] = { range, num };
       row.appendChild(wrap);
+    }
+    // 依据其它参数决定显示与否（如角度只在依据为空间轴时出现）
+    if (typeof param.visibleIf === 'function') {
+      const syncVis = () => { row.hidden = !param.visibleIf(values); };
+      row._syncVis = syncVis;
+      syncVis();
     }
     return row;
   };
@@ -647,6 +678,10 @@ export function openPresetWindow(fxId, presetId) {
 
   // 参数改动即时生成预览（不再防抖，拖动丝滑）
   function scheduleRefresh() {
+    // 依据联动显隐（如角度行只在依据为空间轴时显示）
+    document.querySelectorAll('.preset-modal .preset-param-row').forEach((r) => {
+      if (typeof r._syncVis === 'function') r._syncVis();
+    });
     refreshPreview();
   }
 
@@ -684,7 +719,8 @@ export function openPresetWindow(fxId, presetId) {
     for (const p of preset.params) {
       values[p.key] = p.type === 'color' ? defs[p.key].slice()
         : p.type === 'gradient' ? defs[p.key].map((s) => ({ pos: s.pos, color: s.color.slice() }))
-          : defs[p.key];
+          : p.type === 'angle' ? { x: defs[p.key].x, y: defs[p.key].y, z: defs[p.key].z }
+            : defs[p.key];
       const ctl = inputs[p.key];
       if (!ctl) continue;
       if (p.type === 'bool') ctl.chk.checked = !!values[p.key];
@@ -697,6 +733,10 @@ export function openPresetWindow(fxId, presetId) {
       } else if (p.type === 'gradient') {
         ctl.bar.setStops(values[p.key]);
         ctl.sync();
+      } else if (p.type === 'angle') {
+        ctl.dials.x.setValue(values[p.key].x);
+        ctl.dials.y.setValue(values[p.key].y);
+        ctl.dials.z.setValue(values[p.key].z);
       } else {
         ctl.range.value = String(values[p.key]);
         ctl.num.value = String(values[p.key]);
@@ -728,8 +768,8 @@ export function openPresetWindow(fxId, presetId) {
   overlay.addEventListener('pointerdown', (ev) => { if (ev.target === overlay) closePresetWindow(); });
   const onKey = (ev) => {
     if (ev.key !== 'Escape') return;
-    // 取色器打开时把 Esc 让给它，避免误关整个窗口。
-    if (colorPickerOpen()) return;
+    // 取色器/角度表盘打开时把 Esc 让给它们，避免误关整个窗口。
+    if (colorPickerOpen() || angleDialOpen()) return;
     ev.stopPropagation();
     closePresetWindow();
   };
