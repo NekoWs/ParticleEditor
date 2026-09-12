@@ -36,7 +36,7 @@
 - 可写内建：`position`(vec3)、`color`(color)、`velocity`(vec3)、`scale`(num)、`glow`(bool)、`light`(0..15)、`life`(num)。
 - 只读：`index`（本函数对象内单调递增的 spawn 序号，不复用）。
 - 任意自定义字段：`p.foo = value` 即存即取；未设置的字段读 `undefined`。
-- 分量别名（`x/y/z/w/r/g/b/a`）对向量与 color 有效；写在 `particle` 上时按自定义字段存取（`p.a = 1` 写入自定义字段 `a`）。颜色/位置分量须写 `p.color.a`、`p.position.x` 等。
+- 分量别名（`x/y/z/w/r/g/b/a/alpha`）对向量与 color 有效（`alpha` 是 `a` 的别名）；写在 `particle` 上时按自定义字段存取（`p.a = 1` 写入自定义字段 `a`）。颜色/位置分量须写 `p.color.a`、`p.color.alpha`、`p.position.x` 等。
 - `p.color` 读取返回 color；写入接受 color、vec3、vec4、`[r,g,b]`、`[r,g,b,a]`，分量钳制到 0..1。
 - 方法：`p.kill()` 立即从列表移除。
 - 读取 `p.position`/`p.color`/`p.velocity` 得到新值（拷贝）；改分量须写 `p.position.x = ...` 或整体写回，先把字段存进局部变量再改分量不会写回粒子。
@@ -103,7 +103,7 @@ p.apply {
 ### color
 
 - `color(r, g, b, a)`，分量 0..1。
-- 分量 `.r/.g/.b/.a` 与别名 `.x/.y/.z/.w`；分量写入返回新 color 并钳制 0..1。
+- 分量 `.r/.g/.b/.a` 与别名 `.x/.y/.z/.w`、`.alpha`；分量写入返回新 color 并钳制 0..1。
 - 与 vec4 是不同类型：粒子颜色字段写入时两者都接受（§3）。手动转换用 `vec4(c.r, c.g, c.b, c.a)` 与 `color(v.x, v.y, v.z, v.w)`；HSV 往返用 `c.toHSV()` / `c.toRGB()`（§8）。
 
 ## 5. 词法

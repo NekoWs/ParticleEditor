@@ -13,8 +13,8 @@ function expectColor(c, name) {
   return c;
 }
 
-// x/y/z/w 是 r/g/b/a 的别名。
-const COMP_KEY = { x: 'r', y: 'g', z: 'b', w: 'a', r: 'r', g: 'g', b: 'b', a: 'a' };
+// x/y/z/w 是 r/g/b/a 的别名，alpha 是 a 的别名。
+const COMP_KEY = { x: 'r', y: 'g', z: 'b', w: 'a', r: 'r', g: 'g', b: 'b', a: 'a', alpha: 'a' };
 
 export function colorComponent(c, comp) {
   expectColor(c, 'component access');

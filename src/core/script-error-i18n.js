@@ -47,7 +47,7 @@ export const SCRIPT_ERROR_PATTERNS = [
   { re: /^'const' must have an initializer$/, key: 'err.script.constNoInit' },
   { re: /^only this has fields '\.(.*)'$/, key: 'err.script.onlyThisFields' },
   { re: /^this\.(.*) is read-only$/, key: 'err.script.thisFieldReadonly' },
-  { re: /^only this \/ particle have fields '\.(.*)'$/, key: 'err.script.onlyThisParticleFields' },
+  { re: /^member '\.(.*)' requires a particle or object, got (.*)$/, key: 'err.script.memberReceiver' },
   { re: /^indexed assignment target is not an array$/, key: 'err.script.indexedTargetNotArray' },
   { re: /^array index (.*) out of bounds \(size (.*)\)$/, key: 'err.script.arrayIndexOob' },
   { re: /^particle list index (.*) out of bounds \(size (.*)\)$/, key: 'err.script.particleIndexOob' },

@@ -532,7 +532,7 @@ class Runtime {
         obj.fields.set(target.field, value);
         return;
       }
-      throw runtimeError(`only this / particle / objects have fields '.${target.field}'`, node);
+      throw runtimeError(`member '.${target.field}' requires a particle or object, got ${typeName(obj)}`, node);
     }
     if (target.type === 'index') {
       const arr = this.evalExpr(target.target);
@@ -932,7 +932,7 @@ class Runtime {
     const obj = this.evalExpr(node.object);
     if (isParticle(obj)) return particleGetField(obj, field, node);
     if (isObj(obj)) return obj.fields.get(field);
-    throw runtimeError(`only this / particle / objects have fields '.${field}'`, node);
+    throw runtimeError(`member '.${field}' requires a particle or object, got ${typeName(obj)}`, node);
   }
 
   // 读取可赋值目标（++/-- 用）
@@ -2216,10 +2216,10 @@ const METHOD_CODE = {};
 METHOD_NAMES.forEach((n, i) => { METHOD_CODE[n] = i; });
 const METHOD_BY_CODE = METHOD_NAMES;
 
-// 按原始别名编码分量，保留 r/g/b/a 与 x/y/z/w 的书写形式。
+// 按原始别名编码分量，保留 r/g/b/a/alpha 与 x/y/z/w 的书写形式。
 // 向量运算用 COMP_ALIAS 归一化到 x/y/z/w；particle 上的分量回退为自定义字段时按原始别名存取。
-const COMP_CODE = { x: 0, y: 1, z: 2, w: 3, r: 4, g: 5, b: 6, a: 7 };
-const COMP_BY_CODE = ['x', 'y', 'z', 'w', 'r', 'g', 'b', 'a'];
+const COMP_CODE = { x: 0, y: 1, z: 2, w: 3, r: 4, g: 5, b: 6, a: 7, alpha: 8 };
+const COMP_BY_CODE = ['x', 'y', 'z', 'w', 'r', 'g', 'b', 'a', 'alpha'];
 
 // 可安全提升为 uniform 的纯内建（无 PRNG/随机、无数组变异、无回调）。
 const PURE_BUILTINS = new Set();
@@ -3788,7 +3788,7 @@ class Vm {
           const field = this.names[code[this.pc++]];
           const obj = stack.pop();
           if (isObj(obj)) { stack.push(obj.fields.get(field)); break; }
-          if (!isParticle(obj)) throw runtimeError(`only particles / objects have fields '.${field}'`, node);
+          if (!isParticle(obj)) throw runtimeError(`member '.${field}' requires a particle or object, got ${typeName(obj)}`, node);
           stack.push(particleGetField(obj, field, node));
           break;
         }
@@ -3797,7 +3797,7 @@ class Vm {
           const obj = stack.pop();
           const value = stack.pop();
           if (isObj(obj)) { obj.fields.set(field, value); break; }
-          if (!isParticle(obj)) throw runtimeError(`only particles / objects have fields '.${field}'`, node);
+          if (!isParticle(obj)) throw runtimeError(`member '.${field}' requires a particle or object, got ${typeName(obj)}`, node);
           particleSetField(obj, field, value, node);
           break;
         }
@@ -3821,7 +3821,11 @@ class Vm {
             obj.fields.set(field, setVecComp(old, comp, expectNum(nv, 'component value', node)));
             break;
           }
-          if (!isParticle(obj)) throw runtimeError(`only particles / objects have fields '.${field}'`, node);
+          if (!isParticle(obj)) throw runtimeError(`member '.${field}' requires a particle or object, got ${typeName(obj)}`, node);
+          if (isColor(old)) {
+            particleSetField(obj, field, colorCompWrite(old, raw, expectNum(nv, 'component value', node), node), node);
+            break;
+          }
           const comp = COMP_ALIAS[raw];
           if (!isVec(old)) throw runtimeError('component assignment target is not a vector', node);
           if ((old.t === 'vec2' && (comp === 'z' || comp === 'w')) || (old.t === 'vec3' && comp === 'w')) {

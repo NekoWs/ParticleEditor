@@ -41,7 +41,7 @@ const THIS_FIELD_SET = new Set(SCRIPT_THIS_FIELDS);
 const THIS_METHOD_SET = new Set(['spawn']);
 
 const PARTICLE_FIELD_TYPES = {
-  position: 'vec3', color: 'vec4', velocity: 'vec3', scale: 'num',
+  position: 'vec3', color: 'color', velocity: 'vec3', scale: 'num',
   glow: 'bool', light: 'num', life: 'num', index: 'num',
 };
 const PARTICLE_FIELD_SET = new Set(Object.keys(PARTICLE_FIELD_TYPES));
@@ -312,7 +312,7 @@ const THIS_FIELD_TYPES = {
 const VEC_COMPONENTS = {
   vec2: ['x', 'y', 'r', 'g'],
   vec3: ['x', 'y', 'z', 'r', 'g', 'b'],
-  vec4: ['x', 'y', 'z', 'w', 'r', 'g', 'b', 'a'],
+  vec4: ['x', 'y', 'z', 'w', 'r', 'g', 'b', 'a', 'alpha'],
 };
 
 const ARRAY_METHOD_RETURN_TYPES = {
@@ -321,7 +321,7 @@ const ARRAY_METHOD_RETURN_TYPES = {
   size: 'num', find: 'num', includes: 'bool',
 };
 
-const COLOR_COMPONENTS = ['r', 'g', 'b', 'a', 'x', 'y', 'z', 'w'];
+const COLOR_COMPONENTS = ['r', 'g', 'b', 'a', 'alpha', 'x', 'y', 'z', 'w'];
 const COLOR_METHOD_NAMES = ['toRGB', 'toHSV', 'red', 'green', 'blue', 'alpha', 'hue', 'saturation', 'value', 'shift_hue'];
 const VEC_COMMON_METHODS = ['normalize', 'dot', 'len', 'len2', 'dist', 'angleTo', 'project', 'reflect', 'lerp', 'translate', 'scale'];
 const VEC3_EXTRA_METHODS = ['cross', 'rotateX', 'rotateY', 'rotateZ'];
@@ -465,7 +465,7 @@ function truncateIncomplete(code, pos) {
   let cut = '';
   for (let i = upto.length - 1; i >= 0; i--) {
     const ch = upto[i];
-    if (ch === ';' || ch === '{' || ch === '}' || ch === '\n') { cut = text.slice(0, i + 1); break; }
+    if (ch === ';' || ch === '{' || ch === '}' || ch === '\n' || ch === ',') { cut = text.slice(0, i + 1); break; }
   }
   if (!cut) return '';
   let depth = 0;
@@ -870,9 +870,11 @@ function memberOptionsForType(type) {
     ];
   }
   if (type === 'color') {
+    // alpha 同时是分量别名与方法名，分量优先，避免补全列表出现两个同名项。
     return [
       ...COLOR_COMPONENTS.map((c) => ({ label: c, type: 'property', detail: 'color' })),
-      ...COLOR_METHOD_NAMES.map((m) => ({ label: m, type: 'method', detail: 'color' })),
+      ...COLOR_METHOD_NAMES.filter((m) => !COLOR_COMPONENTS.includes(m))
+        .map((m) => ({ label: m, type: 'method', detail: 'color' })),
     ];
   }
   return null;

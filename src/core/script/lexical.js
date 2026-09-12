@@ -24,9 +24,9 @@ export const CONSTANTS = new Map([
   ['E', Math.E],
 ]);
 
-// 向量分量访问名：r/g/b 分别是 x/y/z 的别名，a 是 w 的别名（§5 后缀）。
-export const COMP_ALIAS = { x: 'x', y: 'y', z: 'z', w: 'w', r: 'x', g: 'y', b: 'z', a: 'w' };
-export const COMP_NAMES = new Set(['x', 'y', 'z', 'w', 'r', 'g', 'b', 'a']);
+// 向量分量访问名：r/g/b 分别是 x/y/z 的别名，a/alpha 是 w 的别名（§5 后缀）。
+export const COMP_ALIAS = { x: 'x', y: 'y', z: 'z', w: 'w', r: 'x', g: 'y', b: 'z', a: 'w', alpha: 'w' };
+export const COMP_NAMES = new Set(['x', 'y', 'z', 'w', 'r', 'g', 'b', 'a', 'alpha']);
 
 // 内建函数名（与 BUILTIN_TABLE 的声明一一对应，parser 用于保留名校验）。
 export const BUILTIN_FUNCTION_NAMES = [
